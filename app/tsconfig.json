@@ -1,0 +1,13 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "types": ["node"],
+    "baseUrl": ".",
+    "paths": {
+      "@electrum/common": ["../../packages/common/src"],
+      "@electrum/core": ["../../packages/core/src"],
+      "@electrum/preload": ["../../packages/preload/src"]
+    }
+  },
+  "include": ["src/main/**/*", "src/preload/**/*"]
+}

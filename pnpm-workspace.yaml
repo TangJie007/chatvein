@@ -1,0 +1,21 @@
+packages:
+  - 'packages/*'
+  - 'app'
+
+# pnpm v11: allowBuilds 取代了 onlyBuiltDependencies
+# 允许 electron 和 esbuild 执行 install/postinstall 脚本
+allowBuilds:
+  electron: true
+  esbuild: true
+
+# 供应链安全：允许当天发布的包（开发便利）
+minimumReleaseAge: 0
+
+# Electron 项目需要 hoist 原生模块依赖
+shamefullyHoist: true
+publicHoistPattern:
+  - '*electron*'
+  - '@electron/*'
+  - 'vitest'
+  - 'vite'
+  - 'vue'

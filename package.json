@@ -1,0 +1,27 @@
+{
+  "name": "electrum",
+  "version": "0.1.0",
+  "private": true,
+  "description": "NestJS-inspired MVC framework for Electron (@electrum/*)",
+  "packageManager": "pnpm@11.22.0",
+  "scripts": {
+    "build": "pnpm --filter @electrum/common --filter @electrum/core --filter @electrum/preload --filter @electrum/client --filter @electrum/testing run build",
+    "dev:example": "pnpm --filter @electrum/example-basic dev",
+    "build:example": "pnpm --filter @electrum/example-basic build",
+    "test": "pnpm --filter @electrum/core --filter @electrum/preload --filter @electrum/client run test",
+    "clean": "pnpm -r exec rimraf dist out",
+    "clean:lock": "rimraf pnpm-lock.yaml node_modules",
+    "docs:dev": "vitepress dev docs",
+    "docs:build": "vitepress build docs",
+    "docs:preview": "vitepress preview docs"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "@wetspace/wetspec-cli": "^1.2.2",
+    "rimraf": "^6.1.3",
+    "vitepress": "^1.6.4"
+  }
+}

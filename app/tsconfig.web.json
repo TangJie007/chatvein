@@ -1,0 +1,21 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "jsx": "preserve",
+    "types": ["vite/client"],
+    "isolatedModules": true,
+    "noEmit": true,
+    "baseUrl": ".",
+    "paths": {
+      "@electrum/client": ["../../packages/client/src"]
+    }
+  },
+  "include": [
+    "src/renderer/env.d.ts",
+    "src/renderer/**/*.ts",
+    "src/renderer/**/*.vue"
+  ]
+}
