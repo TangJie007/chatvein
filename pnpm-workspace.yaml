@@ -1,5 +1,6 @@
 packages:
-  - 'packages/*'
+  - 'packages/electrum/*'
+  - 'packages/chatvein/*'
   - 'app'
 
 # pnpm v11: allowBuilds 取代了 onlyBuiltDependencies

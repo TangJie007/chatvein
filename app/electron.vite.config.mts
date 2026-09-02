@@ -4,10 +4,10 @@ import vue from '@vitejs/plugin-vue'
 import { defineConfig, externalizeDepsPlugin } from 'electron-vite'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
-const commonSrc = resolve(__dirname, '../packages/common/src')
-const coreSrc = resolve(__dirname, '../packages/core/src')
-const preloadSrc = resolve(__dirname, '../packages/preload/src')
-const clientSrc = resolve(__dirname, '../packages/client/src')
+const commonSrc = resolve(__dirname, '../packages/electrum/common/src')
+const coreSrc = resolve(__dirname, '../packages/electrum/core/src')
+const preloadSrc = resolve(__dirname, '../packages/electrum/preload/src')
+const clientSrc = resolve(__dirname, '../packages/electrum/client/src')
 
 export default defineConfig({
   main: {

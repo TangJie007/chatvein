@@ -22,16 +22,16 @@ importers:
     dependencies:
       '@electrum/client':
         specifier: workspace:*
-        version: link:../packages/client
+        version: link:../packages/electrum/client
       '@electrum/common':
         specifier: workspace:*
-        version: link:../packages/common
+        version: link:../packages/electrum/common
       '@electrum/core':
         specifier: workspace:*
-        version: link:../packages/core
+        version: link:../packages/electrum/core
       '@electrum/preload':
         specifier: workspace:*
-        version: link:../packages/preload
+        version: link:../packages/electrum/preload
       '@element-plus/icons-vue':
         specifier: ^2.3.2
         version: 2.3.2(vue@3.5.41(typescript@5.9.3))
@@ -61,7 +61,7 @@ importers:
         specifier: ^5.4.0
         version: 5.4.21(@types/node@22.20.1)
 
-  packages/client:
+  packages/electrum/client:
     devDependencies:
       tsup:
         specifier: ^8.0.0
@@ -73,7 +73,7 @@ importers:
         specifier: ^2.0.0
         version: 2.1.9(@types/node@22.20.1)
 
-  packages/codegen:
+  packages/electrum/codegen:
     dependencies:
       ts-morph:
         specifier: ^24.0.0
@@ -92,7 +92,7 @@ importers:
         specifier: ^2.0.0
         version: 2.1.9(@types/node@22.20.1)
 
-  packages/common:
+  packages/electrum/common:
     devDependencies:
       '@types/node':
         specifier: ^22.0.0
@@ -110,7 +110,7 @@ importers:
         specifier: ^2.0.0
         version: 2.1.9(@types/node@22.20.1)
 
-  packages/core:
+  packages/electrum/core:
     dependencies:
       '@electrum/common':
         specifier: workspace:*
@@ -132,7 +132,7 @@ importers:
         specifier: ^2.0.0
         version: 2.1.9(@types/node@22.20.1)
 
-  packages/preload:
+  packages/electrum/preload:
     devDependencies:
       '@types/node':
         specifier: ^22.0.0
@@ -150,7 +150,7 @@ importers:
         specifier: ^2.0.0
         version: 2.1.9(@types/node@22.20.1)
 
-  packages/testing:
+  packages/electrum/testing:
     dependencies:
       '@electrum/common':
         specifier: workspace:*
