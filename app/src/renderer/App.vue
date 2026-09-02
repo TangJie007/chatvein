@@ -5,6 +5,7 @@ import {
   User,
   Document,
   Setting,
+  ChatDotRound,
 } from '@element-plus/icons-vue'
 import { createClient } from '@electrum/client'
 import type { IpcApi, NavView } from './ipc-api'
@@ -13,6 +14,7 @@ import DashboardView from './views/DashboardView.vue'
 import UsersView from './views/UsersView.vue'
 import FilesView from './views/FilesView.vue'
 import WindowsView from './views/WindowsView.vue'
+import DoubaoView from './views/DoubaoView.vue'
 
 const api = createClient<IpcApi>()
 
@@ -28,6 +30,7 @@ const menuItems = [
   { key: 'users' as const, label: '用户管理', icon: User },
   { key: 'files' as const, label: '文件读写', icon: Document },
   { key: 'windows' as const, label: '窗口与菜单', icon: Setting },
+  { key: 'doubao' as const, label: '豆包实验', icon: ChatDotRound },
 ]
 
 const pageTitle = computed(() => {
@@ -99,6 +102,7 @@ async function openAnotherChild() {
         <UsersView v-else-if="active === 'users'" />
         <FilesView v-else-if="active === 'files'" />
         <WindowsView v-else-if="active === 'windows'" />
+        <DoubaoView v-else-if="active === 'doubao'" />
       </el-main>
     </el-container>
   </div>

@@ -7,7 +7,6 @@ import { IpcBridge } from './bridge/ipc-bridge'
 import { EventBridge } from './bridge/event-bridge'
 import { WindowManager } from './window/manager'
 import { LifecycleManager } from './lifecycle/manager'
-import { TypeGenerator } from './type-generator/generator'
 import type { Plugin } from './plugin/plugin.interface'
 
 /**
@@ -42,6 +41,7 @@ export class Application {
   private plugins: Plugin[] = []
   private logger = new Logger('Application')
   private started = false
+  private shuttingDown = false
 
   /**
    * @param rootModule 根模块类（须有 @Module），一般是 AppModule
@@ -90,20 +90,6 @@ export class Application {
 
   getContainer(): DIContainer {
     return this.container
-  }
-
-  /**
-   * 根据已扫描的 @IpcHandle 生成渲染侧 api.d.ts 骨架。
-   * 若尚未 start，会先扫描一次模块（不启动 Electron）。
-   */
-  generateTypes(outputPath: string): this {
-    if (this.scannedModules.length === 0) {
-      const scanner = new ModuleScanner(this.container)
-      this.scannedModules = scanner.scan(this.rootModule)
-    }
-    new TypeGenerator(this.scannedModules).generate(outputPath)
-    this.logger.log(`Types generated → ${outputPath}`)
-    return this
   }
 
   /**
@@ -157,13 +143,17 @@ export class Application {
     return this
   }
 
-  /** 应用退出清理 */
+  /** 应用退出清理（幂等：重复调用直接返回） */
   private async shutdown(): Promise<void> {
+    if (this.shuttingDown) return
+    this.shuttingDown = true
+
     for (const plugin of this.plugins) {
       await plugin.destroy?.(this)
     }
     await this.lifecycle?.runHook('onModuleDestroy')
     this.ipcBridge?.unregisterAll()
+    this.eventBridge?.unregisterAll()
   }
 }
 

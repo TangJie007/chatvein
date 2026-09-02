@@ -14,6 +14,7 @@ import type { ScannedModule } from '../module/scanner'
  */
 export class EventBridge {
   private logger = new Logger('EventBridge')
+  private registeredListeners: Array<{ event: string; listener: (...args: any[]) => void }> = []
 
   constructor(
     private container: DIContainer,
@@ -36,7 +37,7 @@ export class EventBridge {
     const instance = this.container.resolve<any>(targetClass)
 
     for (const { event, method } of handlers) {
-      app.on(event as any, (...args: any[]) => {
+      const listener = (...args: any[]) => {
         try {
           const result = instance[method](...args)
           if (result instanceof Promise) {
@@ -47,9 +48,19 @@ export class EventBridge {
         } catch (err: any) {
           this.logger.error(`AppEvent "${event}" error: ${err.message}`)
         }
-      })
+      }
 
+      app.on(event as any, listener)
+      this.registeredListeners.push({ event: event as string, listener })
       this.logger.debug(`Bound app.on("${event}") → ${targetClass.name}.${String(method)}`)
     }
+  }
+
+  /** 拆除本桥接注册过的全部 app 事件监听，供 Application.shutdown 调用 */
+  unregisterAll(): void {
+    for (const { event, listener } of this.registeredListeners) {
+      app.removeListener(event as any, listener)
+    }
+    this.registeredListeners = []
   }
 }

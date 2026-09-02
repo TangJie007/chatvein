@@ -16,6 +16,7 @@ import { MenuService } from './menu.service'
     frame: false,
     titleBarStyle: 'hidden',
     backgroundColor: '#f5f7fa',
+    webviewTag: true,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,

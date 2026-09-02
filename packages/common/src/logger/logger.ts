@@ -13,6 +13,10 @@ export class Logger {
     if (this.shouldLog('debug')) console.debug(`[${this.context}] ${message}`, ...args)
   }
 
+  verbose(message: string, ...args: any[]): void {
+    if (this.shouldLog('verbose')) console.log(`[${this.context}] ${message}`, ...args)
+  }
+
   log(message: string, ...args: any[]): void {
     if (this.shouldLog('log')) console.log(`[${this.context}] ${message}`, ...args)
   }

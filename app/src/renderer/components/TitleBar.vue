@@ -9,6 +9,7 @@ import {
   User,
   Document,
   Setting,
+  ChatDotRound,
   ArrowDown,
 } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
@@ -67,6 +68,7 @@ function onMenu(command: string) {
     case 'users':
     case 'files':
     case 'windows':
+    case 'doubao':
       active.value = command
       break
     case 'reload-menu':
@@ -137,6 +139,9 @@ onUnmounted(() => {
             </el-dropdown-item>
             <el-dropdown-item command="windows">
               <el-icon><Setting /></el-icon>窗口与菜单
+            </el-dropdown-item>
+            <el-dropdown-item command="doubao">
+              <el-icon><ChatDotRound /></el-icon>豆包实验
             </el-dropdown-item>
           </el-dropdown-menu>
         </template>

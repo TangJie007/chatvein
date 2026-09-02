@@ -2,11 +2,12 @@ import { Module } from '@electrum/common'
 import { WindowModule } from './window/window.module'
 import { FileModule } from './file/file.module'
 import { UserModule } from './user/user.module'
+import { DoubaoModule } from './doubao/doubao.module'
 import { AppController } from './app.controller'
 import { ConfigService } from './config.service'
 
 @Module({
-  imports: [WindowModule, FileModule, UserModule],
+  imports: [WindowModule, FileModule, UserModule, DoubaoModule],
   controllers: [AppController],
   providers: [
     ConfigService,

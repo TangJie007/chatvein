@@ -6,8 +6,8 @@
   "packageManager": "pnpm@11.22.0",
   "scripts": {
     "build": "pnpm --filter @electrum/common --filter @electrum/core --filter @electrum/preload --filter @electrum/client --filter @electrum/testing run build",
-    "dev:example": "pnpm --filter @electrum/example-basic dev",
-    "build:example": "pnpm --filter @electrum/example-basic build",
+    "dev:app": "pnpm --filter @electrum/example-basic dev",
+    "build:app": "pnpm --filter @electrum/example-basic build",
     "test": "pnpm --filter @electrum/core --filter @electrum/preload --filter @electrum/client run test",
     "clean": "pnpm -r exec rimraf dist out",
     "clean:lock": "rimraf pnpm-lock.yaml node_modules",

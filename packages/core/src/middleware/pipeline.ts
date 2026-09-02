@@ -3,6 +3,7 @@ import {
   readMetadata,
   Logger,
   ForbiddenException,
+  ElectronException,
   type CanActivate,
   type IpcContext,
   type NestInterceptor,
@@ -59,7 +60,7 @@ export class MiddlewarePipeline {
       const transformedArgs = await this.runPipes(ctx, context)
       return await this.runWithInterceptors(ctx, context, transformedArgs)
     } catch (err) {
-      return this.runFilters(err, context)
+      return this.runFilters(err, context, ctx.method)
     }
   }
 
@@ -150,11 +151,15 @@ export class MiddlewarePipeline {
     return chain()
   }
 
-  private runFilters(exception: unknown, context: IpcContext): IpcErrorResponse {
+  private runFilters(
+    exception: unknown,
+    context: IpcContext,
+    method: string | symbol,
+  ): IpcErrorResponse {
     const classFilters = readMetadata<Function[]>(context.controllerClass, META.CLASS_FILTERS) || []
     const methodEntries =
       readMetadata<MethodMiddlewareEntry[]>(context.controllerClass, META.METHOD_FILTERS) || []
-    const methodEntry = methodEntries.find((e) => e.method === context.channel)
+    const methodEntry = methodEntries.find((e) => e.method === method)
     const methodFilters = methodEntry?.middlewares || []
 
     const allFilters = [...methodFilters, ...classFilters, ...this.globalFilters]
@@ -162,6 +167,10 @@ export class MiddlewarePipeline {
     for (const filterClass of allFilters) {
       const filter = this.container.resolve(filterClass) as ExceptionFilter
       return filter.catch(exception, context)
+    }
+
+    if (exception instanceof ElectronException) {
+      return exception.toJSON()
     }
 
     if (exception instanceof Error) {

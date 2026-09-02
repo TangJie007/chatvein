@@ -1,10 +1,13 @@
 {
-  "name": "@electrum/testing",
+  "name": "@electrum/codegen",
   "version": "0.1.0",
-  "description": "Testing utilities for Electrum applications",
+  "description": "Code generation for Electrum — IPC type declarations via ts-morph",
   "main": "./dist/index.js",
   "module": "./dist/index.mjs",
   "types": "./dist/index.d.ts",
+  "bin": {
+    "electrum-codegen": "./dist/cli.js"
+  },
   "exports": {
     ".": {
       "import": {
@@ -23,12 +26,12 @@
   ],
   "scripts": {
     "build": "tsup",
+    "dev": "tsup --watch",
     "test": "vitest run",
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@electrum/common": "workspace:*",
-    "@electrum/core": "workspace:*"
+    "ts-morph": "^24.0.0"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
@@ -37,10 +40,12 @@
     "vitest": "^2.0.0"
   },
   "keywords": [
+    "electron",
     "electrum",
-    "testing",
-    "mock-electron",
-    "vitest"
+    "codegen",
+    "ts-morph",
+    "ipc",
+    "typescript"
   ],
   "license": "MIT"
 }
