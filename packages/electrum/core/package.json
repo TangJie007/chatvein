@@ -35,8 +35,8 @@
     "@electrum/common": "workspace:*"
   },
   "devDependencies": {
-    "@types/node": "^22.0.0",
-    "electron": "^32.0.0",
+    "@types/node": "^24.0.0",
+    "electron": "^44.0.0",
     "tsup": "^8.0.0",
     "typescript": "^5.5.0",
     "vitest": "^2.0.0"
