@@ -1,5 +1,5 @@
 {
-  "name": "electrum",
+  "name": "chatvein",
   "version": "0.1.0",
   "private": true,
   "description": "NestJS-inspired MVC framework for Electron (@electrum/*)",
