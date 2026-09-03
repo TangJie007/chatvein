@@ -45,6 +45,22 @@ function formatTime(ts: number): string {
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
 }
 
+function formatTokenLabel(m: { usage?: { promptTokens: number; completionTokens: number; totalTokens: number } }): string {
+  const u = m.usage
+  if (!u || u.totalTokens <= 0) return ''
+  return `${formatCount(u.totalTokens)} tok`
+}
+
+function formatTokenTitle(m: { usage?: { promptTokens: number; completionTokens: number; totalTokens: number } }): string {
+  const u = m.usage
+  if (!u) return ''
+  return `输入 ${formatCount(u.promptTokens)} · 输出 ${formatCount(u.completionTokens)} · 合计 ${formatCount(u.totalTokens)}`
+}
+
+function formatCount(n: number): string {
+  return n.toLocaleString('en-US')
+}
+
 async function scrollBottom() {
   await nextTick()
   const el = scroller.value
@@ -64,6 +80,10 @@ async function onAdd() {
 }
 
 async function onSend(text: string) {
+  if (!activeModel.value) {
+    status.value = '请先在 Agents 中绑定模型并填写 API Key'
+    return
+  }
   status.value = '生成中…'
   try {
     const result = await chat.send(text)
@@ -188,6 +208,8 @@ onMounted(async () => {
           :role-mini="m.role === 'assistant' ? activeAgent?.role : undefined"
           :time="formatTime(m.createdAt)"
           :content="m.content"
+          :token-label="m.role === 'assistant' ? formatTokenLabel(m) : ''"
+          :token-title="m.role === 'assistant' ? formatTokenTitle(m) : ''"
         />
 
         <div
@@ -204,7 +226,7 @@ onMounted(async () => {
         :scope-label="activeModel ? activeModel.model : '未绑定模型'"
         :send-label="chat.sending ? '生成中' : '发送'"
         hint="Enter 发送 · Shift+Enter 换行"
-        :disabled="chat.sending || !activeModel"
+        :disabled="chat.sending"
         @send="onSend"
       >
         <template #tools>

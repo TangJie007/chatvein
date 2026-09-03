@@ -1,10 +1,19 @@
 export type ChatRole = 'user' | 'assistant' | 'system'
 
+/** OpenAI 兼容接口返回的 token 用量 */
+export interface TokenUsage {
+  promptTokens: number
+  completionTokens: number
+  totalTokens: number
+}
+
 export interface ChatMessage {
   id: string
   role: ChatRole
   content: string
   createdAt: number
+  /** 仅 assistant 消息；部分供应商可能不回传 */
+  usage?: TokenUsage
 }
 
 export interface Conversation {

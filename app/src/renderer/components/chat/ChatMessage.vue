@@ -12,8 +12,19 @@ withDefaults(
     time?: string
     /** 纯文本内容；有 slot 时 slot 优先 */
     content?: string
+    /** 助手回复的 token 用量文案，展示在时间旁 */
+    tokenLabel?: string
+    tokenTitle?: string
   }>(),
-  { tint: 'indigo', author: '', roleMini: '', time: '', content: '' },
+  {
+    tint: 'indigo',
+    author: '',
+    roleMini: '',
+    time: '',
+    content: '',
+    tokenLabel: '',
+    tokenTitle: '',
+  },
 )
 </script>
 
@@ -34,6 +45,11 @@ withDefaults(
         <span>{{ author }}</span>
         <span v-if="roleMini" class="rounded-[5px] bg-[var(--color-track)] px-1.5 py-0.5 font-mono text-[10px] font-medium text-[var(--color-ink-3)]">{{ roleMini }}</span>
         <span v-if="time" class="font-mono text-[10.5px] font-normal text-[var(--color-ink-3)]">{{ time }}</span>
+        <span
+          v-if="tokenLabel"
+          class="font-mono text-[10.5px] font-normal text-[var(--color-ink-3)]"
+          :title="tokenTitle || undefined"
+        >· {{ tokenLabel }}</span>
       </div>
 
       <div

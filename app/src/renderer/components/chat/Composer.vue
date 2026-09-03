@@ -29,6 +29,13 @@ function autosize() {
   el.style.height = `${Math.min(el.scrollHeight, 180)}px`
 }
 
+function onInput(e: Event) {
+  const el = e.target as HTMLTextAreaElement
+  text.value = el.value
+  autosize()
+  emit('update:modelValue', text.value)
+}
+
 function send() {
   if (props.disabled) return
   const value = text.value.trim()
@@ -73,7 +80,7 @@ function onKeydown(e: KeyboardEvent) {
         rows="1"
         class="w-full resize-none border-0 bg-transparent px-1.5 pt-0.5 text-sm leading-[1.45] text-[var(--color-ink-1)] placeholder:text-[var(--color-ink-3)] focus:outline-none disabled:opacity-60"
         style="min-height: 46px; max-height: 180px"
-        @input="autosize(); emit('update:modelValue', ($event.target as HTMLTextAreaElement).value)"
+        @input="onInput"
         @keydown="onKeydown"
       />
 

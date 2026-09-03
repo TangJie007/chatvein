@@ -9,6 +9,7 @@ import type {
   ChatSendInput,
   ChatSendResult,
   Conversation,
+  TokenUsage,
 } from './chat.types'
 
 @Injectable()
@@ -105,7 +106,7 @@ export class ChatService {
     }
     apiMessages.push(...history, { role: 'user', content })
 
-    const { text, latencyMs } = await this.complete({
+    const { text, latencyMs, usage } = await this.complete({
       baseUrl: model.baseUrl,
       apiKey: model.apiKey,
       model: model.model,
@@ -119,6 +120,7 @@ export class ChatService {
       role: 'assistant',
       content: text,
       createdAt: Date.now(),
+      ...(usage ? { usage } : {}),
     }
 
     const title =
@@ -155,7 +157,7 @@ export class ChatService {
     temperature: number
     maxTokens: number
     messages: Array<{ role: string; content: string }>
-  }): Promise<{ text: string; latencyMs: number }> {
+  }): Promise<{ text: string; latencyMs: number; usage?: TokenUsage }> {
     const base = input.baseUrl.trim().replace(/\/+$/, '')
     const url = `${base}/chat/completions`
     const body: Record<string, unknown> = {
@@ -192,10 +194,15 @@ export class ChatService {
       }
       const json = (await res.json()) as {
         choices?: Array<{ message?: { content?: string | null }; finish_reason?: string }>
+        usage?: {
+          prompt_tokens?: number
+          completion_tokens?: number
+          total_tokens?: number
+        }
       }
       const text = json.choices?.[0]?.message?.content?.trim() ?? ''
       if (!text) throw new ValidationException('模型返回空内容', [])
-      return { text, latencyMs }
+      return { text, latencyMs, usage: parseUsage(json.usage) }
     } catch (err) {
       if (err instanceof ValidationException) throw err
       const aborted = err instanceof Error && err.name === 'AbortError'
@@ -212,6 +219,17 @@ export class ChatService {
 function truncateTitle(text: string): string {
   const one = text.replace(/\s+/g, ' ').trim()
   return one.length <= 28 ? one : `${one.slice(0, 28)}…`
+}
+
+function parseUsage(
+  raw?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number },
+): TokenUsage | undefined {
+  if (!raw) return undefined
+  const promptTokens = Number(raw.prompt_tokens) || 0
+  const completionTokens = Number(raw.completion_tokens) || 0
+  const totalTokens = Number(raw.total_tokens) || promptTokens + completionTokens
+  if (totalTokens <= 0 && promptTokens <= 0 && completionTokens <= 0) return undefined
+  return { promptTokens, completionTokens, totalTokens }
 }
 
 async function safeErrorText(res: Response): Promise<string> {
