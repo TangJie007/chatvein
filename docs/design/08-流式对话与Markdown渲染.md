@@ -1,9 +1,10 @@
 # 流式对话与 Markdown 渲染方案
 
-> 版本：v1.0 ｜ 日期：2026-09-03  
+> 版本：v1.1 ｜ 日期：2026-09-03  
 > **决策状态：已锁定（选型）**  
 > 上位：[`../phase1/02-方案设计.md`](../phase1/02-方案设计.md)、[`./02-agent循环方案.md`](./02-agent循环方案.md)  
-> 关联：[`./01-核心骨架.md`](./01-核心骨架.md)（对话 / 群组）、[`./06-插件运行时-Cordis.md`](./06-插件运行时-Cordis.md)
+> 关联：[`./01-核心骨架.md`](./01-核心骨架.md)（对话 / 群组）、[`./06-插件运行时-Cordis.md`](./06-插件运行时-Cordis.md)  
+> 排期：[`../phase1/03-开发计划书.md`](../phase1/03-开发计划书.md) **CP1**
 
 ---
 
@@ -196,12 +197,14 @@ onBeforeUnmount(() => cancelAnimationFrame(raf))
 
 ## 8 实施顺序（WBS 建议）
 
+与 [`../phase1/03-开发计划书.md`](../phase1/03-开发计划书.md) **CP1** 对齐：
+
 1. **M1 协议**：`@chatvein/common` 定义 `ChatEvent`；单测覆盖映射。
-2. **M2 归一**：`@chatvein/service` 实现 `runChat(): AsyncGenerator<ChatEvent>`，消费 LangGraph `astream` 三种模式；`AbortSignal` 取消。
-3. **M3 IPC**：app 主进程 `chat:start/event/cancel`；token 合批；preload 暴露 `onChatEvent`。
-4. **M4 渲染 store + trace**：事件归并 store；`AgentTrace`/`GuardrailAlert` 接事件；护栏选择回传。
-5. **M5 Markdown**：`MarkdownText`（markdown-it + dompurify + shiki/hljs）；流式补配对符、定稿渲染、贴底滚动。
-6. **M6 联调**：单 Agent 对话 → 群组多 Agent（按 `agent` 分气泡）→ 取消/护栏中断恢复。
+2. **CP0 归一**：`@chatvein/agents` 内 `graph.astream` → `ChatEvent`（`createReactAgent`）；`AbortSignal` 取消。
+3. **CP1 IPC**：app `chat:start/event/cancel`；token 合批；preload 暴露 `onChatEvent`。
+4. **CP1 渲染 store + trace**：事件归并 store；`AgentTrace`/`GuardrailAlert`/`ThinkingPanel` 接事件。
+5. **CP1 Markdown**：`MarkdownText`（markdown-it + dompurify + shiki/hljs）；流式补配对符、定稿渲染、贴底滚动。
+6. **CP1 联调**：单 Agent 对话 → 群组多 Agent（按 `agent` 分气泡）→ 取消/护栏中断恢复。
 
 ---
 

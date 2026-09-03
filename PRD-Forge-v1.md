@@ -4,7 +4,7 @@
 
 | 项目 | 内容 |
 |------|------|
-| 文档版本 | v1.0 |
+| 文档版本 | v1.1 |
 | 创建日期 | 2026-09-03 |
 | 作者 | 唐杰 |
 | 评审人 | 待定 |
@@ -12,6 +12,7 @@
 | 项目代号 | Forge（锻造炉） |
 | 目标赛事 | GOSIM 智能体软件工厂黑客松（OAIC 主办）初赛 |
 | 技术栈 | Electron（上层 GUI）+ LangChain.js + LangGraph.js（编排）+ TS/Node.js |
+| 工程文档 | 初赛 Forge 轨见 `docs/phase1/`；**Chat 产品轨**（`@chatvein/agents`、拉群、记忆）在 [`docs/phase1/03-开发计划书.md`](docs/phase1/03-开发计划书.md) **CP0–CP2**，与 Forge **并行、不阻塞初赛** |
 | 官网 | https://create.gosim.org/factory26/ |
 
 ## 2 需求摘要
@@ -400,6 +401,8 @@
 | M3 初赛 | 9/21–9/30 | 每日一次全量演练，按结果调优 | 进入排行榜 Top 20 |
 | M4 大奖赛 | 10/1–10/7 | 增量变更需求支持（第二期范围） | 视晋级情况 |
 
+> **Chat 产品轨（并行）**：普通对话 ReAct、拉群、记忆/向量不在本 PRD 赛事主线内，但已在 [`docs/phase1/03-开发计划书.md`](docs/phase1/03-开发计划书.md) **CP0–CP2** 排期；编排同样用 LangGraph（对话 `createReactAgent`，Forge `StateGraph`），详见 [`docs/design/`](docs/design/index.md)。
+
 ## 10 风险与依赖
 
 | 类型 | 风险 | 影响 | 应对 |
@@ -446,3 +449,4 @@
 | 版本 | 日期 | 变更内容 | 作者 |
 |------|------|---------|------|
 | v1.0 | 2026-09-03 | 初稿，范围锁定初赛第一期 | 唐杰 |
+| v1.1 | 2026-09-03 | 补充 Chat 产品轨（CP0–CP2）交叉引用；LangGraph 双轨分工见工程文档 | 唐杰 |

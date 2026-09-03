@@ -1,6 +1,6 @@
 # Forge 第一期开发 PRD（初赛版 · 工程落地）
 
-> 版本：v1.0 ｜ 日期：2026-09-03 ｜ 作者：唐杰
+> 版本：v1.1 ｜ 日期：2026-09-03 ｜ 作者：唐杰
 > 上位文档：仓库根目录 `PRD-Forge-v1.md`（产品总 PRD）
 > 配套文档：[`02-方案设计.md`](./02-方案设计.md)（技术设计）、[`03-开发计划书.md`](./03-开发计划书.md)（排期与任务）
 
@@ -19,6 +19,8 @@
 - Node 服务 = 无头运行器（CLI + sidecar），用于无人值守、崩溃隔离、回归基线。
 
 一期目标对应总 PRD 的 **M0–M2**（基线 → 骨架 → 成型），在 9/20 研习营结束前达到"可参赛状态"，9/21–9/30 初赛每日演练调优。
+
+**双轨说明**：除 Forge 自动编码 harness（本文 F1–F19）外，Chatvein 产品能力（普通对话 ReAct、拉群协作、记忆/向量）在 **[`03-开发计划书.md`](./03-开发计划书.md) CP0–CP2** 单列排期，与 Forge **并行、不阻塞初赛**。编排均基于 **LangGraph**（Forge 用 `StateGraph`，对话用 `createReactAgent`），不从零自研 Agent 循环；详见 [`../design/02-agent循环方案.md`](../design/02-agent循环方案.md)。
 
 ---
 
@@ -62,21 +64,39 @@
 | F18 | 参数配置：模型分级、并行度（一期固定串行）、预算上限、重试上限 | app + `common` 配置 | M1 |
 | F19 | 提交检查清单（产物完整、git 时间戳、干净目录可重建） | `verifier`/`observability` | M10 |
 
-### 3.2 一期不做（P1/P2，预留接口不实现）
+### 3.2 Chat 产品轨（CP0–CP2，与 Forge 并行）
+
+> 详细 WBS 见 [`03-开发计划书.md`](./03-开发计划书.md) §CP0–CP2。设计见 [`../design/`](../design/index.md)。
+
+| 编号 | 能力 | 归属包 | 里程碑 |
+|------|------|--------|--------|
+| C1 | Agent 运行时：`createReactAgent` + 工具绑定 + 角色加载 | `agents` | CP0 |
+| C2 | 模型桥接：`ChatModelLike` ↔ LangChain（与 fetch 直连并存） | `models` | CP0 |
+| C3 | 普通对话：`chat:start/event/cancel` + 流式 Markdown（design/08） | `agents` + app | CP1 |
+| C4 | app 聊天切 agents（替换临时主进程 fetch 双轨） | app | CP1 |
+| C5 | 个人记忆读写 + 检索注入 | `memory` | CP2 |
+| C6 | 向量存储 PGlite + pgvector | `vector` | CP2 |
+| C7 | 群组 free 模式（@ 驱动发言）+ 群消息流 | `groups` | CP2 |
+| C8 | CLI `forge chat` / `forge group`（无头对话/群跑） | `service` | CP2+ |
+
+### 3.3 一期不做（P1/P2，预留接口不实现）
 
 - 任务级并行子图（dispatch 预留 `parallel_group`，一期串行）。
 - Docker/WSL2 容器沙箱（预留 `SandboxProvider`；**内嵌默认已锁定为 local child_process**，Docker 仅 P1）。
 - 两次运行对比视图、静态检查阻断（lint 仅记录）、Prompt 缓存、服务启动/冒烟探测工具、运行报告导出之外的高级分析。
 - 第二期：增量变更需求支持、远程/多机。
+- Chat 轨 P1+：Supervisor 群模式、群↔Forge 派单闭环、BM25 混合检索、角色模板市场（见 design/01 §10）。
 
-### 3.3 一期边界约束（架构红线）
+### 3.4 一期边界约束（架构红线）
 
 1. `packages/chatvein/**` 内**不得** `import 'electron'`（CI 断言）。
-2. app 主进程的 forge 模块只允许调用 `@chatvein/core` 门面或 sidecar 协议，**不得**内嵌 LangGraph/模型/工具逻辑。
-3. CLI 与 GUI 必须跑同一份能力代码，行为一致（不允许各写一套）。
-4. 所有工具输出进上下文前必须经过截断器；所有 `exec` 必须过白名单。
-5. "完成"只能由 verify 的结构化输出判定。
-6. **Harness 插件化统一使用 `@deepseek-ai/cordis`**；禁止混装上游 `cordis` / `@cordisjs/*`；禁止 `@electrum/*` / 渲染进程 import Cordis。
+2. app 主进程的 **forge 模块**只允许调用 `@chatvein/core` 门面或 sidecar 协议，**不得**内嵌 LangGraph/模型/工具逻辑。
+3. app 主进程的 **chat/group 模块**只调 `@chatvein/agents|groups|memory`（经 core 或薄 service），**不得**内嵌 LangGraph；编排留在能力包内。
+4. CLI 与 GUI 必须跑同一份能力代码，行为一致（不允许各写一套）。
+5. 所有工具输出进上下文前必须经过截断器；所有 `exec` 必须过白名单。
+6. "完成"只能由 verify 的结构化输出判定（Forge 轨）；对话轨终止判定见 design/02 §7。
+7. **Harness 插件化统一使用 `@deepseek-ai/cordis`**；禁止混装上游 `cordis` / `@cordisjs/*`；禁止 `@electrum/*` / 渲染进程 import Cordis。
+8. **Agent 循环不自研**：对话 ReAct 用 LangGraph `createReactAgent`；Forge 编码用 LangGraph `StateGraph`（`orchestrator`）。
 
 ---
 
@@ -89,6 +109,8 @@
 | 卡死归因 | 时间线展开事件 → 看 payload 原文（payload_ref 分片） |
 | 人工干预（练习期） | 控制台暂停 → 注入提示 / 手改 workspace 文件 → 继续；干预写 trace |
 | 回归基线 | `forge regression`（固定需求 + seed）出指标对比；M0 先用 Claude Code 实测基线写入 baseline.json |
+| 普通对话（产品轨） | app 对话页 → `@chatvein/agents` ReAct（CP1）；赛前可保留临时直连作过渡 |
+| 拉群讨论（产品轨） | app 群组页 → `@chatvein/groups` free 模式（CP2） |
 
 ---
 

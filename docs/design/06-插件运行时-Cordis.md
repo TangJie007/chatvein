@@ -93,4 +93,4 @@ export function apply(ctx: Context) {
 1. 全家桶只用 `@deepseek-ai/cordis*`，不混装上游。
 2. `packages/chatvein/**` 可不依赖 electron；Cordis 只出现在 core/service（及将来的 agents/groups 等纯 Node 包）。
 3. 赛前锁版本；升级需跑 `pnpm test:harness`。
-4. Cordis **不替代** LangGraph；任务图仍在 orchestrator。
+4. Cordis **不替代** LangGraph；**Forge** 任务图在 `orchestrator`（StateGraph）；**对话** ReAct 在 `agents`（createReactAgent）。排期见 [`../phase1/03-开发计划书.md`](../phase1/03-开发计划书.md) §1.1。

@@ -1,7 +1,8 @@
 # Agent 循环方案设计
 
-> 版本：v0.1 ｜ 日期：2026-09-03
+> 版本：v0.2 ｜ 日期：2026-09-03
 > 上位：[`01-核心骨架.md`](./01-核心骨架.md) ｜ 记忆：[`03-记忆方案.md`](./03-记忆方案.md)
+> 排期：[`../phase1/03-开发计划书.md`](../phase1/03-开发计划书.md) **CP0**（agents）、M1-7（orchestrator）
 > 本文给出**至少 2 个**可落地的 Agent 循环（control loop）方案，并针对"普通对话"和"群组协作"分别选型。
 
 ---
@@ -154,9 +155,9 @@ loop:
 
 ## 8 与 LangGraph 的映射
 
-- 方案①：`createReactAgent`（langgraph）或手写 while 循环 + tool node。
-- 方案②：`StateGraph`（plan → dispatch → execute → verify → replan → finalize），checkpoint 落 sqlite（已有依赖）。
-- 方案④：LangGraph **supervisor** 模式（supervisor node 路由到各 agent node，条件边回到 supervisor 或 END）。
+- 方案①：`createReactAgent`（**@chatvein/agents**，CP0）或官方 prebuilt；不写手写 while 循环除非调试。
+- 方案②：`StateGraph`（**@chatvein/orchestrator**，M1-7）；checkpoint 落 sqlite（已有依赖）。
+- 方案④：LangGraph **supervisor** 模式（**@chatvein/groups**，CP2+）。
 - 方案③：在 supervisor 基础上把"路由"替换为规则（@ / expertise），或用群消息图（group chat graph）。
 
-> 一期落地顺序：先①打通单 Agent 与普通对话 → 再③free 拉群 → 再④Supervisor 控成本；②复用 Forge 已有 orchestrator。
+> 落地顺序（与 [01-核心骨架](./01-核心骨架.md) §10、[03-开发计划书](../phase1/03-开发计划书.md) 对齐）：**CP0 先①打通 agents 与普通对话** → CP2 ③free 拉群 → P0+ ④Supervisor；**②复用 Forge orchestrator（M1-7，与 CP 并行）**。
