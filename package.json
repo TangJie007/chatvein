@@ -7,8 +7,8 @@
   "scripts": {
     "build": "pnpm --filter @electrum/common --filter @electrum/core --filter @electrum/preload --filter @electrum/client --filter @electrum/testing --filter @electrum/codegen run build && pnpm --filter @chatvein/* run build",
     "build:harness": "pnpm --filter @chatvein/* run build",
-    "dev:app": "pnpm --filter @electrum/example-basic dev",
-    "build:app": "pnpm --filter @electrum/example-basic build",
+    "dev:app": "pnpm --filter @electrum/chatvein dev",
+    "build:app": "pnpm --filter @electrum/chatvein build",
     "test": "pnpm --filter @electrum/core --filter @electrum/preload --filter @electrum/client run test && pnpm --filter @chatvein/* run test",
     "test:harness": "pnpm --filter @chatvein/* run test",
     "clean": "pnpm -r exec rimraf dist out",
