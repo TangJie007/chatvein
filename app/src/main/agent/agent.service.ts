@@ -41,16 +41,18 @@ export class AgentService {
     const data = await this.store.load()
     const now = Date.now()
     const n = data.agents.length + 1
+    const name = input.name?.trim() || `新 Agent ${n}`
     const agent: AgentConfig = {
       id: randomUUID(),
       isMain: false,
-      name: input.name?.trim() || `新 Agent ${n}`,
-      role: input.role ?? '自定义角色',
+      name,
+      role: input.role?.trim() || '自定义角色',
       desc: input.desc ?? '',
-      initial: input.initial || (input.name?.trim()?.[0] ?? 'A'),
+      initial: (input.initial || name[0] || 'A').slice(0, 2),
       tint: input.tint ?? TINTS[n % TINTS.length],
       modelId: input.modelId ?? '',
       enabled: input.enabled ?? true,
+      // 能力绑定一期占位：允许落盘，运行时暂不消费
       tools: input.tools ?? [],
       skills: input.skills ?? [],
       knowledgeBases: input.knowledgeBases ?? [],
@@ -68,10 +70,20 @@ export class AgentService {
     const idx = data.agents.findIndex((a) => a.id === id)
     if (idx === -1) throw new NotFoundException(`agent:${id}`)
     const prev = data.agents[idx]
+
+    if (patch.name !== undefined && !String(patch.name).trim()) {
+      throw new ValidationException('Agent 名称不能为空', [])
+    }
+
     const next: AgentConfig = {
       ...prev,
       ...stripUndefined(patch),
+      name: patch.name != null ? String(patch.name).trim() : prev.name,
+      role: patch.role != null ? String(patch.role).trim() || prev.role : prev.role,
+      initial: patch.initial != null ? String(patch.initial).slice(0, 2) : prev.initial,
+      // 主对话 Agent 不可停用
       enabled: prev.isMain ? true : patch.enabled ?? prev.enabled,
+      // 能力绑定 / 护栏一期不在此强制校验，字段原样持久化即可
       updatedAt: Date.now(),
     }
     data.agents[idx] = next

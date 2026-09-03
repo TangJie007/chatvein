@@ -1,6 +1,7 @@
 import { reactive, ref } from 'vue'
 import { createClient } from '@electrum/client'
 import type { IpcApi, ModelConfig, ModelInput, ProviderPreset, ConnectionTestResult } from '../ipc-api'
+import { toIpcPayload } from '../utils/toIpcPayload'
 
 const api = createClient<IpcApi>()
 
@@ -26,13 +27,13 @@ async function refresh(): Promise<void> {
 }
 
 async function create(input?: ModelInput): Promise<ModelConfig> {
-  const created = await api.model.create(input)
+  const created = await api.model.create(input ? toIpcPayload(input) : undefined)
   models.value = [created, ...models.value]
   return created
 }
 
 async function update(id: string, patch: ModelInput): Promise<ModelConfig> {
-  const updated = await api.model.update({ id, patch })
+  const updated = await api.model.update(toIpcPayload({ id, patch }))
   models.value = models.value.map((m) => (m.id === id ? updated : m))
   return updated
 }
@@ -47,7 +48,7 @@ async function testConnection(data: {
   apiKey: string
   model: string
 }): Promise<ConnectionTestResult> {
-  return api.model.test(data)
+  return api.model.test(toIpcPayload(data))
 }
 
 function presetLabel(provider: string): string {

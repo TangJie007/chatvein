@@ -1,6 +1,7 @@
 import { reactive, ref } from 'vue'
 import { createClient } from '@electrum/client'
 import type { IpcApi, AgentConfig, AgentInput } from '../ipc-api'
+import { toIpcPayload } from '../utils/toIpcPayload'
 
 const api = createClient<IpcApi>()
 
@@ -24,13 +25,13 @@ async function refresh(): Promise<void> {
 }
 
 async function create(input?: AgentInput): Promise<AgentConfig> {
-  const created = await api.agent.create(input)
+  const created = await api.agent.create(input ? toIpcPayload(input) : undefined)
   agents.value = [...agents.value, created]
   return created
 }
 
 async function update(id: string, patch: AgentInput): Promise<AgentConfig> {
-  const updated = await api.agent.update({ id, patch })
+  const updated = await api.agent.update(toIpcPayload({ id, patch }))
   agents.value = agents.value.map((a) => (a.id === id ? updated : a))
   return updated
 }

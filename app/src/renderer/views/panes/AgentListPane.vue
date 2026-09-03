@@ -88,11 +88,11 @@ function match(a: AgentConfig, term: string): boolean {
     </template>
 
     <template #footer>
-      <HintCard title="模型统一选型">
+      <HintCard title="角色配置">
         <template #icon>
           <AppIcon name="sun" :size="12" :stroke-width="2.2" />
         </template>
-        连接与 Key 在「模型选型」配置；这里只为角色绑定一个已启用的模型。
+        可编辑身份、模型与系统提示词。能力绑定与护栏一期占位，后续再接入。
       </HintCard>
     </template>
   </ListPane>

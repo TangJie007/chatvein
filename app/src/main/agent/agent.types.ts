@@ -25,8 +25,11 @@ export interface AgentConfig {
   /** 绑定的模型配置 id（来自模型选型） */
   modelId: string
   enabled: boolean
+  /** 一期占位：工具白名单，能力绑定接入后再真正过滤 */
   tools: string[]
+  /** 一期占位：Skills 绑定列表 */
   skills: string[]
+  /** 一期占位：知识库绑定列表 */
   knowledgeBases: string[]
   systemPrompt: string
   createdAt: number

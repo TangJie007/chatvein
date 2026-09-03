@@ -47,6 +47,12 @@ export interface IpcApi {
   'agent:create': (input?: AgentInput) => Promise<AgentConfig>
   'agent:update': (data: { id: string; patch: AgentInput }) => Promise<AgentConfig>
   'agent:remove': (id: string) => Promise<{ ok: true }>
+
+  // ---- 应用设置（路径 / 护栏）----
+  'settings:get': () => Promise<AppSettingsView>
+  'settings:update': (patch: AppSettingsPatch) => Promise<AppSettingsView>
+  'settings:reset': () => Promise<AppSettingsView>
+  'settings:pickFolder': (data?: { title?: string; defaultPath?: string }) => Promise<string | null>
 }
 
 export type UserRow = { id: number; name: string; email: string }
@@ -138,3 +144,22 @@ export interface AgentInput {
   knowledgeBases?: string[]
   systemPrompt?: string
 }
+
+// ---- 应用设置 ----------------------------------------------------------
+
+export interface AppSettingsView {
+  version: 1
+  workspaceRoot: string
+  runsRoot: string
+  cmdAllowlist: boolean
+  confirmWrites: boolean
+  reduceMotion: boolean
+  effectiveWorkspaceRoot: string
+  effectiveRunsRoot: string
+  defaultWorkspaceRoot: string
+  defaultRunsRoot: string
+}
+
+export type AppSettingsPatch = Partial<
+  Pick<AppSettingsView, 'workspaceRoot' | 'runsRoot' | 'cmdAllowlist' | 'confirmWrites' | 'reduceMotion'>
+>
