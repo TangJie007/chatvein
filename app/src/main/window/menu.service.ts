@@ -68,40 +68,26 @@ export class MenuService implements OnAppReady {
       {
         label: '导航',
         submenu: [
-          {
-            label: '工作台',
-            accelerator: 'CmdOrCtrl+1',
-            click: () => this.navigate('dashboard'),
-          },
-          {
-            label: '用户管理',
-            accelerator: 'CmdOrCtrl+2',
-            click: () => this.navigate('users'),
-          },
-          {
-            label: '文件读写',
-            accelerator: 'CmdOrCtrl+3',
-            click: () => this.navigate('files'),
-          },
-          {
-            label: '窗口与菜单',
-            accelerator: 'CmdOrCtrl+4',
-            click: () => this.navigate('windows'),
-          },
+          { label: '对话', accelerator: 'CmdOrCtrl+1', click: () => this.navigate('/chat') },
+          { label: 'Agents', accelerator: 'CmdOrCtrl+2', click: () => this.navigate('/agents') },
+          { label: '群组', accelerator: 'CmdOrCtrl+3', click: () => this.navigate('/groups') },
+          { label: '知识库', accelerator: 'CmdOrCtrl+4', click: () => this.navigate('/knowledge') },
+          { label: 'MCP', accelerator: 'CmdOrCtrl+5', click: () => this.navigate('/mcp') },
+          { label: 'Skills', accelerator: 'CmdOrCtrl+6', click: () => this.navigate('/skills') },
         ],
       },
       {
         label: '帮助',
         submenu: [
           {
-            label: '关于 Electrum Demo',
+            label: '关于 Chatvein Forge',
             click: () => {
               void dialog.showMessageBox({
                 type: 'info',
                 title: '关于',
-                message: 'Electrum Admin',
+                message: 'Chatvein Forge',
                 detail:
-                  'Nest 风格 Electron MVC 示例：无边框窗口、自定义菜单、多窗口与 Element Plus 管理端。',
+                  '桌面 AI 工作台：多 Agent 协作、知识库、MCP 与 Skills 管理，运行在独立工作区沙箱中。',
               })
             },
           },

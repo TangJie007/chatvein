@@ -46,7 +46,6 @@ export default defineConfig({
       rollupOptions: {
         input: {
           index: resolve(__dirname, 'src/preload/index.ts'),
-          doubao: resolve(__dirname, 'src/preload/doubao.ts'),
         },
       },
     },

@@ -9,14 +9,14 @@ export class WindowService {
 
   private sharedOptions(): BrowserWindowConstructorOptions {
     return {
-      width: 1100,
-      height: 720,
-      minWidth: 880,
-      minHeight: 560,
+      width: 1330,
+      height: 860,
+      minWidth: 1080,
+      minHeight: 700,
       show: false,
       frame: false,
       titleBarStyle: 'hidden',
-      backgroundColor: '#f5f7fa',
+      backgroundColor: '#EEEFF1',
       webPreferences: {
         preload: join(__dirname, '../preload/index.js'),
         contextIsolation: true,

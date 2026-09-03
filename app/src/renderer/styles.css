@@ -1,8 +1,82 @@
 @import "tailwindcss";
 
-:root {
-  color-scheme: light;
-  --font-ui: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+/* =========================================================
+   Design Tokens — Chatvein Forge (LingScape-style)
+   ========================================================= */
+@theme {
+  --font-sans:
+    "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+    "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  --font-serif:
+    "Instrument Serif", Georgia, "Times New Roman", "Songti SC", serif;
+  --font-mono:
+    "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas,
+    "Liberation Mono", monospace;
+
+  --color-page: #eeeff1;
+  --color-canvas: #f5f6f8;
+  --color-elevated: #fefefe;
+  --color-hover: #dfe3e8;
+  --color-active: #d8dde4;
+  --color-track: #f0f1f4;
+  --color-input: #f0f1f4;
+
+  --color-brand: #6178d0;
+  --color-brand-lite: #8496d8;
+  --color-brand-solid: #5a6fcb;
+  --color-brand-deep: #4a5fbb;
+  --color-brand-dark: #3a4ca8;
+  --color-brand-soft: #e9ecf9;
+  --color-brand-mist: #dce2f5;
+
+  --color-ink-1: #2b2c30;
+  --color-ink-2: #6f6668;
+  --color-ink-3: #a5b1c1;
+
+  --color-ok: #7fbfa8;
+  --color-ok-ink: #3f7a63;
+  --color-warn: #e7b45c;
+  --color-warn-ink: #8a6414;
+  --color-danger: #f86576;
+  --color-danger-ink: #a82b3c;
+  --color-info: #6c81d2;
+  --color-info-ink: #3b4e9e;
+
+  --radius-card: 18px;
+  --radius-bubble: 20px;
+
+  --shadow-1:
+    0 1px 1px rgb(43 44 48 / 0.04), 0 2px 6px rgb(43 44 48 / 0.05);
+  --shadow-2:
+    0 4px 12px rgb(43 44 48 / 0.07), 0 12px 32px rgb(43 44 48 / 0.08);
+  --shadow-3:
+    0 24px 60px rgb(43 44 48 / 0.14), 0 8px 18px rgb(43 44 48 / 0.08);
+  --shadow-brand:
+    0 6px 20px rgb(90 111 203 / 0.32), 0 2px 6px rgb(90 111 203 / 0.22);
+
+  --ease-soft: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-quart: cubic-bezier(0.165, 0.84, 0.44, 1);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-page: #18191c;
+    --color-canvas: #1e2024;
+    --color-elevated: #26282d;
+    --color-hover: #2e3137;
+    --color-active: #363a41;
+    --color-track: #222429;
+    --color-input: #222429;
+    --color-brand-soft: #2a2f45;
+    --color-brand-mist: #333a55;
+    --color-ink-1: #edeef0;
+    --color-ink-2: #b0b8c4;
+    --color-ink-3: #7c838f;
+    --color-brand: #8496d8;
+    --color-brand-solid: #6c81d2;
+    --color-brand-deep: #9fb0e4;
+    --color-brand-dark: #b8c5ee;
+  }
 }
 
 * {
@@ -13,35 +87,80 @@ html,
 body,
 #app {
   margin: 0;
+  padding: 0;
   width: 100%;
   height: 100%;
   overflow: hidden;
-  background: #f5f7fa;
-  color: #303133;
-  font-family: var(--font-ui);
 }
 
 body {
+  font-family: var(--font-sans);
+  color: var(--color-ink-1);
+  background: var(--color-page);
+  -webkit-font-smoothing: antialiased;
+  font-feature-settings: "ss01", "cv11";
   user-select: none;
 }
 
 input,
 textarea,
-.el-input__inner,
-.el-textarea__inner,
-.el-table,
-.el-dialog {
+select,
+[contenteditable] {
   user-select: text;
 }
 
-.el-menu {
-  --el-menu-bg-color: transparent;
-  --el-menu-hover-bg-color: #ecf5ff;
-  --el-menu-active-color: #409eff;
-  --el-menu-text-color: #606266;
-  --el-menu-border-color: transparent;
+button {
+  font-family: inherit;
 }
 
-.el-aside .el-menu-item.is-active {
-  background: #ecf5ff;
+/* Frameless window drag regions */
+.app-drag {
+  -webkit-app-region: drag;
+}
+.app-no-drag {
+  -webkit-app-region: no-drag;
+}
+
+/* Thin scrollbars */
+.scroll-thin {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(165 177 193 / 0.55) transparent;
+}
+.scroll-thin::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.scroll-thin::-webkit-scrollbar-thumb {
+  background: rgb(165 177 193 / 0.55);
+  border-radius: 999px;
+}
+.scroll-thin::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* Thinking dot pulse */
+@keyframes forge-pulse {
+  0%,
+  100% {
+    box-shadow:
+      0 0 0 2px var(--color-canvas),
+      0 0 0 0 rgb(97 120 208 / 0.5);
+  }
+  50% {
+    box-shadow:
+      0 0 0 2px var(--color-canvas),
+      0 0 0 5px rgb(97 120 208 / 0);
+  }
+}
+.dot-thinking {
+  animation: forge-pulse 1.4s var(--ease-soft) infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
 }

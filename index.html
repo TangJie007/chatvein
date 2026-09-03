@@ -1,0 +1,2751 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LingScape Agent — 桌面 AI 工作台</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+  <style>
+    /* =========================================================
+       Design Tokens — LingScape Desktop Agent
+       Palette extracted from reference screenshot
+       Hue family: cool grey-blue H≈215 · accent indigo H≈227
+       ========================================================= */
+    :root {
+      --bg-page:        #EEEFF1;
+      --bg-canvas:      #F5F6F8;
+      --bg-elevated:    #FEFEFE;
+      --bg-hover:       #DFE3E8;
+      --bg-active:      #D8DDE4;
+      --bg-track:       #F0F1F4;
+      --bg-input:       #F0F1F4;
+
+      --brand:          #6178D0;
+      --brand-lite:     #8496D8;
+      --brand-solid:    #5A6FCB;
+      --brand-deep:     #4A5FBB;
+      --brand-dark:     #3A4CA8;
+      --brand-soft:     #E9ECF9;
+      --brand-mist:     #DCE2F5;
+      --brand-grad-1:   #8496D8;
+      --brand-grad-2:   #5A6FCB;
+
+      --ink-1:          #2B2C30;
+      --ink-2:          #6F6668;
+      --ink-3:          #A5B1C1;
+      --ink-on-brand:   #FFFFFF;
+
+      --ok:             #7FBFA8;
+      --ok-ink:         #3F7A63;
+      --warn:           #E7B45C;
+      --warn-ink:       #8A6414;
+      --danger:         #F86576;
+      --danger-ink:     #A82B3C;
+      --info:           #6C81D2;
+      --info-ink:       #3B4E9E;
+
+      --av-peach:       #DDB19A;
+      --av-sky:         #9FCADB;
+      --av-clay:        #C6916C;
+      --av-rose:        #F86576;
+      --av-indigo:      #6178D0;
+      --av-slate:       #A5B1C1;
+
+      --r-card:         18px;
+      --r-bubble:       20px;
+
+      --sh-1: 0 1px 1px rgb(43 44 48 / 0.04), 0 2px 6px rgb(43 44 48 / 0.05);
+      --sh-2: 0 4px 12px rgb(43 44 48 / 0.07), 0 12px 32px rgb(43 44 48 / 0.08);
+      --sh-3: 0 24px 60px rgb(43 44 48 / 0.14), 0 8px 18px rgb(43 44 48 / 0.08);
+      --sh-brand:  0 6px 20px rgb(90 111 203 / 0.32), 0 2px 6px rgb(90 111 203 / 0.22);
+
+      --ease:       cubic-bezier(0.22, 1, 0.36, 1);
+      --ease-quart: cubic-bezier(0.165, 0.84, 0.44, 1);
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg-page:      #18191C;
+        --bg-canvas:    #1E2024;
+        --bg-elevated:  #26282D;
+        --bg-hover:     #2E3137;
+        --bg-active:    #363A41;
+        --bg-track:     #222429;
+        --bg-input:     #222429;
+        --brand-soft:   #2A2F45;
+        --brand-mist:   #333A55;
+        --ink-1:        #EDEEF0;
+        --ink-2:        #B0B8C4;
+        --ink-3:        #7C838F;
+        --brand:        #8496D8;
+        --brand-solid:  #6C81D2;
+        --brand-deep:   #9FB0E4;
+        --brand-dark:   #B8C5EE;
+      }
+    }
+
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Geist', -apple-system, BlinkMacSystemFont, 'PingFang SC', sans-serif;
+      background:
+        radial-gradient(58% 48% at 6% 10%,  rgb(132 150 216 / 0.30), transparent 70%),
+        radial-gradient(52% 42% at 94% 88%, rgb(159 202 219 / 0.26), transparent 70%),
+        radial-gradient(44% 34% at 62% 4%,  rgb(238 239 241 / 0.90), transparent 75%),
+        var(--bg-page);
+      min-height: 100vh;
+      color: var(--ink-1);
+      -webkit-font-smoothing: antialiased;
+      font-feature-settings: 'ss01', 'cv11';
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 32px 20px;
+    }
+
+    /* =========================================================
+       Window chrome
+       ========================================================= */
+    .window {
+      width: 1330px;
+      height: 860px;
+      max-width: calc(100vw - 40px);
+      max-height: calc(100vh - 64px);
+      background: var(--bg-canvas);
+      border-radius: 22px;
+      box-shadow: var(--sh-3);
+      overflow: hidden;
+      display: grid;
+      grid-template-rows: 52px 1fr;
+      position: relative;
+      isolation: isolate;
+    }
+
+    .titlebar {
+      display: grid;
+      grid-template-columns: auto auto 1fr auto;
+      align-items: center;
+      gap: 16px;
+      padding: 0 16px;
+      background: linear-gradient(180deg, rgb(254 254 254 / 0.96), rgb(245 246 248 / 0.88));
+      backdrop-filter: blur(40px) saturate(180%);
+      -webkit-backdrop-filter: blur(40px) saturate(180%);
+      position: relative;
+      z-index: 6;
+    }
+
+    .window-controls { display: flex; gap: 9px; align-items: center; }
+    .win-btn {
+      width: 13px; height: 13px; border-radius: 50%;
+      border: none; padding: 0; cursor: pointer;
+      display: grid; place-items: center;
+      transition: transform 220ms var(--ease), filter 220ms var(--ease);
+    }
+    .win-btn:hover { transform: scale(1.18); filter: saturate(1.2); }
+    .win-btn .glyph { width: 9px; height: 9px; opacity: 0; transition: opacity 160ms var(--ease); }
+    .window-controls:hover .win-btn .glyph { opacity: 1; }
+    .win-close { background: var(--av-rose); box-shadow: inset 0 0 0 1px rgb(168 43 60 / 0.30); }
+    .win-min   { background: var(--warn);    box-shadow: inset 0 0 0 1px rgb(138 100 20 / 0.30); }
+    .win-max   { background: var(--ok);      box-shadow: inset 0 0 0 1px rgb(63 122 99 / 0.30); }
+    .win-close .glyph { color: #6E0F1E; }
+    .win-min   .glyph { color: #6B4A0A; }
+    .win-max   .glyph { color: #1F5A42; }
+
+    .brand { display: flex; align-items: center; gap: 10px; }
+    .brand-mark {
+      width: 26px; height: 26px; border-radius: 8px;
+      background: linear-gradient(140deg, var(--brand-lite), var(--brand-deep));
+      box-shadow: 0 4px 12px rgb(90 111 203 / 0.34), inset 0 1px 0 rgb(255 255 255 / 0.35);
+      display: grid; place-items: center;
+      color: #fff; font-family: 'Instrument Serif', serif; font-size: 18px;
+      transform: rotate(-3deg);
+    }
+    .brand-name {
+      font-family: 'Instrument Serif', serif; font-weight: 400; font-size: 17px;
+      letter-spacing: 0.2px; color: var(--ink-1);
+    }
+    .brand-name em { font-style: italic; color: var(--brand-deep); }
+
+    .crumb {
+      display: flex; align-items: center; gap: 8px;
+      font: 500 12px 'Geist', sans-serif; color: var(--ink-3);
+      padding-left: 4px;
+    }
+    .crumb .sep { color: rgb(165 177 193 / 0.7); }
+    .crumb b { font-weight: 600; color: var(--ink-2); }
+
+    .title-actions { display: flex; align-items: center; gap: 6px; }
+    .icon-btn {
+      width: 32px; height: 32px; border-radius: 10px;
+      border: none; background: transparent;
+      display: grid; place-items: center; cursor: pointer; color: var(--ink-2);
+      transition: background 200ms var(--ease), color 200ms var(--ease);
+    }
+    .icon-btn:hover { background: var(--bg-hover); color: var(--ink-1); }
+    .icon-btn:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+    .icon-btn.primary { background: linear-gradient(180deg, var(--brand-grad-1), var(--brand-grad-2)); color: #fff; box-shadow: var(--sh-brand); }
+    .icon-btn.primary:hover { color: #fff; transform: translateY(-1px); }
+
+    /* =========================================================
+       Layout — 3 columns: rail / list pane / stage
+       ========================================================= */
+    .app {
+      display: grid;
+      grid-template-columns: 78px 300px 1fr;
+      min-height: 0;
+      position: relative;
+      z-index: 1;
+    }
+
+    /* ---------- Nav rail ---------- */
+    .rail {
+      background: linear-gradient(180deg, rgb(248 249 251 / 0.92), rgb(233 236 240 / 0.90));
+      padding: 14px 10px 14px;
+      display: flex; flex-direction: column; gap: 4px;
+    }
+    .rail-item {
+      display: grid; grid-template-columns: 40px; justify-items: center; gap: 3px;
+      padding: 9px 0 7px;
+      border: none; background: transparent; cursor: pointer;
+      border-radius: 14px;
+      color: var(--ink-3);
+      transition: background 200ms var(--ease), color 200ms var(--ease);
+      position: relative;
+    }
+    .rail-item:hover { background: rgb(223 227 232 / 0.55); color: var(--ink-2); }
+    .rail-item:focus-visible { outline: 2px solid var(--brand); outline-offset: 1px; }
+    .rail-item .ri-label { font: 500 10.5px 'Geist', sans-serif; letter-spacing: 0.2px; }
+    .rail-item.active {
+      background: linear-gradient(180deg, var(--brand-mist), rgb(233 236 249 / 0.5));
+      color: var(--brand-deep);
+      box-shadow: inset 0 0 0 1px rgb(97 120 208 / 0.22);
+    }
+    .rail-item.active::before {
+      content: ''; position: absolute; left: -10px; top: 50%; transform: translateY(-50%);
+      width: 3px; height: 20px; border-radius: 0 3px 3px 0;
+      background: var(--brand);
+    }
+    .rail-spacer { flex: 1; }
+    .rail-divider { height: 1px; margin: 8px 6px; background: linear-gradient(90deg, transparent, rgb(165 177 193 / 0.4), transparent); }
+
+    /* ---------- List pane ---------- */
+    .pane {
+      background: linear-gradient(180deg, rgb(251 251 252 / 0.90), rgb(235 237 240 / 0.88));
+      display: none;
+      flex-direction: column;
+      min-height: 0;
+      padding: 14px 10px 14px 14px;
+      gap: 12px;
+    }
+    .pane.on { display: flex; }
+
+    .pane-head { display: flex; align-items: center; justify-content: space-between; padding: 0 4px; }
+    .pane-head h3 {
+      margin: 0; font-family: 'Instrument Serif', serif; font-weight: 400;
+      font-size: 19px; letter-spacing: 0.2px; color: var(--ink-1);
+      display: flex; align-items: center; gap: 8px;
+    }
+    .pane-head .count {
+      font: 500 11px 'JetBrains Mono', monospace;
+      color: var(--brand-deep); padding: 2px 7px;
+      background: var(--brand-soft); border-radius: 999px;
+    }
+    .pane-add {
+      width: 28px; height: 28px; border-radius: 9px;
+      border: none; background: var(--bg-input);
+      display: grid; place-items: center; cursor: pointer; color: var(--ink-2);
+      transition: background 180ms var(--ease), color 180ms var(--ease), transform 180ms var(--ease);
+    }
+    .pane-add:hover { background: var(--brand-soft); color: var(--brand-deep); transform: translateY(-1px); }
+    .pane-add:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+
+    .search { position: relative; }
+    .search input {
+      width: 100%; padding: 9px 12px 9px 32px;
+      border-radius: 12px; border: none;
+      background: var(--bg-input);
+      font-family: inherit; font-size: 12.5px; color: var(--ink-1);
+      transition: background 200ms var(--ease), box-shadow 200ms var(--ease);
+    }
+    .search input::placeholder { color: var(--ink-3); }
+    .search input:focus { outline: none; background: #F7F8FA; box-shadow: 0 0 0 4px rgb(97 120 208 / 0.16); }
+    .search svg { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: var(--ink-3); }
+
+    .section-label {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 2px 4px 0;
+    }
+    .section-label h4 {
+      margin: 0; font: 600 10.5px 'Geist', sans-serif;
+      color: var(--ink-3); letter-spacing: 0.7px; text-transform: uppercase;
+    }
+
+    .pane-list { display: flex; flex-direction: column; gap: 2px; overflow-y: auto; padding-right: 4px; min-height: 0; }
+    .pane-list::-webkit-scrollbar { width: 6px; }
+    .pane-list::-webkit-scrollbar-thumb { background: rgb(165 177 193 / 0.55); border-radius: 999px; }
+
+    .row {
+      display: grid; grid-template-columns: 34px 1fr auto;
+      align-items: center; gap: 10px;
+      padding: 8px 10px; border-radius: 14px; cursor: pointer;
+      transition: background 200ms var(--ease);
+    }
+    .row:hover { background: var(--bg-hover); }
+    .row:focus-visible { outline: 2px solid var(--brand); outline-offset: 1px; }
+    .row.active { background: linear-gradient(180deg, var(--brand-mist), rgb(233 236 249 / 0.55)); box-shadow: inset 0 0 0 1px rgb(97 120 208 / 0.20); }
+
+    .row-body { min-width: 0; }
+    .row-title {
+      font: 600 13px 'Geist', sans-serif; color: var(--ink-1);
+      display: flex; align-items: center; gap: 5px;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .row-title .pin { font-size: 10.5px; color: var(--brand-deep); flex-shrink: 0; }
+    .row-sub {
+      font: 400 12px 'Geist', sans-serif; color: var(--ink-2); margin-top: 2px;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 196px;
+    }
+    .row.active .row-sub { color: var(--ink-1); }
+    .row-meta { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; }
+    .row-time { font: 500 10.5px 'JetBrains Mono', monospace; color: var(--ink-3); white-space: nowrap; }
+
+    .avatar {
+      width: 34px; height: 34px; border-radius: 11px;
+      display: grid; place-items: center;
+      font: 600 13px 'Geist', sans-serif; color: #fff; flex-shrink: 0;
+      box-shadow: 0 2px 6px rgb(43 44 48 / 0.10), inset 0 1px 0 rgb(255 255 255 / 0.30);
+      position: relative;
+    }
+    .avatar.lg { width: 46px; height: 46px; border-radius: 14px; font-size: 16px; }
+    .avatar.sm { width: 26px; height: 26px; border-radius: 8px;  font-size: 10.5px; }
+    .avatar.indigo { background: linear-gradient(135deg, #8496D8, #5A6FCB); }
+    .avatar.sky    { background: linear-gradient(135deg, #B7DCE8, #7FB3C9); }
+    .avatar.peach  { background: linear-gradient(135deg, #E9C5B1, #D29880); }
+    .avatar.clay   { background: linear-gradient(135deg, #D6A985, #B57E58); }
+    .avatar.rose   { background: linear-gradient(135deg, #FB8E9B, #E44E60); }
+    .avatar.slate  { background: linear-gradient(135deg, #BCC6D3, #8E9AA9); }
+    .avatar.teal   { background: linear-gradient(135deg, #A1CEC8, #6FAE9F); }
+    .avatar.violet { background: linear-gradient(135deg, #C3B9E8, #8E7FCB); }
+    .avatar.plain  { background: var(--bg-hover); color: var(--ink-2); }
+
+    .avatar .dot {
+      position: absolute; right: -2px; bottom: -2px;
+      width: 10px; height: 10px; border-radius: 999px;
+      background: var(--ok); box-shadow: 0 0 0 2px var(--bg-canvas);
+    }
+    .avatar.lg .dot { width: 12px; height: 12px; }
+    .avatar .dot.thinking { background: var(--brand); animation: pulse 1.4s var(--ease) infinite; }
+    .avatar .dot.idle { background: var(--ink-3); }
+    .avatar .dot.err { background: var(--danger); }
+
+    @keyframes pulse {
+      0%, 100% { box-shadow: 0 0 0 2px var(--bg-canvas), 0 0 0 0 rgb(97 120 208 / 0.5); }
+      50%      { box-shadow: 0 0 0 2px var(--bg-canvas), 0 0 0 5px rgb(97 120 208 / 0); }
+    }
+
+    .badge {
+      font: 600 10px 'JetBrains Mono', monospace;
+      min-width: 18px; padding: 2px 6px; border-radius: 999px;
+      background: var(--brand); color: #fff; text-align: center;
+    }
+    .badge.warn  { background: var(--warn);   color: var(--warn-ink); }
+    .badge.danger{ background: var(--danger); color: #fff; }
+    .badge.muted { background: var(--bg-hover); color: var(--ink-3); }
+
+    .pane-foot { margin-top: auto; padding-top: 4px; }
+    .hint-card {
+      padding: 11px 12px 12px; border-radius: 15px;
+      background: linear-gradient(180deg, var(--brand-soft), rgb(240 242 251 / 0.5));
+      box-shadow: inset 0 0 0 1px rgb(97 120 208 / 0.14);
+      position: relative; overflow: hidden;
+    }
+    .hint-card::after {
+      content: ''; position: absolute; width: 84px; height: 84px; right: -26px; top: -26px;
+      background: radial-gradient(circle, rgb(132 150 216 / 0.45), transparent 70%);
+    }
+    .hint-card h5 {
+      margin: 0 0 6px; font: 600 11.5px 'Geist', sans-serif; color: var(--brand-dark);
+      display: flex; align-items: center; gap: 6px;
+    }
+    .hint-card p { margin: 0; font: 400 11.5px 'Geist', sans-serif; color: var(--ink-2); line-height: 1.55; }
+
+    /* =========================================================
+       Stage / views
+       ========================================================= */
+    .stage {
+      background:
+        radial-gradient(80% 40% at 50% 0%, rgb(254 254 254 / 0.85), transparent 70%),
+        var(--bg-canvas);
+      min-height: 0; min-width: 0; position: relative; overflow: hidden;
+    }
+    .view {
+      display: none;
+      grid-template-rows: auto 1fr auto;
+      height: 100%; min-height: 0;
+    }
+    .view.on { display: grid; }
+
+    .view-head {
+      padding: 16px 26px 14px;
+      display: flex; align-items: center; justify-content: space-between; gap: 16px;
+    }
+    .vh-left { display: flex; align-items: center; gap: 12px; min-width: 0; }
+    .vh-name {
+      font-family: 'Instrument Serif', serif; font-size: 22px;
+      color: var(--ink-1); letter-spacing: 0.2px; line-height: 1.15;
+    }
+    .vh-name em { font-style: italic; color: var(--brand-deep); }
+    .vh-sub { font: 400 12px 'Geist', sans-serif; color: var(--ink-3); margin-top: 3px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    .vh-actions { display: flex; gap: 6px; align-items: center; flex-shrink: 0; }
+
+    .view-body { overflow-y: auto; padding: 0 26px 20px; min-height: 0; display: flex; flex-direction: column; gap: 16px; }
+    .view-body::-webkit-scrollbar { width: 8px; }
+    .view-body::-webkit-scrollbar-thumb { background: rgb(165 177 193 / 0.45); border-radius: 999px; }
+
+    .view-foot {
+      padding: 12px 26px 16px;
+      display: flex; align-items: center; justify-content: space-between; gap: 12px;
+      background: linear-gradient(180deg, transparent, rgb(245 246 248 / 0.9));
+    }
+    .view-foot .foot-note { font: 500 11.5px 'JetBrains Mono', monospace; color: var(--ink-3); }
+
+    /* ---------- Card ---------- */
+    .card {
+      background: var(--bg-elevated);
+      border-radius: var(--r-card);
+      padding: 16px 18px 18px;
+      box-shadow: var(--sh-1);
+    }
+    .card-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+    .card-head h4 {
+      margin: 0; font: 600 13px 'Geist', sans-serif; color: var(--ink-1);
+      display: flex; align-items: center; gap: 8px;
+    }
+    .card-head h4 .idx {
+      width: 20px; height: 20px; border-radius: 7px;
+      display: grid; place-items: center;
+      background: var(--brand-soft); color: var(--brand-deep);
+      font: 600 11px 'JetBrains Mono', monospace;
+    }
+    .card-head .side { font: 500 11px 'JetBrains Mono', monospace; color: var(--ink-3); }
+
+    /* ---------- Form primitives ---------- */
+    .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+    .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+    .field { display: flex; flex-direction: column; gap: 6px; }
+    .field > label { font: 500 11.5px 'Geist', sans-serif; color: var(--ink-2); letter-spacing: 0.2px; }
+    .field .hint { font: 400 11px 'Geist', sans-serif; color: var(--ink-3); }
+
+    .input, .select, .textarea {
+      width: 100%;
+      padding: 9px 12px;
+      border: none; border-radius: 11px;
+      background: var(--bg-input);
+      font: 400 13px 'Geist', sans-serif;
+      color: var(--ink-1);
+      transition: background 180ms var(--ease), box-shadow 180ms var(--ease);
+    }
+    .input::placeholder, .textarea::placeholder { color: var(--ink-3); }
+    .input:focus, .select:focus, .textarea:focus {
+      outline: none; background: #F7F8FA;
+      box-shadow: 0 0 0 4px rgb(97 120 208 / 0.16);
+    }
+    .select {
+      appearance: none; -webkit-appearance: none;
+      background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%236F6668' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+      background-repeat: no-repeat; background-position: right 11px center;
+      padding-right: 30px; cursor: pointer;
+    }
+    .textarea { resize: vertical; min-height: 108px; line-height: 1.6; font-family: 'JetBrains Mono', monospace; font-size: 12px; }
+
+    .input-mono { font-family: 'JetBrains Mono', monospace; font-size: 12px; }
+
+    .input-group { display: flex; gap: 6px; align-items: center; }
+    .input-group .input { flex: 1; }
+
+    .btn {
+      display: inline-flex; align-items: center; gap: 7px;
+      padding: 9px 15px; border-radius: 11px; border: none;
+      font: 600 12.5px 'Geist', sans-serif; cursor: pointer;
+      background: var(--bg-input); color: var(--ink-2);
+      transition: background 180ms var(--ease), color 180ms var(--ease), transform 180ms var(--ease);
+    }
+    .btn:hover { background: var(--bg-hover); color: var(--ink-1); }
+    .btn:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+    .btn.primary {
+      background: linear-gradient(180deg, var(--brand-grad-1), var(--brand-grad-2));
+      color: #fff; box-shadow: var(--sh-brand);
+    }
+    .btn.primary:hover { color: #fff; transform: translateY(-1px); }
+    .btn.ghost { background: transparent; }
+    .btn.ghost:hover { background: var(--bg-hover); }
+    .btn.sm { padding: 6px 11px; font-size: 12px; border-radius: 9px; }
+    .btn svg { flex-shrink: 0; }
+
+    .seg { display: inline-flex; gap: 2px; padding: 3px; background: var(--bg-input); border-radius: 10px; }
+    .seg button {
+      padding: 6px 12px; border: none; background: transparent; border-radius: 7px;
+      font: 500 12px 'Geist', sans-serif; color: var(--ink-2); cursor: pointer;
+      transition: background 200ms var(--ease), color 200ms var(--ease);
+    }
+    .seg button.active { background: var(--bg-elevated); color: var(--ink-1); box-shadow: 0 1px 3px rgb(43 44 48 / 0.08); }
+    .seg button:focus-visible { outline: 2px solid var(--brand); outline-offset: 1px; }
+
+    .switch {
+      --sw-w: 38px; --sw-h: 22px;
+      position: relative; width: var(--sw-w); height: var(--sw-h);
+      border-radius: 999px; border: none; cursor: pointer; flex-shrink: 0;
+      background: var(--bg-hover);
+      transition: background 220ms var(--ease);
+      padding: 0;
+    }
+    .switch::after {
+      content: ''; position: absolute; top: 3px; left: 3px;
+      width: 16px; height: 16px; border-radius: 999px;
+      background: #fff; box-shadow: 0 1px 3px rgb(43 44 48 / 0.22);
+      transition: transform 240ms var(--ease);
+    }
+    .switch[aria-checked="true"] { background: var(--brand-solid); }
+    .switch[aria-checked="true"]::after { transform: translateX(16px); }
+    .switch:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+
+    .tag {
+      display: inline-flex; align-items: center; gap: 5px;
+      padding: 3px 9px; border-radius: 999px;
+      font: 500 11px 'JetBrains Mono', monospace; letter-spacing: 0.2px;
+      background: var(--bg-track); color: var(--ink-2);
+    }
+    .tag.brand { background: var(--brand-soft); color: var(--brand-deep); }
+    .tag.ok    { background: rgb(127 191 168 / 0.22); color: var(--ok-ink); }
+    .tag.warn  { background: rgb(231 180 92 / 0.22);  color: var(--warn-ink); }
+    .tag.danger{ background: rgb(248 101 118 / 0.18); color: var(--danger-ink); }
+    .tag.info  { background: rgb(108 129 210 / 0.16); color: var(--info-ink); }
+    .tag.sm    { padding: 2px 7px; font-size: 10px; }
+
+    .tag-row { display: flex; flex-wrap: wrap; gap: 6px; }
+
+    /* selectable chips (multi-select) */
+    .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+    .chip-pick {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 6px 11px; border-radius: 999px; border: none; cursor: pointer;
+      background: var(--bg-track); color: var(--ink-2);
+      font: 500 12px 'Geist', sans-serif;
+      transition: background 180ms var(--ease), color 180ms var(--ease);
+    }
+    .chip-pick:hover { background: var(--bg-hover); }
+    .chip-pick:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+    .chip-pick .tickbox {
+      width: 13px; height: 13px; border-radius: 4px;
+      background: var(--bg-hover); display: grid; place-items: center;
+      color: transparent; font-size: 9px; font-weight: 700;
+      transition: background 180ms var(--ease), color 180ms var(--ease);
+    }
+    .chip-pick[aria-pressed="true"] { background: var(--brand-soft); color: var(--brand-deep); }
+    .chip-pick[aria-pressed="true"] .tickbox { background: var(--brand); color: #fff; }
+
+    .chip {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 6px 11px; border-radius: 999px;
+      background: var(--bg-track); color: var(--ink-2);
+      font: 500 12px 'Geist', sans-serif; border: none; cursor: pointer;
+      transition: background 200ms var(--ease), color 200ms var(--ease);
+    }
+    .chip:hover { background: var(--brand-soft); color: var(--brand-dark); }
+    .chip:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+    .chip svg { width: 13px; height: 13px; }
+    .chip.accent { background: var(--brand-soft); color: var(--brand-dark); }
+
+    /* ---------- Key/value rows ---------- */
+    .kv { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 9px 0; }
+    .kv + .kv { box-shadow: inset 0 1px 0 rgb(223 227 232 / 0.8); }
+    .kv .k { font: 500 12.5px 'Geist', sans-serif; color: var(--ink-2); }
+    .kv .k small { display: block; font: 400 11px 'Geist', sans-serif; color: var(--ink-3); margin-top: 2px; }
+    .kv .v { font: 500 12.5px 'Geist', sans-serif; color: var(--ink-1); text-align: right; flex-shrink: 0; }
+    .kv .v.mono { font-family: 'JetBrains Mono', monospace; font-size: 12px; }
+
+    /* ---------- Table ---------- */
+    .table { width: 100%; border-collapse: collapse; }
+    .table th {
+      text-align: left; padding: 8px 10px;
+      font: 600 11px 'Geist', sans-serif; color: var(--brand-dark);
+      letter-spacing: 0.3px; text-transform: uppercase;
+    }
+    .table td { padding: 9px 10px; font: 400 12.5px 'Geist', sans-serif; color: var(--ink-2); }
+    .table tbody tr { box-shadow: inset 0 1px 0 rgb(223 227 232 / 0.8); }
+    .table tbody tr:hover { background: rgb(240 241 244 / 0.7); }
+    .table td strong { color: var(--ink-1); font-weight: 600; }
+    .table .mono { font-family: 'JetBrains Mono', monospace; font-size: 11.5px; }
+    .table-wrap { background: var(--bg-track); border-radius: 13px; overflow: hidden; }
+
+    /* ---------- Code block ---------- */
+    .code {
+      background: var(--bg-track); border-radius: 12px;
+      padding: 12px 14px; overflow-x: auto;
+      font-family: 'JetBrains Mono', monospace; font-size: 11.5px; line-height: 1.75;
+      color: var(--ink-2); white-space: pre; margin: 0;
+    }
+    .code .c-key { color: var(--brand-deep); }
+    .code .c-str { color: var(--ok-ink); }
+    .code .c-dim { color: var(--ink-3); }
+    .code .c-com { color: var(--ink-3); font-style: italic; }
+
+    /* ---------- Avatar stack ---------- */
+    .av-stack { display: flex; align-items: center; }
+    .av-stack .avatar { margin-left: -9px; box-shadow: 0 0 0 2.5px var(--bg-canvas), 0 2px 5px rgb(43 44 48 / 0.12); }
+    .av-stack .avatar:first-child { margin-left: 0; }
+    .av-stack .more {
+      margin-left: -9px; width: 34px; height: 34px; border-radius: 11px;
+      display: grid; place-items: center;
+      background: var(--bg-hover); color: var(--ink-2);
+      font: 600 11px 'JetBrains Mono', monospace;
+      box-shadow: 0 0 0 2.5px var(--bg-canvas);
+    }
+
+    /* =========================================================
+       Chat view
+       ========================================================= */
+    .chat-header { padding: 16px 26px 12px; display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+    .chat-header-left { display: flex; align-items: center; gap: 12px; }
+    .chat-header .who { font-family: 'Instrument Serif', serif; font-size: 22px; color: var(--ink-1); letter-spacing: 0.2px; }
+    .chat-header .who em { font-style: italic; color: var(--brand-deep); }
+    .chat-header .role {
+      font: 500 11px 'JetBrains Mono', monospace; padding: 3px 9px;
+      background: var(--brand-soft); color: var(--brand-dark);
+      border-radius: 999px; letter-spacing: 0.4px; text-transform: uppercase;
+    }
+    .chat-header .status { display: flex; align-items: center; gap: 6px; font: 500 12px 'Geist', sans-serif; color: var(--ink-2); }
+    .chat-header .status::before {
+      content: ''; width: 7px; height: 7px; border-radius: 999px;
+      background: var(--ok); box-shadow: 0 0 0 3px rgb(127 191 168 / 0.28);
+    }
+    .chat-header .status.thinking::before { background: var(--brand); animation: pulse 1.4s var(--ease) infinite; }
+    .chat-header-actions { display: flex; gap: 4px; align-items: center; }
+
+    .messages { padding: 10px 26px 16px; overflow-y: auto; display: flex; flex-direction: column; gap: 13px; min-height: 0; }
+    .messages::-webkit-scrollbar { width: 8px; }
+    .messages::-webkit-scrollbar-thumb { background: rgb(165 177 193 / 0.45); border-radius: 999px; }
+
+    .day-divider {
+      display: flex; align-items: center; gap: 14px; margin: 6px 0 2px;
+      color: var(--ink-3); font: 500 11px 'JetBrains Mono', monospace; letter-spacing: 0.4px;
+    }
+    .day-divider::before, .day-divider::after {
+      content: ''; flex: 1; height: 1px;
+      background: linear-gradient(90deg, transparent, rgb(165 177 193 / 0.55), transparent);
+    }
+
+    .sys-note {
+      align-self: center; max-width: 74%; text-align: center;
+      font: 400 11.5px 'Geist', sans-serif; color: var(--ink-3);
+      background: var(--bg-track); padding: 7px 14px; border-radius: 999px;
+    }
+
+    .msg { display: grid; grid-template-columns: 32px 1fr; gap: 12px; align-items: end; max-width: 88%; }
+    .msg.user { margin-left: auto; grid-template-columns: 1fr 32px; }
+    .msg .av {
+      width: 32px; height: 32px; border-radius: 10px;
+      display: grid; place-items: center; font: 600 12px 'Geist', sans-serif; color: #fff;
+      box-shadow: 0 2px 6px rgb(43 44 48 / 0.10), inset 0 1px 0 rgb(255 255 255 / 0.30);
+    }
+    .msg.agent  .av { background: linear-gradient(135deg, #8496D8, #5A6FCB); }
+    .msg.user   .av { background: linear-gradient(135deg, #B7DCE8, #7FB3C9); }
+    .msg-meta { font: 600 11.5px 'Geist', sans-serif; color: var(--ink-2); margin-bottom: 5px; display: flex; align-items: center; gap: 7px; }
+    .msg-meta .role-mini { font: 500 10px 'JetBrains Mono', monospace; color: var(--ink-3); background: var(--bg-track); padding: 2px 6px; border-radius: 5px; }
+    .msg-meta .ts { font: 500 10.5px 'JetBrains Mono', monospace; color: var(--ink-3); font-weight: 400; }
+
+    .msg-bubble {
+      padding: 11px 15px; border-radius: var(--r-bubble);
+      font: 400 14px 'Geist', sans-serif; line-height: 1.55; color: var(--ink-1);
+      box-shadow: var(--sh-1); background: var(--bg-elevated); border-bottom-left-radius: 6px;
+    }
+    .msg.user .msg-bubble {
+      background: linear-gradient(135deg, #6C81D2, #4A5FBB); color: #fff;
+      border-bottom-right-radius: 6px; border-bottom-left-radius: var(--r-bubble);
+      box-shadow: var(--sh-brand);
+    }
+    .msg-bubble strong { font-weight: 600; }
+    .msg-bubble code {
+      font-family: 'JetBrains Mono', monospace; font-size: 12.5px;
+      padding: 1px 6px; border-radius: 5px; background: var(--bg-input); color: var(--brand-deep);
+    }
+    .msg.user .msg-bubble code { background: rgb(255 255 255 / 0.20); color: #F2F4FF; }
+    .msg-bubble .tick {
+      display: inline-flex; align-items: center; gap: 4px; margin-top: 8px;
+      font: 500 11px 'JetBrains Mono', monospace; color: var(--ink-3);
+      letter-spacing: 0.4px; text-transform: uppercase;
+    }
+    .msg.user .msg-bubble .tick { color: rgb(255 255 255 / 0.82); }
+
+    .mention {
+      display: inline-flex; align-items: center; gap: 3px;
+      padding: 1px 7px; border-radius: 6px;
+      background: var(--brand-soft); color: var(--brand-deep);
+      font: 600 12.5px 'Geist', sans-serif;
+    }
+    .msg.user .mention { background: rgb(255 255 255 / 0.24); color: #EEF1FF; }
+
+    /* ---- Task assignment card (group) ---- */
+    .assign {
+      margin-left: 44px; max-width: 82%;
+      background: var(--bg-elevated); border-radius: var(--r-card);
+      padding: 14px 16px 15px; box-shadow: var(--sh-1);
+    }
+    .assign h5 { margin: 0 0 10px; font: 600 12.5px 'Geist', sans-serif; color: var(--ink-1); display: flex; align-items: center; gap: 7px; }
+    .assign h5 .idx { width: 18px; height: 18px; border-radius: 6px; background: var(--brand-soft); color: var(--brand-deep); display: grid; place-items: center; font: 600 10px 'JetBrains Mono', monospace; }
+    .assign-item {
+      display: grid; grid-template-columns: 26px 1fr auto; gap: 10px; align-items: center;
+      padding: 9px 10px; border-radius: 12px; background: var(--bg-track);
+    }
+    .assign-item + .assign-item { margin-top: 6px; }
+    .assign-item .t-title { font: 500 12.5px 'Geist', sans-serif; color: var(--ink-1); }
+    .assign-item .t-desc { font: 400 11.5px 'Geist', sans-serif; color: var(--ink-3); margin-top: 2px; }
+
+    /* ---- Handoff card ---- */
+    .handoff {
+      align-self: center; display: flex; align-items: center; gap: 10px;
+      padding: 8px 14px; border-radius: 999px;
+      background: linear-gradient(90deg, rgb(233 236 249 / 0.9), rgb(240 242 251 / 0.6));
+      box-shadow: inset 0 0 0 1px rgb(97 120 208 / 0.18);
+      font: 500 11.5px 'JetBrains Mono', monospace; color: var(--brand-deep);
+    }
+    .handoff .arrow { color: var(--ink-3); }
+
+    /* ---- Trace ---- */
+    .trace { margin-left: 44px; max-width: 82%; }
+    .trace-toggle {
+      width: 100%; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+      padding: 8px 12px; border: none; cursor: pointer; text-align: left;
+      border-radius: 12px; background: var(--bg-track);
+      box-shadow: inset 0 0 0 1px rgb(223 227 232 / 0.70);
+      font: 500 12px 'JetBrains Mono', monospace; color: var(--ink-3);
+      transition: background 180ms var(--ease);
+    }
+    .trace-toggle:hover { background: var(--bg-hover); }
+    .trace-toggle:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+    .trace-toggle .caret { flex-shrink: 0; transition: transform 240ms var(--ease); }
+    .trace.open .trace-toggle .caret { transform: rotate(90deg); }
+    .trace-toggle .pill {
+      display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border-radius: 999px;
+      background: var(--brand-soft); color: var(--brand-dark); font: 500 11.5px 'JetBrains Mono', monospace;
+    }
+    .trace-toggle .pill.ok   { background: rgb(127 191 168 / 0.22); color: var(--ok-ink); }
+    .trace-toggle .pill.warn { background: rgb(231 180 92 / 0.22);  color: var(--warn-ink); }
+
+    .trace-body { display: none; flex-direction: column; gap: 6px; margin-top: 6px; }
+    .trace.open .trace-body { display: flex; }
+    .trace-step {
+      display: grid; grid-template-columns: 22px 1fr; gap: 10px; padding: 10px 12px;
+      border-radius: 14px; background: var(--bg-track);
+      box-shadow: inset 0 0 0 1px rgb(223 227 232 / 0.70); align-items: start;
+    }
+    .step-icon {
+      width: 22px; height: 22px; border-radius: 7px; display: grid; place-items: center;
+      background: var(--bg-elevated); box-shadow: 0 1px 3px rgb(43 44 48 / 0.08);
+      color: var(--brand); font: 600 11px 'JetBrains Mono', monospace;
+    }
+    .step-icon.ok   { color: var(--ok-ink);    background: rgb(127 191 168 / 0.18); }
+    .step-icon.tool { color: var(--info-ink);  background: rgb(108 129 210 / 0.16); }
+    .step-icon.think{ color: var(--brand-deep);background: var(--brand-soft); }
+    .step-title { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .step-name {
+      font: 600 12.5px 'JetBrains Mono', monospace; color: var(--ink-1);
+      background: var(--bg-hover); padding: 2px 8px; border-radius: 6px;
+    }
+    .step-tag { font: 500 11px 'JetBrains Mono', monospace; color: var(--ink-3); }
+    .step-detail { margin-top: 5px; font: 400 12.5px 'Geist', sans-serif; color: var(--ink-2); line-height: 1.5; }
+    .step-detail code { font-family: 'JetBrains Mono', monospace; font-size: 11.5px; padding: 1px 5px; border-radius: 4px; background: var(--bg-hover); color: var(--ink-1); }
+
+    /* ---- Guardrail ---- */
+    .guard {
+      margin: 6px 44px; padding: 12px 14px; border-radius: 14px;
+      background: linear-gradient(135deg, rgb(231 180 92 / 0.16), rgb(231 180 92 / 0.08));
+      box-shadow: inset 0 0 0 1px rgb(231 180 92 / 0.38);
+      display: grid; grid-template-columns: 28px 1fr auto; gap: 10px; align-items: center;
+    }
+    .guard .g-icon {
+      width: 28px; height: 28px; border-radius: 9px; background: var(--warn); color: #4A3608;
+      display: grid; place-items: center; box-shadow: 0 2px 6px rgb(138 100 20 / 0.25);
+    }
+    .guard .g-body { font: 500 13px 'Geist', sans-serif; color: var(--ink-1); }
+    .guard .g-body small { display: block; margin-top: 3px; font: 400 11.5px 'Geist', sans-serif; color: var(--ink-2); }
+
+    /* ---- Composer ---- */
+    .composer-wrap { padding: 12px 22px 16px; background: linear-gradient(180deg, transparent, rgb(245 246 248 / 0.85)); }
+    .composer {
+      background: var(--bg-elevated); border-radius: 20px; padding: 12px 12px 10px;
+      box-shadow: 0 1px 2px rgb(43 44 48 / 0.04), 0 8px 24px rgb(43 44 48 / 0.06), 0 0 0 4px rgb(97 120 208 / 0.10);
+      transition: box-shadow 200ms var(--ease);
+    }
+    .composer:focus-within {
+      box-shadow: 0 1px 2px rgb(43 44 48 / 0.06), 0 12px 32px rgb(43 44 48 / 0.08), 0 0 0 5px rgb(97 120 208 / 0.22);
+    }
+    .composer-toolbar { display: flex; gap: 4px; align-items: center; padding: 0 2px 8px; }
+    .tool-btn {
+      width: 30px; height: 30px; border-radius: 9px; border: none; background: transparent;
+      display: grid; place-items: center; cursor: pointer; color: var(--ink-2);
+      transition: background 180ms var(--ease), color 180ms var(--ease);
+    }
+    .tool-btn:hover { background: var(--bg-hover); color: var(--ink-1); }
+    .tool-btn:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+    .tool-btn.brand { color: var(--brand); }
+    .composer-hint { margin-left: auto; font: 500 11.5px 'JetBrains Mono', monospace; color: var(--ink-3); }
+    .composer-hint kbd { font-family: 'JetBrains Mono', monospace; padding: 2px 6px; border-radius: 5px; background: var(--bg-input); color: var(--ink-2); font-size: 10.5px; }
+
+    .composer-input {
+      width: 100%; min-height: 46px; max-height: 180px; padding: 8px 6px 4px;
+      border: none; outline: none; resize: none; background: transparent;
+      font: 400 14px 'Geist', sans-serif; color: var(--ink-1); line-height: 1.45;
+    }
+    .composer-input::placeholder { color: var(--ink-3); }
+
+    .composer-footer { display: flex; align-items: center; justify-content: space-between; padding: 6px 4px 0; }
+    .footer-left { display: flex; align-items: center; gap: 6px; font: 500 11.5px 'JetBrains Mono', monospace; color: var(--ink-3); }
+    .footer-left .scope { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border-radius: 999px; background: var(--brand-soft); color: var(--brand-dark); }
+    .footer-left .scope::before { content: ''; width: 5px; height: 5px; border-radius: 999px; background: var(--brand); box-shadow: 0 0 0 3px rgb(97 120 208 / 0.25); }
+
+    .send {
+      display: inline-flex; align-items: center; gap: 8px; padding: 8px 16px 8px 14px;
+      border-radius: 12px; border: none;
+      background: linear-gradient(180deg, var(--brand-grad-1), var(--brand-grad-2));
+      color: #fff; font: 600 13px 'Geist', sans-serif; cursor: pointer; box-shadow: var(--sh-brand);
+      transition: transform 200ms var(--ease), box-shadow 200ms var(--ease);
+    }
+    .send:hover { transform: translateY(-1px); box-shadow: 0 12px 32px rgb(90 111 203 / 0.42); }
+    .send:focus-visible { outline: 2px solid var(--brand-deep); outline-offset: 2px; }
+    .send svg { transition: transform 200ms var(--ease); }
+    .send:hover svg { transform: translateX(3px); }
+
+    .statbar { display: flex; gap: 14px; padding: 0 28px 10px; font: 500 11px 'JetBrains Mono', monospace; color: var(--ink-3); letter-spacing: 0.3px; }
+    .statbar span { display: inline-flex; align-items: center; gap: 5px; }
+    .statbar span::before { content: ''; width: 5px; height: 5px; border-radius: 999px; background: var(--brand); }
+    .statbar span:nth-child(2)::before { background: var(--av-sky); }
+    .statbar span:nth-child(3)::before { background: var(--ok); }
+
+    .cite {
+      display: inline-flex; align-items: center; justify-content: center;
+      min-width: 16px; height: 16px; padding: 0 4px; margin: 0 2px;
+      border-radius: 5px; border: none; cursor: pointer;
+      background: var(--brand-soft); color: var(--brand-deep);
+      font: 600 10px 'JetBrains Mono', monospace; vertical-align: middle;
+      transition: background 160ms var(--ease), color 160ms var(--ease), transform 160ms var(--ease);
+    }
+    .cite:hover { background: var(--brand); color: #fff; transform: translateY(-1px); }
+    .cite:focus-visible { outline: 2px solid var(--brand); outline-offset: 1px; }
+
+    /* ---- Drawer ---- */
+    .drawer-scrim {
+      position: absolute; inset: 0; background: rgb(43 44 48 / 0.16);
+      backdrop-filter: blur(2px); -webkit-backdrop-filter: blur(2px);
+      opacity: 0; pointer-events: none; transition: opacity 320ms var(--ease); z-index: 4;
+    }
+    .drawer-scrim.on { opacity: 1; pointer-events: auto; }
+    .drawer {
+      position: absolute; top: 0; right: 0; bottom: 0; width: 352px; max-width: 92%;
+      background: var(--bg-elevated); box-shadow: -24px 0 64px rgb(43 44 48 / 0.16);
+      transform: translateX(101%); transition: transform 420ms var(--ease-quart);
+      z-index: 5; display: flex; flex-direction: column;
+    }
+    .drawer.open { transform: translateX(0); }
+    .drawer-head { padding: 18px 22px 12px; display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+    .drawer-head h3 { margin: 0 0 4px; font: 600 15px 'Geist', sans-serif; color: var(--ink-1); }
+    .drawer-head p { margin: 0; font: 400 11.5px 'JetBrains Mono', monospace; color: var(--ink-3); }
+    .drawer-close {
+      width: 28px; height: 28px; border-radius: 9px; border: none; background: var(--bg-track);
+      display: grid; place-items: center; cursor: pointer; color: var(--ink-2); flex-shrink: 0;
+      transition: background 180ms var(--ease), color 180ms var(--ease);
+    }
+    .drawer-close:hover { background: var(--bg-hover); color: var(--ink-1); }
+    .drawer-close:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+    .drawer-body { padding: 4px 14px 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
+    .drawer-body::-webkit-scrollbar { width: 6px; }
+    .drawer-body::-webkit-scrollbar-thumb { background: rgb(165 177 193 / 0.5); border-radius: 999px; }
+
+    .src { padding: 12px 13px; border-radius: 14px; background: var(--bg-track); box-shadow: inset 0 0 0 1px rgb(223 227 232 / 0.70); transition: background 260ms var(--ease), box-shadow 260ms var(--ease); }
+    .src.hot { background: var(--brand-soft); box-shadow: inset 0 0 0 1px rgb(97 120 208 / 0.38); }
+    .src-head { display: flex; align-items: center; gap: 8px; margin-bottom: 7px; }
+    .src-idx { width: 18px; height: 18px; border-radius: 6px; display: grid; place-items: center; background: var(--brand); color: #fff; font: 600 10px 'JetBrains Mono', monospace; flex-shrink: 0; }
+    .src-file { font: 500 12px 'JetBrains Mono', monospace; color: var(--ink-1); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .src-score { margin-left: auto; font: 600 10.5px 'JetBrains Mono', monospace; padding: 2px 7px; border-radius: 999px; background: rgb(127 191 168 / 0.22); color: var(--ok-ink); flex-shrink: 0; }
+    .src-text { margin: 0; font: 400 12.5px 'Geist', sans-serif; color: var(--ink-2); line-height: 1.6; }
+    .src-text mark { background: rgb(231 180 92 / 0.38); color: var(--ink-1); border-radius: 3px; padding: 0 2px; }
+
+    @media (prefers-reduced-motion: reduce) {
+      * { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+    }
+    @media (max-width: 1180px) { .app { grid-template-columns: 72px 260px 1fr; } }
+    @media (max-width: 900px)  { .app { grid-template-columns: 72px 1fr; } .pane { display: none !important; } }
+  </style>
+</head>
+<body>
+
+<div class="window" role="application" aria-label="LingScape Desktop Agent">
+
+  <!-- ===================== Titlebar ===================== -->
+  <header class="titlebar" role="banner">
+    <div class="window-controls" role="group" aria-label="window controls">
+      <button class="win-btn win-close" aria-label="close">
+        <svg class="glyph" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M2.4 2.4l5.2 5.2M7.6 2.4L2.4 7.6"></path></svg>
+      </button>
+      <button class="win-btn win-min" aria-label="minimize">
+        <svg class="glyph" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M2.4 5h5.2"></path></svg>
+      </button>
+      <button class="win-btn win-max" aria-label="maximize">
+        <svg class="glyph" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M2.4 2.4h5.2v5.2H2.4z"></path></svg>
+      </button>
+    </div>
+
+    <div class="brand">
+      <div class="brand-mark">L</div>
+      <div class="brand-name">Ling<em>scape</em> Agent</div>
+    </div>
+
+    <div class="crumb">
+      <span class="sep">/</span>
+      <b id="crumbModule">对话</b>
+      <span class="sep">/</span>
+      <span id="crumbItem">Terry · 日常任务助理</span>
+    </div>
+
+    <div class="title-actions">
+      <button class="icon-btn" aria-label="搜索">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"></circle><path d="M21 21l-4.3-4.3"></path></svg>
+      </button>
+      <button class="icon-btn" aria-label="运行队列">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l3 8 4-16 3 8h4"></path></svg>
+      </button>
+      <button class="icon-btn primary" aria-label="新建">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"></path></svg>
+      </button>
+    </div>
+  </header>
+
+  <!-- ===================== App body ===================== -->
+  <div class="app">
+
+    <!-- ============ Nav rail ============ -->
+    <nav class="rail" role="navigation" aria-label="模块导航">
+
+      <button class="rail-item active" data-mod="chat" aria-label="对话">
+        <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 14a2 2 0 0 1-2 2H8l-4 4V5a2 2 0 0 1 2-2h13a2 2 0 0 1 2 2z"></path></svg>
+        <span class="ri-label">对话</span>
+      </button>
+
+      <button class="rail-item" data-mod="agents" aria-label="Agent 角色">
+        <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="8" width="16" height="12" rx="3.5"></rect><path d="M12 3v5"></path><circle cx="9.2" cy="14" r="1.1" fill="currentColor" stroke="none"></circle><circle cx="14.8" cy="14" r="1.1" fill="currentColor" stroke="none"></circle><path d="M2.5 13v2.5M21.5 13v2.5"></path></svg>
+        <span class="ri-label">Agents</span>
+      </button>
+
+      <button class="rail-item" data-mod="groups" aria-label="工作群组">
+        <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15.5 20.5v-1.8a3.5 3.5 0 0 0-3.5-3.5H6.2a3.5 3.5 0 0 0-3.5 3.5v1.8"></path><circle cx="9.1" cy="7.5" r="3.5"></circle><path d="M21.3 20.5v-1.8a3.5 3.5 0 0 0-2.6-3.4"></path><path d="M16.2 4.2a3.5 3.5 0 0 1 0 6.6"></path></svg>
+        <span class="ri-label">群组</span>
+      </button>
+
+      <button class="rail-item" data-mod="kb" aria-label="知识库">
+        <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5.5" rx="7.5" ry="3"></ellipse><path d="M4.5 5.5v13c0 1.66 3.36 3 7.5 3s7.5-1.34 7.5-3v-13"></path><path d="M4.5 12c0 1.66 3.36 3 7.5 3s7.5-1.34 7.5-3"></path></svg>
+        <span class="ri-label">知识库</span>
+      </button>
+
+      <button class="rail-item" data-mod="mcp" aria-label="MCP 管理">
+        <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="4" width="19" height="7" rx="2.2"></rect><rect x="2.5" y="13" width="19" height="7" rx="2.2"></rect><path d="M6.5 7.5h.01M6.5 16.5h.01"></path><path d="M10.5 7.5h4M10.5 16.5h4"></path></svg>
+        <span class="ri-label">MCP</span>
+      </button>
+
+      <button class="rail-item" data-mod="skills" aria-label="Skill 管理">
+        <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 4V2.5M15 16.5V15M8.5 9.5h1.5M20 9.5h1.5M17.8 11.8l1.2 1.2M15 9.5h.01M17.8 6.2L19 5M3.5 20.5l8.5-8.5M12.2 6.2L11 5"></path></svg>
+        <span class="ri-label">Skills</span>
+      </button>
+
+      <div class="rail-spacer"></div>
+      <div class="rail-divider"></div>
+
+      <button class="rail-item" data-mod="chat" aria-label="设置">
+        <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"></path></svg>
+        <span class="ri-label">设置</span>
+      </button>
+    </nav>
+
+    <!-- =========================================================
+         LIST PANES
+         ========================================================= -->
+
+    <!-- ---------- Pane: 对话 ---------- -->
+    <aside class="pane on" data-pane="chat" aria-label="会话列表">
+      <div class="pane-head">
+        <h3>对话 <span class="count">12</span></h3>
+        <button class="pane-add" aria-label="新建对话">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"></path></svg>
+        </button>
+      </div>
+
+      <div class="search">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"></circle><path d="M21 21l-4.3-4.3"></path></svg>
+        <input type="text" placeholder="搜索会话或消息…" aria-label="搜索会话" />
+      </div>
+
+      <div class="section-label"><h4>置顶 · 1:1</h4></div>
+      <div class="pane-list">
+        <div class="row active" role="button" tabindex="0"
+             data-fields='{"cName":"Terry · 日常任务助理","cRole":"react · rag","cStatus":"正在思考 · 第 3 步","cModel":"deepseek-chat"}'>
+          <div class="avatar indigo"><span class="dot thinking"></span>T</div>
+          <div class="row-body">
+            <div class="row-title">Terry <span class="pin">★</span></div>
+            <div class="row-sub">正在整理 RAG 笔记，已写入…</div>
+          </div>
+          <div class="row-meta"><span class="row-time">现在</span><span class="badge warn">3</span></div>
+        </div>
+
+        <div class="row" role="button" tabindex="0"
+             data-fields='{"cName":"Porter · 发布工程师","cRole":"ssh · docker","cStatus":"空闲","cModel":"qwen-plus"}'>
+          <div class="avatar sky"><span class="dot"></span>P</div>
+          <div class="row-body">
+            <div class="row-title">Porter</div>
+            <div class="row-sub">应用发布平台 · 待审批 2 个</div>
+          </div>
+          <div class="row-meta"><span class="row-time">10:42</span><span class="badge">2</span></div>
+        </div>
+
+        <div class="row" role="button" tabindex="0"
+             data-fields='{"cName":"WebAgent · SaaS 助手","cRole":"langchain","cStatus":"空闲","cModel":"deepseek-chat"}'>
+          <div class="avatar peach"><span class="dot"></span>W</div>
+          <div class="row-body">
+            <div class="row-title">WebAgent</div>
+            <div class="row-sub">上月订单查询 ready</div>
+          </div>
+          <div class="row-meta"><span class="row-time">09:15</span><span class="badge muted">·</span></div>
+        </div>
+
+        <div class="row" role="button" tabindex="0"
+             data-fields='{"cName":"Ksher Audit · 合规审计","cRole":"kyb · 报表","cStatus":"已停用","cModel":"claude-sonnet-4-5"}'>
+          <div class="avatar clay"><span class="dot idle"></span>K</div>
+          <div class="row-body">
+            <div class="row-title">Ksher Audit</div>
+            <div class="row-sub">合规台账导出完成</div>
+          </div>
+          <div class="row-meta"><span class="row-time">昨天</span><span class="badge muted">·</span></div>
+        </div>
+      </div>
+
+      <div class="section-label"><h4>纯对话 · 不挂工具</h4></div>
+      <div class="pane-list">
+        <div class="row" role="button" tabindex="0"
+             data-fields='{"cName":"随想 · 快速问答","cRole":"chat only","cStatus":"空闲","cModel":"deepseek-chat"}'>
+          <div class="avatar slate"><span class="dot"></span>随</div>
+          <div class="row-body">
+            <div class="row-title">随想</div>
+            <div class="row-sub">关掉工具与记忆，纯问答</div>
+          </div>
+          <div class="row-meta"><span class="row-time">周二</span></div>
+        </div>
+        <div class="row" role="button" tabindex="0"
+             data-fields='{"cName":"灼世劫火 · 小说写作","cRole":"长文","cStatus":"空闲","cModel":"deepseek-reasoner"}'>
+          <div class="avatar violet"><span class="dot idle"></span>灼</div>
+          <div class="row-body">
+            <div class="row-title">灼世劫火</div>
+            <div class="row-sub">第 27 章战斗节奏展开</div>
+          </div>
+          <div class="row-meta"><span class="row-time">周一</span></div>
+        </div>
+      </div>
+
+      <div class="pane-foot">
+        <div class="hint-card">
+          <h5>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a8 8 0 0 0-8 8c0 6 8 12 8 12s8-6 8-12a8 8 0 0 0-8-8z"></path><circle cx="12" cy="10" r="3"></circle></svg>
+            长期记忆 3 条
+          </h5>
+          <p>偏好表结构化输出 · 不要 border · 先确认方向再写码 · 主色取参考图靛蓝 <strong>#6178D0</strong>。</p>
+        </div>
+      </div>
+    </aside>
+
+    <!-- ---------- Pane: Agents ---------- -->
+    <aside class="pane" data-pane="agents" aria-label="Agent 角色列表">
+      <div class="pane-head">
+        <h3>Agent 角色 <span class="count">05</span></h3>
+        <button class="pane-add" aria-label="新建 Agent">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"></path></svg>
+        </button>
+      </div>
+
+      <div class="search">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"></circle><path d="M21 21l-4.3-4.3"></path></svg>
+        <input type="text" placeholder="搜索角色…" aria-label="搜索 Agent" />
+      </div>
+
+      <div class="section-label"><h4>已创建</h4></div>
+      <div class="pane-list">
+        <div class="row active" role="button" tabindex="0" data-agent="terry">
+          <div class="avatar indigo"><span class="dot thinking"></span>T</div>
+          <div class="row-body">
+            <div class="row-title">Terry</div>
+            <div class="row-sub">DeepSeek · deepseek-chat</div>
+          </div>
+          <div class="row-meta"><span class="tag brand sm">5 工具</span></div>
+        </div>
+
+        <div class="row" role="button" tabindex="0" data-agent="porter">
+          <div class="avatar sky"><span class="dot"></span>P</div>
+          <div class="row-body">
+            <div class="row-title">Porter</div>
+            <div class="row-sub">通义千问 · qwen-plus</div>
+          </div>
+          <div class="row-meta"><span class="tag brand sm">3 工具</span></div>
+        </div>
+
+        <div class="row" role="button" tabindex="0" data-agent="doc">
+          <div class="avatar teal"><span class="dot"></span>D</div>
+          <div class="row-body">
+            <div class="row-title">DocWriter</div>
+            <div class="row-sub">本地 Relay · deepseek-v4</div>
+          </div>
+          <div class="row-meta"><span class="tag brand sm">4 工具</span></div>
+        </div>
+
+        <div class="row" role="button" tabindex="0" data-agent="audit">
+          <div class="avatar clay"><span class="dot idle"></span>K</div>
+          <div class="row-body">
+            <div class="row-title">Ksher Audit</div>
+            <div class="row-sub">Anthropic · claude-sonnet-4-5</div>
+          </div>
+          <div class="row-meta"><span class="tag warn sm">已停用</span></div>
+        </div>
+
+        <div class="row" role="button" tabindex="0" data-agent="review">
+          <div class="avatar violet"><span class="dot"></span>R</div>
+          <div class="row-body">
+            <div class="row-title">CodeReview</div>
+            <div class="row-sub">OpenAI · gpt-4.1</div>
+          </div>
+          <div class="row-meta"><span class="tag brand sm">2 工具</span></div>
+        </div>
+      </div>
+
+      <div class="pane-foot">
+        <div class="hint-card">
+          <h5>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v4M12 18v4M4.9 4.9l2.9 2.9M16.2 16.2l2.9 2.9M2 12h4M18 12h4M4.9 19.1l2.9-2.9M16.2 7.8l2.9-2.9"></path></svg>
+            每个 Agent 独立 API
+          </h5>
+          <p>角色之间 Provider / Base URL / Key / 模型互不影响，可以混用多家与本地 Relay。</p>
+        </div>
+      </div>
+    </aside>
+
+    <!-- ---------- Pane: 群组 ---------- -->
+    <aside class="pane" data-pane="groups" aria-label="工作群组列表">
+      <div class="pane-head">
+        <h3>工作群组 <span class="count">03</span></h3>
+        <button class="pane-add" aria-label="新建群组">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"></path></svg>
+        </button>
+      </div>
+
+      <div class="search">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"></circle><path d="M21 21l-4.3-4.3"></path></svg>
+        <input type="text" placeholder="搜索群组…" aria-label="搜索群组" />
+      </div>
+
+      <div class="section-label"><h4>进行中</h4></div>
+      <div class="pane-list">
+        <div class="row active" role="button" tabindex="0"
+             data-fields='{"gName":"RAG 重构攻坚组","gMode":"主管制","gMembers":"4 位成员 · 3 Agent"}'>
+          <div class="av-stack">
+            <div class="avatar sm indigo">T</div>
+            <div class="avatar sm teal">D</div>
+            <div class="avatar sm sky">P</div>
+          </div>
+          <div class="row-body">
+            <div class="row-title">RAG 重构攻坚组</div>
+            <div class="row-sub">Porter：灰度窗口已排到 周四</div>
+          </div>
+          <div class="row-meta"><span class="row-time">现在</span><span class="badge warn">5</span></div>
+        </div>
+
+        <div class="row" role="button" tabindex="0"
+             data-fields='{"gName":"灵境 V1.3 发布","gMode":"轮询","gMembers":"3 位成员 · 2 Agent"}'>
+          <div class="av-stack">
+            <div class="avatar sm sky">P</div>
+            <div class="avatar sm violet">R</div>
+          </div>
+          <div class="row-body">
+            <div class="row-title">灵境 V1.3 发布</div>
+            <div class="row-sub">Steam 物料待补 2 项</div>
+          </div>
+          <div class="row-meta"><span class="row-time">11:20</span><span class="badge">2</span></div>
+        </div>
+
+        <div class="row" role="button" tabindex="0"
+             data-fields='{"gName":"简历打磨小组","gMode":"自由讨论","gMembers":"2 位成员 · 1 Agent"}'>
+          <div class="av-stack">
+            <div class="avatar sm peach">W</div>
+          </div>
+          <div class="row-body">
+            <div class="row-title">简历打磨小组</div>
+            <div class="row-sub">Vue3 导向版本 v3 已出</div>
+          </div>
+          <div class="row-meta"><span class="row-time">昨天</span><span class="badge muted">·</span></div>
+        </div>
+      </div>
+
+      <div class="pane-foot">
+        <div class="hint-card">
+          <h5>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path></svg>
+            三种协作模式
+          </h5>
+          <p><strong>主管制</strong> 一个 Agent 拆解派活 · <strong>轮询</strong> 依次发言 · <strong>自由讨论</strong> 谁 relevant 谁接。</p>
+        </div>
+      </div>
+    </aside>
+
+    <!-- ---------- Pane: 知识库 ---------- -->
+    <aside class="pane" data-pane="kb" aria-label="知识库列表">
+      <div class="pane-head">
+        <h3>知识库 <span class="count">04</span></h3>
+        <button class="pane-add" aria-label="新建知识库">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"></path></svg>
+        </button>
+      </div>
+
+      <div class="search">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"></circle><path d="M21 21l-4.3-4.3"></path></svg>
+        <input type="text" placeholder="搜索知识库…" aria-label="搜索知识库" />
+      </div>
+
+      <div class="section-label"><h4>已索引</h4></div>
+      <div class="pane-list">
+        <div class="row active" role="button" tabindex="0"
+             data-fields='{"kName":"医疗健康科普","kDocs":"10 篇","kChunks":"1,284 chunks","kEmbed":"BGE-M3 · 1024 维","kStore":"pgvector · ivfflat","kStatus":"已就绪","kTop":"4","kThresh":"0.65","kChunk":"512","kOverlap":"12%"}'>
+          <div class="avatar teal">医</div>
+          <div class="row-body">
+            <div class="row-title">医疗健康科普</div>
+            <div class="row-sub">10 篇 · 1,284 chunks</div>
+          </div>
+          <div class="row-meta"><span class="tag ok sm">ready</span></div>
+        </div>
+
+        <div class="row" role="button" tabindex="0"
+             data-fields='{"kName":"RAG 工程笔记","kDocs":"24 篇","kChunks":"3,612 chunks","kEmbed":"BGE-M3 · 1024 维","kStore":"pgvector · hnsw","kStatus":"已就绪","kTop":"6","kThresh":"0.68","kChunk":"768","kOverlap":"15%"}'>
+          <div class="avatar indigo">R</div>
+          <div class="row-body">
+            <div class="row-title">RAG 工程笔记</div>
+            <div class="row-sub">24 篇 · 3,612 chunks</div>
+          </div>
+          <div class="row-meta"><span class="tag ok sm">ready</span></div>
+        </div>
+
+        <div class="row" role="button" tabindex="0"
+             data-fields='{"kName":"灵境产品文档","kDocs":"18 篇","kChunks":"902 chunks","kEmbed":"text-embedding-3-small","kStore":"pgvector · ivfflat","kStatus":"索引中 62%","kTop":"4","kThresh":"0.62","kChunk":"512","kOverlap":"10%"}'>
+          <div class="avatar sky">灵</div>
+          <div class="row-body">
+            <div class="row-title">灵境产品文档</div>
+            <div class="row-sub">18 篇 · 索引中 62%</div>
+          </div>
+          <div class="row-meta"><span class="tag warn sm">indexing</span></div>
+        </div>
+
+        <div class="row" role="button" tabindex="0"
+             data-fields='{"kName":"支付合规 KYB","kDocs":"7 篇","kChunks":"415 chunks","kEmbed":"BGE-M3 · 1024 维","kStore":"pgvector · ivfflat","kStatus":"已停用","kTop":"3","kThresh":"0.70","kChunk":"1024","kOverlap":"20%"}'>
+          <div class="avatar clay">合</div>
+          <div class="row-body">
+            <div class="row-title">支付合规 KYB</div>
+            <div class="row-sub">7 篇 · 已停用</div>
+          </div>
+          <div class="row-meta"><span class="tag sm">off</span></div>
+        </div>
+      </div>
+
+      <div class="pane-foot">
+        <div class="hint-card">
+          <h5>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a8 8 0 0 0-8 8c0 6 8 12 8 12s8-6 8-12a8 8 0 0 0-8-8z"></path><circle cx="12" cy="10" r="3"></circle></svg>
+            检索参数按库独立
+          </h5>
+          <p>分块 / 嵌入 / 向量索引 / top-k 每个库单独配，不共用一套。</p>
+        </div>
+      </div>
+    </aside>
+
+    <!-- ---------- Pane: MCP ---------- -->
+    <aside class="pane" data-pane="mcp" aria-label="MCP 服务器列表">
+      <div class="pane-head">
+        <h3>MCP 服务器 <span class="count">06</span></h3>
+        <button class="pane-add" aria-label="添加 MCP 服务器">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"></path></svg>
+        </button>
+      </div>
+
+      <div class="search">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"></circle><path d="M21 21l-4.3-4.3"></path></svg>
+        <input type="text" placeholder="搜索服务器…" aria-label="搜索 MCP 服务器" />
+      </div>
+
+      <div class="section-label"><h4>已连接</h4></div>
+      <div class="pane-list">
+        <div class="row active" role="button" tabindex="0"
+             data-fields='{"mName":"filesystem","mTransport":"stdio","mTools":"6 个工具","mCmd":"npx -y @modelcontextprotocol/server-filesystem ~/Workspace","mStatus":"已连接","mLatency":"12 ms"}'>
+          <div class="avatar indigo">F</div>
+          <div class="row-body">
+            <div class="row-title">filesystem</div>
+            <div class="row-sub">stdio · 6 个工具</div>
+          </div>
+          <div class="row-meta"><span class="tag ok sm">on</span></div>
+        </div>
+
+        <div class="row" role="button" tabindex="0"
+             data-fields='{"mName":"pgvector-kb","mTransport":"stdio","mTools":"4 个工具","mCmd":"node ./servers/pgvector-kb/dist/index.js","mStatus":"已连接","mLatency":"38 ms"}'>
+          <div class="avatar teal">V</div>
+          <div class="row-body">
+            <div class="row-title">pgvector-kb</div>
+            <div class="row-sub">stdio · 4 个工具</div>
+          </div>
+          <div class="row-meta"><span class="tag ok sm">on</span></div>
+        </div>
+
+        <div class="row" role="button" tabindex="0"
+             data-fields='{"mName":"obsidian-vault","mTransport":"stdio","mTools":"5 个工具","mCmd":"python -m obsidian_mcp --vault ~/Obsidian/AI研究","mStatus":"已连接","mLatency":"21 ms"}'>
+          <div class="avatar violet">O</div>
+          <div class="row-body">
+            <div class="row-title">obsidian-vault</div>
+            <div class="row-sub">stdio · 5 个工具</div>
+          </div>
+          <div class="row-meta"><span class="tag ok sm">on</span></div>
+        </div>
+
+        <div class="row" role="button" tabindex="0"
+             data-fields='{"mName":"browser-tools","mTransport":"sse","mTools":"9 个工具","mCmd":"http://127.0.0.1:8931/sse","mStatus":"已连接","mLatency":"64 ms"}'>
+          <div class="avatar sky">B</div>
+          <div class="row-body">
+            <div class="row-title">browser-tools</div>
+            <div class="row-sub">sse · 9 个工具</div>
+          </div>
+          <div class="row-meta"><span class="tag ok sm">on</span></div>
+        </div>
+
+        <div class="row" role="button" tabindex="0"
+             data-fields='{"mName":"github","mTransport":"stdio","mTools":"11 个工具","mCmd":"npx -y @modelcontextprotocol/server-github","mStatus":"连接失败","mLatency":"—"}'>
+          <div class="avatar slate">G</div>
+          <div class="row-body">
+            <div class="row-title">github</div>
+            <div class="row-sub">stdio · token 已过期</div>
+          </div>
+          <div class="row-meta"><span class="tag danger sm">err</span></div>
+        </div>
+
+        <div class="row" role="button" tabindex="0"
+             data-fields='{"mName":"porter-deploy","mTransport":"stdio","mTools":"3 个工具","mCmd":"porter-mcp --ssh-config ~/.ssh/porter","mStatus":"已停用","mLatency":"—"}'>
+          <div class="avatar clay">D</div>
+          <div class="row-body">
+            <div class="row-title">porter-deploy</div>
+            <div class="row-sub">stdio · 手动停用</div>
+          </div>
+          <div class="row-meta"><span class="tag sm">off</span></div>
+        </div>
+      </div>
+
+      <div class="pane-foot">
+        <div class="hint-card">
+          <h5>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5.5l-8-3-8 3V12c0 6 8 10 8 10z"></path></svg>
+            工具按 Agent 授权
+          </h5>
+          <p>MCP 全局装好之后，具体给哪个 Agent 用，在角色配置里勾选。</p>
+        </div>
+      </div>
+    </aside>
+
+    <!-- ---------- Pane: Skills ---------- -->
+    <aside class="pane" data-pane="skills" aria-label="Skill 列表">
+      <div class="pane-head">
+        <h3>Skills <span class="count">08</span></h3>
+        <button class="pane-add" aria-label="新建 Skill">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"></path></svg>
+        </button>
+      </div>
+
+      <div class="search">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"></circle><path d="M21 21l-4.3-4.3"></path></svg>
+        <input type="text" placeholder="搜索 Skill…" aria-label="搜索 Skill" />
+      </div>
+
+      <div class="section-label"><h4>本项目</h4></div>
+      <div class="pane-list">
+        <div class="row active" role="button" tabindex="0"
+             data-fields='{"sName":"prd-to-spec","sVer":"v1.2.0","sCat":"产品 / 文档","sDesc":"解析 PRD，按模块拆成 Spec 目录树，输出 YAML + Markdown 双格式。","sOwner":"唐杰","sFiles":"4 个文件 · 2 个脚本","sTrig":"PRD 解析, 生成 Spec, 需求拆解, 模块拆分"}'>
+          <div class="avatar indigo">P</div>
+          <div class="row-body">
+            <div class="row-title">prd-to-spec</div>
+            <div class="row-sub">产品 / 文档 · 4 触发词</div>
+          </div>
+          <div class="row-meta"><span class="tag ok sm">on</span></div>
+        </div>
+
+        <div class="row" role="button" tabindex="0"
+             data-fields='{"sName":"extract-image-palette","sVer":"v1.0.0","sCat":"设计 / 取色","sDesc":"从参考图、截图、设计稿中提取真实配色。k-means 聚类 + 六区采样 + 量化频次三重交叉验证，输出 HEX / HSL / 占比。","sOwner":"唐杰","sFiles":"2 个文件 · 1 个脚本","sTrig":"按这个配色, 提取色板, 参考这张图, match this palette"}'>
+          <div class="avatar teal">E</div>
+          <div class="row-body">
+            <div class="row-title">extract-image-palette</div>
+            <div class="row-sub">设计 / 取色 · 4 触发词</div>
+          </div>
+          <div class="row-meta"><span class="tag ok sm">on</span></div>
+        </div>
+
+        <div class="row" role="button" tabindex="0"
+             data-fields='{"sName":"wenwei-requirement-alignment","sVer":"v0.9.1","sCat":"需求 / 评审","sDesc":"全量阅读需求文档并关联工程代码，推演实现路径，检查数据流与边界条件，给出「可以开发」或「需要澄清」的结论。","sOwner":"团队","sFiles":"3 个文件 · 0 个脚本","sTrig":"需求对齐, 需求评审, 需求碰撞, 能不能开发"}'>
+          <div class="avatar violet">W</div>
+          <div class="row-body">
+            <div class="row-title">wenwei-需求对齐</div>
+            <div class="row-sub">需求 / 评审 · 4 触发词</div>
+          </div>
+          <div class="row-meta"><span class="tag ok sm">on</span></div>
+        </div>
+
+        <div class="row" role="button" tabindex="0"
+             data-fields='{"sName":"excel-handler","sVer":"v2.4.0","sCat":"数据 / 表格","sDesc":"读写 xlsx / csv，做分析、公式构造、图表生成、透视表、清洗整理。","sOwner":"内置","sFiles":"6 个文件 · 3 个脚本","sTrig":"分析表格, 生成图表, 透视表, 处理 excel"}'>
+          <div class="avatar sky">X</div>
+          <div class="row-body">
+            <div class="row-title">excel-handler</div>
+            <div class="row-sub">数据 / 表格 · 4 触发词</div>
+          </div>
+          <div class="row-meta"><span class="tag ok sm">on</span></div>
+        </div>
+
+        <div class="row" role="button" tabindex="0"
+             data-fields='{"sName":"frontend-code-review","sVer":"v0.3.0","sCat":"工程 / 质量","sDesc":"按 Vue3 + TS 约定审查变更：类型收敛、响应式陷阱、构建体积、可访问性。","sOwner":"唐杰","sFiles":"2 个文件 · 1 个脚本","sTrig":"代码评审, review 一下, 看下这个 PR"}'>
+          <div class="avatar peach">R</div>
+          <div class="row-body">
+            <div class="row-title">frontend-code-review</div>
+            <div class="row-sub">工程 / 质量 · 3 触发词</div>
+          </div>
+          <div class="row-meta"><span class="tag sm">off</span></div>
+        </div>
+      </div>
+
+      <div class="pane-foot">
+        <div class="hint-card">
+          <h5>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6M10 21h4"></path><path d="M12 3a6 6 0 0 0-3.5 10.9c.4.3.6.8.6 1.3v.8h5.8v-.8c0-.5.2-1 .6-1.3A6 6 0 0 0 12 3z"></path></svg>
+            触发词即入口
+          </h5>
+          <p>Skill 靠触发词被路由命中，写准口语说法比写术语管用。</p>
+        </div>
+      </div>
+    </aside>
+
+    <!-- =========================================================
+         STAGE / VIEWS
+         ========================================================= -->
+    <main class="stage">
+
+      <!-- ================= VIEW: 对话 ================= -->
+      <section class="view on" data-view="chat">
+
+        <header class="chat-header">
+          <div class="chat-header-left">
+            <div class="avatar lg indigo"><span class="dot thinking"></span>T</div>
+            <div>
+              <div class="who" data-field="cName">Terry · <em>日常任务助理</em></div>
+              <div style="display:flex;align-items:center;gap:8px;margin-top:3px;">
+                <span class="role" data-field="cRole">react · rag</span>
+                <span style="font:500 11px 'JetBrains Mono',monospace;color:var(--ink-3);" data-field="cModel">deepseek-chat</span>
+              </div>
+            </div>
+          </div>
+
+          <div style="display:flex;align-items:center;gap:14px;">
+            <div class="status thinking"><span data-field="cStatus">正在思考 · 第 3 步</span></div>
+            <div class="chat-header-actions">
+              <button class="chip" id="traceChip">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"></path><path d="M7 16l4-6 4 3 5-8"></path></svg>
+                Trace
+              </button>
+              <button class="chip">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path></svg>
+                记忆
+              </button>
+              <button class="chip">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"></path></svg>
+                设置
+              </button>
+            </div>
+          </div>
+        </header>
+
+        <div class="messages" id="chatMessages" aria-live="polite">
+
+          <div class="day-divider">今天 · 星期四</div>
+
+          <div class="msg user">
+            <div class="msg-bubble">
+              帮我把昨天关于 <code>RAG</code> 的笔记按模块整理一下，写进 Obsidian 知识库 <code>AI 研究</code> 文件夹。要包含分块策略、向量选型、还有检索评估那三块。
+              <div class="tick"><span>✓</span> 已发送 · 14:32</div>
+            </div>
+            <div class="av">唐</div>
+          </div>
+
+          <div class="msg agent">
+            <div class="av">T</div>
+            <div>
+              <div class="msg-meta">Terry <span class="role-mini">orchestrator</span> <span class="ts">14:32</span></div>
+              <div class="msg-bubble">
+                好，先去翻 <code>~/notes</code> 找昨天的内容定位到 RAG 那几篇，然后按你提到三个模块切分、最后写入 Obsidian。<strong>我边做边把步骤回给你看。</strong>
+              </div>
+            </div>
+          </div>
+
+          <div class="trace open" aria-label="agent trace">
+            <button class="trace-toggle" aria-expanded="true">
+              <svg class="caret" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"></path></svg>
+              <span class="pill">● 正在执行 · 第 3 / 5 步</span>
+              <span>累计 2.4s · tokens 1.2k · ¥0.003</span>
+            </button>
+            <div class="trace-body">
+              <div class="trace-step">
+                <div class="step-icon think">1</div>
+                <div class="step-body">
+                  <div class="step-title"><span class="step-name">think</span><span class="step-tag">计划：定位 → 读取 → 拆分 → 评估嵌入 → 写入 obsidian</span></div>
+                  <div class="step-detail">基于长期记忆：用户偏好表结构化、目标模块 = <code>chunking</code> / <code>embedding</code> / <code>eval</code></div>
+                </div>
+              </div>
+              <div class="trace-step">
+                <div class="step-icon tool ok">2</div>
+                <div class="step-body">
+                  <div class="step-title"><span class="step-name">file_search</span><span class="step-tag">180ms</span></div>
+                  <div class="step-detail">匹配 <code>~/notes/2026-09-02-*rag*.md</code> → 找到 <strong>3</strong> 篇</div>
+                </div>
+              </div>
+              <div class="trace-step">
+                <div class="step-icon tool">3</div>
+                <div class="step-body">
+                  <div class="step-title"><span class="step-name">file_read</span><span class="step-tag">240ms · 13.4 KB</span></div>
+                  <div class="step-detail">正在按你的拆分偏好（语义分块 · 512 tokens · overlap 12%）构造 chunks…</div>
+                </div>
+              </div>
+              <div class="trace-step">
+                <div class="step-icon" style="background: rgb(127 191 168 / 0.18); color: var(--ok-ink);">4</div>
+                <div class="step-body">
+                  <div class="step-title"><span class="step-name" style="background: rgb(127 191 168 / 0.22); color: var(--ok-ink);">rag_query</span><span class="step-tag">向量库召回 · top 4</span></div>
+                  <div class="step-detail">从 <code>pgvector</code> 医疗健康知识库命中 3 段相似段落，作为补充</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="guard" role="alert">
+            <div class="g-icon">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01"></path><path d="M10.3 3.86l-7.6 13.18A2 2 0 0 0 4.43 20h15.14a2 2 0 0 0 1.73-2.96L13.7 3.86a2 2 0 0 0-3.4 0z"></path></svg>
+            </div>
+            <div class="g-body">
+              <strong>写入前拦截</strong>：检测到目标文件夹已存在同名文件 <code>rag-overview.md</code>
+              <small>已暂停写入，等待你确认覆盖 / 重命名 / 跳过</small>
+            </div>
+            <div style="display:flex;gap:6px;">
+              <button class="chip">跳过</button>
+              <button class="chip accent">确认覆盖</button>
+            </div>
+          </div>
+
+          <div class="msg agent">
+            <div class="av">T</div>
+            <div>
+              <div class="msg-meta">Terry <span class="ts">14:33</span></div>
+              <div class="msg-bubble">
+                先停一下 ✋ — 我查到 Obsidian 那个目录里已经有 <code>rag-overview.md</code>，你希望我怎么处理？
+                <div class="tick">trace ↳ step 3 → paused</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="msg user">
+            <div class="msg-bubble">用 <code>rag-overview-v2.md</code> 重写一份，旧版先备份到 <code>Archive/2026-09</code>。</div>
+            <div class="av">唐</div>
+          </div>
+
+          <div class="msg agent">
+            <div class="av">T</div>
+            <div>
+              <div class="msg-meta">Terry <span class="ts">14:34</span></div>
+              <div class="msg-bubble">
+                好，备份 → 写入 → 校验索引三个动作我会一起做。
+                <div class="tick">trace ↳ resumed · 3 steps remaining</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="trace" aria-label="agent trace continued">
+            <button class="trace-toggle" aria-expanded="false">
+              <svg class="caret" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"></path></svg>
+              <span class="pill ok">✓ 完成 · 3 步</span>
+              <span>总耗时 4.7s · tokens 3.8k · ¥0.009</span>
+            </button>
+            <div class="trace-body">
+              <div class="trace-step">
+                <div class="step-icon ok">A</div>
+                <div class="step-body">
+                  <div class="step-title"><span class="step-name">file_move</span><span class="step-tag">90ms</span></div>
+                  <div class="step-detail"><code>rag-overview.md</code> → <code>Archive/2026-09/rag-overview.md</code></div>
+                </div>
+              </div>
+              <div class="trace-step">
+                <div class="step-icon ok">B</div>
+                <div class="step-body">
+                  <div class="step-title"><span class="step-name">file_write</span><span class="step-tag">1.4s · 8.2 KB</span></div>
+                  <div class="step-detail"><code>AI 研究/rag-overview-v2.md</code> · 含 4 章 12 小节</div>
+                </div>
+              </div>
+              <div class="trace-step">
+                <div class="step-icon tool ok">C</div>
+                <div class="step-body">
+                  <div class="step-title"><span class="step-name">obs_index_sync</span><span class="step-tag">220ms</span></div>
+                  <div class="step-detail">已同步 wikilink · <code>[[rag-overview-v2]]</code> 反向引用 3 处</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="msg agent">
+            <div class="av">T</div>
+            <div>
+              <div class="msg-meta">Terry <span class="ts">14:35</span></div>
+              <div class="msg-bubble">
+                整理完成 ✅ 一共分成这三大块：
+                <div class="table-wrap" style="margin-top:10px;">
+                  <table class="table">
+                    <thead><tr><th>模块</th><th>要点</th><th>文件</th></tr></thead>
+                    <tbody>
+                      <tr><td><strong>chunking</strong><button class="cite" data-src="1" aria-label="查看来源 1">1</button></td><td>512 tokens · overlap 12% · 语义优先</td><td class="mono">rag-overview-v2.md#1</td></tr>
+                      <tr><td><strong>embedding</strong><button class="cite" data-src="2" aria-label="查看来源 2">2</button></td><td>BGE-M3 · 1024 维 · pgvector(ivfflat)</td><td class="mono">rag-overview-v2.md#2</td></tr>
+                      <tr><td><strong>eval</strong><button class="cite" data-src="3" aria-label="查看来源 3">3</button></td><td>RAGAS · hit@5 = 0.86 · cost ↓ 41%</td><td class="mono">rag-overview-v2.md#3</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+                <div class="tick">delivered · 3 引用</div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+        <div class="composer-wrap">
+          <div class="composer">
+            <div class="composer-toolbar">
+              <button class="tool-btn brand" aria-label="附件">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.4 8.4 0 0 1-9 8.4 8.5 8.5 0 1 1-8.4-12.6 8.4 8.4 0 0 1 8.4 8.4v3a3 3 0 1 1-6 0V9"></path></svg>
+              </button>
+              <button class="tool-btn" aria-label="图片">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><path d="M21 15l-5-5L5 21"></path></svg>
+              </button>
+              <button class="tool-btn" aria-label="工具">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.7-3.7a6 6 0 0 1-7.9 7.9L8.7 18.7a4 4 0 0 1-5.6-5.6l8-8a2.8 2.8 0 1 1 4 4l-7 7a1.5 1.5 0 1 1-2.2-2L9.6 9"></path></svg>
+              </button>
+              <button class="tool-btn" aria-label="语音">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><path d="M12 19v4M8 23h8"></path></svg>
+              </button>
+              <div class="composer-hint"><kbd>/</kbd> 调出工具 · <kbd>@</kbd> 切换 agent</div>
+            </div>
+
+            <textarea class="composer-input" id="chatInput" placeholder="告诉 Terry 你接下来要做的事…">把刚才那三块的速查表导成一张网页，配色跟参考截图走。</textarea>
+
+            <div class="composer-footer">
+              <div class="footer-left">
+                <span class="scope">Workspace: 全部启用</span>
+                <span>· sandbox safe</span>
+              </div>
+              <button class="send" id="chatSend" aria-label="发送">
+                发送
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"></path></svg>
+              </button>
+            </div>
+          </div>
+
+          <div class="statbar" aria-label="运行状态">
+            <span data-field="cModel">deepseek-chat</span>
+            <span>5 工具 · 3 memory</span>
+            <span>护栏 v2.1 已启用</span>
+          </div>
+        </div>
+
+        <!-- RAG source drawer -->
+        <div class="drawer-scrim" id="drawerScrim"></div>
+        <aside class="drawer" id="sourceDrawer" aria-label="引用来源" aria-hidden="true">
+          <div class="drawer-head">
+            <div><h3>引用来源</h3><p>pgvector · top 4 · 命中 3 段</p></div>
+            <button class="drawer-close" id="drawerClose" aria-label="关闭来源面板">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"></path></svg>
+            </button>
+          </div>
+          <div class="drawer-body">
+            <article class="src" data-idx="1">
+              <div class="src-head"><span class="src-idx">1</span><span class="src-file">rag/chunking-strategy.md</span><span class="src-score">0.91</span></div>
+              <p class="src-text">语义分块优于固定长度：<mark>512 tokens + 12% overlap</mark> 在长文档召回上比 256 定长提升 23%。</p>
+            </article>
+            <article class="src" data-idx="2">
+              <div class="src-head"><span class="src-idx">2</span><span class="src-file">rag/embedding-bench.md</span><span class="src-score">0.87</span></div>
+              <p class="src-text">BGE-M3 在中文语料上 <mark>1024 维 / ivfflat</mark>，召回率 0.86，比 768 维高 4 个点，成本持平。</p>
+            </article>
+            <article class="src" data-idx="3">
+              <div class="src-head"><span class="src-idx">3</span><span class="src-file">rag/eval-ragas.md</span><span class="src-score">0.79</span></div>
+              <p class="src-text">RAGAS 评估下 <mark>hit@5 = 0.86</mark>，rerank 关掉后降到 0.71，但单次成本下降 41%。</p>
+            </article>
+            <article class="src" data-idx="4" style="opacity:.62">
+              <div class="src-head"><span class="src-idx" style="background:var(--ink-3)">4</span><span class="src-file">notes/2026-09-02-scratch.md</span><span class="src-score" style="background:var(--bg-hover);color:var(--ink-3)">0.42</span></div>
+              <p class="src-text">未采用 — 相似度低于阈值 0.65，已排除出上下文。</p>
+            </article>
+          </div>
+        </aside>
+      </section>
+
+      <!-- ================= VIEW: Agents ================= -->
+      <section class="view" data-view="agents">
+
+        <header class="view-head">
+          <div class="vh-left">
+            <div class="avatar lg indigo" id="agAvatar"><span class="dot thinking"></span>T</div>
+            <div>
+              <div class="vh-name" id="agTitle">Terry · <em>日常任务助理</em></div>
+              <div class="vh-sub">
+                <span class="tag brand" id="agProviderTag">DeepSeek</span>
+                <span class="tag" id="agModelTag">deepseek-chat</span>
+                <span class="tag ok" id="agStateTag">已启用</span>
+              </div>
+            </div>
+          </div>
+          <div class="vh-actions">
+            <button class="chip" id="agTest">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l3 8 4-16 3 8h4"></path></svg>
+              测试连接
+            </button>
+            <button class="btn sm" aria-label="复制角色">复制</button>
+            <div class="switch" id="agEnable" role="switch" aria-checked="true" aria-label="启用该 Agent" tabindex="0"></div>
+          </div>
+        </header>
+
+        <div class="view-body">
+
+          <!-- 身份 -->
+          <div class="card">
+            <div class="card-head"><h4><span class="idx">1</span>身份</h4><span class="side">identity</span></div>
+            <div class="grid2">
+              <div class="field">
+                <label for="agName">名称</label>
+                <input class="input" id="agName" type="text" value="Terry" />
+              </div>
+              <div class="field">
+                <label for="agRole">定位</label>
+                <input class="input" id="agRole" type="text" value="日常任务助理" />
+              </div>
+            </div>
+            <div class="field" style="margin-top:14px;">
+              <label for="agDesc">简介（给群组和路由用）</label>
+              <input class="input" id="agDesc" type="text" value="负责本地文件、Obsidian 与日程的默认执行者" />
+            </div>
+          </div>
+
+          <!-- 模型与 API -->
+          <div class="card">
+            <div class="card-head">
+              <h4><span class="idx">2</span>模型与 API</h4>
+              <span class="side">每个 Agent 独立</span>
+            </div>
+
+            <div class="field">
+              <label for="agProvider">Provider</label>
+              <select class="select" id="agProvider">
+                <option value="deepseek">DeepSeek</option>
+                <option value="openai">OpenAI</option>
+                <option value="anthropic">Anthropic</option>
+                <option value="qwen">通义千问（DashScope 兼容模式）</option>
+                <option value="moonshot">Moonshot</option>
+                <option value="local">本地 Relay（127.0.0.1:4444）</option>
+                <option value="custom">自定义 · OpenAI 兼容</option>
+              </select>
+            </div>
+
+            <div style="margin-top:14px;">
+              <div class="field">
+                <label for="agBase">Base URL</label>
+                <input class="input input-mono" id="agBase" type="text" value="https://api.deepseek.com/v1" />
+              </div>
+            </div>
+
+            <div style="margin-top:14px;">
+              <div class="field">
+                <label for="agKey">API Key</label>
+                <div class="input-group">
+                  <input class="input input-mono" id="agKey" type="password" value="sk-9f2c41ab7de04c8eb1f6a0d3" />
+                  <button class="btn sm" id="agKeyToggle" aria-label="显示或隐藏密钥">显示</button>
+                </div>
+                <span class="hint">密钥按角色隔离存储，导出备份时会二次确认</span>
+              </div>
+            </div>
+
+            <div class="grid3" style="margin-top:14px;">
+              <div class="field">
+                <label for="agModel">模型</label>
+                <select class="select" id="agModel"></select>
+              </div>
+              <div class="field">
+                <label for="agTemp">温度 <span id="agTempVal" style="color:var(--brand-deep);">0.30</span></label>
+                <input id="agTemp" type="range" min="0" max="1" step="0.05" value="0.3" style="width:100%;accent-color:var(--brand-solid);" />
+              </div>
+              <div class="field">
+                <label for="agMaxTok">最大输出 tokens</label>
+                <input class="input input-mono" id="agMaxTok" type="text" value="4096" />
+              </div>
+            </div>
+          </div>
+
+          <!-- 能力绑定 -->
+          <div class="card">
+            <div class="card-head"><h4><span class="idx">3</span>能力绑定</h4><span class="side">tools · skills · kb</span></div>
+
+            <div class="field">
+              <label>工具（来自 MCP 与内置）</label>
+              <div class="chips" id="agTools">
+                <button class="chip-pick" aria-pressed="true" data-v="file_search"><span class="tickbox">✓</span>file_search</button>
+                <button class="chip-pick" aria-pressed="true" data-v="file_read"><span class="tickbox">✓</span>file_read</button>
+                <button class="chip-pick" aria-pressed="true" data-v="file_write"><span class="tickbox">✓</span>file_write</button>
+                <button class="chip-pick" aria-pressed="true" data-v="rag_query"><span class="tickbox">✓</span>rag_query</button>
+                <button class="chip-pick" aria-pressed="true" data-v="obsidian_sync"><span class="tickbox">✓</span>obsidian_sync</button>
+                <button class="chip-pick" aria-pressed="false" data-v="browser_open"><span class="tickbox">✓</span>browser_open</button>
+                <button class="chip-pick" aria-pressed="false" data-v="github_pr"><span class="tickbox">✓</span>github_pr</button>
+                <button class="chip-pick" aria-pressed="false" data-v="ssh_deploy"><span class="tickbox">✓</span>ssh_deploy</button>
+              </div>
+            </div>
+
+            <div class="grid2" style="margin-top:14px;">
+              <div class="field">
+                <label>Skills</label>
+                <div class="chips" id="agSkills">
+                  <button class="chip-pick" aria-pressed="true" data-v="prd-to-spec"><span class="tickbox">✓</span>prd-to-spec</button>
+                  <button class="chip-pick" aria-pressed="false" data-v="extract-image-palette"><span class="tickbox">✓</span>extract-image-palette</button>
+                  <button class="chip-pick" aria-pressed="false" data-v="wenwei-对齐"><span class="tickbox">✓</span>wenwei-需求对齐</button>
+                  <button class="chip-pick" aria-pressed="false" data-v="excel-handler"><span class="tickbox">✓</span>excel-handler</button>
+                </div>
+              </div>
+              <div class="field">
+                <label>知识库</label>
+                <div class="chips" id="agKb">
+                  <button class="chip-pick" aria-pressed="true" data-v="rag-notes"><span class="tickbox">✓</span>RAG 工程笔记</button>
+                  <button class="chip-pick" aria-pressed="true" data-v="medical"><span class="tickbox">✓</span>医疗健康科普</button>
+                  <button class="chip-pick" aria-pressed="false" data-v="lingscape"><span class="tickbox">✓</span>灵境产品文档</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 系统提示词 -->
+          <div class="card">
+            <div class="card-head"><h4><span class="idx">4</span>系统提示词</h4><span class="side">支持变量</span></div>
+            <div class="field">
+              <textarea class="textarea" id="agPrompt" spellcheck="false">你是 Terry，用户的日常任务助理。
+
+执行约定：
+1. 动笔前先确认方向，允许用一句话反问；
+2. 输出优先表格 / 列表，不要长段落铺陈；
+3. 涉及文件写入、删除、外部请求，先说明再执行；
+4. 回答里出现的事实要能从工具结果或知识库溯源。
+
+当前环境：{{workspace}} · 用户 {{user.name}} · 时间 {{now}}</textarea>
+              <div class="tag-row" style="margin-top:8px;">
+                <span class="tag sm">{{workspace}}</span>
+                <span class="tag sm">{{user.name}}</span>
+                <span class="tag sm">{{now}}</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- 护栏 -->
+          <div class="card">
+            <div class="card-head"><h4><span class="idx">5</span>护栏</h4><span class="side">guardrails</span></div>
+            <div class="kv">
+              <div class="k">写入前二次确认<small>文件覆盖、批量删除、git 强推</small></div>
+              <div class="v"><div class="switch" role="switch" aria-checked="true" tabindex="0" aria-label="写入前二次确认"></div></div>
+            </div>
+            <div class="kv">
+              <div class="k">沙箱执行<small>命令只允许在 workspace 目录内</small></div>
+              <div class="v"><div class="switch" role="switch" aria-checked="true" tabindex="0" aria-label="沙箱执行"></div></div>
+            </div>
+            <div class="kv">
+              <div class="k">单轮预算上限<small>超过即停下并汇报，不继续烧钱</small></div>
+              <div class="v mono">¥ 1.50 / 轮</div>
+            </div>
+          </div>
+
+        </div>
+
+        <div class="view-foot">
+          <span class="foot-note" id="agFoot">上次保存 · 今天 14:02</span>
+          <div style="display:flex;gap:8px;">
+            <button class="btn">放弃更改</button>
+            <button class="btn primary" id="agSave">保存角色</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================= VIEW: 群组 ================= -->
+      <section class="view" data-view="groups">
+
+        <header class="view-head">
+          <div class="vh-left">
+            <div class="av-stack" style="margin-right:4px;">
+              <div class="avatar indigo">T</div><div class="avatar teal">D</div><div class="avatar sky">P</div><div class="more">+1</div>
+            </div>
+            <div>
+              <div class="vh-name" data-field="gName">RAG 重构攻坚组</div>
+              <div class="vh-sub">
+                <span data-field="gMembers">4 位成员 · 3 Agent</span>
+                <span class="tag info sm">协作中</span>
+              </div>
+            </div>
+          </div>
+          <div class="vh-actions">
+            <div class="seg" role="tablist" aria-label="协作模式">
+              <button class="active" role="tab" data-mode="主管制">主管制</button>
+              <button role="tab" data-mode="轮询">轮询</button>
+              <button role="tab" data-mode="自由讨论">自由讨论</button>
+            </div>
+            <button class="chip" aria-label="群设置">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"></path></svg>
+              群设置
+            </button>
+          </div>
+        </header>
+
+        <div class="messages" id="groupMessages" aria-live="polite">
+
+          <div class="sys-note">群组创建于 周二 · 主管制 · Terry 为编排者</div>
+
+          <div class="msg user">
+            <div class="msg-bubble">
+              <span class="mention">@全体</span> 这周目标就一个：把 RAG 的检索质量提上去。hit@5 现在 0.71，想拉到 0.85 以上。
+              <div class="tick">14:02</div>
+            </div>
+            <div class="av">唐</div>
+          </div>
+
+          <div class="msg agent">
+            <div class="av" style="background:linear-gradient(135deg,#8496D8,#5A6FCB);">T</div>
+            <div>
+              <div class="msg-meta">Terry <span class="role-mini">orchestrator</span> <span class="ts">14:02</span></div>
+              <div class="msg-bubble">
+                拆成三件事并行，我盯结果汇总。
+              </div>
+            </div>
+          </div>
+
+          <div class="assign">
+            <h5><span class="idx">⇄</span>任务分工 · 由 Terry 派发</h5>
+            <div class="assign-item">
+              <div class="avatar sm teal">D</div>
+              <div>
+                <div class="t-title">重写分块 + 重跑评测</div>
+                <div class="t-desc">语义分块 512 / overlap 12% · 输出 RAGAS 前后对比</div>
+              </div>
+              <span class="tag ok sm">进行中</span>
+            </div>
+            <div class="assign-item">
+              <div class="avatar sm sky">P</div>
+              <div>
+                <div class="t-title">rerank 灰度开关</div>
+                <div class="t-desc">加一个可回滚的开关，先 10% 流量</div>
+              </div>
+              <span class="tag warn sm">待开始</span>
+            </div>
+            <div class="assign-item">
+              <div class="avatar sm violet">R</div>
+              <div>
+                <div class="t-title">检索链路埋点</div>
+                <div class="t-desc">每次召回记 chunk id 与分数，便于回溯</div>
+              </div>
+              <span class="tag sm">未分配</span>
+            </div>
+          </div>
+
+          <div class="msg agent">
+            <div class="av" style="background:linear-gradient(135deg,#A1CEC8,#6FAE9F);">D</div>
+            <div>
+              <div class="msg-meta">DocWriter <span class="role-mini">rag</span> <span class="ts">14:06</span></div>
+              <div class="msg-bubble">
+                分块改完跑了一轮：<strong>hit@5 从 0.71 → 0.83</strong>。rerank 打开还能再 +0.03，但单次成本涨 41%。<button class="cite" data-src="3">3</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="trace">
+            <button class="trace-toggle" aria-expanded="false">
+              <svg class="caret" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"></path></svg>
+              <span class="pill ok">✓ 完成 · 3 步</span>
+              <span>DocWriter · 6.2s · ¥0.014</span>
+            </button>
+            <div class="trace-body">
+              <div class="trace-step">
+                <div class="step-icon ok">1</div>
+                <div class="step-body">
+                  <div class="step-title"><span class="step-name">rechunk</span><span class="step-tag">2.1s · 3,612 chunks</span></div>
+                  <div class="step-detail">按语义边界重切，平均块长由 243 → 486 tokens</div>
+                </div>
+              </div>
+              <div class="trace-step">
+                <div class="step-icon ok">2</div>
+                <div class="step-body">
+                  <div class="step-title"><span class="step-name">rag_eval</span><span class="step-tag">3.4s · 120 题</span></div>
+                  <div class="step-detail">RAGAS 评测集跑分：hit@5 = 0.83 · MRR = 0.61</div>
+                </div>
+              </div>
+              <div class="trace-step">
+                <div class="step-icon ok">3</div>
+                <div class="step-body">
+                  <div class="step-title"><span class="step-name">cost_report</span><span class="step-tag">0.7s</span></div>
+                  <div class="step-detail">rerank on：成本 +41%，延迟 +180ms；建议默认关、按需开</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="handoff">
+            <span>DocWriter</span>
+            <span class="arrow">→</span>
+            <span>Porter</span>
+            <span style="color:var(--ink-3);">交接：评测数据已落到 kb 报告</span>
+          </div>
+
+          <div class="msg agent">
+            <div class="av" style="background:linear-gradient(135deg,#B7DCE8,#7FB3C9);">P</div>
+            <div>
+              <div class="msg-meta">Porter <span class="role-mini">deploy</span> <span class="ts">14:09</span></div>
+              <div class="msg-bubble">
+                收到。灰度开关已经排进周四的发布窗口，默认 <code>rerank=false</code>，走配置中心下发，不用重新发版。
+              </div>
+            </div>
+          </div>
+
+          <div class="msg user">
+            <div class="msg-bubble">
+              <span class="mention">@Porter</span> 先别发生产，等我把这一版的评估报告看完。
+            </div>
+            <div class="av">唐</div>
+          </div>
+
+          <div class="msg agent">
+            <div class="av" style="background:linear-gradient(135deg,#B7DCE8,#7FB3C9);">P</div>
+            <div>
+              <div class="msg-meta">Porter <span class="ts">14:10</span></div>
+              <div class="msg-bubble">
+                好，发布任务挂起，等你在群里说一声我再放行。
+                <div class="tick">blocked by you</div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+        <div class="composer-wrap">
+          <div class="composer">
+            <div class="composer-toolbar">
+              <button class="tool-btn" aria-label="@ 成员">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"></circle><path d="M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-3.9 7.9"></path></svg>
+              </button>
+              <button class="tool-btn" aria-label="派发任务">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"></path><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path></svg>
+              </button>
+              <button class="tool-btn" aria-label="附件">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.4 8.4 0 0 1-9 8.4 8.5 8.5 0 1 1-8.4-12.6 8.4 8.4 0 0 1 8.4 8.4v3a3 3 0 1 1-6 0V9"></path></svg>
+              </button>
+              <div class="composer-hint"><kbd>@</kbd> 指定成员 · 不 @ 则由主管分发</div>
+            </div>
+
+            <textarea class="composer-input" id="groupInput" placeholder="在群里说点什么… 不 @ 则由 Terry 自动分发"></textarea>
+
+            <div class="composer-footer">
+              <div class="footer-left">
+                <span class="scope" data-field="gMode">主管制</span>
+                <span>· 3 Agent 在线</span>
+              </div>
+              <button class="send" id="groupSend" aria-label="发送到群组">
+                发送到群组
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"></path></svg>
+              </button>
+            </div>
+          </div>
+
+          <div class="statbar">
+            <span>本轮 3 Agent · 12 步</span>
+            <span>tokens 18.4k · ¥0.042</span>
+            <span>交接 1 次 · 阻塞 1 项</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================= VIEW: 知识库 ================= -->
+      <section class="view" data-view="kb">
+
+        <header class="view-head">
+          <div class="vh-left">
+            <div class="avatar lg teal">医</div>
+            <div>
+              <div class="vh-name" data-field="kName">医疗健康科普</div>
+              <div class="vh-sub">
+                <span class="tag ok sm" data-field="kStatus">已就绪</span>
+                <span data-field="kDocs">10 篇</span>
+                <span data-field="kChunks">1,284 chunks</span>
+                <span class="tag sm" data-field="kStore">pgvector · ivfflat</span>
+              </div>
+            </div>
+          </div>
+          <div class="vh-actions">
+            <button class="btn sm">导入文档</button>
+            <button class="btn sm primary">重建索引</button>
+          </div>
+        </header>
+
+        <div class="view-body">
+
+          <div class="grid2">
+            <div class="card">
+              <div class="card-head"><h4>检索参数</h4><span class="side">retrieval</span></div>
+              <div class="kv"><div class="k">分块大小</div><div class="v mono" data-field="kChunk">512 tokens</div></div>
+              <div class="kv"><div class="k">重叠比例</div><div class="v mono" data-field="kOverlap">12%</div></div>
+              <div class="kv"><div class="k">召回数量 top-k</div><div class="v mono" data-field="kTop">4</div></div>
+              <div class="kv"><div class="k">相似度阈值<small>低于该值直接丢弃</small></div><div class="v mono" data-field="kThresh">0.65</div></div>
+              <div class="kv"><div class="k">Rerank<small>二次精排，成本 +41%</small></div><div class="v"><div class="switch" role="switch" aria-checked="false" tabindex="0" aria-label="rerank"></div></div></div>
+            </div>
+
+            <div class="card">
+              <div class="card-head"><h4>嵌入与存储</h4><span class="side">embedding</span></div>
+              <div class="kv"><div class="k">嵌入模型</div><div class="v mono" data-field="kEmbed">BGE-M3 · 1024 维</div></div>
+              <div class="kv"><div class="k">向量库</div><div class="v mono" data-field="kStore">pgvector · ivfflat</div></div>
+              <div class="kv"><div class="k">索引参数<small>lists / probes</small></div><div class="v mono">100 / 10</div></div>
+              <div class="kv"><div class="k">平均召回延迟</div><div class="v mono">38 ms</div></div>
+              <div class="kv"><div class="k">最近重建</div><div class="v mono">09-01 23:14</div></div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-head"><h4>检索测试</h4><span class="side">命中 3 段 · 128 ms</span></div>
+            <div class="input-group">
+              <input class="input" type="text" value="高血压患者日常饮食要注意什么" aria-label="检索测试输入" />
+              <button class="btn primary">检索</button>
+            </div>
+
+            <div style="display:flex;flex-direction:column;gap:8px;margin-top:14px;">
+              <div class="src" style="box-shadow:inset 0 0 0 1px rgb(97 120 208 / 0.30); background:var(--brand-soft);">
+                <div class="src-head"><span class="src-idx">1</span><span class="src-file">慢病管理/高血压-饮食.md</span><span class="src-score">0.91</span></div>
+                <p class="src-text">每日钠摄入控制在 <mark>5g 盐以内</mark>，增加钾摄入（蔬果、豆类），限制加工肉与腌制食品。</p>
+              </div>
+              <div class="src">
+                <div class="src-head"><span class="src-idx">2</span><span class="src-file">慢病管理/血压自测.md</span><span class="src-score">0.84</span></div>
+                <p class="src-text">建议固定晨起与睡前各测一次，<mark>静息 5 分钟</mark>后测量，连续记录 7 天取均值。</p>
+              </div>
+              <div class="src">
+                <div class="src-head"><span class="src-idx">3</span><span class="src-file">用药常识/降压药依从性.md</span><span class="src-score">0.72</span></div>
+                <p class="src-text">不可因血压下降自行停药，漏服后<mark>不可加倍补服</mark>，需咨询医生调整方案。</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-head"><h4>文档</h4><span class="side">10 篇 · 全部已索引</span></div>
+            <div class="table-wrap">
+              <table class="table">
+                <thead><tr><th>文件</th><th>chunks</th><th>大小</th><th>更新时间</th><th>状态</th></tr></thead>
+                <tbody>
+                  <tr><td><strong>高血压-饮食.md</strong></td><td class="mono">148</td><td class="mono">18.2 KB</td><td class="mono">08-29</td><td><span class="tag ok sm">indexed</span></td></tr>
+                  <tr><td><strong>血压自测.md</strong></td><td class="mono">96</td><td class="mono">11.4 KB</td><td class="mono">08-29</td><td><span class="tag ok sm">indexed</span></td></tr>
+                  <tr><td><strong>降压药依从性.md</strong></td><td class="mono">132</td><td class="mono">16.8 KB</td><td class="mono">08-30</td><td><span class="tag ok sm">indexed</span></td></tr>
+                  <tr><td><strong>糖尿病-血糖监测.md</strong></td><td class="mono">174</td><td class="mono">22.1 KB</td><td class="mono">08-30</td><td><span class="tag ok sm">indexed</span></td></tr>
+                  <tr><td><strong>慢病运动处方.md</strong></td><td class="mono">118</td><td class="mono">14.9 KB</td><td class="mono">09-01</td><td><span class="tag ok sm">indexed</span></td></tr>
+                  <tr><td><strong>体检报告怎么看.md</strong></td><td class="mono">—</td><td class="mono">9.3 KB</td><td class="mono">09-02</td><td><span class="tag warn sm">queued</span></td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+        </div>
+
+        <div class="view-foot">
+          <span class="foot-note">索引占用 42.6 MB · 上次重建 09-01 23:14</span>
+          <div style="display:flex;gap:8px;"><button class="btn">导出配置</button><button class="btn primary">保存</button></div>
+        </div>
+      </section>
+
+      <!-- ================= VIEW: MCP ================= -->
+      <section class="view" data-view="mcp">
+
+        <header class="view-head">
+          <div class="vh-left">
+            <div class="avatar lg indigo">F</div>
+            <div>
+              <div class="vh-name" data-field="mName">filesystem</div>
+              <div class="vh-sub">
+                <span class="tag ok sm" data-field="mStatus">已连接</span>
+                <span class="tag sm" data-field="mTransport">stdio</span>
+                <span data-field="mTools">6 个工具</span>
+                <span class="tag info sm" data-field="mLatency">12 ms</span>
+              </div>
+            </div>
+          </div>
+          <div class="vh-actions">
+            <button class="btn sm">重启</button>
+            <button class="btn sm">编辑</button>
+            <div class="switch" role="switch" aria-checked="true" tabindex="0" aria-label="启用 MCP 服务器"></div>
+          </div>
+        </header>
+
+        <div class="view-body">
+
+          <div class="card">
+            <div class="card-head"><h4>连接</h4><span class="side">stdio · 子进程常驻</span></div>
+            <div class="field">
+              <label>启动命令</label>
+              <pre class="code"><span class="c-dim">$</span> <span class="c-key">npx</span> -y @modelcontextprotocol/server-filesystem <span class="c-str">~/Workspace</span></pre>
+            </div>
+            <div class="kv" style="margin-top:12px;"><div class="k">工作目录</div><div class="v mono">~/Workspace</div></div>
+            <div class="kv"><div class="k">协议版本</div><div class="v mono">2025-06-18</div></div>
+            <div class="kv"><div class="k">环境变量</div><div class="v mono">2 项已注入</div></div>
+          </div>
+
+          <div class="card">
+            <div class="card-head"><h4>工具</h4><span class="side">6 个 · 勾选后对 Agent 可见</span></div>
+            <div class="table-wrap">
+              <table class="table">
+                <thead><tr><th>工具</th><th>说明</th><th style="width:120px;">授权给</th><th style="width:56px;">启用</th></tr></thead>
+                <tbody>
+                  <tr><td class="mono"><strong>read_file</strong></td><td>读取单个文件，支持按行区间</td><td class="mono">3 个 Agent</td><td><div class="switch" role="switch" aria-checked="true" tabindex="0" aria-label="read_file"></div></td></tr>
+                  <tr><td class="mono"><strong>write_file</strong></td><td>写入文件，触发写入护栏</td><td class="mono">2 个 Agent</td><td><div class="switch" role="switch" aria-checked="true" tabindex="0" aria-label="write_file"></div></td></tr>
+                  <tr><td class="mono"><strong>list_directory</strong></td><td>列目录，默认限制深度 3</td><td class="mono">4 个 Agent</td><td><div class="switch" role="switch" aria-checked="true" tabindex="0" aria-label="list_directory"></div></td></tr>
+                  <tr><td class="mono"><strong>search_files</strong></td><td>glob 模式匹配文件名</td><td class="mono">3 个 Agent</td><td><div class="switch" role="switch" aria-checked="true" tabindex="0" aria-label="search_files"></div></td></tr>
+                  <tr><td class="mono"><strong>move_file</strong></td><td>移动 / 重命名，跨目录需确认</td><td class="mono">1 个 Agent</td><td><div class="switch" role="switch" aria-checked="true" tabindex="0" aria-label="move_file"></div></td></tr>
+                  <tr><td class="mono"><strong>delete_file</strong></td><td>删除文件，始终二次确认</td><td class="mono">0 个 Agent</td><td><div class="switch" role="switch" aria-checked="false" tabindex="0" aria-label="delete_file"></div></td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-head"><h4>运行日志</h4><span class="side">tail -f</span></div>
+            <pre class="code"><span class="c-dim">14:02:11</span> <span class="c-key">connect</span>    stdio transport established
+<span class="c-dim">14:02:11</span> <span class="c-key">handshake</span>  protocol 2025-06-18 · server filesystem v0.9.2
+<span class="c-dim">14:02:11</span> <span class="c-key">tools</span>       6 tools discovered
+<span class="c-dim">14:32:04</span> <span class="c-key">call</span>        search_files(<span class="c-str">"~/notes/2026-09-02-*rag*.md"</span>) <span class="c-dim">→ 180ms</span>
+<span class="c-dim">14:32:05</span> <span class="c-key">call</span>        read_file(<span class="c-str">"~/notes/2026-09-02-rag-notes.md"</span>) <span class="c-dim">→ 240ms</span>
+<span class="c-dim">14:33:41</span> <span class="c-key">call</span>        move_file(<span class="c-str">"rag-overview.md → Archive/2026-09/"</span>) <span class="c-dim">→ 90ms</span>
+<span class="c-com">— 监听中 —</span></pre>
+          </div>
+
+        </div>
+
+        <div class="view-foot">
+          <span class="foot-note">uptime 3h 12m · 今日调用 84 次</span>
+          <div style="display:flex;gap:8px;"><button class="btn">断开连接</button><button class="btn primary">保存</button></div>
+        </div>
+      </section>
+
+      <!-- ================= VIEW: Skills ================= -->
+      <section class="view" data-view="skills">
+
+        <header class="view-head">
+          <div class="vh-left">
+            <div class="avatar lg indigo">P</div>
+            <div>
+              <div class="vh-name" data-field="sName">prd-to-spec</div>
+              <div class="vh-sub">
+                <span class="tag brand sm" data-field="sVer">v1.2.0</span>
+                <span data-field="sCat">产品 / 文档</span>
+                <span data-field="sOwner">唐杰</span>
+                <span class="tag ok sm">已启用</span>
+              </div>
+            </div>
+          </div>
+          <div class="vh-actions">
+            <button class="btn sm">在编辑器打开</button>
+            <button class="btn sm">试运行</button>
+            <div class="switch" role="switch" aria-checked="true" tabindex="0" aria-label="启用 Skill"></div>
+          </div>
+        </header>
+
+        <div class="view-body">
+
+          <div class="card">
+            <div class="card-head"><h4>触发词</h4><span class="side">命中即路由到本 Skill</span></div>
+            <div class="tag-row" id="skillTriggers"></div>
+            <div class="hint" style="margin-top:10px;font:400 11.5px 'Geist',sans-serif;color:var(--ink-3);">口语说法比术语更容易命中，建议每个 Skill 至少写 3 条。</div>
+          </div>
+
+          <div class="card">
+            <div class="card-head"><h4>描述</h4><span class="side">description</span></div>
+            <p style="margin:0;font:400 13.5px 'Geist',sans-serif;line-height:1.65;color:var(--ink-2);" data-field="sDesc">解析 PRD，按模块拆成 Spec 目录树，输出 YAML + Markdown 双格式。</p>
+          </div>
+
+          <div class="card">
+            <div class="card-head"><h4>SKILL.md</h4><span class="side">frontmatter</span></div>
+            <pre class="code"><span class="c-dim">---</span>
+<span class="c-key">name</span>: prd-to-spec
+<span class="c-key">description</span>: <span class="c-str">解析 PRD，按模块拆成 Spec 目录树，输出 YAML + Markdown 双格式。</span>
+<span class="c-key">agent_created</span>: <span class="c-str">true</span>
+<span class="c-dim">---</span>
+
+<span class="c-com"># 工作流</span>
+1. 通读 PRD，抽出一二级模块
+2. 按模块建目录，每个模块输出 spec.yaml + spec.md
+3. 字段缺失时先反问，不要自行补全业务规则
+4. 最后输出一份模块清单便于复查</pre>
+          </div>
+
+          <div class="grid2">
+            <div class="card">
+              <div class="card-head"><h4>文件</h4><span class="side" data-field="sFiles">4 个文件 · 2 个脚本</span></div>
+              <div class="kv"><div class="k">SKILL.md<small>入口定义</small></div><div class="v mono">2.1 KB</div></div>
+              <div class="kv"><div class="k">scripts/parse_prd.py</div><div class="v mono">6.4 KB</div></div>
+              <div class="kv"><div class="k">scripts/render_spec.py</div><div class="v mono">4.8 KB</div></div>
+              <div class="kv"><div class="k">references/template.md</div><div class="v mono">1.2 KB</div></div>
+            </div>
+
+            <div class="card">
+              <div class="card-head"><h4>授权给 Agent</h4><span class="side">routing</span></div>
+              <div class="kv"><div class="k">Terry</div><div class="v"><div class="switch" role="switch" aria-checked="true" tabindex="0" aria-label="Terry"></div></div></div>
+              <div class="kv"><div class="k">DocWriter</div><div class="v"><div class="switch" role="switch" aria-checked="true" tabindex="0" aria-label="DocWriter"></div></div></div>
+              <div class="kv"><div class="k">Porter</div><div class="v"><div class="switch" role="switch" aria-checked="false" tabindex="0" aria-label="Porter"></div></div></div>
+              <div class="kv"><div class="k">Ksher Audit</div><div class="v"><div class="switch" role="switch" aria-checked="false" tabindex="0" aria-label="Ksher Audit"></div></div></div>
+            </div>
+          </div>
+
+        </div>
+
+        <div class="view-foot">
+          <span class="foot-note">最近调用 · 今天 11:26 · 耗时 24.6s</span>
+          <div style="display:flex;gap:8px;"><button class="btn">导出</button><button class="btn primary">保存</button></div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  /* =========================================================
+     Module switching — rail ↔ list pane ↔ view
+     ========================================================= */
+  var MODULES = {
+    chat:   '对话',
+    agents: 'Agents',
+    groups: '工作群组',
+    kb:     '知识库',
+    mcp:    'MCP 管理',
+    skills: 'Skills'
+  };
+
+  var crumbModule = document.getElementById('crumbModule');
+  var crumbItem   = document.getElementById('crumbItem');
+
+  function switchModule(mod) {
+    if (!MODULES[mod]) return;
+
+    document.querySelectorAll('.rail-item[data-mod]').forEach(function (b) {
+      if (b.getAttribute('aria-label') === '设置') return;      // keep 设置 out of the tab group
+      b.classList.toggle('active', b.dataset.mod === mod);
+    });
+    document.querySelectorAll('.pane').forEach(function (p) {
+      p.classList.toggle('on', p.dataset.pane === mod);
+    });
+    document.querySelectorAll('.view').forEach(function (v) {
+      v.classList.toggle('on', v.dataset.view === mod);
+    });
+    crumbModule.textContent = MODULES[mod];
+  }
+
+  document.querySelectorAll('.rail-item[data-mod]').forEach(function (btn) {
+    if (btn.getAttribute('aria-label') === '设置') return;
+    btn.addEventListener('click', function () { switchModule(btn.dataset.mod); });
+  });
+
+  /* =========================================================
+     Generic field binding: row[data-fields] → [data-field] in same module
+     ========================================================= */
+  function bindRow(row) {
+    var raw = row.getAttribute('data-fields');
+    if (!raw) return;
+    var data;
+    try { data = JSON.parse(raw); } catch (e) { return; }
+
+    var view = document.querySelector('.view[data-view="' + row.closest('.pane').dataset.pane + '"]');
+    if (!view) return;
+
+    Object.keys(data).forEach(function (key) {
+      view.querySelectorAll('[data-field="' + key + '"]').forEach(function (el) {
+        // cName renders as "名字 · <em>定位</em>" — rebuild with nodes, never innerHTML
+        if (key === 'cName' && data[key].indexOf(' · ') > -1) {
+          var parts = data[key].split(' · ');
+          el.textContent = parts[0] + ' · ';
+          var em = document.createElement('em');
+          em.textContent = parts.slice(1).join(' · ');
+          el.appendChild(em);
+        } else {
+          el.textContent = data[key];
+        }
+      });
+    });
+
+    var first = view.querySelector('.vh-name, .who');
+    if (first && first.textContent) crumbItem.textContent = first.textContent.replace(/\s+/g, ' ').trim();
+  }
+
+  document.querySelectorAll('.pane').forEach(function (pane) {
+    pane.querySelectorAll('.row').forEach(function (row) {
+      row.addEventListener('click', function () {
+        pane.querySelectorAll('.row').forEach(function (r) { r.classList.remove('active'); });
+        row.classList.add('active');
+        bindRow(row);
+      });
+      row.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); row.click(); }
+      });
+    });
+  });
+
+  /* =========================================================
+     Agent config — each agent carries its own API settings
+     ========================================================= */
+  var PROVIDERS = {
+    deepseek:  { label: 'DeepSeek',      base: 'https://api.deepseek.com/v1',                       models: ['deepseek-chat', 'deepseek-reasoner', 'deepseek-coder'] },
+    openai:    { label: 'OpenAI',        base: 'https://api.openai.com/v1',                         models: ['gpt-4o', 'gpt-4.1', 'gpt-4o-mini', 'o3-mini'] },
+    anthropic: { label: 'Anthropic',     base: 'https://api.anthropic.com/v1',                      models: ['claude-sonnet-4-5', 'claude-opus-4-1', 'claude-haiku-4-5'] },
+    qwen:      { label: '通义千问',       base: 'https://dashscope.aliyuncs.com/compatible-mode/v1', models: ['qwen-plus', 'qwen-max', 'qwen-turbo'] },
+    moonshot:  { label: 'Moonshot',      base: 'https://api.moonshot.cn/v1',                        models: ['moonshot-v1-8k', 'moonshot-v1-32k', 'moonshot-v1-128k'] },
+    local:     { label: '本地 Relay',     base: 'http://127.0.0.1:4444/v1',                          models: ['deepseek-v4', 'glm-4.6', 'qwen3-coder'] },
+    custom:    { label: '自定义',         base: '',                                                  models: ['custom-model'] }
+  };
+
+  var AGENTS = {
+    terry: {
+      name: 'Terry', role: '日常任务助理', initial: 'T', tint: 'indigo',
+      desc: '负责本地文件、Obsidian 与日程的默认执行者',
+      provider: 'deepseek', base: 'https://api.deepseek.com/v1',
+      key: 'sk-9f2c41ab7de04c8eb1f6a0d3', model: 'deepseek-chat',
+      temp: 0.3, maxTok: 4096, enabled: true,
+      tools: ['file_search', 'file_read', 'file_write', 'rag_query', 'obsidian_sync'],
+      skills: ['prd-to-spec'], kb: ['rag-notes', 'medical'],
+      prompt: '你是 Terry，用户的日常任务助理。\n\n执行约定：\n1. 动笔前先确认方向，允许用一句话反问；\n2. 输出优先表格 / 列表，不要长段落铺陈；\n3. 涉及文件写入、删除、外部请求，先说明再执行；\n4. 回答里出现的事实要能从工具结果或知识库溯源。\n\n当前环境：{{workspace}} · 用户 {{user.name}} · 时间 {{now}}'
+    },
+    porter: {
+      name: 'Porter', role: '发布工程师', initial: 'P', tint: 'sky',
+      desc: '中小企业应用发布，SSH + Docker 部署',
+      provider: 'qwen', base: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+      key: 'sk-dash-7c1e09b4a2f38d51', model: 'qwen-plus',
+      temp: 0.1, maxTok: 8192, enabled: true,
+      tools: ['ssh_deploy', 'file_read', 'github_pr'],
+      skills: ['excel-handler'], kb: ['lingscape'],
+      prompt: '你是 Porter，负责应用发布。\n\n硬约束：\n1. 生产环境操作前必须复述一遍目标主机与版本号；\n2. 只走已登记的发布窗口，窗口外一律挂起；\n3. 每一步都要能回滚，回滚命令一并给出。'
+    },
+    doc: {
+      name: 'DocWriter', role: '文档写手', initial: 'D', tint: 'teal',
+      desc: '长文写作与知识库整理，偏好表格化输出',
+      provider: 'local', base: 'http://127.0.0.1:4444/v1',
+      key: 'relay-local-no-key', model: 'deepseek-v4',
+      temp: 0.6, maxTok: 16384, enabled: true,
+      tools: ['file_read', 'file_write', 'rag_query', 'obsidian_sync'],
+      skills: ['prd-to-spec', 'wenwei-对齐'], kb: ['rag-notes', 'medical'],
+      prompt: '你是 DocWriter。默认输出表格与清单，不写长段落。\n涉及事实必须标注来源文件与段落。'
+    },
+    audit: {
+      name: 'Ksher Audit', role: '合规审计', initial: 'K', tint: 'clay',
+      desc: '跨境支付 KYC / KYB 校验与台账导出',
+      provider: 'anthropic', base: 'https://api.anthropic.com/v1',
+      key: 'sk-ant-4e8b02ff19c7a6d3', model: 'claude-sonnet-4-5',
+      temp: 0.0, maxTok: 8192, enabled: false,
+      tools: ['file_read', 'rag_query'],
+      skills: [], kb: ['kyb'],
+      prompt: '你是合规审计助手。任何结论都要落到具体条款或台账条目；\n不确定时必须明说「证据不足」，不做推断。'
+    },
+    review: {
+      name: 'CodeReview', role: '代码评审', initial: 'R', tint: 'violet',
+      desc: 'Vue3 + TS 变更审查：类型、响应式、体积、可访问性',
+      provider: 'openai', base: 'https://api.openai.com/v1',
+      key: 'sk-proj-1b93de05c8f24a71', model: 'gpt-4.1',
+      temp: 0.2, maxTok: 8192, enabled: true,
+      tools: ['file_read', 'github_pr'],
+      skills: ['frontend-code-review'], kb: [],
+      prompt: '你是资深前端评审。按 类型收敛 / 响应式陷阱 / 构建体积 / 可访问性 四类给意见。\n每条意见必须给出行号与改法，不要泛泛而谈。'
+    }
+  };
+
+  var el = {
+    avatar:   document.getElementById('agAvatar'),
+    title:    document.getElementById('agTitle'),
+    provTag:  document.getElementById('agProviderTag'),
+    modelTag: document.getElementById('agModelTag'),
+    stateTag: document.getElementById('agStateTag'),
+    enable:   document.getElementById('agEnable'),
+    name:     document.getElementById('agName'),
+    role:     document.getElementById('agRole'),
+    desc:     document.getElementById('agDesc'),
+    provider: document.getElementById('agProvider'),
+    base:     document.getElementById('agBase'),
+    key:      document.getElementById('agKey'),
+    model:    document.getElementById('agModel'),
+    temp:     document.getElementById('agTemp'),
+    tempVal:  document.getElementById('agTempVal'),
+    maxTok:   document.getElementById('agMaxTok'),
+    prompt:   document.getElementById('agPrompt'),
+    tools:    document.getElementById('agTools'),
+    skills:   document.getElementById('agSkills'),
+    kb:       document.getElementById('agKb'),
+    foot:     document.getElementById('agFoot')
+  };
+
+  function fillModels(provider, selected) {
+    var list = PROVIDERS[provider].models;
+    el.model.innerHTML = '';
+    list.forEach(function (m) {
+      var opt = document.createElement('option');
+      opt.value = m;
+      opt.textContent = m;
+      if (m === selected) opt.selected = true;
+      el.model.appendChild(opt);
+    });
+  }
+
+  function setChips(container, values) {
+    container.querySelectorAll('.chip-pick').forEach(function (c) {
+      c.setAttribute('aria-pressed', values.indexOf(c.dataset.v) > -1 ? 'true' : 'false');
+    });
+  }
+
+  function loadAgent(id) {
+    var a = AGENTS[id];
+    if (!a) return;
+
+    el.avatar.className = 'avatar lg ' + a.tint;
+    el.avatar.innerHTML = '<span class="dot' + (a.enabled ? (id === 'terry' ? ' thinking' : '') : ' idle') + '"></span>' + a.initial;
+    el.title.innerHTML = a.name + ' · <em>' + a.role + '</em>';
+    el.provTag.textContent = PROVIDERS[a.provider].label;
+    el.modelTag.textContent = a.model;
+    el.stateTag.textContent = a.enabled ? '已启用' : '已停用';
+    el.stateTag.className = 'tag ' + (a.enabled ? 'ok' : '');
+    el.enable.setAttribute('aria-checked', String(a.enabled));
+
+    el.name.value = a.name;
+    el.role.value = a.role;
+    el.desc.value = a.desc;
+    el.provider.value = a.provider;
+    el.base.value = a.base;
+    el.key.value = a.key;
+    el.temp.value = a.temp;
+    el.tempVal.textContent = Number(a.temp).toFixed(2);
+    el.maxTok.value = a.maxTok;
+    el.prompt.value = a.prompt;
+
+    fillModels(a.provider, a.model);
+    setChips(el.tools, a.tools);
+    setChips(el.skills, a.skills);
+    setChips(el.kb, a.kb);
+
+    el.foot.textContent = '配置来自 ' + PROVIDERS[a.provider].label + ' · 与其他角色相互隔离';
+    crumbItem.textContent = a.name + ' · ' + a.role;
+  }
+
+  document.querySelectorAll('.pane[data-pane="agents"] .row').forEach(function (row) {
+    row.addEventListener('click', function () { loadAgent(row.dataset.agent); });
+  });
+
+  /* Provider change → auto-fill base URL + model list */
+  el.provider.addEventListener('change', function () {
+    var p = PROVIDERS[el.provider.value];
+    el.base.value = p.base;
+    fillModels(el.provider.value, p.models[0]);
+    el.modelTag.textContent = p.models[0];
+    el.provTag.textContent = p.label;
+    if (el.provider.value === 'custom') el.base.focus();
+  });
+
+  el.model.addEventListener('change', function () { el.modelTag.textContent = el.model.value; });
+  el.temp.addEventListener('input', function () { el.tempVal.textContent = Number(el.temp.value).toFixed(2); });
+
+  /* API key visibility */
+  document.getElementById('agKeyToggle').addEventListener('click', function () {
+    var shown = el.key.type === 'text';
+    el.key.type = shown ? 'password' : 'text';
+    this.textContent = shown ? '显示' : '隐藏';
+  });
+
+  /* Test connection */
+  document.getElementById('agTest').addEventListener('click', function () {
+    var btn = this;
+    var original = btn.textContent.trim();
+    btn.textContent = '测试中…';
+    btn.disabled = true;
+    setTimeout(function () {
+      btn.textContent = '✓ 连通 · 128 ms';
+      setTimeout(function () { btn.textContent = original; btn.disabled = false; }, 1800);
+    }, 900);
+  });
+
+  /* Save */
+  document.getElementById('agSave').addEventListener('click', function () {
+    var d = new Date();
+    var hh = String(d.getHours()).padStart(2, '0');
+    var mm = String(d.getMinutes()).padStart(2, '0');
+    el.foot.textContent = '已保存 · 今天 ' + hh + ':' + mm;
+  });
+
+  /* Chip multi-select */
+  document.querySelectorAll('.chip-pick').forEach(function (c) {
+    c.addEventListener('click', function () {
+      c.setAttribute('aria-pressed', c.getAttribute('aria-pressed') === 'true' ? 'false' : 'true');
+    });
+  });
+
+  /* Switches */
+  document.querySelectorAll('.switch').forEach(function (sw) {
+    function toggle() {
+      sw.setAttribute('aria-checked', sw.getAttribute('aria-checked') === 'true' ? 'false' : 'true');
+    }
+    sw.addEventListener('click', toggle);
+    sw.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); }
+    });
+  });
+
+  /* Segmented controls (协作模式 / etc.) */
+  document.querySelectorAll('.seg').forEach(function (seg) {
+    seg.querySelectorAll('button').forEach(function (b) {
+      b.addEventListener('click', function () {
+        seg.querySelectorAll('button').forEach(function (x) { x.classList.remove('active'); });
+        b.classList.add('active');
+        if (b.dataset.mode) {
+          var view = b.closest('.view');
+          view.querySelectorAll('[data-field="gMode"]').forEach(function (t) { t.textContent = b.dataset.mode; });
+        }
+      });
+    });
+  });
+
+  /* =========================================================
+     Trace collapse
+     ========================================================= */
+  document.querySelectorAll('.trace-toggle').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var open = btn.closest('.trace').classList.toggle('open');
+      btn.setAttribute('aria-expanded', String(open));
+    });
+  });
+
+  /* =========================================================
+     RAG source drawer
+     ========================================================= */
+  var drawer = document.getElementById('sourceDrawer');
+  var scrim  = document.getElementById('drawerScrim');
+  var closer = document.getElementById('drawerClose');
+  var sources = drawer.querySelectorAll('.src');
+
+  function openDrawer(idx) {
+    drawer.classList.add('open');
+    drawer.setAttribute('aria-hidden', 'false');
+    scrim.classList.add('on');
+    sources.forEach(function (s) {
+      s.classList.toggle('hot', idx != null && s.dataset.idx === String(idx));
+    });
+    if (idx != null) {
+      var hot = drawer.querySelector('.src.hot');
+      if (hot && hot.scrollIntoView) hot.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    }
+    closer.focus();
+  }
+  function closeDrawer() {
+    drawer.classList.remove('open');
+    drawer.setAttribute('aria-hidden', 'true');
+    scrim.classList.remove('on');
+    sources.forEach(function (s) { s.classList.remove('hot'); });
+  }
+
+  document.querySelectorAll('.cite').forEach(function (c) {
+    c.addEventListener('click', function () { openDrawer(c.dataset.src); });
+  });
+  document.getElementById('traceChip').addEventListener('click', function () { openDrawer(null); });
+  closer.addEventListener('click', closeDrawer);
+  scrim.addEventListener('click', closeDrawer);
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && drawer.classList.contains('open')) closeDrawer();
+  });
+
+  /* =========================================================
+     Composers
+     ========================================================= */
+  function wireComposer(inputId, sendBtnId, boxId) {
+    var ta  = document.getElementById(inputId);
+    var btn = document.getElementById(sendBtnId);
+    var box = document.getElementById(boxId);
+    if (!ta || !btn || !box) return;
+
+    function autosize() {
+      ta.style.height = 'auto';
+      ta.style.height = Math.min(ta.scrollHeight, 180) + 'px';
+    }
+    function send() {
+      var text = ta.value.trim();
+      if (!text) return;
+      var msg = document.createElement('div');
+      msg.className = 'msg user';
+      var bubble = document.createElement('div');
+      bubble.className = 'msg-bubble';
+      bubble.textContent = text;                 // textContent — never innerHTML
+      var av = document.createElement('div');
+      av.className = 'av';
+      av.textContent = '唐';
+      msg.appendChild(bubble);
+      msg.appendChild(av);
+      box.appendChild(msg);
+      ta.value = '';
+      autosize();
+      box.scrollTop = box.scrollHeight;
+    }
+
+    ta.addEventListener('input', autosize);
+    ta.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
+    });
+    btn.addEventListener('click', send);
+    autosize();
+  }
+
+  wireComposer('chatInput', 'chatSend', 'chatMessages');
+  wireComposer('groupInput', 'groupSend', 'groupMessages');
+
+  /* =========================================================
+     Skill triggers → chips
+     ========================================================= */
+  var trigBox = document.getElementById('skillTriggers');
+  function renderTriggers(row) {
+    var raw = row.getAttribute('data-fields');
+    if (!raw || !trigBox) return;
+    var data;
+    try { data = JSON.parse(raw); } catch (e) { return; }
+    trigBox.innerHTML = '';
+    (data.sTrig || '').split(',').map(function (s) { return s.trim(); }).filter(Boolean).forEach(function (t) {
+      var span = document.createElement('span');
+      span.className = 'tag brand';
+      span.textContent = t;                     // textContent
+      trigBox.appendChild(span);
+    });
+  }
+  document.querySelectorAll('.pane[data-pane="skills"] .row').forEach(function (row) {
+    row.addEventListener('click', function () { renderTriggers(row); });
+  });
+  var firstSkill = document.querySelector('.pane[data-pane="skills"] .row.active');
+  if (firstSkill) renderTriggers(firstSkill);
+
+  /* Boot */
+  loadAgent('terry');
+  switchModule('chat');
+})();
+</script>
+
+</body>
+</html>

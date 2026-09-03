@@ -1,21 +1,3 @@
-export interface DoubaoMessage {
-  role: 'user' | 'assistant' | 'system'
-  content: string
-  timestamp: number
-}
-
-export interface DoubaoDiagnostic {
-  url: string
-  title: string
-  bodyText: string
-  hasInput: boolean
-  hasTextarea: boolean
-  hasContentEditable: boolean
-  pageHint: string
-}
-
-export type DoubaoStatus = 'idle' | 'connecting' | 'ready' | 'generating' | 'error'
-
 export interface IpcApi {
   'app:info': () => Promise<{
     name: string
@@ -49,23 +31,6 @@ export interface IpcApi {
   'window:list': () => Promise<Array<{ id: number; title: string; focused: boolean }>>
   'window:focus': (id: number) => Promise<boolean>
   'window:reloadMenu': () => Promise<{ ok: true }>
-  'doubao:connect': () => Promise<{ status: DoubaoStatus; preloadPath: string }>
-  'doubao:disconnect': () => Promise<void>
-  'doubao:status': () => Promise<{ status: DoubaoStatus; hasWebview: boolean }>
-  'doubao:diagnose': () => Promise<DoubaoDiagnostic>
-  'doubao:send': (data: {
-    prompt: string
-    waitForCompletion?: boolean
-  }) => Promise<{
-    ok: boolean
-    error?: string
-    messages?: DoubaoMessage[]
-    xml?: string
-  }>
-  'doubao:messages': () => Promise<DoubaoMessage[]>
-  'doubao:extract': () => Promise<string>
 }
-
-export type NavView = 'dashboard' | 'users' | 'files' | 'windows' | 'doubao'
 
 export type UserRow = { id: number; name: string; email: string }
