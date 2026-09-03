@@ -246,7 +246,7 @@ onMounted(async () => {
     <template v-if="form.id">
       <Card idx="1" title="基本信息" side="display">
         <Field label="显示名称" hint="Agent 选型列表中展示">
-          <TextInput v-model="form.name" placeholder="如 DeepSeek Chat" @input="markDirty" />
+          <TextInput v-model="form.name" placeholder="如 DeepSeek Chat" @update:model-value="markDirty" />
         </Field>
       </Card>
 
@@ -256,7 +256,7 @@ onMounted(async () => {
         </Field>
         <div class="mt-3.5">
           <Field label="Base URL" hint="OpenAI 兼容端点，以 /v1 结尾">
-            <TextInput v-model="form.baseUrl" mono placeholder="https://api.deepseek.com/v1" @input="markDirty" />
+            <TextInput v-model="form.baseUrl" mono placeholder="https://api.deepseek.com/v1" @update:model-value="markDirty" />
           </Field>
         </div>
         <div class="mt-3.5">
@@ -267,7 +267,7 @@ onMounted(async () => {
                 mono
                 :type="keyShown ? 'text' : 'password'"
                 placeholder="sk-..."
-                @input="markDirty"
+                @update:model-value="markDirty"
               />
               <AppButton size="sm" @click="keyShown = !keyShown">{{ keyShown ? '隐藏' : '显示' }}</AppButton>
             </div>
@@ -275,7 +275,13 @@ onMounted(async () => {
         </div>
         <div class="mt-3.5">
           <Field label="模型 ID" hint="可从建议选或直接填网关侧模型名">
-            <TextInput v-model="form.model" mono list="model-id-suggestions" placeholder="deepseek-chat" @input="markDirty" />
+            <TextInput
+              v-model="form.model"
+              mono
+              list="model-id-suggestions"
+              placeholder="deepseek-chat"
+              @update:model-value="markDirty"
+            />
             <datalist id="model-id-suggestions">
               <option v-for="m in presetModels" :key="m" :value="m" />
             </datalist>
