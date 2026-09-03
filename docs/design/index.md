@@ -11,5 +11,6 @@
 | [05-群组记忆架构](./05-群组记忆架构) | 共享黑板 vs 分角色视角（≥2）+ 混合推荐 |
 | [06-插件运行时 Cordis](./06-插件运行时-Cordis) | **`@deepseek-ai/cordis` 为本软件插件化标准**；与 LangGraph / Electrum 边界 |
 | [07-沙箱方案](./07-沙箱方案) | **已锁定**：独立工作区 + 受限 `child_process`（P0 默认）；Docker 仅 P1 |
+| [08-流式对话与 Markdown 渲染](./08-流式对话与Markdown渲染) | LangGraph `astream` → IPC `ChatEvent`；执行过程与正文分离；markdown-it + Shiki/hljs + DOMPurify 流式渲染 |
 
 > 实现仍遵循红线：能力在 `@chatvein/*`，app / service 只是调用者；插件内核用 Cordis，壳用 Electrum；**内嵌沙箱用 local child_process**。

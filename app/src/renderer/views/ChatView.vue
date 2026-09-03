@@ -5,6 +5,7 @@ import ChatMessage from '../components/chat/ChatMessage.vue'
 import AgentTrace from '../components/chat/AgentTrace.vue'
 import GuardrailAlert from '../components/chat/GuardrailAlert.vue'
 import Composer from '../components/chat/Composer.vue'
+import ThinkingPanel from '../components/chat/ThinkingPanel.vue'
 import SourceDrawer from '../components/layout/SourceDrawer.vue'
 import ChipButton from '../components/ui/ChipButton.vue'
 import AppIcon from '../components/AppIcon.vue'
@@ -45,6 +46,7 @@ function onSend(text: string) {
         var(--color-canvas);
     "
   >
+    <div class="grid h-full min-h-0" style="grid-template-columns: minmax(0, 1fr) 240px">
     <section class="grid h-full min-h-0" style="grid-template-rows: auto 1fr auto">
       <!-- header -->
       <header class="flex items-center justify-between gap-4 px-[26px] pb-3 pt-4">
@@ -169,13 +171,18 @@ function onSend(text: string) {
         </template>
       </Composer>
 
-      <SourceDrawer
-        :open="drawerOpen"
-        :sources="sources"
-        :hot-idx="drawerHot"
-        sub="pgvector · top 4 · 命中 3 段"
-        @close="drawerOpen = false"
-      />
     </section>
+
+    <!-- AI 实时思考侧栏（仅对话模块） -->
+    <ThinkingPanel :steps="runningTrace" />
+    </div>
+
+    <SourceDrawer
+      :open="drawerOpen"
+      :sources="sources"
+      :hot-idx="drawerHot"
+      sub="pgvector · top 4 · 命中 3 段"
+      @close="drawerOpen = false"
+    />
   </main>
 </template>
