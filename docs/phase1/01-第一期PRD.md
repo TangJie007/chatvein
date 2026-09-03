@@ -76,6 +76,7 @@
 3. CLI 与 GUI 必须跑同一份能力代码，行为一致（不允许各写一套）。
 4. 所有工具输出进上下文前必须经过截断器；所有 `exec` 必须过白名单。
 5. "完成"只能由 verify 的结构化输出判定。
+6. **Harness 插件化统一使用 `@deepseek-ai/cordis`**；禁止混装上游 `cordis` / `@cordisjs/*`；禁止 `@electrum/*` / 渲染进程 import Cordis。
 
 ---
 

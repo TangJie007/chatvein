@@ -2,13 +2,15 @@
   "name": "chatvein",
   "version": "0.1.0",
   "private": true,
-  "description": "NestJS-inspired MVC framework for Electron (@electrum/*)",
+  "description": "Chatvein/Forge — @electrum/* Electron shell framework + @chatvein/* Agent Harness",
   "packageManager": "pnpm@11.22.0",
   "scripts": {
-    "build": "pnpm --filter @electrum/common --filter @electrum/core --filter @electrum/preload --filter @electrum/client --filter @electrum/testing run build",
+    "build": "pnpm --filter @electrum/common --filter @electrum/core --filter @electrum/preload --filter @electrum/client --filter @electrum/testing --filter @electrum/codegen run build && pnpm --filter @chatvein/* run build",
+    "build:harness": "pnpm --filter @chatvein/* run build",
     "dev:app": "pnpm --filter @electrum/example-basic dev",
     "build:app": "pnpm --filter @electrum/example-basic build",
-    "test": "pnpm --filter @electrum/core --filter @electrum/preload --filter @electrum/client run test",
+    "test": "pnpm --filter @electrum/core --filter @electrum/preload --filter @electrum/client run test && pnpm --filter @chatvein/* run test",
+    "test:harness": "pnpm --filter @chatvein/* run test",
     "clean": "pnpm -r exec rimraf dist out",
     "clean:lock": "rimraf pnpm-lock.yaml node_modules",
     "docs:dev": "vitepress dev docs",
@@ -16,7 +18,7 @@
     "docs:preview": "vitepress preview docs"
   },
   "engines": {
-    "node": ">=22"
+    "node": ">=22.12.0"
   },
   "license": "MIT",
   "devDependencies": {

@@ -1,0 +1,49 @@
+{
+  "name": "@chatvein/core",
+  "version": "0.1.0",
+  "description": "Harness facade and runtime assembly: start/pause/abort/resume/intervene lifecycle over all @chatvein capabilities",
+  "main": "./dist/index.js",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.mts",
+        "default": "./dist/index.mjs"
+      },
+      "require": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "default": "./dist/index.js"
+    }
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@chatvein/common": "workspace:*",
+    "@chatvein/compiler": "workspace:*",
+    "@chatvein/context": "workspace:*",
+    "@chatvein/models": "workspace:*",
+    "@chatvein/observability": "workspace:*",
+    "@chatvein/orchestrator": "workspace:*",
+    "@chatvein/sandbox": "workspace:*",
+    "@chatvein/tools": "workspace:*",
+    "@chatvein/verifier": "workspace:*",
+    "@deepseek-ai/cordis": "^4.0.2",
+    "@deepseek-ai/cordis-plugin-include": "^1.0.7",
+    "@deepseek-ai/cordis-plugin-loader": "^1.0.3",
+    "@deepseek-ai/cordis-plugin-timer": "^1.1.4"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "tsup": "^8.5.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.0"
+  },
+  "license": "MIT"
+}
