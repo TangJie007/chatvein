@@ -1,10 +1,13 @@
 /**
  * @chatvein/models
- *
- * OpenAI-compatible model gateway: ChatModelLike abstraction, strong/medium/weak
- * tiered routing, fallback chain, per-model token metering and concurrency
- * control. Wraps @langchain/openai ChatOpenAI pointed at the competition gateway.
+ * OpenAI 兼容网关：直连适配 + 计量 + 分档路由降级。
  */
 
 export const CHATVEIN_MODELS_VERSION = '0.1.0'
-export {}
+
+export {
+  OpenAICompatibleChatModel,
+  type OpenAICompatibleConfig,
+} from './openai-compatible'
+export { MeteredChatModel, type MeterListener } from './meter'
+export { ModelRouter, type ModelRouterOptions } from './router'
