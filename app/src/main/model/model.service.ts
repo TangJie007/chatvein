@@ -61,7 +61,7 @@ export class ModelService {
       apiKey: input.apiKey ?? '',
       model: modelId,
       temperature: clamp(input.temperature ?? 0.3, 0, 2),
-      maxTokens: Math.round(input.maxTokens ?? 4096),
+      maxTokens: normalizeMaxTokens(input.maxTokens ?? 0),
       enabled: input.enabled ?? true,
       createdAt: now,
       updatedAt: now,
@@ -81,7 +81,7 @@ export class ModelService {
       ...stripUndefined(patch),
       protocol: 'openai',
       temperature: patch.temperature != null ? clamp(patch.temperature, 0, 2) : prev.temperature,
-      maxTokens: patch.maxTokens != null ? Math.round(patch.maxTokens) : prev.maxTokens,
+      maxTokens: patch.maxTokens != null ? normalizeMaxTokens(patch.maxTokens) : prev.maxTokens,
       updatedAt: Date.now(),
     }
     data.models[idx] = next
@@ -174,6 +174,13 @@ export class ModelService {
 
 function clamp(n: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, n))
+}
+
+/** 0 = 自动；其余钳到 1024–16384 */
+function normalizeMaxTokens(n: number): number {
+  const v = Math.round(n)
+  if (v <= 0) return 0
+  return clamp(v, 1024, 16384)
 }
 
 function stripUndefined<T extends object>(obj: T): Partial<T> {

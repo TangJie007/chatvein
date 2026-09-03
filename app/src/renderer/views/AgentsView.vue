@@ -276,7 +276,7 @@ onMounted(async () => {
         </div>
         <div>
           <div class="text-[10.5px] uppercase tracking-[0.4px] text-[var(--color-ink-3)]">Max tokens</div>
-          <div class="mt-0.5 font-mono">{{ selectedModel.maxTokens }}</div>
+          <div class="mt-0.5 font-mono">{{ selectedModel.maxTokens > 0 ? selectedModel.maxTokens : '自动' }}</div>
         </div>
       </div>
       <div class="mt-3 text-xs text-[var(--color-ink-3)]">

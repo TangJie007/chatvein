@@ -40,7 +40,7 @@ function emptyForm(): ModelForm {
     apiKey: '',
     model: '',
     temperature: 0.3,
-    maxTokens: 4096,
+    maxTokens: 0,
     enabled: true,
   }
 }
@@ -58,16 +58,23 @@ const providerLabel = computed(
 )
 
 const MAX_TOKEN_OPTIONS = [
+  { value: '0', label: '自动（由模型决定）' },
   { value: '1024', label: '1,024' },
   { value: '2048', label: '2,048' },
   { value: '4096', label: '4,096' },
   { value: '8192', label: '8,192' },
+  { value: '16384', label: '16,384' },
 ]
 
 const maxTokensValue = computed({
-  get: () => String(Math.min(form.maxTokens || 4096, 8192)),
+  get: () => {
+    const n = form.maxTokens
+    if (!n || n <= 0) return '0'
+    return String(Math.min(n, 16384))
+  },
   set: (v: string) => {
-    form.maxTokens = Math.min(Number(v) || 4096, 8192)
+    const n = Number(v)
+    form.maxTokens = !n || n <= 0 ? 0 : Math.min(n, 16384)
     markDirty()
   },
 })
@@ -145,7 +152,7 @@ function collectPatch(): ModelInput {
     apiKey: form.apiKey,
     model: form.model,
     temperature: form.temperature,
-    maxTokens: Math.min(form.maxTokens, 8192),
+    maxTokens: form.maxTokens <= 0 ? 0 : Math.min(form.maxTokens, 16384),
     enabled: form.enabled,
   }
 }
@@ -309,7 +316,7 @@ onMounted(async () => {
               @input="markDirty"
             />
           </Field>
-          <Field label="最大输出 tokens">
+          <Field label="最大输出 tokens" hint="自动 = 不传上限，由网关/模型默认；固定值用于防止过长烧钱">
             <SelectInput v-model="maxTokensValue" :options="maxTokenOptions" />
           </Field>
         </div>

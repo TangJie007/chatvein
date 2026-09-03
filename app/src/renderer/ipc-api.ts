@@ -62,6 +62,7 @@ export interface ModelConfig {
   apiKey: string
   model: string
   temperature: number
+  /** 0 = 自动（不传 max_tokens） */
   maxTokens: number
   enabled: boolean
   createdAt: number

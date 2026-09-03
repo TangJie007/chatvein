@@ -14,6 +14,10 @@ export interface ModelConfig {
   /** 网关侧模型 id，如 deepseek-chat */
   model: string
   temperature: number
+  /**
+   * 单次最大输出 token。
+   * `0` = 自动（调用时不传 max_tokens，由网关/模型默认决定）。
+   */
   maxTokens: number
   enabled: boolean
   createdAt: number
