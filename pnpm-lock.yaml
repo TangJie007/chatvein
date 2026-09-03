@@ -41,6 +41,9 @@ importers:
       '@headlessui/vue':
         specifier: ^1.7.23
         version: 1.7.23(vue@3.5.41(typescript@5.9.3))
+      es-toolkit:
+        specifier: ^1.52.0
+        version: 1.52.0
       vue:
         specifier: ^3.5.0
         version: 3.5.41(typescript@5.9.3)
@@ -118,6 +121,9 @@ importers:
 
   packages/chatvein/common:
     dependencies:
+      es-toolkit:
+        specifier: ^1.52.0
+        version: 1.52.0
       zod:
         specifier: ^4.5.4
         version: 4.5.4
@@ -2039,6 +2045,9 @@ packages:
 
   es-module-lexer@2.3.2:
     resolution: {integrity: sha512-poHGpORABojJJucnV9KbOavETW8lBVnphkW77ER5/BQ5Fz7oXSoCNek7IH3vR5nRjdsEz926ibFYX8KtLQmdyw==}
+
+  es-toolkit@1.52.0:
+    resolution: {integrity: sha512-XTNEJQh1tY1ZJVcf6ayP/2n4ZPyaHlW2FWs7xvw5ddPuhUVjLD3olQVQS7kf58JbAB48iL0uL/jerTrjtV3lDA==}
 
   esbuild@0.21.5:
     resolution: {integrity: sha512-mg3OPMV4hXywwpoDxu3Qda5xCKQi+vCTZq8S9J/EpkhB2HzKXq4SNFZE3+NK93JYxc8VMSep+lOUSC/RVKaBqw==}
@@ -4186,6 +4195,8 @@ snapshots:
   es-module-lexer@1.7.0: {}
 
   es-module-lexer@2.3.2: {}
+
+  es-toolkit@1.52.0: {}
 
   esbuild@0.21.5:
     optionalDependencies:

@@ -17,6 +17,7 @@
     "@electrum/core": "workspace:*",
     "@electrum/preload": "workspace:*",
     "@headlessui/vue": "^1.7.23",
+    "es-toolkit": "^1.52.0",
     "vue": "^3.5.0",
     "vue-router": "^4.5.0"
   },

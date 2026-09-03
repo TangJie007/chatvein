@@ -1,4 +1,5 @@
 import { Injectable, Inject, NotFoundException, ValidationException } from '@electrum/common'
+import { clamp } from 'es-toolkit'
 import { randomUUID } from 'node:crypto'
 import { AgentStore } from '../agent/agent.store'
 import { ModelStore } from './model.store'
@@ -170,10 +171,6 @@ export class ModelService {
   private presetModels(provider?: string): string[] {
     return PROVIDER_PRESETS.find((p) => p.value === provider)?.models ?? []
   }
-}
-
-function clamp(n: number, min: number, max: number): number {
-  return Math.min(max, Math.max(min, n))
 }
 
 /** 0 = 自动；其余钳到 1024–16384 */

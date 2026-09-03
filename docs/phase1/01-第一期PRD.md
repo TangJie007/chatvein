@@ -96,7 +96,8 @@
 5. 所有工具输出进上下文前必须经过截断器；所有 `exec` 必须过白名单。
 6. "完成"只能由 verify 的结构化输出判定（Forge 轨）；对话轨终止判定见 design/02 §7。
 7. **Harness 插件化统一使用 `@deepseek-ai/cordis`**；禁止混装上游 `cordis` / `@cordisjs/*`；禁止 `@electrum/*` / 渲染进程 import Cordis。
-8. **Agent 循环不自研**：对话 ReAct 用 LangGraph `createReactAgent`；Forge 编码用 LangGraph `StateGraph`（`orchestrator`）。
+8. **Agent 循环不自研**：对话 ReAct 用 LangChain `createAgent`（LangGraph 上跑）；Forge 编码用 LangGraph `StateGraph`（`orchestrator`）。
+9. **优先成熟第三方，不重复造轮子**：通用工具/编排/校验等能用社区成熟包就用（见 [`04-依赖选型.md`](./04-依赖选型.md) §1）；自研仅限产品差异化与架构红线。
 
 ---
 
