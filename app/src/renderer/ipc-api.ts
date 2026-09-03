@@ -48,6 +48,13 @@ export interface IpcApi {
   'agent:update': (data: { id: string; patch: AgentInput }) => Promise<AgentConfig>
   'agent:remove': (id: string) => Promise<{ ok: true }>
 
+  // ---- 普通对话 ----
+  'chat:list': () => Promise<Conversation[]>
+  'chat:get': (id: string) => Promise<Conversation>
+  'chat:create': (input?: { title?: string; agentId?: string }) => Promise<Conversation>
+  'chat:remove': (id: string) => Promise<{ ok: true }>
+  'chat:send': (input: ChatSendInput) => Promise<ChatSendResult>
+
   // ---- 应用设置（路径 / 护栏）----
   'settings:get': () => Promise<AppSettingsView>
   'settings:update': (patch: AppSettingsPatch) => Promise<AppSettingsView>
@@ -163,3 +170,37 @@ export interface AppSettingsView {
 export type AppSettingsPatch = Partial<
   Pick<AppSettingsView, 'workspaceRoot' | 'runsRoot' | 'cmdAllowlist' | 'confirmWrites' | 'reduceMotion'>
 >
+
+// ---- 普通对话 ----------------------------------------------------------
+
+export type ChatRole = 'user' | 'assistant' | 'system'
+
+export interface ChatMessage {
+  id: string
+  role: ChatRole
+  content: string
+  createdAt: number
+}
+
+export interface Conversation {
+  id: string
+  title: string
+  agentId: string
+  messages: ChatMessage[]
+  createdAt: number
+  updatedAt: number
+}
+
+export interface ChatSendInput {
+  conversationId: string
+  content: string
+  agentId?: string
+}
+
+export interface ChatSendResult {
+  conversation: Conversation
+  userMessage: ChatMessage
+  assistantMessage: ChatMessage
+  latencyMs: number
+  model: string
+}

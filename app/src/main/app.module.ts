@@ -5,11 +5,12 @@ import { UserModule } from './user/user.module'
 import { AgentModule } from './agent/agent.module'
 import { ModelModule } from './model/model.module'
 import { SettingsModule } from './settings/settings.module'
+import { ChatModule } from './chat/chat.module'
 import { AppController } from './app.controller'
 import { ConfigService } from './config.service'
 
 @Module({
-  imports: [WindowModule, FileModule, UserModule, ModelModule, AgentModule, SettingsModule],
+  imports: [WindowModule, FileModule, UserModule, ModelModule, AgentModule, SettingsModule, ChatModule],
   controllers: [AppController],
   providers: [
     ConfigService,

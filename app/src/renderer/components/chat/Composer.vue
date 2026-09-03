@@ -8,6 +8,7 @@ const props = defineProps<{
   sendLabel: string
   hint?: string
   modelValue?: string
+  disabled?: boolean
 }>()
 const emit = defineEmits<{ send: [string]; 'update:modelValue': [string] }>()
 
@@ -29,6 +30,7 @@ function autosize() {
 }
 
 function send() {
+  if (props.disabled) return
   const value = text.value.trim()
   if (!value) return
   emit('send', value)
@@ -67,8 +69,9 @@ function onKeydown(e: KeyboardEvent) {
         ref="ta"
         :value="text"
         :placeholder="placeholder"
+        :disabled="disabled"
         rows="1"
-        class="w-full resize-none border-0 bg-transparent px-1.5 pt-0.5 text-sm leading-[1.45] text-[var(--color-ink-1)] placeholder:text-[var(--color-ink-3)] focus:outline-none"
+        class="w-full resize-none border-0 bg-transparent px-1.5 pt-0.5 text-sm leading-[1.45] text-[var(--color-ink-1)] placeholder:text-[var(--color-ink-3)] focus:outline-none disabled:opacity-60"
         style="min-height: 46px; max-height: 180px"
         @input="autosize(); emit('update:modelValue', ($event.target as HTMLTextAreaElement).value)"
         @keydown="onKeydown"
@@ -84,8 +87,9 @@ function onKeydown(e: KeyboardEvent) {
         </div>
         <button
           type="button"
-          class="inline-flex items-center gap-2 rounded-xl border-0 px-4 py-2 text-[13px] font-semibold text-white shadow-[var(--shadow-brand)] transition-all duration-200 hover:-translate-y-px"
+          class="inline-flex items-center gap-2 rounded-xl border-0 px-4 py-2 text-[13px] font-semibold text-white shadow-[var(--shadow-brand)] transition-all duration-200 hover:-translate-y-px disabled:cursor-not-allowed disabled:opacity-55 disabled:hover:translate-y-0"
           style="background: linear-gradient(180deg, var(--color-brand-lite), var(--color-brand-solid))"
+          :disabled="disabled"
           @click="send"
         >
           {{ sendLabel }}

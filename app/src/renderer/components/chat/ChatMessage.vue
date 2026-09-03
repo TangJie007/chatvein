@@ -10,8 +10,10 @@ withDefaults(
     author?: string
     roleMini?: string
     time?: string
+    /** 纯文本内容；有 slot 时 slot 优先 */
+    content?: string
   }>(),
-  { tint: 'indigo', author: '', roleMini: '', time: '' },
+  { tint: 'indigo', author: '', roleMini: '', time: '', content: '' },
 )
 </script>
 
@@ -28,7 +30,7 @@ withDefaults(
     </div>
 
     <div class="min-w-0" :class="role === 'user' ? 'flex flex-col items-end' : ''">
-      <div v-if="role === 'agent' && author" class="mb-[5px] flex items-center gap-[7px] text-[11.5px] font-semibold text-[var(--color-ink-2)]">
+      <div v-if="role === 'agent' && author" class="mb-[5px] flex items-center gap-1.5 text-[11.5px] font-semibold text-[var(--color-ink-2)]">
         <span>{{ author }}</span>
         <span v-if="roleMini" class="rounded-[5px] bg-[var(--color-track)] px-1.5 py-0.5 font-mono text-[10px] font-medium text-[var(--color-ink-3)]">{{ roleMini }}</span>
         <span v-if="time" class="font-mono text-[10.5px] font-normal text-[var(--color-ink-3)]">{{ time }}</span>
@@ -42,7 +44,9 @@ withDefaults(
             : 'rounded-[var(--radius-bubble)] rounded-bl-[6px] bg-[var(--color-elevated)] text-[var(--color-ink-1)]'
         "
       >
-        <slot />
+        <slot>
+          <div class="whitespace-pre-wrap break-words">{{ content }}</div>
+        </slot>
         <div
           v-if="time && role === 'user'"
           class="mt-2 inline-flex items-center gap-1 font-mono text-[11px] font-medium uppercase tracking-[0.4px]"
