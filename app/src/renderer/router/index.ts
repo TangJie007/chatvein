@@ -15,6 +15,12 @@ const routes: RouteRecordRaw[] = [
     meta: { module: 'Agents' },
   },
   {
+    path: '/models',
+    name: 'models',
+    component: () => import('../views/ModelsView.vue'),
+    meta: { module: '模型选型' },
+  },
+  {
     path: '/groups',
     name: 'groups',
     component: () => import('../views/GroupsView.vue'),

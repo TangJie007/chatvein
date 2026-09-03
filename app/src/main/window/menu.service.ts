@@ -70,10 +70,11 @@ export class MenuService implements OnAppReady {
         submenu: [
           { label: '对话', accelerator: 'CmdOrCtrl+1', click: () => this.navigate('/chat') },
           { label: 'Agents', accelerator: 'CmdOrCtrl+2', click: () => this.navigate('/agents') },
-          { label: '群组', accelerator: 'CmdOrCtrl+3', click: () => this.navigate('/groups') },
-          { label: '知识库', accelerator: 'CmdOrCtrl+4', click: () => this.navigate('/knowledge') },
-          { label: 'MCP', accelerator: 'CmdOrCtrl+5', click: () => this.navigate('/mcp') },
-          { label: 'Skills', accelerator: 'CmdOrCtrl+6', click: () => this.navigate('/skills') },
+          { label: '模型选型', accelerator: 'CmdOrCtrl+3', click: () => this.navigate('/models') },
+          { label: '群组', accelerator: 'CmdOrCtrl+4', click: () => this.navigate('/groups') },
+          { label: '知识库', accelerator: 'CmdOrCtrl+5', click: () => this.navigate('/knowledge') },
+          { label: 'MCP', accelerator: 'CmdOrCtrl+6', click: () => this.navigate('/mcp') },
+          { label: 'Skills', accelerator: 'CmdOrCtrl+7', click: () => this.navigate('/skills') },
         ],
       },
       {

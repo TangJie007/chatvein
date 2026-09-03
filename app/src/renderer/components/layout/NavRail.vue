@@ -5,6 +5,7 @@ import AppIcon from '../AppIcon.vue'
 const nav = [
   { to: '/chat', label: '对话', icon: 'chat' },
   { to: '/agents', label: 'Agents', icon: 'robot' },
+  { to: '/models', label: '模型', icon: 'cpu' },
   { to: '/groups', label: '群组', icon: 'users' },
   { to: '/knowledge', label: '知识库', icon: 'database' },
   { to: '/mcp', label: 'MCP', icon: 'server' },

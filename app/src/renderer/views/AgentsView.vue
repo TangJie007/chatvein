@@ -9,100 +9,84 @@ import TextArea from '../components/ui/TextArea.vue'
 import SelectInput from '../components/ui/SelectInput.vue'
 import KvRow from '../components/ui/KvRow.vue'
 import ChipPick from '../components/ui/ChipPick.vue'
-import ChipButton from '../components/ui/ChipButton.vue'
-import SwitchToggle from '../components/ui/SwitchToggle.vue'
 import AppButton from '../components/ui/AppButton.vue'
 import Tag from '../components/ui/Tag.vue'
 import Avatar from '../components/ui/Avatar.vue'
-import AppIcon from '../components/AppIcon.vue'
-import { agents as agentList } from '../data/lists'
-import type { AgentRow } from '../data/types'
+import SwitchToggle from '../components/ui/SwitchToggle.vue'
+import { useAgents } from '../composables/useAgents'
+import { useModels } from '../composables/useModels'
+import type { AgentConfig, AgentInput, AvatarTint } from '../ipc-api'
 import { setCrumbItem } from '../composables/useUi'
+import { RouterLink } from 'vue-router'
 
-const providers: Record<string, { label: string; base: string; models: string[] }> = {
-  deepseek: { label: 'DeepSeek', base: 'https://api.deepseek.com/v1', models: ['deepseek-chat', 'deepseek-reasoner', 'deepseek-coder'] },
-  openai: { label: 'OpenAI', base: 'https://api.openai.com/v1', models: ['gpt-4o', 'gpt-4.1', 'gpt-4o-mini', 'o3-mini'] },
-  anthropic: { label: 'Anthropic', base: 'https://api.anthropic.com/v1', models: ['claude-sonnet-4-5', 'claude-opus-4-1', 'claude-haiku-4-5'] },
-  qwen: { label: '通义千问', base: 'https://dashscope.aliyuncs.com/compatible-mode/v1', models: ['qwen-plus', 'qwen-max', 'qwen-turbo'] },
-  moonshot: { label: 'Moonshot', base: 'https://api.moonshot.cn/v1', models: ['moonshot-v1-8k', 'moonshot-v1-32k', 'moonshot-v1-128k'] },
-  local: { label: '本地 Relay', base: 'http://127.0.0.1:4444/v1', models: ['deepseek-v4', 'glm-4.6', 'qwen3-coder'] },
-  custom: { label: '自定义 · OpenAI 兼容', base: '', models: ['custom-model'] },
-}
+const store = useAgents()
+const models = useModels()
+
+const currentId = ref<string>('')
+const form = reactive<AgentForm>(emptyForm())
 
 interface AgentForm {
   id: string
+  isMain: boolean
   name: string
   role: string
   desc: string
-  provider: string
-  base: string
-  key: string
-  model: string
-  temp: number
-  maxTok: string
+  initial: string
+  tint: AvatarTint
+  modelId: string
   enabled: boolean
   tools: string[]
   skills: string[]
   kbs: string[]
-  prompt: string
-  tint: AgentRow['tint']
-  initial: string
+  systemPrompt: string
 }
 
-const forms = reactive<Record<string, AgentForm>>({
-  terry: {
-    id: 'terry', name: 'Terry', role: '日常任务助理', initial: 'T', tint: 'indigo',
-    desc: '负责本地文件、Obsidian 与日程的默认执行者',
-    provider: 'deepseek', base: 'https://api.deepseek.com/v1', key: 'sk-9f2c41ab7de04c8eb1f6a0d3',
-    model: 'deepseek-chat', temp: 0.3, maxTok: '4096', enabled: true,
-    tools: ['file_search', 'file_read', 'file_write', 'rag_query', 'obsidian_sync'],
-    skills: ['prd-to-spec'], kbs: ['rag-notes', 'medical'],
-    prompt: '你是 Terry，用户的日常任务助理。\n\n执行约定：\n1. 动笔前先确认方向，允许用一句话反问；\n2. 输出优先表格 / 列表，不要长段落铺陈；\n3. 涉及文件写入、删除、外部请求，先说明再执行；\n4. 回答里出现的事实要能从工具结果或知识库溯源。\n\n当前环境：{{workspace}} · 用户 {{user.name}} · 时间 {{now}}',
-  },
-  porter: {
-    id: 'porter', name: 'Porter', role: '发布工程师', initial: 'P', tint: 'sky',
-    desc: '中小企业应用发布，SSH + Docker 部署',
-    provider: 'qwen', base: 'https://dashscope.aliyuncs.com/compatible-mode/v1', key: 'sk-dash-7c1e09b4a2f38d51',
-    model: 'qwen-plus', temp: 0.1, maxTok: '8192', enabled: true,
-    tools: ['ssh_deploy', 'file_read', 'github_pr'],
-    skills: ['excel-handler'], kbs: ['lingscape'],
-    prompt: '你是 Porter，负责应用发布。\n\n硬约束：\n1. 生产环境操作前必须复述目标主机与版本号；\n2. 只走已登记发布窗口，窗口外挂起；\n3. 每一步都要能回滚。',
-  },
-  doc: {
-    id: 'doc', name: 'DocWriter', role: '文档写手', initial: 'D', tint: 'teal',
-    desc: '长文写作与知识库整理，偏好表格化输出',
-    provider: 'local', base: 'http://127.0.0.1:4444/v1', key: 'relay-local-no-key',
-    model: 'deepseek-v4', temp: 0.6, maxTok: '16384', enabled: true,
-    tools: ['file_read', 'file_write', 'rag_query', 'obsidian_sync'],
-    skills: ['prd-to-spec', 'wenwei'], kbs: ['rag-notes', 'medical'],
-    prompt: '你是 DocWriter。默认输出表格与清单，不写长段落。\n涉及事实必须标注来源文件与段落。',
-  },
-  audit: {
-    id: 'audit', name: 'Ksher Audit', role: '合规审计', initial: 'K', tint: 'clay',
-    desc: '跨境支付 KYC / KYB 校验与台账导出',
-    provider: 'anthropic', base: 'https://api.anthropic.com/v1', key: 'sk-ant-4e8b02ff19c7a6d3',
-    model: 'claude-sonnet-4-5', temp: 0.0, maxTok: '8192', enabled: false,
-    tools: ['file_read', 'rag_query'],
-    skills: [], kbs: ['kyb'],
-    prompt: '你是合规审计助手。结论要落到具体条款；\n证据不足时明说，不做推断。',
-  },
-  review: {
-    id: 'review', name: 'CodeReview', role: '代码评审', initial: 'R', tint: 'violet',
-    desc: 'Vue3 + TS 变更审查：类型、响应式、体积、可访问性',
-    provider: 'openai', base: 'https://api.openai.com/v1', key: 'sk-proj-1b93de05c8f24a71',
-    model: 'gpt-4.1', temp: 0.2, maxTok: '8192', enabled: true,
-    tools: ['file_read', 'github_pr'],
-    skills: ['frontend-code-review'], kbs: [],
-    prompt: '你是资深前端评审。按 类型收敛 / 响应式陷阱 / 构建体积 / 可访问性 四类给意见，给出行号与改法。',
-  },
+function emptyForm(): AgentForm {
+  return {
+    id: '',
+    isMain: false,
+    name: '',
+    role: '',
+    desc: '',
+    initial: '',
+    tint: 'indigo',
+    modelId: '',
+    enabled: true,
+    tools: [],
+    skills: [],
+    kbs: [],
+    systemPrompt: '',
+  }
+}
+
+const current = computed(() => store.agents.find((a) => a.id === currentId.value))
+
+const modelOptions = computed(() => {
+  const enabled = models.models.filter((m) => m.enabled)
+  const opts = enabled.map((m) => ({
+    value: m.id,
+    label: `${m.name} · ${m.model}`,
+  }))
+  // 若当前绑定的模型已停用/删除，仍保留选项便于用户看见并更换
+  if (form.modelId && !opts.some((o) => o.value === form.modelId)) {
+    const orphan = models.findById(form.modelId)
+    opts.unshift({
+      value: form.modelId,
+      label: orphan ? `${orphan.name}（已停用）` : '（模型已删除，请重新选择）',
+    })
+  }
+  if (!form.modelId) {
+    opts.unshift({ value: '', label: '请选择模型…' })
+  }
+  return opts
 })
 
-const currentId = ref('terry')
-const form = computed(() => forms[currentId.value])
-const current = computed(() => agentList.find((a) => a.id === currentId.value)!)
-
-const providerOptions = Object.entries(providers).map(([value, p]) => ({ value, label: p.label }))
-const modelOptions = computed(() => (providers[form.value.provider]?.models ?? []).map((m) => ({ value: m, label: m })))
+const selectedModel = computed(() => (form.modelId ? models.findById(form.modelId) : undefined))
+const modelTag = computed(() => {
+  if (!form.modelId) return '未选模型'
+  const m = selectedModel.value
+  return m ? m.name : '模型缺失'
+})
 
 const allTools = ['file_search', 'file_read', 'file_write', 'rag_query', 'obsidian_sync', 'browser_open', 'github_pr', 'ssh_deploy']
 const allSkills = ['prd-to-spec', 'extract-image-palette', 'wenwei-对齐', 'excel-handler']
@@ -112,96 +96,192 @@ const allKbs = [
   { v: 'lingscape', label: '灵境产品文档' },
 ]
 
+const saving = ref(false)
+const foot = ref('模型在「模型选型」中统一管理 · Agent 只绑定选用')
+const dirty = ref(false)
+
+function markDirty() {
+  dirty.value = true
+}
+
+function loadIntoForm(a: AgentConfig) {
+  Object.assign(form, {
+    id: a.id,
+    isMain: !!a.isMain,
+    name: a.name,
+    role: a.role,
+    desc: a.desc,
+    initial: a.initial,
+    tint: a.tint,
+    modelId: a.modelId ?? '',
+    enabled: a.enabled,
+    tools: [...a.tools],
+    skills: [...a.skills],
+    kbs: [...a.knowledgeBases],
+    systemPrompt: a.systemPrompt,
+  })
+  dirty.value = false
+}
+
+function onSelect(a: AgentConfig) {
+  currentId.value = a.id
+  loadIntoForm(a)
+  setCrumbItem(a.isMain ? `主对话 · ${a.name}` : `${a.name} · ${a.role}`)
+}
+
+function modelLabelFor(agent: AgentConfig): string {
+  if (!agent.modelId) return '未选模型'
+  const m = models.findById(agent.modelId)
+  return m ? m.name : '模型缺失'
+}
+
 function toggle(list: 'tools' | 'skills' | 'kbs', v: string) {
-  const arr = form.value[list]
+  const arr = form[list]
   const i = arr.indexOf(v)
   if (i > -1) arr.splice(i, 1)
   else arr.push(v)
+  markDirty()
 }
-function onProvider() {
-  const p = providers[form.value.provider]
-  if (p) {
-    form.value.base = p.base
-    form.value.model = p.models[0]
+
+function collectPatch(): AgentInput {
+  return {
+    name: form.name,
+    role: form.role,
+    desc: form.desc,
+    initial: form.initial || form.name.trim()[0] || 'A',
+    tint: form.tint,
+    modelId: form.modelId,
+    enabled: form.isMain ? true : form.enabled,
+    tools: form.tools,
+    skills: form.skills,
+    knowledgeBases: form.kbs,
+    systemPrompt: form.systemPrompt,
   }
 }
-const keyShown = ref(false)
-const testLabel = ref('测试连接')
-const confirmWrite = ref(true)
-const sandboxExec = ref(true)
-function test() {
-  testLabel.value = '测试中…'
-  setTimeout(() => {
-    testLabel.value = '✓ 连通 · 128 ms'
-    setTimeout(() => (testLabel.value = '测试连接'), 1800)
-  }, 900)
+
+async function save() {
+  if (!form.id || saving.value) return
+  saving.value = true
+  try {
+    const updated = await store.update(form.id, collectPatch())
+    loadIntoForm(updated)
+    const d = new Date()
+    foot.value = `已保存 · ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+  } catch (e) {
+    foot.value = `保存失败：${(e as Error).message}`
+  } finally {
+    saving.value = false
+  }
 }
-const foot = ref('配置来自 DeepSeek · 与其他角色相互隔离')
-function save() {
-  const d = new Date()
-  foot.value = `已保存 · 今天 ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+
+function discard() {
+  if (current.value) loadIntoForm(current.value)
 }
-function onSelect(a: AgentRow) {
-  currentId.value = a.id
-  setCrumbItem(`${a.name} · ${a.role}`)
+
+async function createAgent() {
+  const defaultModelId = models.models.find((m) => m.enabled)?.id ?? ''
+  const created = await store.create({
+    name: `新 Agent ${store.agents.length + 1}`,
+    modelId: defaultModelId,
+  })
+  currentId.value = created.id
+  loadIntoForm(created)
+  setCrumbItem(`${created.name} · ${created.role}`)
+  dirty.value = true
 }
-onMounted(() => setCrumbItem('Terry · 日常任务助理'))
+
+async function removeAgent() {
+  if (!form.id || form.isMain) return
+  if (!window.confirm(`删除角色「${form.name}」？该操作不可撤销。`)) return
+  await store.remove(form.id)
+  const next = store.agents.find((a) => a.isMain) ?? store.agents[0]
+  if (next) onSelect(next)
+}
+
+onMounted(async () => {
+  await Promise.all([
+    store.loaded ? Promise.resolve() : store.refresh(),
+    models.loaded ? Promise.resolve() : models.refresh(),
+  ])
+  const main = store.agents.find((a) => a.isMain) ?? store.agents[0]
+  if (main) {
+    currentId.value = main.id
+    loadIntoForm(main)
+    setCrumbItem(`主对话 · ${main.name}`)
+  }
+})
 </script>
 
 <template>
-  <AgentListPane @select="onSelect" />
+  <AgentListPane
+    :agents="store.agents"
+    :model-value="currentId"
+    :loading="store.loading"
+    :model-label="modelLabelFor"
+    @select="onSelect"
+    @add="createAgent"
+  />
 
   <ViewShell :foot-note="foot">
     <template #identity>
       <Avatar :initial="form.initial" :tint="form.tint" size="lg" :dot="form.enabled ? 'thinking' : 'idle'" />
       <div>
         <div class="font-serif text-[22px] leading-[1.15] tracking-[0.2px] text-[var(--color-ink-1)]">
-          {{ form.name }} · <em class="italic" style="color: var(--color-brand-deep)">{{ form.role }}</em>
+          {{ form.name || '未命名' }} · <em class="italic" style="color: var(--color-brand-deep)">{{ form.role || '未设置定位' }}</em>
         </div>
         <div class="mt-[3px] flex items-center gap-2">
-          <Tag tone="brand" sm>{{ providers[form.provider]?.label }}</Tag>
-          <Tag sm>{{ form.model }}</Tag>
+          <Tag v-if="form.isMain" tone="brand" sm>主对话</Tag>
+          <Tag tone="brand" sm>{{ modelTag }}</Tag>
+          <Tag v-if="selectedModel" sm class="font-mono">{{ selectedModel.model }}</Tag>
           <Tag :tone="form.enabled ? 'ok' : 'default'" sm>{{ form.enabled ? '已启用' : '已停用' }}</Tag>
         </div>
       </div>
     </template>
     <template #actions>
-      <ChipButton @click="test"><AppIcon name="activity" :size="13" /> {{ testLabel }}</ChipButton>
-      <AppButton size="sm">复制</AppButton>
-      <SwitchToggle v-model="form.enabled" label="启用该 Agent" />
+      <AppButton v-if="!form.isMain" size="sm" variant="ghost" @click="removeAgent">删除</AppButton>
+      <SwitchToggle
+        :model-value="form.enabled"
+        :label="form.isMain ? '主对话始终启用' : '启用该 Agent'"
+        :disabled="form.isMain"
+        @update:model-value="(v: boolean) => { form.enabled = v; markDirty() }"
+      />
     </template>
 
     <Card idx="1" title="身份" side="identity">
       <div class="grid grid-cols-2 gap-3.5">
-        <Field label="名称"><TextInput v-model="form.name" /></Field>
-        <Field label="定位"><TextInput v-model="form.role" /></Field>
+        <Field label="名称"><TextInput v-model="form.name" placeholder="如 Terry" @input="markDirty" /></Field>
+        <Field label="定位"><TextInput v-model="form.role" placeholder="如 日常任务助理" @input="markDirty" /></Field>
       </div>
       <div class="mt-3.5">
-        <Field label="简介（给群组和路由用）"><TextInput v-model="form.desc" /></Field>
+        <Field label="简介（给群组和路由用）"><TextInput v-model="form.desc" @input="markDirty" /></Field>
       </div>
     </Card>
 
-    <Card idx="2" title="模型与 API" side="每个 Agent 独立">
-      <Field label="Provider">
-        <SelectInput v-model="form.provider" :options="providerOptions" @update:model-value="onProvider" />
+    <Card idx="2" title="模型" side="从模型选型中选用">
+      <Field label="选用模型" hint="连接与 Key 在「模型选型」中统一配置">
+        <SelectInput
+          v-model="form.modelId"
+          :options="modelOptions"
+          @update:model-value="markDirty"
+        />
       </Field>
-      <div class="mt-3.5">
-        <Field label="Base URL"><TextInput v-model="form.base" mono /></Field>
+      <div v-if="selectedModel" class="mt-3.5 grid grid-cols-3 gap-3 text-xs text-[var(--color-ink-2)]">
+        <div>
+          <div class="text-[10.5px] uppercase tracking-[0.4px] text-[var(--color-ink-3)]">Provider</div>
+          <div class="mt-0.5">{{ models.presetLabel(selectedModel.provider) }}</div>
+        </div>
+        <div>
+          <div class="text-[10.5px] uppercase tracking-[0.4px] text-[var(--color-ink-3)]">温度</div>
+          <div class="mt-0.5 font-mono">{{ selectedModel.temperature.toFixed(2) }}</div>
+        </div>
+        <div>
+          <div class="text-[10.5px] uppercase tracking-[0.4px] text-[var(--color-ink-3)]">Max tokens</div>
+          <div class="mt-0.5 font-mono">{{ selectedModel.maxTokens }}</div>
+        </div>
       </div>
-      <div class="mt-3.5">
-        <Field label="API Key" hint="密钥按角色隔离存储，导出备份时会二次确认">
-          <div class="flex gap-1.5">
-            <TextInput v-model="form.key" mono :type="keyShown ? 'text' : 'password'" />
-            <AppButton size="sm" @click="keyShown = !keyShown">{{ keyShown ? '隐藏' : '显示' }}</AppButton>
-          </div>
-        </Field>
-      </div>
-      <div class="mt-3.5 grid grid-cols-3 gap-3.5">
-        <Field label="模型"><SelectInput v-model="form.model" :options="modelOptions" /></Field>
-        <Field :label="`温度 ${form.temp.toFixed(2)}`">
-          <input v-model.number="form.temp" type="range" min="0" max="1" step="0.05" class="mt-2 w-full" style="accent-color: var(--color-brand-solid)" />
-        </Field>
-        <Field label="最大输出 tokens"><TextInput v-model="form.maxTok" mono /></Field>
+      <div class="mt-3 text-xs text-[var(--color-ink-3)]">
+        没有合适的模型？
+        <RouterLink to="/models" class="text-[var(--color-brand-deep)] underline-offset-2 hover:underline">去模型选型添加</RouterLink>
       </div>
     </Card>
 
@@ -226,7 +306,7 @@ onMounted(() => setCrumbItem('Terry · 日常任务助理'))
     </Card>
 
     <Card idx="4" title="系统提示词" side="支持变量">
-      <TextArea v-model="form.prompt" mono />
+      <TextArea v-model="form.systemPrompt" mono @input="markDirty" />
       <div class="mt-2 flex flex-wrap gap-1.5">
         <Tag sm v-pre>{{workspace}}</Tag>
         <Tag sm v-pre>{{user.name}}</Tag>
@@ -236,18 +316,20 @@ onMounted(() => setCrumbItem('Terry · 日常任务助理'))
 
     <Card idx="5" title="护栏" side="guardrails">
       <KvRow k="写入前二次确认" sub="文件覆盖、批量删除、git 强推">
-        <SwitchToggle v-model="confirmWrite" label="写入前二次确认" />
+        <span class="font-mono text-xs text-[var(--color-ink-3)]">全局设置</span>
       </KvRow>
       <KvRow k="沙箱执行" sub="命令只允许在 workspace 目录内">
-        <SwitchToggle v-model="sandboxExec" label="沙箱执行" />
+        <span class="font-mono text-xs text-[var(--color-ink-3)]">全局设置</span>
       </KvRow>
       <KvRow k="单轮预算上限" sub="超过即停下并汇报，不继续烧钱" mono>¥ 1.50 / 轮</KvRow>
     </Card>
 
     <template #footer>
-      <div class="flex gap-2">
-        <AppButton>放弃更改</AppButton>
-        <AppButton variant="primary" @click="save">保存角色</AppButton>
+      <div class="flex items-center gap-2">
+        <AppButton @click="discard">放弃更改</AppButton>
+        <AppButton variant="primary" :disabled="saving" @click="save">
+          {{ saving ? '保存中…' : dirty ? '保存角色' : '已保存' }}
+        </AppButton>
       </div>
     </template>
   </ViewShell>
