@@ -10,6 +10,8 @@
     "preview": "electron-vite preview"
   },
   "dependencies": {
+    "@chatvein/agents": "workspace:*",
+    "@chatvein/models": "workspace:*",
     "@electrum/client": "workspace:*",
     "@electrum/common": "workspace:*",
     "@electrum/core": "workspace:*",

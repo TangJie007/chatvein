@@ -9,7 +9,7 @@ Chat 对话最终应由 `@chatvein/agents` 驱动；此前仅有包骨架，app 
 ## 决策
 
 - **`@chatvein/models`**：`createLangChainChatModel(OpenAICompatibleConfig)` → `ChatOpenAI`（`configuration.baseURL`），与 `OpenAICompatibleChatModel` fetch 路径并存。
-- **`@chatvein/agents`**：`createReactChatAgent` / `invokeReactChatAgent` 薄封装 `@langchain/langgraph/prebuilt` 的 `createReactAgent`；`defineAgentTool` 用 zod 定义工具。
+- **`@chatvein/agents`**：`createReactChatAgent` / `invokeReactChatAgent` 薄封装 LangChain **`createAgent`**（在 LangGraph 上跑 ReAct；替代已弃用的 `createReactAgent`）；`defineAgentTool` 用 zod 定义工具。
 - 单测用 `FakeListChatModel` 模拟 tool_calls → ToolMessage → 最终 AIMessage，不打真实网关。
 - **本轮不切 app** `chat.service`（留 CP1-5）；`@chatvein/tools` 正式工具集未实现时由调用方传入 LangChain tools。
 

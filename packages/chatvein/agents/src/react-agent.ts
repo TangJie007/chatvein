@@ -2,7 +2,7 @@ import type { BaseMessage } from '@langchain/core/messages'
 import { AIMessage, HumanMessage, SystemMessage } from '@langchain/core/messages'
 import type { LanguageModelLike } from '@langchain/core/language_models/base'
 import type { StructuredToolInterface } from '@langchain/core/tools'
-import { createReactAgent } from '@langchain/langgraph/prebuilt'
+import { createAgent } from 'langchain'
 
 /** 单轮对话输入（最简 ReAct） */
 export interface ReactChatInput {
@@ -22,24 +22,34 @@ export interface ReactChatResult {
 }
 
 export interface CreateReactChatAgentOptions {
-  /** 须支持 OpenAI 风格 tool calling（ChatOpenAI / FakeListChatModel 等） */
-  llm: LanguageModelLike
+  /**
+   * 须支持 OpenAI 风格 tool calling（ChatOpenAI / 测试用 ScriptedChatModel 等）。
+   * 映射为 LangChain `createAgent` 的 `model`。
+   */
+  model?: LanguageModelLike
+  /** @deprecated 使用 `model` */
+  llm?: LanguageModelLike
   /** 工具列表；空数组 = 纯问答（仍走 ReAct 图，模型不调工具即结束） */
   tools?: StructuredToolInterface[]
-  /** 系统提示（persona）；映射为 createReactAgent 的 prompt */
+  /** 系统提示（persona）；映射为 createAgent 的 systemPrompt */
   systemPrompt?: string
   /** Agent 名（trace / 多 Agent 区分） */
   name?: string
 }
 
 /**
- * 最简 ReAct：封装 LangGraph `createReactAgent`，不自研 while 循环。
+ * 最简 ReAct：封装 LangChain `createAgent`（LangGraph 上跑），不自研 while 循环。
+ * 替代已弃用的 `@langchain/langgraph/prebuilt` `createReactAgent`。
  */
 export function createReactChatAgent(options: CreateReactChatAgentOptions) {
-  return createReactAgent({
-    llm: options.llm,
+  const model = options.model ?? options.llm
+  if (!model) {
+    throw new Error('createReactChatAgent: model（或 llm）必填')
+  }
+  return createAgent({
+    model,
     tools: options.tools ?? [],
-    prompt: options.systemPrompt,
+    systemPrompt: options.systemPrompt,
     name: options.name,
   })
 }

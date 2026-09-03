@@ -20,6 +20,12 @@ importers:
 
   app:
     dependencies:
+      '@chatvein/agents':
+        specifier: workspace:*
+        version: link:../packages/chatvein/agents
+      '@chatvein/models':
+        specifier: workspace:*
+        version: link:../packages/chatvein/models
       '@electrum/client':
         specifier: workspace:*
         version: link:../packages/electrum/client
@@ -90,6 +96,9 @@ importers:
       '@langchain/langgraph':
         specifier: ^1.4.13
         version: 1.4.13(@langchain/core@1.2.9(openai@7.9.0(undici@7.29.0)(zod@4.5.4)))(zod@4.5.4)
+      langchain:
+        specifier: ^1.5.10
+        version: 1.5.10(@langchain/core@1.2.9(openai@7.9.0(undici@7.29.0)(zod@4.5.4)))(openai@7.9.0(undici@7.29.0)(zod@4.5.4))
       zod:
         specifier: ^4.5.4
         version: 4.5.4
@@ -2162,6 +2171,12 @@ packages:
     resolution: {integrity: sha512-XmOWe7eyHYH14cLdVPoyg+GOH3rYX++KpzrylJwSW98t3Nk+U8XOl8FWKOgwtzdb8lXGf6zYwDUzeHMWfxasyg==}
     engines: {node: '>=6'}
     hasBin: true
+
+  langchain@1.5.10:
+    resolution: {integrity: sha512-JaC12C1qyGn985vvjttr4hr8lfFzWhrXp2M1byZJGmNJ2RiIgqnhiYDuLlG/xHDxhKD3onJ5pCuUif/cbdqPhA==}
+    engines: {node: '>=20'}
+    peerDependencies:
+      '@langchain/core': ^1.2.9
 
   langsmith@0.10.1:
     resolution: {integrity: sha512-zRDCnLznGdzx1VottX4CWr8v9ZZLRoSql2pbjEXYA1Jeg+NMDdq87x/v0Dk4GNkNZYhE+ZxFX3vTxwWq6W6gVA==}
@@ -4352,6 +4367,22 @@ snapshots:
   jsesc@3.1.0: {}
 
   json5@2.2.3: {}
+
+  langchain@1.5.10(@langchain/core@1.2.9(openai@7.9.0(undici@7.29.0)(zod@4.5.4)))(openai@7.9.0(undici@7.29.0)(zod@4.5.4)):
+    dependencies:
+      '@langchain/core': 1.2.9(openai@7.9.0(undici@7.29.0)(zod@4.5.4))
+      '@langchain/langgraph': 1.4.13(@langchain/core@1.2.9(openai@7.9.0(undici@7.29.0)(zod@4.5.4)))(zod@4.5.4)
+      '@langchain/langgraph-checkpoint': 1.1.5(@langchain/core@1.2.9(openai@7.9.0(undici@7.29.0)(zod@4.5.4)))
+      langsmith: 0.10.1(openai@7.9.0(undici@7.29.0)(zod@4.5.4))
+      zod: 4.5.4
+    transitivePeerDependencies:
+      - '@opentelemetry/api'
+      - '@opentelemetry/exporter-trace-otlp-proto'
+      - '@opentelemetry/sdk-trace-base'
+      - openai
+      - react
+      - react-dom
+      - ws
 
   langsmith@0.10.1(openai@7.9.0(undici@7.29.0)(zod@4.5.4)):
     dependencies:

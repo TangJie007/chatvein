@@ -1,7 +1,7 @@
 /**
  * @chatvein/agents
  *
- * Agent runtime: LangGraph createReactAgent (ReAct) for chat and group members.
+ * Agent runtime: LangChain createAgent (ReAct on LangGraph) for chat and group members.
  */
 
 export const CHATVEIN_AGENTS_VERSION = '0.1.0'
