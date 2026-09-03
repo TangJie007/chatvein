@@ -1,0 +1,105 @@
+import type { BaseMessage } from '@langchain/core/messages'
+import { AIMessage, HumanMessage, SystemMessage } from '@langchain/core/messages'
+import type { LanguageModelLike } from '@langchain/core/language_models/base'
+import type { StructuredToolInterface } from '@langchain/core/tools'
+import { createReactAgent } from '@langchain/langgraph/prebuilt'
+
+/** 单轮对话输入（最简 ReAct） */
+export interface ReactChatInput {
+  /** 用户本轮消息 */
+  message: string
+  /** 可选历史（不含本轮） */
+  history?: Array<{ role: 'user' | 'assistant' | 'system'; content: string }>
+  /** LangGraph 递归上限（一轮模型调用或工具调用计 1）；默认 25 */
+  recursionLimit?: number
+}
+
+export interface ReactChatResult {
+  /** 最终助手文本（最后一条无 tool_calls 的 AIMessage） */
+  content: string
+  /** 完整消息轨迹（含 ToolMessage） */
+  messages: BaseMessage[]
+}
+
+export interface CreateReactChatAgentOptions {
+  /** 须支持 OpenAI 风格 tool calling（ChatOpenAI / FakeListChatModel 等） */
+  llm: LanguageModelLike
+  /** 工具列表；空数组 = 纯问答（仍走 ReAct 图，模型不调工具即结束） */
+  tools?: StructuredToolInterface[]
+  /** 系统提示（persona）；映射为 createReactAgent 的 prompt */
+  systemPrompt?: string
+  /** Agent 名（trace / 多 Agent 区分） */
+  name?: string
+}
+
+/**
+ * 最简 ReAct：封装 LangGraph `createReactAgent`，不自研 while 循环。
+ */
+export function createReactChatAgent(options: CreateReactChatAgentOptions) {
+  return createReactAgent({
+    llm: options.llm,
+    tools: options.tools ?? [],
+    prompt: options.systemPrompt,
+    name: options.name,
+  })
+}
+
+export type ReactChatAgent = ReturnType<typeof createReactChatAgent>
+
+/**
+ * 同步 invoke 一轮用户消息，返回最终回答与消息轨迹。
+ */
+export async function invokeReactChatAgent(
+  agent: ReactChatAgent,
+  input: ReactChatInput,
+): Promise<ReactChatResult> {
+  const messages = toLangChainMessages(input)
+  const state = await agent.invoke(
+    { messages },
+    { recursionLimit: input.recursionLimit ?? 25 },
+  )
+  return {
+    content: extractFinalAssistantText(state.messages),
+    messages: state.messages,
+  }
+}
+
+function toLangChainMessages(input: ReactChatInput): BaseMessage[] {
+  const out: BaseMessage[] = []
+  for (const m of input.history ?? []) {
+    if (m.role === 'system') out.push(new SystemMessage(m.content))
+    else if (m.role === 'assistant') out.push(new AIMessage(m.content))
+    else out.push(new HumanMessage(m.content))
+  }
+  out.push(new HumanMessage(input.message))
+  return out
+}
+
+/** 从后往前找最后一条纯文本 AIMessage */
+export function extractFinalAssistantText(messages: BaseMessage[]): string {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i]
+    if (!AIMessage.isInstance(m)) continue
+    const calls = m.tool_calls
+    if (calls && calls.length > 0) continue
+    const text = messageContentToString(m.content).trim()
+    if (text) return text
+  }
+  return ''
+}
+
+function messageContentToString(content: unknown): string {
+  if (typeof content === 'string') return content
+  if (Array.isArray(content)) {
+    return content
+      .map((part) => {
+        if (typeof part === 'string') return part
+        if (part && typeof part === 'object' && 'text' in part) {
+          return String((part as { text: unknown }).text ?? '')
+        }
+        return ''
+      })
+      .join('')
+  }
+  return content == null ? '' : String(content)
+}

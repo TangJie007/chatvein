@@ -17,3 +17,4 @@ export {
   type ConcurrencyLimitedOptions,
 } from './semaphore'
 export { createEndpointModel, createModelRouter } from './factory'
+export { createLangChainChatModel } from './langchain-bridge'

@@ -31,7 +31,8 @@
     "@chatvein/observability": "workspace:*",
     "@chatvein/tools": "workspace:*",
     "@langchain/core": "^1.2.9",
-    "@langchain/langgraph": "^1.4.13"
+    "@langchain/langgraph": "^1.4.13",
+    "zod": "^4.5.4"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
