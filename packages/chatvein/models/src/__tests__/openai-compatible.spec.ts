@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from 'vitest'
 import { ModelError, type ChatModelLike, type ModelResult } from '@chatvein/common'
-import { MeteredChatModel } from './meter'
-import { OpenAICompatibleChatModel } from './openai-compatible'
-import { ModelRouter } from './router'
+import { MeteredChatModel } from '../meter'
+import { OpenAICompatibleChatModel } from '../openai-compatible'
+import { ModelRouter } from '../router'
 
 function fakeModel(id: string, impl: ChatModelLike['invoke']): ChatModelLike {
   return { id, invoke: impl }

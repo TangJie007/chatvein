@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import ConversationPane from './panes/ConversationPane.vue'
 import ChatMessage from '../components/chat/ChatMessage.vue'
 import Composer from '../components/chat/Composer.vue'
 import ThinkingPanel from '../components/chat/ThinkingPanel.vue'
+import ChipButton from '../components/ui/ChipButton.vue'
 import AppIcon from '../components/AppIcon.vue'
 import Avatar from '../components/ui/Avatar.vue'
 import { useChat } from '../composables/useChat'
@@ -12,12 +14,15 @@ import { useModels } from '../composables/useModels'
 import { setCrumbItem } from '../composables/useUi'
 import type { AvatarTint, Conversation } from '../ipc-api'
 
+const router = useRouter()
 const chat = useChat()
 const agents = useAgents()
 const models = useModels()
 
 const scroller = ref<HTMLElement | null>(null)
 const status = ref('')
+/** 右侧「Trace / 思考流」面板是否展开（Trace 按钮切换） */
+const tracePanelOpen = ref(true)
 
 const mainAgent = computed(() => agents.agents.find((a) => a.isMain) ?? agents.agents[0])
 const activeAgent = computed(() => {
@@ -36,6 +41,19 @@ const panelActive = computed(
   () => chat.thinking.active && chat.thinking.conversationId === chat.currentId,
 )
 const panelThought = computed(() => (panelActive.value ? chat.thinking.text : ''))
+
+function toggleTrace() {
+  tracePanelOpen.value = !tracePanelOpen.value
+}
+
+function openSettings() {
+  void router.push('/settings')
+}
+
+function onMemory() {
+  // 记忆能力（docs/design/03）尚未落地，先给出诚实提示而非假入口
+  status.value = '记忆模块尚未上线（见 docs/design/03-记忆方案）'
+}
 
 function agentLabel(agentId: string): string {
   return agents.agents.find((a) => a.id === agentId)?.name ?? agentId
@@ -173,14 +191,27 @@ onMounted(async () => {
             </div>
           </div>
         </div>
-        <div class="flex shrink-0 items-center gap-2 text-xs font-medium text-[var(--color-ink-2)]">
+        <div class="flex shrink-0 items-center gap-3 text-xs font-medium text-[var(--color-ink-2)]">
           <template v-if="chat.sending">
-            <span class="h-[7px] w-[7px] rounded-full bg-[var(--color-brand)] dot-thinking" />
-            正在生成…
+            <span class="inline-flex items-center gap-1.5">
+              <span class="h-[7px] w-[7px] rounded-full bg-[var(--color-brand)] dot-thinking" />
+              正在生成…
+            </span>
           </template>
           <template v-else-if="status">
-            <span class="max-w-[280px] truncate font-mono text-[11px] text-[var(--color-ink-3)]">{{ status }}</span>
+            <span class="max-w-[260px] truncate font-mono text-[11px] text-[var(--color-ink-3)]">{{ status }}</span>
           </template>
+          <div class="flex items-center gap-1">
+            <ChipButton :accent="tracePanelOpen" @click="toggleTrace">
+              <AppIcon name="chart" :size="13" /> Trace
+            </ChipButton>
+            <ChipButton @click="onMemory">
+              <AppIcon name="history" :size="13" /> 记忆
+            </ChipButton>
+            <ChipButton @click="openSettings">
+              <AppIcon name="gear" :size="13" /> 设置
+            </ChipButton>
+          </div>
         </div>
       </header>
 
@@ -254,8 +285,9 @@ onMounted(async () => {
       </Composer>
     </section>
 
-    <!-- AI 实时思考侧栏：reasoning 经 chat:event 流式推送 -->
+    <!-- AI 实时思考侧栏：reasoning 经 chat:event 流式推送；Trace 按钮切换显隐 -->
     <ThinkingPanel
+      v-show="tracePanelOpen"
       :active="panelActive"
       :phase="chat.thinking.phase"
       :agent="chat.thinking.agent"

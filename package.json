@@ -11,6 +11,8 @@
     "build:app": "pnpm --filter @electrum/chatvein build",
     "test": "pnpm --filter @electrum/core --filter @electrum/preload --filter @electrum/client run test && pnpm --filter @chatvein/* run test",
     "test:harness": "pnpm --filter @chatvein/* run test",
+    "check": "node scripts/check-boundaries.mjs",
+    "verify:harness": "pnpm check && pnpm build:harness && pnpm test:harness",
     "clean": "pnpm -r exec rimraf dist out",
     "clean:lock": "rimraf pnpm-lock.yaml node_modules",
     "docs:dev": "vitepress dev docs",

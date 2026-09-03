@@ -2,7 +2,7 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { TraceSink } from './index'
+import { TraceSink } from '../index'
 
 describe('TraceSink', () => {
   let root = ''

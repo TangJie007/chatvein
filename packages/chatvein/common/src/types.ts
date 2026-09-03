@@ -72,11 +72,22 @@ export interface ChatModelLike {
   invoke(messages: ChatMessage[], opts?: ModelInvokeOptions): Promise<ModelResult>
 }
 
+/**
+ * Trace 事件类型。对齐 PRD 5.3.9（model_call/tool_call/verify/error/human/budget）
+ * 与 M1 验收事件清单（run_start/node_enter/node_exit/…/run_end）。
+ */
 export type TraceEventKind =
+  | 'run_start'
+  | 'run_end'
+  | 'node_enter'
+  | 'node_exit'
   | 'model_call'
   | 'model_fallback'
   | 'tool_call'
+  | 'verify'
   | 'budget'
+  | 'human'
+  | 'error'
   | 'run_status'
   | 'info'
 
