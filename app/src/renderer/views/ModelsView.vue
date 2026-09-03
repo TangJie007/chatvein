@@ -179,14 +179,20 @@ async function createModel() {
 
 async function removeModel() {
   if (!form.id) return
-  if (!window.confirm(`删除模型「${form.name}」？已绑定该模型的 Agent 需重新选择。`)) return
-  await store.remove(form.id)
-  const next = store.models[0]
-  if (next) onSelect(next)
-  else {
-    currentId.value = ''
-    Object.assign(form, emptyForm())
-    setCrumbItem('')
+  if (!window.confirm(`删除模型「${form.name}」？`)) return
+  try {
+    await store.remove(form.id)
+    const next = store.models[0]
+    if (next) onSelect(next)
+    else {
+      currentId.value = ''
+      Object.assign(form, emptyForm())
+      setCrumbItem('')
+    }
+  } catch (e) {
+    const msg = (e as Error).message || '删除失败'
+    foot.value = msg
+    window.alert(msg)
   }
 }
 

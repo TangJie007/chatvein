@@ -1,5 +1,6 @@
-import { Injectable, Inject, NotFoundException } from '@electrum/common'
+import { Injectable, Inject, NotFoundException, ValidationException } from '@electrum/common'
 import { randomUUID } from 'node:crypto'
+import { AgentStore } from '../agent/agent.store'
 import { ModelStore } from './model.store'
 import {
   PROVIDER_PRESETS,
@@ -25,6 +26,9 @@ export interface ModelInput {
 export class ModelService {
   @Inject(ModelStore)
   private store!: ModelStore
+
+  @Inject(AgentStore)
+  private agents!: AgentStore
 
   listPresets(): ProviderPreset[] {
     return PROVIDER_PRESETS
@@ -89,6 +93,17 @@ export class ModelService {
     const data = await this.store.load()
     const idx = data.models.findIndex((m) => m.id === id)
     if (idx === -1) throw new NotFoundException(`model:${id}`)
+
+    const agentData = await this.agents.load()
+    const bound = agentData.agents.filter((a) => a.modelId === id)
+    if (bound.length > 0) {
+      const names = bound.map((a) => a.name).join('、')
+      throw new ValidationException(
+        `无法删除：仍被 ${bound.length} 个 Agent 绑定（${names}）。请先在 Agents 中更换模型。`,
+        [],
+      )
+    }
+
     data.models.splice(idx, 1)
     await this.store.save(data)
     return { ok: true }

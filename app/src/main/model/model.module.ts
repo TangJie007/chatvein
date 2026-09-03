@@ -1,9 +1,11 @@
 import { Module } from '@electrum/common'
+import { AgentModule } from '../agent/agent.module'
 import { ModelController } from './model.controller'
 import { ModelService } from './model.service'
 import { ModelStore } from './model.store'
 
 @Module({
+  imports: [AgentModule],
   controllers: [ModelController],
   providers: [ModelStore, ModelService],
   exports: [ModelService],

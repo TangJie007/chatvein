@@ -94,7 +94,7 @@ function match(m: ModelConfig, term: string): boolean {
         <template #icon>
           <AppIcon name="sun" :size="12" :stroke-width="2.2" />
         </template>
-        点击「+」添加真实模型。API Key 经系统加密落盘；Agent 创建时直接选用。
+        点击「+」添加真实模型。API Key 经系统加密落盘；已被 Agent 绑定的模型不可删除。
       </HintCard>
     </template>
   </ListPane>
