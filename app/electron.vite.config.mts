@@ -1,5 +1,6 @@
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import tailwindcss from '@tailwindcss/vite'
 import vue from '@vitejs/plugin-vue'
 import { defineConfig, externalizeDepsPlugin } from 'electron-vite'
 
@@ -57,7 +58,7 @@ export default defineConfig({
         '@electrum/client': resolve(clientSrc, 'index.ts'),
       },
     },
-    plugins: [vue()],
+    plugins: [vue(), tailwindcss()],
     build: {
       rollupOptions: {
         input: {

@@ -10,5 +10,6 @@
 | [04-向量存储架构](./04-向量存储架构) | PGlite + pgvector 本体向量库；混合检索 |
 | [05-群组记忆架构](./05-群组记忆架构) | 共享黑板 vs 分角色视角（≥2）+ 混合推荐 |
 | [06-插件运行时 Cordis](./06-插件运行时-Cordis) | **`@deepseek-ai/cordis` 为本软件插件化标准**；与 LangGraph / Electrum 边界 |
+| [07-沙箱方案](./07-沙箱方案) | **已锁定**：独立工作区 + 受限 `child_process`（P0 默认）；Docker 仅 P1 |
 
-> 实现仍遵循红线：能力在 `@chatvein/*`，app / service 只是调用者；插件内核用 Cordis，壳用 Electrum。
+> 实现仍遵循红线：能力在 `@chatvein/*`，app / service 只是调用者；插件内核用 Cordis，壳用 Electrum；**内嵌沙箱用 local child_process**。

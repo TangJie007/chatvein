@@ -49,7 +49,7 @@
 | F5 | 工具层：read/write/patch/list/glob/grep/exec/git | `tools` | M4 |
 | F6 | 工具超时 + 输出截断 + 命令白名单 | `tools` + `context` | M4/M5 |
 | F7 | 模型网关：OpenAI 兼容适配 + 强中弱分级 + 降级链 + 计量 + 并发控制 | `models` | M7 |
-| F8 | 沙箱：独立工作区 + 受限子进程 + 环境快照 | `sandbox` | M8 |
+| F8 | 沙箱：**独立工作区 + 受限 `child_process`（已锁定）** + 环境快照 | `sandbox` | M8 |
 | F9 | 上下文管理：截断、错误关键帧、任务级历史压缩、文件索引 | `context` | M5 |
 | F10 | 验证闭环：build + test 解析为结构化失败报告 | `verifier` | M6 |
 | F11 | 失败归因 + 定向修复循环（重试上限） | `orchestrator` + `verifier` | M6 |
@@ -65,7 +65,7 @@
 ### 3.2 一期不做（P1/P2，预留接口不实现）
 
 - 任务级并行子图（dispatch 预留 `parallel_group`，一期串行）。
-- Docker/WSL2 容器沙箱（预留 `SandboxProvider` 接口，一期本地子进程）。
+- Docker/WSL2 容器沙箱（预留 `SandboxProvider`；**内嵌默认已锁定为 local child_process**，Docker 仅 P1）。
 - 两次运行对比视图、静态检查阻断（lint 仅记录）、Prompt 缓存、服务启动/冒烟探测工具、运行报告导出之外的高级分析。
 - 第二期：增量变更需求支持、远程/多机。
 
@@ -145,4 +145,5 @@
 | 模型网关限流/额度 | 运行中断 | 降级链 + 预算护栏 + checkpoint 续跑 |
 | sidecar 协议拖慢进度 | 骨架延期 | 先模式 A（进程内）打通端到端，再模式 B（sidecar） |
 
-> 待确认决策点（参赛形式、正式比赛是否允许人工干预、模型分级默认值、沙箱方案）沿用总 PRD 第 11 节，M0 实测后定稿。
+> 待确认决策点（参赛形式、正式比赛是否允许人工干预、模型分级默认值）沿用总 PRD 第 11 节，M0 实测后定稿。  
+> **沙箱方案已锁定**：独立工作区 + 受限 `child_process`（见 [`../design/07-沙箱方案.md`](../design/07-沙箱方案.md)）。
