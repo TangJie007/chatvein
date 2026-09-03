@@ -8,6 +8,7 @@ import type {
   ChatMessage,
   ChatSendInput,
   ChatSendResult,
+  ChatStreamEvent,
   Conversation,
   TokenUsage,
 } from './chat.types'
@@ -66,8 +67,13 @@ export class ChatService {
   /**
    * 普通对话：解析 Agent → Model，拼 system + 历史 + 用户消息，调 OpenAI 兼容接口。
    * 一期不做工具 / ReAct，仅单轮补全。
+   *
+   * `emit`（可选）用于把流式思考事件推给渲染层思考面板；不传则退化为无事件。
    */
-  async send(input: ChatSendInput): Promise<ChatSendResult> {
+  async send(
+    input: ChatSendInput,
+    emit?: (evt: ChatStreamEvent) => void,
+  ): Promise<ChatSendResult> {
     const content = (input.content || '').trim()
     if (!content) throw new ValidationException('消息不能为空', [])
 
@@ -106,6 +112,22 @@ export class ChatService {
     }
     apiMessages.push(...history, { role: 'user', content })
 
+    const runId = randomUUID()
+    emit?.({
+      type: 'run_start',
+      runId,
+      conversationId: conv.id,
+      agent: agent.name,
+      ts: Date.now(),
+    })
+
+    let reasoning = ''
+    let thinkingEnded = false
+    const endThinking = () => {
+      if (thinkingEnded || !emit) return
+      thinkingEnded = true
+      emit({ type: 'thinking_done', runId, conversationId: conv.id })
+    }
     const { text, latencyMs, usage } = await this.complete({
       baseUrl: model.baseUrl,
       apiKey: model.apiKey,
@@ -113,7 +135,16 @@ export class ChatService {
       temperature: model.temperature,
       maxTokens: model.maxTokens,
       messages: apiMessages,
+      onReasoning: emit
+        ? (delta) => {
+            reasoning += delta
+            emit({ type: 'thinking_delta', runId, conversationId: conv.id, delta })
+          }
+        : undefined,
+      // 正文首块到达即结束「思考中」阶段（非推理模型也会立即切到生成正文）
+      onContentStart: emit ? endThinking : undefined,
     })
+    endThinking()
 
     const assistantMessage: ChatMessage = {
       id: randomUUID(),
@@ -157,6 +188,10 @@ export class ChatService {
     temperature: number
     maxTokens: number
     messages: Array<{ role: string; content: string }>
+    /** 思考过程增量回调（reasoning_content / reasoning），用于思考面板 */
+    onReasoning?: (delta: string) => void
+    /** 正文首块到达回调（标志思考阶段结束） */
+    onContentStart?: () => void
   }): Promise<{ text: string; latencyMs: number; usage?: TokenUsage }> {
     const base = input.baseUrl.trim().replace(/\/+$/, '')
     const url = `${base}/chat/completions`
@@ -164,7 +199,8 @@ export class ChatService {
       model: input.model,
       messages: input.messages,
       temperature: input.temperature,
-      stream: false,
+      // 流式：拿 reasoning 增量喂思考面板；正文一期仍累积后整体返回
+      stream: true,
     }
     // 0 = 自动：不传 max_tokens
     if (input.maxTokens > 0) body.max_tokens = input.maxTokens
@@ -182,8 +218,7 @@ export class ChatService {
         },
         body: JSON.stringify(body),
       })
-      const latencyMs = Date.now() - started
-      if (!res.ok) {
+      if (!res.ok || !res.body) {
         const detail = await safeErrorText(res)
         throw new ValidationException(
           res.status === 401
@@ -192,17 +227,76 @@ export class ChatService {
           [],
         )
       }
-      const json = (await res.json()) as {
-        choices?: Array<{ message?: { content?: string | null }; finish_reason?: string }>
-        usage?: {
-          prompt_tokens?: number
-          completion_tokens?: number
-          total_tokens?: number
+
+      let content = ''
+      let reasoning = ''
+      let usage: TokenUsage | undefined
+      const reader = res.body.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ''
+
+      const handleLine = (line: string): void => {
+        const trimmed = line.trim()
+        if (!trimmed.startsWith('data:')) return
+        const payload = trimmed.slice(5).trim()
+        if (!payload || payload === '[DONE]') return
+        let chunk: {
+          choices?: Array<{
+            delta?: {
+              content?: string | null
+              reasoning_content?: string | null
+              reasoning?: string | null
+            }
+          }>
+          usage?: {
+            prompt_tokens?: number
+            completion_tokens?: number
+            total_tokens?: number
+          }
+        }
+        try {
+          chunk = JSON.parse(payload)
+        } catch {
+          return // 半包/非 JSON，跳过
+        }
+        const delta = chunk.choices?.[0]?.delta
+        if (delta?.content) {
+          if (!content) input.onContentStart?.()
+          content += delta.content
+        }
+        const think = delta?.reasoning_content ?? delta?.reasoning
+        if (think) {
+          reasoning += think
+          input.onReasoning?.(think)
+        }
+        if (chunk.usage) usage = parseUsage(chunk.usage)
+      }
+
+      // SSE：按行解析 `data: {...}`，`[DONE]` 结束
+      for (;;) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buffer += decoder.decode(value, { stream: true })
+        let nl: number
+        // 以换行分隔事件；逐行处理
+        while ((nl = buffer.indexOf('\n')) !== -1) {
+          handleLine(buffer.slice(0, nl))
+          buffer = buffer.slice(nl + 1)
         }
       }
-      const text = json.choices?.[0]?.message?.content?.trim() ?? ''
-      if (!text) throw new ValidationException('模型返回空内容', [])
-      return { text, latencyMs, usage: parseUsage(json.usage) }
+      // 流末尾可能残留一行（无结尾换行）
+      if (buffer.trim()) handleLine(buffer)
+
+      const latencyMs = Date.now() - started
+      const text = content.trim()
+      if (!text) {
+        // 有思考无正文（如纯推理被截断）也给出明确提示
+        throw new ValidationException(
+          reasoning ? '模型仅返回思考过程、无正文内容' : '模型返回空内容',
+          [],
+        )
+      }
+      return { text, latencyMs, usage }
     } catch (err) {
       if (err instanceof ValidationException) throw err
       const aborted = err instanceof Error && err.name === 'AbortError'

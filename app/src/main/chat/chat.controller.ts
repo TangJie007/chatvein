@@ -1,11 +1,20 @@
-import { Controller, IpcHandle, Inject } from '@electrum/common'
+import { Controller, IpcHandle, IpcEmit, Inject } from '@electrum/common'
 import { ChatService } from './chat.service'
-import type { ChatSendInput, ChatSendResult, Conversation } from './chat.types'
+import type {
+  ChatSendInput,
+  ChatSendResult,
+  ChatStreamEvent,
+  Conversation,
+} from './chat.types'
 
-@Controller('chat')
+@Controller({ prefix: 'chat', window: 'main' })
 export class ChatController {
   @Inject(ChatService)
   chat!: ChatService
+
+  /** 主进程 → 渲染进程：推送对话流事件（思考过程等），通道 `chat:event` */
+  @IpcEmit('event')
+  emitEvent!: (evt: ChatStreamEvent) => void
 
   @IpcHandle('list')
   list(): Promise<Conversation[]> {
@@ -29,6 +38,7 @@ export class ChatController {
 
   @IpcHandle('send')
   send(input: ChatSendInput): Promise<ChatSendResult> {
-    return this.chat.send(input)
+    // 每个事件广播给渲染层；渲染层按 conversationId 过滤当前会话
+    return this.chat.send(input, (evt) => this.emitEvent(evt))
   }
 }

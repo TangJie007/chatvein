@@ -211,3 +211,13 @@ export interface ChatSendResult {
   latencyMs: number
   model: string
 }
+
+/**
+ * 主进程 → 渲染进程的对话流事件（通道 `chat:event`，经 `api.on('chat:event', ...)` 订阅）。
+ * 一期承载思考过程：reasoning 增量逐块推送，渲染层思考面板消费。
+ * 与主进程 chat.types.ts 的 ChatStreamEvent 保持一致。
+ */
+export type ChatStreamEvent =
+  | { type: 'run_start'; runId: string; conversationId: string; agent: string; ts: number }
+  | { type: 'thinking_delta'; runId: string; conversationId: string; delta: string }
+  | { type: 'thinking_done'; runId: string; conversationId: string }

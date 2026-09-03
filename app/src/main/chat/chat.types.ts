@@ -39,6 +39,19 @@ export interface ChatSendInput {
   agentId?: string
 }
 
+/**
+ * 主进程 → 渲染进程的对话流事件（通道 `chat:event`）。
+ *
+ * 一期只承载「思考过程」：主进程以流式 SSE 调模型，把 reasoning
+ * （DeepSeek `reasoning_content` / OpenAI 兼容 `reasoning`）逐块推给
+ * 渲染层的思考面板。正文 token 流式（Markdown）见 docs/design/08，后续接入。
+ * 事件均带 `conversationId`，渲染层按当前会话过滤。
+ */
+export type ChatStreamEvent =
+  | { type: 'run_start'; runId: string; conversationId: string; agent: string; ts: number }
+  | { type: 'thinking_delta'; runId: string; conversationId: string; delta: string }
+  | { type: 'thinking_done'; runId: string; conversationId: string }
+
 export interface ChatSendResult {
   conversation: Conversation
   userMessage: ChatMessage

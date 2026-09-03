@@ -3,6 +3,7 @@ import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import ConversationPane from './panes/ConversationPane.vue'
 import ChatMessage from '../components/chat/ChatMessage.vue'
 import Composer from '../components/chat/Composer.vue'
+import ThinkingPanel from '../components/chat/ThinkingPanel.vue'
 import AppIcon from '../components/AppIcon.vue'
 import Avatar from '../components/ui/Avatar.vue'
 import { useChat } from '../composables/useChat'
@@ -29,6 +30,12 @@ const activeModel = computed(() => {
 })
 
 const messages = computed(() => chat.current?.messages ?? [])
+
+// 思考面板：仅展示当前会话的运行（事件带 conversationId，切会话时不串）
+const panelActive = computed(
+  () => chat.thinking.active && chat.thinking.conversationId === chat.currentId,
+)
+const panelThought = computed(() => (panelActive.value ? chat.thinking.text : ''))
 
 function agentLabel(agentId: string): string {
   return agents.agents.find((a) => a.id === agentId)?.name ?? agentId
@@ -132,8 +139,9 @@ onMounted(async () => {
   />
 
   <main
-    class="relative min-h-0 min-w-0 overflow-hidden"
+    class="relative grid min-h-0 min-w-0 overflow-hidden"
     style="
+      grid-template-columns: minmax(0, 1fr) auto;
       background:
         radial-gradient(80% 40% at 50% 0%, rgb(254 254 254 / 0.85), transparent 70%),
         var(--color-canvas);
@@ -245,5 +253,13 @@ onMounted(async () => {
         </template>
       </Composer>
     </section>
+
+    <!-- AI 实时思考侧栏：reasoning 经 chat:event 流式推送 -->
+    <ThinkingPanel
+      :active="panelActive"
+      :phase="chat.thinking.phase"
+      :agent="chat.thinking.agent"
+      :thought="panelThought"
+    />
   </main>
 </template>
