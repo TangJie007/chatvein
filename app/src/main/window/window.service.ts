@@ -14,9 +14,10 @@ export class WindowService {
       minWidth: 1080,
       minHeight: 700,
       show: false,
+      // 无边框窗口：不使用 Electron 原生标题栏/边框，标题栏由渲染层自定义
       frame: false,
       titleBarStyle: 'hidden',
-      backgroundColor: '#EEEFF1',
+      // 不设置 backgroundColor：窗口背景完全交给渲染层（CSS）控制
       webPreferences: {
         preload: join(__dirname, '../preload/index.js'),
         contextIsolation: true,
