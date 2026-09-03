@@ -2,7 +2,7 @@
 
 > 版本：v0.2 ｜ 日期：2026-09-03
 > 上位：[`01-核心骨架.md`](./01-核心骨架.md) ｜ 记忆：[`03-记忆方案.md`](./03-记忆方案.md)
-> 排期：[`../phase1/03-开发计划书.md`](../phase1/03-开发计划书.md) **CP0**（agents）、M1-7（orchestrator）
+> 排期：[`../phase1/03-开发计划书.md`](../phase1/03-开发计划书.md) **CP0**（`packages/chatvein/agents`）、M1-7（orchestrator）
 > 本文给出**至少 2 个**可落地的 Agent 循环（control loop）方案，并针对"普通对话"和"群组协作"分别选型。
 
 ---

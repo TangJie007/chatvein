@@ -86,11 +86,22 @@ export function apply(ctx: Context) {
 
 `@chatvein/core` 再导出 `Context` / `Service` / `Fiber`，调用方优先从 `@chatvein/core` import，避免散落多处依赖声明。
 
+### 4.1 Chat 轨能力包（CP0–CP2）
+
+| npm 包 | 路径 | Cordis 挂载 | LangGraph |
+|--------|------|-------------|-----------|
+| `@chatvein/agents` | `packages/chatvein/agents` | CP0-6 `ctx.agents` | `createReactAgent` |
+| `@chatvein/groups` | `packages/chatvein/groups` | CP2 | supervisor / 群图 |
+| `@chatvein/memory` | `packages/chatvein/memory` | CP2 | — |
+| `@chatvein/vector` | `packages/chatvein/vector` | CP2 | — |
+
+`memory` / `vector` 以库形式被 `agents` / `groups` / `tools` 调用；是否在 core 单独 `plugin()` 视 CP2 装配需要再定。
+
 ---
 
 ## 5 红线
 
 1. 全家桶只用 `@deepseek-ai/cordis*`，不混装上游。
-2. `packages/chatvein/**` 可不依赖 electron；Cordis 只出现在 core/service（及将来的 agents/groups 等纯 Node 包）。
+2. `packages/chatvein/**` 可不依赖 electron；Cordis 出现在 core/service，以及 Chat 轨 **`agents` / `groups`**（CP0+ 挂载 Cordis Service 占位）。
 3. 赛前锁版本；升级需跑 `pnpm test:harness`。
 4. Cordis **不替代** LangGraph；**Forge** 任务图在 `orchestrator`（StateGraph）；**对话** ReAct 在 `agents`（createReactAgent）。排期见 [`../phase1/03-开发计划书.md`](../phase1/03-开发计划书.md) §1.1。
