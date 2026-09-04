@@ -3,9 +3,9 @@
 Chat 产品轨的 **Agent 运行时**：
 
 1. **启发式路由**（L1 / L1.5 → **L2**）：L1 无 LLM；灰区由弱模 JSON 结构化决策（图外，不增加 ReAct 轮次）
-2. **ReAct**：LangChain `createAgent`（LangGraph）+ 工具绑定；**语义意图由主模型在此理解**
+2. **L3 执行**：LangChain `createAgent`（LangGraph）+ 工具绑定；**语义意图由主模型在此理解**（演进按 band 选预置 StateGraph）
 
-普通对话与群成员单次发言都由本包驱动。契约类型在 `@chatvein/common`（`chat/route`）。设计见 [`docs/design/09-启发式规则路由.md`](../../../docs/design/09-启发式规则路由.md)；**L2 专文** [`docs/design/10-L2语义路由层.md`](../../../docs/design/10-L2语义路由层.md)。
+普通对话与群成员单次发言都由本包驱动。契约类型在 `@chatvein/common`（`chat/route`）。设计见 [`docs/design/09-启发式规则路由.md`](../../../docs/design/09-启发式规则路由.md)；**L2** [`docs/design/10-L2语义路由层.md`](../../../docs/design/10-L2语义路由层.md)；**L3 执行** [`docs/design/11-L3-ReAct自适应循环推理层.md`](../../../docs/design/11-L3-ReAct自适应循环推理层.md)。
 
 ## 目录
 
