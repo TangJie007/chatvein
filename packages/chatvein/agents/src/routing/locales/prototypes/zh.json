@@ -1,0 +1,16 @@
+[
+  { "id": "zh-hi", "text": "你好", "band": "trivial", "tools": "none", "lang": "zh" },
+  { "id": "zh-thanks", "text": "谢谢", "band": "trivial", "tools": "none", "lang": "zh" },
+  { "id": "zh-ok", "text": "好的", "band": "trivial", "tools": "none", "lang": "zh" },
+  { "id": "zh-what-is", "text": "什么是闭包", "band": "simple", "tools": "none", "lang": "zh" },
+  { "id": "zh-explain", "text": "用一句话解释 Promise", "band": "simple", "tools": "none", "lang": "zh" },
+  { "id": "zh-fix", "text": "帮我修复这个 TypeScript 报错", "band": "standard", "tools": "full", "lang": "zh" },
+  { "id": "zh-read", "text": "读取 package.json 看看依赖", "band": "standard", "tools": "read_only", "lang": "zh" },
+  { "id": "zh-impl", "text": "实现一个带单测的加法函数", "band": "standard", "tools": "full", "lang": "zh" },
+  { "id": "zh-refactor", "text": "重构这段代码并保持测试通过", "band": "complex", "tools": "full", "lang": "zh" },
+  { "id": "zh-arch", "text": "帮我做前后端架构选型对比", "band": "complex", "tools": "none", "lang": "zh" },
+  { "id": "zh-debug", "text": "根据 stacktrace 调试失败原因", "band": "complex", "tools": "full", "lang": "zh" },
+  { "id": "zh-multi", "text": "先分析需求然后分步实现最后写测试", "band": "complex", "tools": "full", "lang": "zh" },
+  { "id": "zh-group", "text": "拉个群一起评审方案", "band": "standard", "tools": "none", "lang": "zh", "tags": ["hint-group"] },
+  { "id": "zh-forge", "text": "交给 forge 自动写代码并跑测试", "band": "complex", "tools": "full", "lang": "zh", "tags": ["hint-forge"] }
+]

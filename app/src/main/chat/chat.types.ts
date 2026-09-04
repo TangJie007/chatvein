@@ -50,6 +50,12 @@ export type ChatStreamEvent =
   | { type: 'run_start'; runId: string; conversationId: string; agent: string; ts: number }
   | { type: 'thinking_delta'; runId: string; conversationId: string; delta: string }
   | { type: 'thinking_done'; runId: string; conversationId: string }
+  | {
+      type: 'route'
+      runId: string
+      conversationId: string
+      decision: import('@chatvein/common').RouteDecision
+    }
 
 export interface ChatSendResult {
   conversation: Conversation
@@ -57,4 +63,6 @@ export interface ChatSendResult {
   assistantMessage: ChatMessage
   latencyMs: number
   model: string
+  /** L1/L1.5 启发式路由结果 */
+  route?: import('@chatvein/common').RouteDecision
 }

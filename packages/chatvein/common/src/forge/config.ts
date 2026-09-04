@@ -6,8 +6,8 @@
  * API Key 不硬编码进配置文件：运行时从加密存储/环境注入，绝不写入 trace。
  */
 import { z } from 'zod'
-import { DEFAULT_BUDGET, type Budget, type ModelTier } from './types'
-import { ValidationError } from './errors'
+import { DEFAULT_BUDGET, type Budget, type ModelTier } from '../core/types'
+import { ValidationError } from '../core/errors'
 
 /** 单个模型端点（OpenAI 兼容）；apiKey 运行时注入，可留空 */
 export interface ModelEndpointConfig {

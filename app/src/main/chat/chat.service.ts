@@ -1,5 +1,10 @@
 import { Injectable, Inject, NotFoundException, ValidationException } from '@electrum/common'
-import { createReactChatAgent, invokeReactChatAgent } from '@chatvein/agents'
+import {
+  createReactChatAgent,
+  getDefaultHeuristicRouter,
+  invokeReactChatAgent,
+} from '@chatvein/agents'
+import type { ComplexityBand, RouteDecision } from '@chatvein/common'
 import { createLangChainChatModel } from '@chatvein/models'
 import { randomUUID } from 'node:crypto'
 import { AgentService } from '../agent/agent.service'
@@ -24,6 +29,8 @@ export class ChatService {
 
   @Inject(ModelService)
   private models!: ModelService
+
+  private lastBandByConv = new Map<string, ComplexityBand>()
 
   async list(): Promise<Conversation[]> {
     const data = await this.store.load()
@@ -60,14 +67,14 @@ export class ChatService {
     const idx = data.conversations.findIndex((c) => c.id === id)
     if (idx === -1) throw new NotFoundException(`conversation:${id}`)
     data.conversations.splice(idx, 1)
+    this.lastBandByConv.delete(id)
     await this.store.save(data)
     return { ok: true }
   }
 
   /**
-   * 普通对话：Agent → Model → `@chatvein/agents` ReAct（createAgent）。
-   * 工具白名单尚未落地时 tools=[]（纯问答仍走 ReAct 图）。
-   * 流式 reasoning / ChatEvent 归一见 CP1-2；一期同步 invoke，思考面板给状态提示。
+   * 普通对话：L1/L1.5 启发式路由 → Agent → Model → `@chatvein/agents` ReAct。
+   * 工具白名单尚未落地时 tools=[]；路由 policy 供后续裁剪与 UI 提示。
    */
   async send(
     input: ChatSendInput,
@@ -113,6 +120,39 @@ export class ChatService {
       agent: agent.name,
       ts: Date.now(),
     })
+
+    const route = await getDefaultHeuristicRouter().route({
+      text: content,
+      session: {
+        turnIndex: history.filter((m) => m.role === 'user').length,
+        lastBand: this.lastBandByConv.get(conv.id),
+        lastAssistantHadTools: false,
+        recentFailure: false,
+        activeMode: 'chat',
+      },
+    })
+    this.lastBandByConv.set(conv.id, route.band)
+
+    emit?.({
+      type: 'route',
+      runId,
+      conversationId: conv.id,
+      decision: route,
+    })
+    emit?.({
+      type: 'thinking_delta',
+      runId,
+      conversationId: conv.id,
+      delta: formatRouteThinking(route),
+    })
+
+    if (route.terminal?.kind === 'slash') {
+      const cmd = String(route.terminal.payload?.slashCmd ?? '')
+      const text = `已识别命令 /${cmd}（本地处理占位；尚未绑定具体动作）。`
+      emit?.({ type: 'thinking_done', runId, conversationId: conv.id })
+      return this.persistAssistant(data, idx, conv, agentId, userMessage, text, 0, model.model, route)
+    }
+
     emit?.({
       type: 'thinking_delta',
       runId,
@@ -142,7 +182,7 @@ export class ChatService {
       const result = await invokeReactChatAgent(reactAgent, {
         message: content,
         history,
-        recursionLimit: 25,
+        recursionLimit: Math.max(1, route.policy.maxSteps || 25),
       })
       text = result.content.trim()
     } catch (err) {
@@ -154,6 +194,30 @@ export class ChatService {
 
     if (!text) throw new ValidationException('模型返回空内容', [])
 
+    return this.persistAssistant(
+      data,
+      idx,
+      conv,
+      agentId,
+      userMessage,
+      text,
+      latencyMs,
+      model.model,
+      route,
+    )
+  }
+
+  private async persistAssistant(
+    data: Awaited<ReturnType<ChatStore['load']>>,
+    idx: number,
+    conv: Conversation,
+    agentId: string,
+    userMessage: ChatMessage,
+    text: string,
+    latencyMs: number,
+    modelId: string,
+    route: RouteDecision,
+  ): Promise<ChatSendResult> {
     const assistantMessage: ChatMessage = {
       id: randomUUID(),
       role: 'assistant',
@@ -163,7 +227,7 @@ export class ChatService {
 
     const title =
       conv.messages.length === 0 && conv.title === '新对话'
-        ? truncateTitle(content)
+        ? truncateTitle(userMessage.content)
         : conv.title
 
     const next: Conversation = {
@@ -183,9 +247,19 @@ export class ChatService {
       userMessage,
       assistantMessage,
       latencyMs,
-      model: model.model,
+      model: modelId,
+      route,
     }
   }
+}
+
+function formatRouteThinking(route: RouteDecision): string {
+  const hints: string[] = []
+  if (route.policy.hintUserCreateGroup) hints.push('可提示用户拉群')
+  if (route.policy.hintUserForge) hints.push('可提示派 Forge')
+  if (route.policy.allowSubAgents) hints.push('允许子 Agent')
+  const hintStr = hints.length ? `；${hints.join('、')}` : ''
+  return `路由 L1：band=${route.band} score=${route.score} tier=${route.policy.modelTier} tools=${route.policy.tools}（${route.reasons.slice(0, 4).join(', ') || '—'}）${hintStr}\n`
 }
 
 function truncateTitle(text: string): string {

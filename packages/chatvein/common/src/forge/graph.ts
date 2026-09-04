@@ -4,7 +4,7 @@
  * 对应 PRD 5.3.3 / 02-方案设计 §4.1。状态在节点间流转、每个节点后写 checkpoint，
  * resume 时从最近 checkpoint 重建。字段统一 camelCase（PRD 表格的 snake_case 为逻辑名）。
  */
-import { DEFAULT_BUDGET, emptyTokenStat, type Budget, type TokenStat } from './types'
+import { DEFAULT_BUDGET, emptyTokenStat, type Budget, type TokenStat } from '../core/types'
 import type { TaskTree } from './task'
 import type { BuildStatus, TestReport } from './verifier'
 

@@ -17,3 +17,27 @@ export {
 } from './react-agent'
 
 export { defineAgentTool } from './define-tool'
+
+export {
+  HeuristicRouter,
+  createHeuristicRouter,
+  getDefaultHeuristicRouter,
+  L1HeuristicRouter,
+  createL1Router,
+  extractFacts,
+  isGreetingOnly,
+  createDefaultRules,
+  DEFAULT_PROTOTYPES,
+  DEFAULT_DICTS,
+  resolveDict,
+  RouteBm25Index,
+  tokenizeForBm25,
+  createL2Classifier,
+  shouldEscalateToL2,
+  loadDefaultPrototypes,
+  type HeuristicRouterOptions,
+  type RouteInput,
+  type HeuristicCtx,
+  type HeuristicSession,
+  type L2Classifier,
+} from './routing'

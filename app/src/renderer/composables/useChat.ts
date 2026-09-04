@@ -45,6 +45,9 @@ api.on('chat:event', (evt: unknown) => {
     case 'thinking_done':
       if (e.runId === thinking.runId) thinking.phase = 'answering'
       break
+    case 'route':
+      // 路由详情已写入 thinking_delta；此处预留 UI 结构化消费
+      break
   }
 })
 

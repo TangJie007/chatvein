@@ -99,13 +99,25 @@ importers:
       '@langchain/langgraph':
         specifier: ^1.4.13
         version: 1.4.13(@langchain/core@1.2.9(openai@7.9.0(undici@7.29.0)(zod@4.5.4)))(zod@4.5.4)
+      es-toolkit:
+        specifier: ^1.52.0
+        version: 1.52.0
+      json-rules-engine:
+        specifier: ^7.3.1
+        version: 7.3.1
       langchain:
         specifier: ^1.5.10
         version: 1.5.10(@langchain/core@1.2.9(openai@7.9.0(undici@7.29.0)(zod@4.5.4)))(openai@7.9.0(undici@7.29.0)(zod@4.5.4))
+      wink-bm25-text-search:
+        specifier: ^3.1.2
+        version: 3.1.2
       zod:
         specifier: ^4.5.4
         version: 4.5.4
     devDependencies:
+      '@types/json-rules-engine':
+        specifier: ^4.1.0
+        version: 4.1.0
       '@types/node':
         specifier: ^24.0.0
         version: 24.13.3
@@ -1297,6 +1309,18 @@ packages:
   '@jridgewell/trace-mapping@0.3.31':
     resolution: {integrity: sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw==}
 
+  '@jsep-plugin/assignment@1.3.0':
+    resolution: {integrity: sha512-VVgV+CXrhbMI3aSusQyclHkenWSAm95WaiKrMxRFam3JSUiIaQjoMIw2sEs/OX4XifnqeQUN4DYbJjlA8EfktQ==}
+    engines: {node: '>= 10.16.0'}
+    peerDependencies:
+      jsep: ^0.4.0||^1.0.0
+
+  '@jsep-plugin/regex@1.0.4':
+    resolution: {integrity: sha512-q7qL4Mgjs1vByCaTnDFcBnV9HS7GVPJX5vyVoCgZHNSC9rjwIlmbXG5sUuorR5ndfHAIlJ8pVStxvjXHbNvtUg==}
+    engines: {node: '>= 10.16.0'}
+    peerDependencies:
+      jsep: ^0.4.0||^1.0.0
+
   '@langchain/core@1.2.9':
     resolution: {integrity: sha512-conzSEj9Zu1AyXJLXsSbgrtxtxinmI1yGqQ5CIJZSoV5rvv+yvQE/vgBnoySpBQ/bl3YPgj2FL/gbDjWykLSfg==}
     engines: {node: '>=20'}
@@ -1637,6 +1661,10 @@ packages:
   '@types/hast@3.0.5':
     resolution: {integrity: sha512-rp/ezSWaD1m44dPKICGhiskI13nVr7qTloFwDa/IYkhhf5nzwP+zIQcIJh3WIFSBOy/H1PzB40jPjMDksN4F+g==}
 
+  '@types/json-rules-engine@4.1.0':
+    resolution: {integrity: sha512-lH8brqgqkQilK/cTUVq4kn22+YrJjyOwbOOdItewOul/GxyUVDWmmDQcREeIj35edFsd0jPhZf7le0N83dfwUA==}
+    deprecated: This is a stub types definition. json-rules-engine provides its own type definitions, so you do not need this installed.
+
   '@types/json-schema@7.0.15':
     resolution: {integrity: sha512-5+fP8P8MFNC+AyZCDxrB2pkZFPGzqQWUzpSeuuVLvm8VMcorNYavBqoFcxK8bQz4Qsbn4oUEEem4wDLfcysGHA==}
 
@@ -1940,6 +1968,10 @@ packages:
   chownr@1.1.4:
     resolution: {integrity: sha512-jJ0bqzaylmJtVnNgzTeSOs8DPavpbYgEr/b0YL8/2GO3xJEhInFmhKMUnEJQjZumK7KXGFhUy89PrsJWlakBVg==}
 
+  clone@2.1.2:
+    resolution: {integrity: sha512-3Pe/CF1Nn94hyhIYpjtiLhdCoEoz0DqQ+988E9gmeEdQZlojxnOb74wctFyuwWQHzqyf9X7C7MG8juUpqBJT8w==}
+    engines: {node: '>=0.8'}
+
   code-block-writer@13.0.3:
     resolution: {integrity: sha512-Oofo0pq3IKnsFtuHqSF7TqBfr71aeyZDVJ0HpmqB7FBM2qEigL0iPONSCZSO9pE9dZTAxANe5XHG9Uy0YMv8cg==}
 
@@ -2025,6 +2057,9 @@ packages:
   emoji-regex-xs@1.0.0:
     resolution: {integrity: sha512-LRlerrMYoIDrT6jgpeZ2YYl/L8EulRTt5hQcYjy5AInh7HWXKimpqx68aknBFpGL2+/IcogTcaydJEgaTmOpDg==}
 
+  emoji-regex@9.2.2:
+    resolution: {integrity: sha512-L18DaJsXSUk2+42pv8mLs5jJT2hqFkFE4j21wOmgbUqsZ2hL72NsUU785g9RXgo3s0ZNgVl42TiHp3ZtOv/Vyg==}
+
   end-of-stream@1.4.5:
     resolution: {integrity: sha512-ooEGc6HP26xXq/N+GCGOT0JKCLDGrq2bQUZrQ7gyrJiZANJ/8YDTxTpQBXGMn+WbIQXNVpyWymm7KYVICQnyOg==}
 
@@ -2073,6 +2108,9 @@ packages:
 
   estree-walker@3.0.3:
     resolution: {integrity: sha512-7RUKfXgSMMkzt6ZuXmqapOurLGPPfgj6l9uRZ7lRGolvk0y2yocc35LdcxKC5PQZdn2DMqioAQ2NoWcrTKmm6g==}
+
+  eventemitter2@6.4.9:
+    resolution: {integrity: sha512-JEPTiaOt9f04oa6NOkc4aH+nVp5I3wEjpHbIPqfgCdD5v5bUzy7xQqwcVO2aDQgOWhI28da57HksMrzK9HlRxg==}
 
   eventemitter3@4.0.7:
     resolution: {integrity: sha512-8guHBZCwKnFhYdHr2ysuRWErTwhoN2X8XELRlrRwpmfeY2jjuUN4taQMsULKUVo1K4DvZl+0pgfyoysHxvmvEw==}
@@ -2128,6 +2166,9 @@ packages:
   graceful-fs@4.2.11:
     resolution: {integrity: sha512-RbJ5/jmFcNNCcDV5o9eTnBLJ/HszWV0P73bc+Ff4nS/rJj+YaS6IGyiOL0VoBYX+l1Wrl3k63h/KrH+nhJ0XvQ==}
 
+  hash-it@6.0.1:
+    resolution: {integrity: sha512-qhl8+l4Zwi1eLlL3lja5ywmDQnBzLEJxd0QJoAVIgZpgQbdtVZrN5ypB0y3VHwBlvAalpcbM2/A6x7oUks5zNg==}
+
   hast-util-to-html@9.0.5:
     resolution: {integrity: sha512-OguPdidb+fbHQSU4Q4ZiLKnzWo8Wwsf5bZfbvu7//a9oTYoqD/fWpe96NuHkoS9h0ccGOTe0C4NGXdtS0iObOw==}
 
@@ -2171,14 +2212,27 @@ packages:
     resolution: {integrity: sha512-CY6crGq313MX8GkwvB7tzgp99vjQxY1++5y10/BKN/GUfHqWaOGQMNZkBvqSzsZKWk/ijwHlWzzkLulsGHhjWQ==}
     hasBin: true
 
+  jsep@1.4.0:
+    resolution: {integrity: sha512-B7qPcEVE3NVkmSJbaYxvv4cHkVW7DQsZz13pUMrfS8z8Q/BuShN+gcTXrUlPiGqM2/t/EEaI030bpxMqY8gMlw==}
+    engines: {node: '>= 10.16.0'}
+
   jsesc@3.1.0:
     resolution: {integrity: sha512-/sM3dO2FOzXjKQhJuo0Q173wf2KOo8t4I8vHy6lF9poUp7bKT0/NHE8fPX23PwfhnykfqnC2xRxOnVw5XuGIaA==}
     engines: {node: '>=6'}
     hasBin: true
 
+  json-rules-engine@7.3.1:
+    resolution: {integrity: sha512-NyRTQZllvAt7AQ3g9P7/t4nIwlEB+EyZV7y8/WgXfZWSlpcDryt1UH9CsoU+Z+MDvj8umN9qqEcbE6qnk9JAHw==}
+    engines: {node: '>=18.0.0'}
+
   json5@2.2.3:
     resolution: {integrity: sha512-XmOWe7eyHYH14cLdVPoyg+GOH3rYX++KpzrylJwSW98t3Nk+U8XOl8FWKOgwtzdb8lXGf6zYwDUzeHMWfxasyg==}
     engines: {node: '>=6'}
+    hasBin: true
+
+  jsonpath-plus@10.4.0:
+    resolution: {integrity: sha512-T92WWatJXmhBbKsgH/0hl+jxjdXrifi5IKeMY02DWggRxX0UElcbVzPlmgLTbvsPeW1PasQ6xE2Q75stkhGbsA==}
+    engines: {node: '>=18.0.0'}
     hasBin: true
 
   langchain@1.5.10:
@@ -2946,6 +3000,34 @@ packages:
     engines: {node: '>=8'}
     hasBin: true
 
+  wink-bm25-text-search@3.1.2:
+    resolution: {integrity: sha512-s+xY0v/yurUhiUop/XZnf9IvO9XVuwI14X+QTW0JqlmQCg+9ZgVXTMudXKqZuQVsnm5J+RjLnqrOflnD5BLApA==}
+
+  wink-distance@2.0.2:
+    resolution: {integrity: sha512-pyEhUB/OKFYcgOC4J6E+c+gwVA/8qg2s5n49mIcUsJZM5iDSa17uOxRQXR4rvfp+gbj55K/I08FwjFBwb6fq3g==}
+
+  wink-eng-lite-web-model@1.8.1:
+    resolution: {integrity: sha512-M2tSOU/rVNkDj8AS8IoKJaM7apJJjS0cN+hE8CPazfnB4A/ojyc9+7RMPk18UOiIdSyWk7MR6w8z9lWix2l5tA==}
+    engines: {node: '>=16.0.0'}
+
+  wink-helpers@2.0.0:
+    resolution: {integrity: sha512-I/ZzXrHcNRXuoeFJmp2vMVqDI6UCK02Tds1WP4kSGAmx520gjL1BObVzF7d2ps24tyHIly9ngdB2jwhlFUjPvg==}
+
+  wink-jaro-distance@2.0.0:
+    resolution: {integrity: sha512-9bcUaXCi9N8iYpGWbFkf83OsBkg17r4hEyxusEzl+nnReLRPqxhB9YNeRn3g54SYnVRNXP029lY3HDsbdxTAuA==}
+
+  wink-nlp-utils@2.1.0:
+    resolution: {integrity: sha512-b7PcRhEBNxQmsmht70jLOkwYUyie3da4/cgEXL+CumYO5b/nwV+W7fuMXToh5BtGq1RABznmc2TGTp1Qf/JUXg==}
+
+  wink-nlp@1.14.3:
+    resolution: {integrity: sha512-lvY5iCs3T8I34F8WKS70+2P0U9dWLn3vdPf/Z+m2VK14N7OmqnPzmHfh3moHdusajoQ37Em39z0IZB9K4x/96A==}
+
+  wink-porter2-stemmer@2.0.1:
+    resolution: {integrity: sha512-0g+RkkqhRXFmSpJQStVXW5N/WsshWpJXsoDRW7DwVkGI2uDT6IBCoq3xdH5p6IHLaC6ygk7RWUsUx4alKxoagQ==}
+
+  wink-tokenizer@5.3.0:
+    resolution: {integrity: sha512-O/yAw0g3FmSgeeQuYAJJfP7fVPB4A6ay0018qASh79aWmIOyPYy4j4r9EQT8xBjicja6lCLvgRVAybmEBaATQA==}
+
   wrappy@1.0.2:
     resolution: {integrity: sha512-l4Sp/DRseor9wL6EvV2+TuQn63dMkPjZ/sp9XkghTEbV9KlPS1xUsZ3u7/IQO4wxtcFB4bgpQPRcR3QCvezPcQ==}
 
@@ -3505,6 +3587,14 @@ snapshots:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.5.5
 
+  '@jsep-plugin/assignment@1.3.0(jsep@1.4.0)':
+    dependencies:
+      jsep: 1.4.0
+
+  '@jsep-plugin/regex@1.0.4(jsep@1.4.0)':
+    dependencies:
+      jsep: 1.4.0
+
   '@langchain/core@1.2.9(openai@7.9.0(undici@7.29.0)(zod@4.5.4))':
     dependencies:
       '@cfworker/json-schema': 4.1.1
@@ -3783,6 +3873,10 @@ snapshots:
   '@types/hast@3.0.5':
     dependencies:
       '@types/unist': 3.0.3
+
+  '@types/json-rules-engine@4.1.0':
+    dependencies:
+      json-rules-engine: 7.3.1
 
   '@types/json-schema@7.0.15': {}
 
@@ -4117,6 +4211,8 @@ snapshots:
 
   chownr@1.1.4: {}
 
+  clone@2.1.2: {}
+
   code-block-writer@13.0.3: {}
 
   comma-separated-tokens@2.0.3: {}
@@ -4178,6 +4274,8 @@ snapshots:
       - supports-color
 
   emoji-regex-xs@1.0.0: {}
+
+  emoji-regex@9.2.2: {}
 
   end-of-stream@1.4.5:
     dependencies:
@@ -4290,6 +4388,8 @@ snapshots:
     dependencies:
       '@types/estree': 1.0.9
 
+  eventemitter2@6.4.9: {}
+
   eventemitter3@4.0.7: {}
 
   eventemitter3@5.0.4: {}
@@ -4330,6 +4430,8 @@ snapshots:
       path-scurry: 2.0.2
 
   graceful-fs@4.2.11: {}
+
+  hash-it@6.0.1: {}
 
   hast-util-to-html@9.0.5:
     dependencies:
@@ -4375,9 +4477,24 @@ snapshots:
     dependencies:
       argparse: 2.0.1
 
+  jsep@1.4.0: {}
+
   jsesc@3.1.0: {}
 
+  json-rules-engine@7.3.1:
+    dependencies:
+      clone: 2.1.2
+      eventemitter2: 6.4.9
+      hash-it: 6.0.1
+      jsonpath-plus: 10.4.0
+
   json5@2.2.3: {}
+
+  jsonpath-plus@10.4.0:
+    dependencies:
+      '@jsep-plugin/assignment': 1.3.0(jsep@1.4.0)
+      '@jsep-plugin/regex': 1.0.4(jsep@1.4.0)
+      jsep: 1.4.0
 
   langchain@1.5.10(@langchain/core@1.2.9(openai@7.9.0(undici@7.29.0)(zod@4.5.4)))(openai@7.9.0(undici@7.29.0)(zod@4.5.4)):
     dependencies:
@@ -5109,6 +5226,41 @@ snapshots:
     dependencies:
       siginfo: 2.0.0
       stackback: 0.0.2
+
+  wink-bm25-text-search@3.1.2:
+    dependencies:
+      wink-eng-lite-web-model: 1.8.1
+      wink-helpers: 2.0.0
+      wink-nlp: 1.14.3
+      wink-nlp-utils: 2.1.0
+
+  wink-distance@2.0.2:
+    dependencies:
+      wink-helpers: 2.0.0
+      wink-jaro-distance: 2.0.0
+
+  wink-eng-lite-web-model@1.8.1: {}
+
+  wink-helpers@2.0.0: {}
+
+  wink-jaro-distance@2.0.0: {}
+
+  wink-nlp-utils@2.1.0:
+    dependencies:
+      wink-distance: 2.0.2
+      wink-eng-lite-web-model: 1.8.1
+      wink-helpers: 2.0.0
+      wink-nlp: 1.14.3
+      wink-porter2-stemmer: 2.0.1
+      wink-tokenizer: 5.3.0
+
+  wink-nlp@1.14.3: {}
+
+  wink-porter2-stemmer@2.0.1: {}
+
+  wink-tokenizer@5.3.0:
+    dependencies:
+      emoji-regex: 9.2.2
 
   wrappy@1.0.2: {}
 

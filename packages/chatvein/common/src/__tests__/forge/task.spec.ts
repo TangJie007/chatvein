@@ -4,7 +4,7 @@ import {
   nextRunnableTasks,
   topoSortTasks,
   type Task,
-} from '../task'
+} from '../../forge/task'
 
 function makeTask(partial: Partial<Task> & Pick<Task, 'id'>): Task {
   return {

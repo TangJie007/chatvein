@@ -1,0 +1,8 @@
+export { L1HeuristicRouter, HeuristicRouter, createL1Router, createHeuristicRouter } from './router'
+export type { L1RouterOptions, RouteInput } from './router'
+export { extractFacts, isGreetingOnly, factsFromCtx } from './features'
+export type { HeuristicCtx, HeuristicSession } from './features'
+export { createDefaultRules } from './rules'
+export { RouteBm25Index, tokenizeForBm25 } from './bm25-index'
+export { materialize, eventsWantSkipBm25 } from './materialize'
+export { DEFAULT_SCORE_TABLE, policyForBand, bandFromScore } from './defaults'

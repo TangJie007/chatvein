@@ -1,0 +1,13 @@
+{
+  "greetings": ["ok", "okay", "thanks", "thx", "ty", "lgtm", "👍", "🙏"],
+  "greetingParticles": [],
+  "taskVerbs": [],
+  "toolVerbs": [],
+  "negateTools": [],
+  "multiStep": [],
+  "compare": [],
+  "groupIntent": [],
+  "multiAgentNeed": [],
+  "forgeIntent": [],
+  "correction": []
+}

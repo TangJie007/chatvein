@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { addTokenUsage, emptyTokenStat, emptyTokenUsage } from '../types'
+import { addTokenUsage, emptyTokenStat, emptyTokenUsage } from '../../core/types'
 
 describe('TokenUsage helpers', () => {
   it('addTokenUsage 累加', () => {

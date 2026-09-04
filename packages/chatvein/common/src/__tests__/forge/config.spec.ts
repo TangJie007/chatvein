@@ -3,8 +3,8 @@ import {
   DEFAULT_TRUNCATION,
   parseForgeConfig,
   forgeConfigSchema,
-} from '../config'
-import { DEFAULT_BUDGET } from '../types'
+} from '../../forge/config'
+import { DEFAULT_BUDGET } from '../../core/types'
 
 describe('parseForgeConfig', () => {
   it('合法配置通过校验', () => {

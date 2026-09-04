@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { createConsoleLogger, createNullLogger, type LogEntry } from '../logger'
+import { createConsoleLogger, createNullLogger, type LogEntry } from '../../core/logger'
 
 describe('createConsoleLogger', () => {
   it('按级别过滤：info 级别不输出 debug', () => {

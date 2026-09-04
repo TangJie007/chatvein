@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { createInitialState } from '../graph'
-import { DEFAULT_BUDGET, emptyTokenStat } from '../types'
-import { isVerifyPassed, type VerifyResult } from '../verifier'
+import { createInitialState } from '../../forge/graph'
+import { DEFAULT_BUDGET, emptyTokenStat } from '../../core/types'
+import { isVerifyPassed, type VerifyResult } from '../../forge/verifier'
 
 describe('createInitialState', () => {
   it('填充默认预算与空 token 统计', () => {
