@@ -1,5 +1,6 @@
-/** Channel map: `'user:list': () => Promise<User[]>` */
-export type IpcApiMap = Record<string, (...args: any[]) => any>
+/** Channel map: `'user:list': () => Promise<User[]>`（具体键即可，不要求 index signature） */
+export type IpcChannelFn = (...args: any[]) => any
+export type IpcApiMap = Record<string, IpcChannelFn>
 
 export interface ElectrumBridge {
   invoke: (channel: string, ...args: unknown[]) => Promise<unknown>
@@ -13,7 +14,7 @@ type ChannelMethod<T extends string, P extends string> = T extends `${P}:${infer
   : never
 
 /** `'user:list' | 'file:read'` → `{ user: { list: ... }, file: { read: ... } }` */
-export type NestedIpcClient<T extends IpcApiMap> = {
+export type NestedIpcClient<T> = {
   [P in ChannelPrefix<keyof T & string>]: {
     [M in ChannelMethod<keyof T & string, P>]: T[Extract<
       keyof T,
@@ -22,11 +23,11 @@ export type NestedIpcClient<T extends IpcApiMap> = {
   }
 }
 
-export type ElectrumClient<T extends IpcApiMap = IpcApiMap> = {
+export type ElectrumClient<T = IpcApiMap> = {
   invoke: <K extends keyof T & string>(
     channel: K,
-    ...args: Parameters<T[K]>
-  ) => ReturnType<T[K]>
+    ...args: Parameters<Extract<T[K], IpcChannelFn>>
+  ) => ReturnType<Extract<T[K], IpcChannelFn>>
   on: (channel: string, listener: (...args: any[]) => void) => () => void
   send: (channel: string, ...args: any[]) => void
 } & Omit<NestedIpcClient<T>, 'invoke' | 'on' | 'send'>

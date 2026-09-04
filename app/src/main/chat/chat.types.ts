@@ -56,6 +56,14 @@ export type ChatStreamEvent =
       conversationId: string
       decision: import('@chatvein/common').RouteDecision
     }
+  | {
+      /** 开发环境：单次 LLM 返回全量，渲染进程 console.log */
+      type: 'llm_debug'
+      runId: string
+      conversationId: string
+      source: string
+      payload: unknown
+    }
 
 export interface ChatSendResult {
   conversation: Conversation

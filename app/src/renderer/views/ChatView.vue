@@ -21,6 +21,7 @@ const models = useModels()
 
 const scroller = ref<HTMLElement | null>(null)
 const status = ref('')
+const draft = ref('')
 /** 右侧「Trace / 思考流」面板是否展开（Trace 按钮切换） */
 const tracePanelOpen = ref(true)
 
@@ -112,6 +113,7 @@ async function onSend(text: string) {
   status.value = '生成中…'
   try {
     const result = await chat.send(text)
+    draft.value = ''
     status.value = `完成 · ${result.latencyMs} ms · ${result.model}`
     setCrumbItem(result.conversation.title)
     await scrollBottom()
@@ -261,6 +263,7 @@ onMounted(async () => {
       </div>
 
       <Composer
+        v-model="draft"
         :placeholder="`跟 ${activeAgent?.name || 'Agent'} 说点什么…`"
         :scope-label="activeModel ? activeModel.model : '未绑定模型'"
         :send-label="chat.sending ? '生成中' : '发送'"

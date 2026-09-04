@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { nextTick, ref, watch } from 'vue'
+import { ref, watch } from 'vue'
 import AppIcon from '../AppIcon.vue'
 
 const props = defineProps<{
@@ -41,9 +41,6 @@ function send() {
   const value = text.value.trim()
   if (!value) return
   emit('send', value)
-  text.value = ''
-  emit('update:modelValue', '')
-  void nextTick(autosize)
 }
 
 function onKeydown(e: KeyboardEvent) {

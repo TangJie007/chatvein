@@ -8,6 +8,7 @@ import {
   type ModelResult,
   type TokenUsage,
 } from '@chatvein/common'
+import { logLlmResponse } from './llm-debug-log'
 
 export interface OpenAICompatibleConfig {
   id: string
@@ -87,12 +88,19 @@ export class OpenAICompatibleChatModel implements ChatModelLike {
       const content = json.choices?.[0]?.message?.content?.trim() ?? ''
       if (!content) throw new ModelError('模型返回空内容', 'MODEL_EMPTY')
 
-      return {
+      const result: ModelResult = {
         content,
         usage: parseUsage(json.usage),
         model: json.model || this.config.model,
         latencyMs,
       }
+      logLlmResponse('openai-compatible', {
+        modelId: this.id,
+        requestModel: this.config.model,
+        raw: json,
+        result,
+      })
+      return result
     } catch (err) {
       if (err instanceof ModelError || err instanceof ValidationError) throw err
       const aborted = err instanceof Error && err.name === 'AbortError'

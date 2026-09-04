@@ -4,5 +4,6 @@ export type {
   ElectrumBridge,
   ElectrumClient,
   IpcApiMap,
+  IpcChannelFn,
   NestedIpcClient,
 } from './types'

@@ -150,8 +150,13 @@ export function materialize(input: MaterializeInput): RouteDecision {
     band = 'unknown'
   }
 
-  // 默认：有 bump 但未 override → 按 score；全无信号走 standard 保守？设计说 unknown 用 medium 保守
-  if (acc.score === 0 && !acc.bandOverride && !input.ctx.hitGreetingOnly) {
+  // 无规则 bump 且 BM25 未自信采纳 → 保守 unknown（勿冲掉已采纳的 bm25_vote）
+  if (
+    acc.score === 0 &&
+    !acc.bandOverride &&
+    !input.ctx.hitGreetingOnly &&
+    !confident
+  ) {
     band = 'unknown'
     confident = false
     if (!acc.reasons.includes('no_signal_unsupported_lang')) {

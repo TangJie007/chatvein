@@ -17,4 +17,19 @@ export {
   type ConcurrencyLimitedOptions,
 } from './semaphore'
 export { createEndpointModel, createModelRouter } from './factory'
-export { createLangChainChatModel } from './langchain-bridge'
+export { createLangChainChatModel, type CreateLangChainChatModelOptions } from './langchain-bridge'
+export {
+  isLlmDebugLogEnabled,
+  logLlmResponse,
+  safeJsonStringify,
+  toIpcSafePayload,
+  runWithLlmDebugLog,
+  type LlmDebugContext,
+} from './llm-debug-log'
+export {
+  DevLlmLogCallbackHandler,
+  maybeDevLlmCallbacks,
+  setLlmDebugSink,
+  getLlmDebugSink,
+  type LlmDebugSink,
+} from './dev-llm-callback'

@@ -2,7 +2,7 @@ import type {
   CreateClientOptions,
   ElectrumBridge,
   ElectrumClient,
-  IpcApiMap,
+  IpcChannelFn,
 } from './types'
 
 function getBridge(key: string): ElectrumBridge {
@@ -27,7 +27,7 @@ function getBridge(key: string): ElectrumBridge {
  * api.on('file:saved', (p) => {})
  * ```
  */
-export function createClient<T extends IpcApiMap = IpcApiMap>(
+export function createClient<T extends { [K in keyof T]: IpcChannelFn }>(
   options: CreateClientOptions = {},
 ): ElectrumClient<T> {
   const key = options.key ?? 'api'

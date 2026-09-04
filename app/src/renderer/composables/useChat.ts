@@ -48,6 +48,21 @@ api.on('chat:event', (evt: unknown) => {
     case 'route':
       // 路由详情已写入 thinking_delta；此处预留 UI 结构化消费
       break
+    case 'llm_debug':
+      // 开发环境：渲染进程 DevTools；payload 可能已是 JSON 字符串
+      {
+        const raw = e.payload
+        let body: unknown = raw
+        if (typeof raw === 'string') {
+          try {
+            body = JSON.parse(raw) as unknown
+          } catch {
+            body = raw
+          }
+        }
+        console.log(`[chatvein:llm:${e.source}]`, body)
+      }
+      break
   }
 })
 

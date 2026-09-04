@@ -228,3 +228,10 @@ export type ChatStreamEvent =
       conversationId: string
       decision: import('@chatvein/common').RouteDecision
     }
+  | {
+      type: 'llm_debug'
+      runId: string
+      conversationId: string
+      source: string
+      payload: unknown
+    }

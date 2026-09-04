@@ -5,7 +5,11 @@ import {
   invokeReactChatAgent,
 } from '@chatvein/agents'
 import type { ComplexityBand, RouteDecision } from '@chatvein/common'
-import { createLangChainChatModel } from '@chatvein/models'
+import {
+  createLangChainChatModel,
+  isLlmDebugLogEnabled,
+  safeJsonStringify,
+} from '@chatvein/models'
 import { randomUUID } from 'node:crypto'
 import { AgentService } from '../agent/agent.service'
 import { MAIN_AGENT_ID } from '../agent/agent.types'
@@ -160,6 +164,9 @@ export class ChatService {
       delta: 'ReAct 运行中（@chatvein/agents）…\n',
     })
 
+    const systemPrompt = agent.systemPrompt?.trim() || undefined
+    const recursionLimit = Math.max(1, route.policy.maxSteps || 25)
+
     const llm = createLangChainChatModel({
       id: model.id,
       baseUrl: model.baseUrl,
@@ -172,19 +179,48 @@ export class ChatService {
     const reactAgent = createReactChatAgent({
       model: llm,
       tools: [],
-      systemPrompt: agent.systemPrompt?.trim() || undefined,
+      systemPrompt,
       name: agent.name,
     })
 
     const started = Date.now()
     let text: string
     try {
+      this.emitLlmDebug(emit, runId, conv.id, 'react:request', {
+        model: {
+          id: model.id,
+          name: model.name,
+          model: model.model,
+          baseUrl: model.baseUrl,
+          temperature: model.temperature,
+          maxTokens: model.maxTokens,
+        },
+        agent: { id: agent.id, name: agent.name },
+        systemPrompt: systemPrompt ?? null,
+        recursionLimit,
+        route: {
+          band: route.band,
+          score: route.score,
+          tools: route.policy.tools,
+          modelTier: route.policy.modelTier,
+        },
+        history,
+        message: content,
+      })
+
       const result = await invokeReactChatAgent(reactAgent, {
         message: content,
         history,
-        recursionLimit: Math.max(1, route.policy.maxSteps || 25),
+        recursionLimit,
       })
       text = result.content.trim()
+
+      this.emitLlmDebug(emit, runId, conv.id, 'react:response', {
+        content: result.content,
+        messageCount: result.messages.length,
+        messages: result.messages,
+        latencyMs: Date.now() - started,
+      })
     } catch (err) {
       emit?.({ type: 'thinking_done', runId, conversationId: conv.id })
       throw new ValidationException(formatAgentError(err), [])
@@ -205,6 +241,28 @@ export class ChatService {
       model.model,
       route,
     )
+  }
+
+  /** 开发环境：推渲染进程 DevTools（不挂 LangChain 回调） */
+  private emitLlmDebug(
+    emit: ((evt: ChatStreamEvent) => void) | undefined,
+    runId: string,
+    conversationId: string,
+    source: string,
+    payload: unknown,
+  ): void {
+    if (!isLlmDebugLogEnabled() || !emit) return
+    try {
+      emit({
+        type: 'llm_debug',
+        runId,
+        conversationId,
+        source,
+        payload: safeJsonStringify(payload),
+      })
+    } catch {
+      // ignore
+    }
   }
 
   private async persistAssistant(
