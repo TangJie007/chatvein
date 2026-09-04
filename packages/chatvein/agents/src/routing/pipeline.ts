@@ -1,5 +1,7 @@
 /**
- * 路由管线：L1（启发式）→ 可选 L2（弱模型 stub）→ 预留 L3。
+ * 路由管线：L1（启发式）→ 可选 L2（弱模结构化）→ 预留 L3。
+ *
+ * L2 在 ReAct 之外；语义意图仍由主模型在 ReAct 内理解。
  */
 import type { RouteDecision, RoutePrototype } from '@chatvein/common'
 import {
@@ -13,9 +15,9 @@ import { createL2Classifier, shouldEscalateToL2, type L2Classifier } from './l2'
 import { loadDefaultPrototypes } from './locales'
 
 export interface HeuristicRouterOptions extends L1RouterOptions {
-  /** 注入 L2；默认 Passthrough stub */
+  /** 注入 L2；默认无模型 → Passthrough */
   l2?: L2Classifier
-  /** 是否在灰区调用 L2（默认 true；stub 时等价透传） */
+  /** 是否在灰区调用 L2（默认 true） */
   enableL2?: boolean
 }
 
@@ -25,13 +27,19 @@ export interface HeuristicRouterOptions extends L1RouterOptions {
  */
 export class HeuristicRouter {
   private readonly l1: L1HeuristicRouter
-  private readonly l2: L2Classifier
-  private readonly enableL2: boolean
+  private l2: L2Classifier
+  private enableL2: boolean
 
   constructor(options: HeuristicRouterOptions = {}) {
     this.l1 = createL1Router(options)
     this.l2 = options.l2 ?? createL2Classifier()
     this.enableL2 = options.enableL2 !== false
+  }
+
+  /** 热更新 L2（例如 app 绑定弱模后注入 StructuredL2Classifier） */
+  setL2(l2: L2Classifier, enableL2 = true): void {
+    this.l2 = l2
+    this.enableL2 = enableL2
   }
 
   reloadRules(rules: object[]): void {
@@ -51,21 +59,18 @@ export class HeuristicRouter {
     if (!this.enableL2 || !shouldEscalateToL2(l1Decision)) {
       return l1Decision
     }
+
+    // —— 重点：仅灰区 escalate；terminal / 高置信寒暄不进 L2 ——
     const session = {
       turnIndex: input.session?.turnIndex ?? 0,
       lastBand: input.session?.lastBand,
       lastAssistantHadTools: input.session?.lastAssistantHadTools ?? false,
       recentFailure: input.session?.recentFailure ?? false,
-      activeMode: input.session?.activeMode ?? 'chat' as const,
+      activeMode: input.session?.activeMode ?? ('chat' as const),
       forceTier: input.session?.forceTier,
     }
     const ctx = extractFacts(input.text, session)
-    const l2Decision = await this.l2.classify(ctx, l1Decision)
-    if (l2Decision === l1Decision) return l1Decision
-    return {
-      ...l2Decision,
-      reasons: [...l2Decision.reasons, 'l2_classifier'],
-    }
+    return this.l2.classify(ctx, l1Decision)
   }
 }
 
@@ -73,6 +78,14 @@ let shared: HeuristicRouter | undefined
 
 export function getDefaultHeuristicRouter(): HeuristicRouter {
   if (!shared) shared = new HeuristicRouter()
+  return shared
+}
+
+/** 重建默认单例（测试或注入 L2 模型时） */
+export function configureDefaultHeuristicRouter(
+  options?: HeuristicRouterOptions,
+): HeuristicRouter {
+  shared = new HeuristicRouter(options)
   return shared
 }
 

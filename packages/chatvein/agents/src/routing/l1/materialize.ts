@@ -124,10 +124,12 @@ export function materialize(input: MaterializeInput): RouteDecision {
         acc.reasons.push(`bm25_vote:${vote.band}:${vote.ratio.toFixed(2)}`)
       }
     } else if (vote && !vote.adopted) {
+      // 方案 A：弱投票只作灰区信号，不得自信定档（避免「整理成 md」→ simple/none）
       acc.score = clampScore(acc.score + 5)
       acc.reasons.push('bm25_weak_vote')
+      confident = false
       if (!acc.bandOverride) {
-        band = bandFromScore(acc.score, table)
+        band = 'unknown'
       }
     }
   }

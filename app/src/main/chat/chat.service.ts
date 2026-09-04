@@ -1,5 +1,6 @@
 import { Injectable, Inject, NotFoundException, ValidationException } from '@electrum/common'
 import {
+  createL2Classifier,
   createReactChatAgent,
   getDefaultHeuristicRouter,
   invokeReactChatAgent,
@@ -14,6 +15,7 @@ import { randomUUID } from 'node:crypto'
 import { AgentService } from '../agent/agent.service'
 import { MAIN_AGENT_ID } from '../agent/agent.types'
 import { ModelService } from '../model/model.service'
+import type { ModelConfig } from '../model/model.types'
 import { ChatStore } from './chat.store'
 import type {
   ChatMessage,
@@ -35,6 +37,8 @@ export class ChatService {
   private models!: ModelService
 
   private lastBandByConv = new Map<string, ComplexityBand>()
+  /** 已为该模型 id 注入过 Structured L2，避免每轮重建 */
+  private l2BoundModelId: string | null = null
 
   async list(): Promise<Conversation[]> {
     const data = await this.store.load()
@@ -77,7 +81,7 @@ export class ChatService {
   }
 
   /**
-   * 普通对话：L1/L1.5 启发式路由 → Agent → Model → `@chatvein/agents` ReAct。
+   * 普通对话：L1/L1.5 →（灰区）L2 结构化分类 → Agent ReAct。
    * 工具白名单尚未落地时 tools=[]；路由 policy 供后续裁剪与 UI 提示。
    */
   async send(
@@ -125,7 +129,9 @@ export class ChatService {
       ts: Date.now(),
     })
 
-    const route = await getDefaultHeuristicRouter().route({
+    // L1 →（灰区）L2 结构化分类 → ReAct；L2 用弱模偏好，无分档表时回退当前 Agent 模型
+    const router = await this.routerWithL2(model)
+    const route = await router.route({
       text: content,
       session: {
         turnIndex: history.filter((m) => m.role === 'user').length,
@@ -380,7 +386,8 @@ export class ChatService {
       ts: Date.now(),
     })
 
-    const route = await getDefaultHeuristicRouter().route({
+    const router = await this.routerWithL2(model)
+    const route = await router.route({
       text: content,
       session: {
         turnIndex: history.filter((m) => m.role === 'user').length,
@@ -477,6 +484,40 @@ export class ChatService {
         true,
       )
     }
+  }
+
+  /**
+   * 确保默认路由器挂上 Structured L2。
+   * 一期无独立 weak 模型表：优先名称含 flash/mini/turbo/haiku/lite 的已启用模型，否则用当前对话模型（低温短输出）。
+   */
+  private async routerWithL2(agentModel: ModelConfig) {
+    const l2Model = await this.resolveL2Model(agentModel)
+    const router = getDefaultHeuristicRouter()
+    if (this.l2BoundModelId === l2Model.id) return router
+
+    const llm = createLangChainChatModel({
+      id: l2Model.id,
+      baseUrl: l2Model.baseUrl,
+      apiKey: l2Model.apiKey,
+      model: l2Model.model,
+      temperature: 0,
+      maxTokens: 256,
+    })
+    router.setL2(createL2Classifier({ model: llm, timeoutMs: 12_000 }))
+    this.l2BoundModelId = l2Model.id
+    return router
+  }
+
+  private async resolveL2Model(agentModel: ModelConfig): Promise<ModelConfig> {
+    const list = await this.models.list()
+    const weakish = list.find(
+      (m) =>
+        m.enabled &&
+        m.baseUrl?.trim() &&
+        m.model?.trim() &&
+        /flash|mini|turbo|haiku|lite|small/i.test(`${m.name} ${m.model}`),
+    )
+    return weakish ?? agentModel
   }
 
   /** 开发环境：推渲染进程 DevTools（不挂 LangChain 回调） */
@@ -600,8 +641,13 @@ function formatRouteThinking(route: RouteDecision): string {
   if (route.policy.hintUserCreateGroup) hints.push('可提示用户拉群')
   if (route.policy.hintUserForge) hints.push('可提示派 Forge')
   if (route.policy.allowSubAgents) hints.push('允许子 Agent')
+  const l2 = route.reasons.includes('l2_classifier')
+    ? '；已过 L2'
+    : route.reasons.includes('l2_failed') || route.reasons.includes('l2_timeout')
+      ? '；L2 失败保留 L1'
+      : ''
   const hintStr = hints.length ? `；${hints.join('、')}` : ''
-  return `路由 L1：band=${route.band} score=${route.score} tier=${route.policy.modelTier} tools=${route.policy.tools} maxSteps=${route.policy.maxSteps}（${route.reasons.slice(0, 4).join(', ') || '—'}）${hintStr}\n`
+  return `路由 L1/L2：band=${route.band} score=${route.score} tier=${route.policy.modelTier} tools=${route.policy.tools} maxSteps=${route.policy.maxSteps}（${route.reasons.slice(0, 6).join(', ') || '—'}）${hintStr}${l2}\n`
 }
 
 function formatPolicyApply(route: RouteDecision): string {

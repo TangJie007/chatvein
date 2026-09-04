@@ -26,4 +26,5 @@ L1 启发式无法可靠区分「只需读工具」与「需要写/执行工具�
 
 - 收益：工具强度语义与「灰区交下一层」一致；假阳性查询不再假装已定只读。
 - 代价：在 L2 落地前，`tools: unknown` 仍可能被下游保守当成满配或空配，需尽快接 L2 或执行层默认策略。
+- **更新（同日 L2 落地）**：灰区已由 Structured L2 拍板 `none|full`；见 [`2026-09-04-l2-structured-router.md`](./2026-09-04-l2-structured-router.md)。
 - 相关：[`2026-09-04-heuristic-routing-l1.md`](./2026-09-04-heuristic-routing-l1.md)、[`docs/design/09-启发式规则路由.md`](../../docs/design/09-启发式规则路由.md)。

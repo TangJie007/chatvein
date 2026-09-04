@@ -2,6 +2,7 @@ export {
   HeuristicRouter,
   createHeuristicRouter,
   getDefaultHeuristicRouter,
+  configureDefaultHeuristicRouter,
   loadDefaultPrototypes,
   type HeuristicRouterOptions,
   type RouteInput,
@@ -29,8 +30,14 @@ export {
 export {
   createL2Classifier,
   PassthroughL2Classifier,
+  StructuredL2Classifier,
   shouldEscalateToL2,
+  mergeL2Judgement,
+  L2JudgementSchema,
   type L2Classifier,
+  type L2ClassifierOptions,
+  type L2ModelCall,
+  type L2Judgement,
 } from './l2'
 
 export {

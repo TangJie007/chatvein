@@ -9,7 +9,7 @@ describe('pipeline HeuristicRouter', () => {
     expect(shouldEscalateToL2(d)).toBe(false)
   })
 
-  it('英文短句灰区可 escalate（L2 stub 透传）', async () => {
+  it('英文短句灰区可 escalate（无 L2 模型时透传）', async () => {
     const d = await createHeuristicRouter().route({ text: 'hello' })
     expect(d.band).toBe('unknown')
     expect(shouldEscalateToL2(d)).toBe(true)

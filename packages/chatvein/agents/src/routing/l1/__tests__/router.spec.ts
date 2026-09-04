@@ -43,6 +43,19 @@ describe('L1HeuristicRouter', () => {
     expect(d.ruleIds).not.toContain('self_intro_trivial')
   })
 
+  it('无 task_verb 长请求 + 弱 BM25 → 灰区（不自信定 simple）', async () => {
+    const d = await router.route({ text: '帮我整理vue3 的 响应式原理 整理成md文档' })
+    // 方案 A：弱投票不得落成自信 simple/none
+    if (d.reasons.includes('bm25_weak_vote')) {
+      expect(d.confident).toBe(false)
+      expect(d.band).toBe('unknown')
+    }
+    expect(d.band).not.toBe('trivial')
+    // 无论弱投票或 no_strong_signal，都应可 escalate
+    const { shouldEscalateToL2 } = await import('../../l2')
+    expect(shouldEscalateToL2(d)).toBe(true)
+  })
+
   it('slash → terminal', async () => {
     const d = await router.route({ text: '/clear' })
     expect(d.terminal?.kind).toBe('slash')
