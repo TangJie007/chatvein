@@ -108,16 +108,21 @@ export function materialize(input: MaterializeInput): RouteDecision {
     confident = acc.confident ?? (!inGrey && !acc.forceUnknown && acc.score > 0)
 
     // BM25：无硬 band override 时可采纳；tools 与规则合成（unknown 粘性，negate 锁定）
+    // trivial 只认规则（greeting / self_intro），禁止 BM25 单独定档，避免「你好 + 真问题」误短路
     const vote = input.bm25Vote
     if (vote?.adopted && !acc.bandOverride) {
-      band = vote.band
-      acc.policyPatch.tools = synthesizeTools(
-        acc.policyPatch.tools ?? 'none',
-        [vote.tools],
-        acc.lockToolsNone,
-      )
-      confident = true
-      acc.reasons.push(`bm25_vote:${vote.band}:${vote.ratio.toFixed(2)}`)
+      if (vote.band === 'trivial') {
+        acc.reasons.push(`bm25_trivial_ignored:${vote.ratio.toFixed(2)}`)
+      } else {
+        band = vote.band
+        acc.policyPatch.tools = synthesizeTools(
+          acc.policyPatch.tools ?? 'none',
+          [vote.tools],
+          acc.lockToolsNone,
+        )
+        confident = true
+        acc.reasons.push(`bm25_vote:${vote.band}:${vote.ratio.toFixed(2)}`)
+      }
     } else if (vote && !vote.adopted) {
       acc.score = clampScore(acc.score + 5)
       acc.reasons.push('bm25_weak_vote')

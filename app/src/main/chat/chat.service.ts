@@ -174,8 +174,12 @@ export class ChatService {
       delta: formatPolicyApply(route),
     })
 
-    // maxSteps<=0：本地短路，不调 LLM（trivial 寒暄等）
-    if (maxSteps <= 0) {
+    // 仅寒暄 / 自我介绍规则允许本地短路；其它 maxSteps=0（如误判 trivial）仍走 LLM
+    const allowLocalShortCircuit =
+      maxSteps <= 0 &&
+      (route.reasons.includes('greeting_only') || route.reasons.includes('self_intro'))
+
+    if (allowLocalShortCircuit) {
       const text = localReplyForRoute(route, content)
       emit?.({
         type: 'thinking_delta',
@@ -365,8 +369,11 @@ function formatPolicyApply(route: RouteDecision): string {
     `tools=${p.tools}${p.tools === 'full' ? '（白名单未接，暂仍无工具）' : ' → 禁用工具'}`,
     `maxSteps=${p.maxSteps}${p.maxSteps <= 0 ? ' → 将本地短路' : ` → recursionLimit=${Math.max(1, p.maxSteps)}`}`,
   ]
-  if (p.modelTier === 'weak' && p.maxSteps > 0) {
+  if (p.modelTier === 'weak' && !(p.maxSteps <= 0 && (route.reasons.includes('greeting_only') || route.reasons.includes('self_intro')))) {
     lines.push('weak → 注入短回复约束（一两句，不列清单）')
+  }
+  if (p.maxSteps <= 0 && !(route.reasons.includes('greeting_only') || route.reasons.includes('self_intro'))) {
+    lines.push('maxSteps=0 但非寒暄/自我介绍 → 仍调 LLM（recursionLimit≥1）')
   }
   if (p.hintUserCreateGroup) lines.push('hint：提示用户拉群（不自动建群）')
   if (p.hintUserForge) lines.push('hint：提示用户派 Forge（不自动派单）')

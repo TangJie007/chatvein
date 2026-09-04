@@ -19,6 +19,14 @@ describe('L1HeuristicRouter', () => {
     expect(d.ruleIds).toContain('greeting_trivial')
   })
 
+  it('寒暄开头夹真问题 → 不得 trivial / maxSteps=0', async () => {
+    const d = await router.route({ text: '你好，1+1等于多少' })
+    expect(d.band).not.toBe('trivial')
+    expect(d.policy.maxSteps).toBeGreaterThan(0)
+    expect(d.ruleIds).not.toContain('greeting_trivial')
+    expect(d.reasons.some((r) => r.startsWith('bm25_vote:trivial'))).toBe(false)
+  })
+
   it('自我介绍 → trivial + weak + 本地可短路', async () => {
     const d = await router.route({ text: '我叫唐杰' })
     expect(d.band).toBe('trivial')
