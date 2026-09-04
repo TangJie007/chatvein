@@ -59,4 +59,11 @@ describe('extractFacts', () => {
     expect(ctx.hitToolVerb).toBe(true)
     expect(ctx.hitGreetingOnly).toBe(false)
   })
+
+  it('口语扩展：看下 / 只看不改 / 派 forge', () => {
+    expect(extractFacts('看下日志里最近的报错', session).hitToolVerb).toBe(true)
+    expect(extractFacts('只看不改，说说原因', session).hitNegateTool).toBe(true)
+    expect(extractFacts('交给 forge 无人值守实现', session).hitForgeIntent).toBe(true)
+    expect(extractFacts('你理解错了，我说的是缓存', session).hitCorrection).toBe(true)
+  })
 })
