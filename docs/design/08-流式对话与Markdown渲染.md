@@ -173,7 +173,7 @@ onBeforeUnmount(() => cancelAnimationFrame(raf))
 | `token` | 追加到当前 agent 气泡的 `<MarkdownText :streaming>` |
 | `step(think/tool/rag)` | `AgentTrace` 时间线：图标 + 步骤名 + 耗时/参数摘要；状态 pill `● 正在执行 · 第 3/5 步` → `✓ 完成` |
 | `guard` | 黄色护栏卡（`GuardrailAlert`）+ 选择按钮；run 置 `blocked`，等待回传选择后继续 |
-| `handoff` | 群组内 `A → B 交接` 胶囊条 |
+| `handoff` | **子 Agent** 交接或群内 `A → B` 胶囊条（群须用户已建；handoff 不是建群） |
 | `run_done` | trace 折叠为一行摘要（耗时 / tokens / 费用）；正文定稿 |
 
 - 执行中 trace 默认展开、完成后默认折叠；agent 气泡只放「它说的话」，工具调用不塞进正文。

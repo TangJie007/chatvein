@@ -20,7 +20,7 @@ features:
   - title: 能力全部在 packages/chatvein
     details: "Harness 的需求编译、LangGraph 编排、工具、模型网关、沙箱、验证、上下文、可观测全部为纯 Node 包，零 Electron 依赖。"
   - title: 双轨交付
-    details: "Forge 轨（M0–M3）：自动写代码-测试-修复，LangGraph StateGraph。Chat 轨（CP0–CP2）：普通对话 ReAct、拉群、记忆，LangGraph createReactAgent。排期见开发计划书。"
+    details: "Forge 轨（M0–M3）：自动写代码-测试-修复，LangGraph StateGraph。Chat 轨（CP0–CP2）：普通对话 ReAct、**用户拉群**、记忆；复杂单聊可由 Agent **创建子 Agent**（非自动建群）。排期见开发计划书。"
   - title: Node 服务也是调用者
     details: "@chatvein/service 提供 CLI（forge run / resume / regression）与 sidecar，支持无人值守、崩溃隔离与断点续跑。"
 ---

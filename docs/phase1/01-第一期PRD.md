@@ -111,7 +111,7 @@
 | 人工干预（练习期） | 控制台暂停 → 注入提示 / 手改 workspace 文件 → 继续；干预写 trace |
 | 回归基线 | `forge regression`（固定需求 + seed）出指标对比；M0 先用 Claude Code 实测基线写入 baseline.json |
 | 普通对话（产品轨） | app 对话页 → `@chatvein/agents` ReAct（CP1）；赛前可保留临时直连作过渡 |
-| 拉群讨论（产品轨） | app 群组页 → `@chatvein/groups` free 模式（CP2） |
+| 拉群讨论（产品轨） | **用户**在 app 群组页建群 → `@chatvein/groups` free 模式（CP2）；Agent 不自动建群 |
 
 ---
 

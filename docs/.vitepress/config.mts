@@ -46,7 +46,7 @@ export default defineConfig({
         text: '设计参考（深夜任务）',
         collapsed: false,
         items: [
-          { text: '1. 核心骨架（角色 / 拉群 / 对话）', link: '/design/01-核心骨架' },
+          { text: '1. 核心骨架（角色 / 用户拉群 / 对话）', link: '/design/01-核心骨架' },
           { text: '2. Agent 循环方案（≥2）', link: '/design/02-agent循环方案' },
           { text: '3. 记忆方案（省 Token / 缓存）', link: '/design/03-记忆方案' },
           { text: '4. 向量存储架构', link: '/design/04-向量存储架构' },
@@ -54,6 +54,7 @@ export default defineConfig({
           { text: '6. 插件运行时（Cordis）', link: '/design/06-插件运行时-Cordis' },
           { text: '7. 沙箱方案（已锁定）', link: '/design/07-沙箱方案' },
           { text: '8. 流式对话与 Markdown 渲染', link: '/design/08-流式对话与Markdown渲染' },
+          { text: '9. 启发式规则路由', link: '/design/09-启发式规则路由' },
         ],
       },
     ],
