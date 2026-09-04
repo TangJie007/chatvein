@@ -1,6 +1,6 @@
 import { reactive, ref } from 'vue'
 import { createClient } from '@electrum/client'
-import type { IpcApi, Conversation, ChatSendResult, ChatStreamEvent } from '../ipc-api'
+import type { IpcApi, Conversation, ChatSendResult, ChatStreamEvent, ChatMessage } from '../ipc-api'
 import { toIpcPayload } from '../utils/toIpcPayload'
 
 const api = createClient<IpcApi>()
@@ -68,6 +68,18 @@ api.on('chat:event', (evt: unknown) => {
 
 const current = () => conversations.value.find((c) => c.id === currentId.value) ?? null
 
+function patchConversation(id: string, patch: (c: Conversation) => Conversation): void {
+  conversations.value = conversations.value.map((c) => (c.id === id ? patch(c) : c))
+}
+
+function applySendResult(result: ChatSendResult): void {
+  conversations.value = [
+    result.conversation,
+    ...conversations.value.filter((c) => c.id !== result.conversation.id),
+  ]
+  currentId.value = result.conversation.id
+}
+
 async function refresh(): Promise<void> {
   loading.value = true
   error.value = ''
@@ -123,26 +135,112 @@ async function remove(id: string): Promise<void> {
   }
 }
 
+function localFailureMessage(reason: string): ChatMessage {
+  return {
+    id: `local-fail-${Date.now()}`,
+    role: 'assistant',
+    content: `抱歉，这次没能完成回复。\n\n原因：${reason}\n\n你可以点击「重试」，或稍后再试。`,
+    createdAt: Date.now(),
+    failed: true,
+  }
+}
+
 async function send(content: string): Promise<ChatSendResult> {
   const conv = await ensureActive()
+  const text = content.trim()
+  if (!text) throw new Error('消息不能为空')
+
   sending.value = true
   error.value = ''
+
+  // 乐观插入用户气泡；失败也不撤回（用户未主动删除）
+  const optimisticId = `pending-${Date.now()}`
+  const optimisticMsg: ChatMessage = {
+    id: optimisticId,
+    role: 'user',
+    content: text,
+    createdAt: Date.now(),
+  }
+  patchConversation(conv.id, (c) => ({
+    ...c,
+    messages: [...c.messages, optimisticMsg],
+    updatedAt: Date.now(),
+  }))
+
   try {
     const result = await api.chat.send(
-      toIpcPayload({ conversationId: conv.id, content, agentId: conv.agentId }),
+      toIpcPayload({ conversationId: conv.id, content: text, agentId: conv.agentId }),
     )
-    conversations.value = [
-      result.conversation,
-      ...conversations.value.filter((c) => c.id !== result.conversation.id),
-    ]
-    currentId.value = result.conversation.id
+    applySendResult(result)
     return result
   } catch (e) {
-    error.value = (e as Error)?.message ?? String(e)
+    // 发送前校验失败等：保留用户气泡，追加友好失败提示
+    const reason = (e as Error)?.message ?? String(e)
+    error.value = reason
+    patchConversation(conv.id, (c) => ({
+      ...c,
+      messages: [...c.messages, localFailureMessage(reason)],
+      updatedAt: Date.now(),
+    }))
     throw e
   } finally {
     sending.value = false
-    // 本轮结束（成功或失败）：收起思考面板
+    thinking.active = false
+  }
+}
+
+/** 重试失败的助手回复（保留原用户消息） */
+async function retry(failedMessageId: string): Promise<ChatSendResult> {
+  const conv = current()
+  if (!conv) throw new Error('没有当前会话')
+
+  const failed = conv.messages.find((m) => m.id === failedMessageId)
+  if (!failed?.failed) throw new Error('只能重试失败的回复')
+
+  sending.value = true
+  error.value = ''
+
+  // 本地先去掉失败气泡，显示「正在回复」
+  patchConversation(conv.id, (c) => ({
+    ...c,
+    messages: c.messages.filter((m) => m.id !== failedMessageId),
+    updatedAt: Date.now(),
+  }))
+
+  try {
+    // 已落库的失败消息走主进程 retry；本地占位则用末条用户内容再 send
+    const isLocalFail = failedMessageId.startsWith('local-fail-')
+    let result: ChatSendResult
+    if (isLocalFail) {
+      const lastUser = [...(current()?.messages ?? [])].reverse().find((m) => m.role === 'user')
+      if (!lastUser) throw new Error('找不到对应的用户消息')
+      result = await api.chat.send(
+        toIpcPayload({
+          conversationId: conv.id,
+          content: lastUser.content,
+          agentId: conv.agentId,
+        }),
+      )
+      // send 会再写一条用户消息；合并去重视图由服务端会话覆盖
+      applySendResult(result)
+    } else {
+      result = await api.chat.retry(
+        toIpcPayload({ conversationId: conv.id, failedMessageId }),
+      )
+      applySendResult(result)
+    }
+    return result
+  } catch (e) {
+    const reason = (e as Error)?.message ?? String(e)
+    error.value = reason
+    patchConversation(conv.id, (c) => ({
+      ...c,
+      messages: [...c.messages, localFailureMessage(reason)],
+      updatedAt: Date.now(),
+    }))
+    throw e
+  } finally {
+    sending.value = false
     thinking.active = false
   }
 }
@@ -165,5 +263,6 @@ export function useChat() {
     select,
     remove,
     send,
+    retry,
   })
 }

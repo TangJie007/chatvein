@@ -265,12 +265,36 @@ export class ChatService {
       })
     } catch (err) {
       emit?.({ type: 'thinking_done', runId, conversationId: conv.id })
-      throw new ValidationException(formatAgentError(err), [])
+      return this.persistAssistant(
+        data,
+        idx,
+        conv,
+        agentId,
+        userMessage,
+        friendlyReplyFailure(formatAgentError(err)),
+        Date.now() - started,
+        model.model,
+        route,
+        true,
+      )
     }
     const latencyMs = Date.now() - started
     emit?.({ type: 'thinking_done', runId, conversationId: conv.id })
 
-    if (!text) throw new ValidationException('模型返回空内容', [])
+    if (!text) {
+      return this.persistAssistant(
+        data,
+        idx,
+        conv,
+        agentId,
+        userMessage,
+        friendlyReplyFailure('模型返回空内容'),
+        latencyMs,
+        model.model,
+        route,
+        true,
+      )
+    }
 
     return this.persistAssistant(
       data,
@@ -283,6 +307,176 @@ export class ChatService {
       model.model,
       route,
     )
+  }
+
+  /**
+   * 重试失败的助手回复：保留原用户消息，去掉失败气泡后重新生成。
+   */
+  async retry(
+    input: { conversationId: string; failedMessageId: string },
+    emit?: (evt: ChatStreamEvent) => void,
+  ): Promise<ChatSendResult> {
+    const data = await this.store.load()
+    const idx = data.conversations.findIndex((c) => c.id === input.conversationId)
+    if (idx === -1) throw new NotFoundException(`conversation:${input.conversationId}`)
+    let conv = data.conversations[idx]!
+
+    const failIdx = conv.messages.findIndex((m) => m.id === input.failedMessageId)
+    if (failIdx < 0) throw new NotFoundException(`message:${input.failedMessageId}`)
+    const failed = conv.messages[failIdx]!
+    if (failed.role !== 'assistant' || !failed.failed) {
+      throw new ValidationException('只能重试失败的回复', [])
+    }
+
+    let userIdx = failIdx - 1
+    while (userIdx >= 0 && conv.messages[userIdx]!.role !== 'user') userIdx--
+    if (userIdx < 0) throw new ValidationException('找不到对应的用户消息', [])
+    const userMessage = conv.messages[userIdx]!
+
+    // 去掉失败气泡（及误跟在后面的内容）
+    conv = {
+      ...conv,
+      messages: conv.messages.slice(0, failIdx),
+      updatedAt: Date.now(),
+    }
+    data.conversations[idx] = conv
+    await this.store.save(data)
+
+    // 复用 send：以已落库用户消息内容再跑一轮（会话末尾已是该用户消息）
+    return this.regenerateAfterUser(data, idx, conv, userMessage, emit)
+  }
+
+  /** 会话末尾已是 userMessage 时，只生成助手回复并追加 */
+  private async regenerateAfterUser(
+    data: Awaited<ReturnType<ChatStore['load']>>,
+    idx: number,
+    conv: Conversation,
+    userMessage: ChatMessage,
+    emit?: (evt: ChatStreamEvent) => void,
+  ): Promise<ChatSendResult> {
+    const agentId = conv.agentId || MAIN_AGENT_ID
+    const agent = await this.agents.get(agentId)
+    if (!agent.enabled) throw new ValidationException(`Agent「${agent.name}」已停用`, [])
+    if (!agent.modelId) {
+      throw new ValidationException(`Agent「${agent.name}」未绑定模型，请先在 Agents 中选用模型`, [])
+    }
+    const model = await this.models.get(agent.modelId)
+    if (!model.enabled) throw new ValidationException(`模型「${model.name}」已停用`, [])
+    if (!model.baseUrl?.trim()) throw new ValidationException('模型 Base URL 为空', [])
+    if (!model.model?.trim()) throw new ValidationException('模型 ID 为空', [])
+
+    const content = userMessage.content
+    const history = conv.messages
+      .filter((m) => m.role === 'user' || m.role === 'assistant')
+      .slice(0, -1)
+      .map((m) => ({ role: m.role as 'user' | 'assistant', content: m.content }))
+
+    const runId = randomUUID()
+    emit?.({
+      type: 'run_start',
+      runId,
+      conversationId: conv.id,
+      agent: agent.name,
+      ts: Date.now(),
+    })
+
+    const route = await getDefaultHeuristicRouter().route({
+      text: content,
+      session: {
+        turnIndex: history.filter((m) => m.role === 'user').length,
+        lastBand: this.lastBandByConv.get(conv.id),
+        lastAssistantHadTools: false,
+        recentFailure: true,
+        activeMode: 'chat',
+      },
+    })
+    this.lastBandByConv.set(conv.id, route.band)
+
+    emit?.({ type: 'route', runId, conversationId: conv.id, decision: route })
+    emit?.({
+      type: 'thinking_delta',
+      runId,
+      conversationId: conv.id,
+      delta: formatRouteThinking(route),
+    })
+
+    const maxSteps = route.policy.maxSteps
+    const allowLocalShortCircuit =
+      maxSteps <= 0 &&
+      (route.reasons.includes('greeting_only') || route.reasons.includes('self_intro'))
+
+    if (allowLocalShortCircuit) {
+      const text = localReplyForRoute(route, content)
+      emit?.({ type: 'thinking_done', runId, conversationId: conv.id })
+      return this.appendAssistant(data, idx, conv, agentId, userMessage, text, 0, model.model, route)
+    }
+
+    const recursionLimit = Math.max(1, maxSteps)
+    const systemPrompt = systemPromptForTier(agent.systemPrompt, route.policy.modelTier)
+    const llm = createLangChainChatModel({
+      id: model.id,
+      baseUrl: model.baseUrl,
+      apiKey: model.apiKey,
+      model: model.model,
+      temperature: temperatureForTier(route.policy.modelTier, model.temperature),
+      maxTokens: model.maxTokens > 0 ? model.maxTokens : undefined,
+    })
+    const reactAgent = createReactChatAgent({
+      model: llm,
+      tools: [],
+      systemPrompt,
+      name: agent.name,
+    })
+
+    const started = Date.now()
+    try {
+      const result = await invokeReactChatAgent(reactAgent, {
+        message: content,
+        history,
+        recursionLimit,
+      })
+      const text = result.content.trim()
+      emit?.({ type: 'thinking_done', runId, conversationId: conv.id })
+      if (!text) {
+        return this.appendAssistant(
+          data,
+          idx,
+          conv,
+          agentId,
+          userMessage,
+          friendlyReplyFailure('模型返回空内容'),
+          Date.now() - started,
+          model.model,
+          route,
+          true,
+        )
+      }
+      return this.appendAssistant(
+        data,
+        idx,
+        conv,
+        agentId,
+        userMessage,
+        text,
+        Date.now() - started,
+        model.model,
+        route,
+      )
+    } catch (err) {
+      emit?.({ type: 'thinking_done', runId, conversationId: conv.id })
+      return this.appendAssistant(
+        data,
+        idx,
+        conv,
+        agentId,
+        userMessage,
+        friendlyReplyFailure(formatAgentError(err)),
+        Date.now() - started,
+        model.model,
+        route,
+        true,
+      )
+    }
   }
 
   /** 开发环境：推渲染进程 DevTools（不挂 LangChain 回调） */
@@ -317,12 +511,14 @@ export class ChatService {
     latencyMs: number,
     modelId: string,
     route: RouteDecision,
+    failed = false,
   ): Promise<ChatSendResult> {
     const assistantMessage: ChatMessage = {
       id: randomUUID(),
       role: 'assistant',
       content: text,
       createdAt: Date.now(),
+      ...(failed ? { failed: true } : {}),
     }
 
     const title =
@@ -349,8 +545,54 @@ export class ChatService {
       latencyMs,
       model: modelId,
       route,
+      ...(failed ? { failed: true } : {}),
     }
   }
+
+  /** 用户消息已在会话中时只追加助手 */
+  private async appendAssistant(
+    data: Awaited<ReturnType<ChatStore['load']>>,
+    idx: number,
+    conv: Conversation,
+    agentId: string,
+    userMessage: ChatMessage,
+    text: string,
+    latencyMs: number,
+    modelId: string,
+    route: RouteDecision,
+    failed = false,
+  ): Promise<ChatSendResult> {
+    const assistantMessage: ChatMessage = {
+      id: randomUUID(),
+      role: 'assistant',
+      content: text,
+      createdAt: Date.now(),
+      ...(failed ? { failed: true } : {}),
+    }
+    const next: Conversation = {
+      ...conv,
+      agentId,
+      messages: [...conv.messages, assistantMessage],
+      updatedAt: Date.now(),
+    }
+    data.conversations[idx] = next
+    data.conversations.splice(idx, 1)
+    data.conversations.unshift(next)
+    await this.store.save(data)
+    return {
+      conversation: next,
+      userMessage,
+      assistantMessage,
+      latencyMs,
+      model: modelId,
+      route,
+      ...(failed ? { failed: true } : {}),
+    }
+  }
+}
+
+function friendlyReplyFailure(reason: string): string {
+  return `抱歉，这次没能完成回复。\n\n原因：${reason}\n\n你可以点击「重试」，或稍后再试。`
 }
 
 function formatRouteThinking(route: RouteDecision): string {

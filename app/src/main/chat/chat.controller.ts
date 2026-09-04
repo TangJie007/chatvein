@@ -1,6 +1,7 @@
 import { Controller, IpcHandle, IpcEmit, Inject } from '@electrum/common'
 import { ChatService } from './chat.service'
 import type {
+  ChatRetryInput,
   ChatSendInput,
   ChatSendResult,
   ChatStreamEvent,
@@ -40,5 +41,10 @@ export class ChatController {
   send(input: ChatSendInput): Promise<ChatSendResult> {
     // 每个事件广播给渲染层；渲染层按 conversationId 过滤当前会话
     return this.chat.send(input, (evt) => this.emitEvent(evt))
+  }
+
+  @IpcHandle('retry')
+  retry(input: ChatRetryInput): Promise<ChatSendResult> {
+    return this.chat.retry(input, (evt) => this.emitEvent(evt))
   }
 }

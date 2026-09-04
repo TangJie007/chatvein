@@ -54,6 +54,7 @@ export interface IpcApi {
   'chat:create': (input?: { title?: string; agentId?: string }) => Promise<Conversation>
   'chat:remove': (id: string) => Promise<{ ok: true }>
   'chat:send': (input: ChatSendInput) => Promise<ChatSendResult>
+  'chat:retry': (input: ChatRetryInput) => Promise<ChatSendResult>
 
   // ---- 应用设置（路径 / 护栏）----
   'settings:get': () => Promise<AppSettingsView>
@@ -187,6 +188,8 @@ export interface ChatMessage {
   content: string
   createdAt: number
   usage?: TokenUsage
+  /** 助手回复失败占位；可触发重试 */
+  failed?: boolean
 }
 
 export interface Conversation {
@@ -204,6 +207,11 @@ export interface ChatSendInput {
   agentId?: string
 }
 
+export interface ChatRetryInput {
+  conversationId: string
+  failedMessageId: string
+}
+
 export interface ChatSendResult {
   conversation: Conversation
   userMessage: ChatMessage
@@ -211,6 +219,7 @@ export interface ChatSendResult {
   latencyMs: number
   model: string
   route?: import('@chatvein/common').RouteDecision
+  failed?: boolean
 }
 
 /**

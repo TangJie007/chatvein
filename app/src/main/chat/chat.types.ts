@@ -14,6 +14,8 @@ export interface ChatMessage {
   createdAt: number
   /** 仅 assistant 消息；部分供应商可能不回传 */
   usage?: TokenUsage
+  /** 助手回复失败占位；可触发重试，用户消息仍保留 */
+  failed?: boolean
 }
 
 export interface Conversation {
@@ -37,6 +39,12 @@ export interface ChatSendInput {
   content: string
   /** 不传则用会话已绑定 agentId */
   agentId?: string
+}
+
+export interface ChatRetryInput {
+  conversationId: string
+  /** 失败的助手消息 id */
+  failedMessageId: string
 }
 
 /**
@@ -73,4 +81,6 @@ export interface ChatSendResult {
   model: string
   /** L1/L1.5 启发式路由结果 */
   route?: import('@chatvein/common').RouteDecision
+  /** true：本轮助手为失败占位，用户消息已保留 */
+  failed?: boolean
 }

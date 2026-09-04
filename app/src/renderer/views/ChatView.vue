@@ -110,15 +110,40 @@ async function onSend(text: string) {
     status.value = '请先在 Agents 中绑定模型并填写 API Key'
     return
   }
+  draft.value = ''
   status.value = '生成中…'
+  await scrollBottom()
   try {
     const result = await chat.send(text)
-    draft.value = ''
-    status.value = `完成 · ${result.latencyMs} ms · ${result.model}`
+    if (result.failed) {
+      status.value = '回复失败 · 可点击「重试」'
+    } else {
+      status.value = `完成 · ${result.latencyMs} ms · ${result.model}`
+    }
     setCrumbItem(result.conversation.title)
     await scrollBottom()
   } catch (e) {
-    status.value = (e as Error).message || '发送失败'
+    status.value = (e as Error).message || '回复失败 · 可点击「重试」'
+    await scrollBottom()
+  }
+}
+
+async function onRetry(failedMessageId: string) {
+  if (chat.sending) return
+  status.value = '正在重试…'
+  await scrollBottom()
+  try {
+    const result = await chat.retry(failedMessageId)
+    if (result.failed) {
+      status.value = '回复仍失败 · 可再次重试'
+    } else {
+      status.value = `重试成功 · ${result.latencyMs} ms · ${result.model}`
+    }
+    setCrumbItem(result.conversation.title)
+    await scrollBottom()
+  } catch (e) {
+    status.value = (e as Error).message || '重试失败'
+    await scrollBottom()
   }
 }
 
@@ -239,19 +264,32 @@ onMounted(async () => {
           </p>
         </div>
 
-        <ChatMessage
+        <div
           v-for="m in messages"
           :key="m.id"
-          :role="m.role === 'assistant' ? 'agent' : 'user'"
-          :initial="m.role === 'assistant' ? activeAgent?.initial || 'A' : '我'"
-          :tint="m.role === 'assistant' ? activeAgent?.tint || 'indigo' : 'sky'"
-          :author="m.role === 'assistant' ? activeAgent?.name : undefined"
-          :role-mini="m.role === 'assistant' ? activeAgent?.role : undefined"
-          :time="formatTime(m.createdAt)"
-          :content="m.content"
-          :token-label="m.role === 'assistant' ? formatTokenLabel(m) : ''"
-          :token-title="m.role === 'assistant' ? formatTokenTitle(m) : ''"
-        />
+          class="flex flex-col gap-1.5"
+          :class="m.role === 'user' ? 'items-end' : 'items-start'"
+        >
+          <ChatMessage
+            :role="m.role === 'assistant' ? 'agent' : 'user'"
+            :initial="m.role === 'assistant' ? activeAgent?.initial || 'A' : '我'"
+            :tint="m.role === 'assistant' ? activeAgent?.tint || 'indigo' : 'sky'"
+            :author="m.role === 'assistant' ? activeAgent?.name : undefined"
+            :role-mini="m.role === 'assistant' ? activeAgent?.role : undefined"
+            :time="formatTime(m.createdAt)"
+            :content="m.content"
+            :token-label="m.role === 'assistant' && !m.failed ? formatTokenLabel(m) : ''"
+            :token-title="m.role === 'assistant' && !m.failed ? formatTokenTitle(m) : ''"
+          />
+          <button
+            v-if="m.failed && m.role === 'assistant' && !chat.sending"
+            type="button"
+            class="ml-11 rounded-[8px] border border-[var(--color-line)] bg-[var(--color-elevated)] px-2.5 py-1 text-[11.5px] font-medium text-[var(--color-ink-2)] shadow-[var(--shadow-1)] transition hover:border-[var(--color-brand)] hover:text-[var(--color-brand-deep)]"
+            @click="onRetry(m.id)"
+          >
+            重试回复
+          </button>
+        </div>
 
         <div
           v-if="chat.sending"
