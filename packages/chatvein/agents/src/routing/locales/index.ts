@@ -13,6 +13,8 @@ export type DictLang = SupportedLocale | '_common'
 export interface HeuristicDict {
   greetings: string[]
   greetingParticles: string[]
+  /** 自我介绍前缀（句首匹配，非整句全等） */
+  selfIntroPrefixes: string[]
   taskVerbs: string[]
   toolVerbs: string[]
   negateTools: string[]
@@ -40,6 +42,7 @@ export function mergeDicts(...dicts: HeuristicDict[]): HeuristicDict {
   const keys: (keyof HeuristicDict)[] = [
     'greetings',
     'greetingParticles',
+    'selfIntroPrefixes',
     'taskVerbs',
     'toolVerbs',
     'negateTools',

@@ -1,6 +1,7 @@
 {
   "greetings": ["ok", "okay", "thanks", "thx", "ty", "lgtm", "👍", "🙏"],
   "greetingParticles": [],
+  "selfIntroPrefixes": ["my name is", "i'm ", "i am "],
   "taskVerbs": [],
   "toolVerbs": [],
   "negateTools": [],

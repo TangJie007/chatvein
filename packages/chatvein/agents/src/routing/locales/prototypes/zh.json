@@ -56,6 +56,34 @@
     "lang": "zh"
   },
   {
+    "id": "zh-selfintro1",
+    "text": "我叫唐杰",
+    "band": "trivial",
+    "tools": "none",
+    "lang": "zh"
+  },
+  {
+    "id": "zh-selfintro2",
+    "text": "我叫小明",
+    "band": "trivial",
+    "tools": "none",
+    "lang": "zh"
+  },
+  {
+    "id": "zh-selfintro3",
+    "text": "我的名字是张三",
+    "band": "trivial",
+    "tools": "none",
+    "lang": "zh"
+  },
+  {
+    "id": "zh-selfintro4",
+    "text": "我是李华",
+    "band": "trivial",
+    "tools": "none",
+    "lang": "zh"
+  },
+  {
     "id": "zh-ok",
     "text": "好的",
     "band": "trivial",

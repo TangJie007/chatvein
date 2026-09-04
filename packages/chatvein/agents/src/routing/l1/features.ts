@@ -30,6 +30,8 @@ export interface HeuristicCtx extends HeuristicSession {
   listItemCount: number
 
   hitGreetingOnly: boolean
+  /** 短句自我介绍（句首前缀 + 短余下部分） */
+  hitSelfIntro: boolean
   hitTaskVerb: boolean
   hitToolVerb: boolean
   hitNegateTool: boolean
@@ -83,6 +85,7 @@ export function extractFacts(text: string, session: HeuristicSession): Heuristic
     questionMarkCount: countChars(trimmed, '？?¿؟'),
     listItemCount: countMatches(trimmed, LIST_RE),
     hitGreetingOnly: isGreetingOnly(textNorm, dict),
+    hitSelfIntro: isSelfIntro(textNorm, dict),
     hitTaskVerb,
     hitToolVerb,
     hitNegateTool,
@@ -144,6 +147,24 @@ export function isGreetingOnly(textNorm: string, dict: HeuristicDict): boolean {
   return false
 }
 
+/**
+ * 短句自我介绍：去掉空白标点后以词典前缀开头，且余下为短名字段（1～12 字）。
+ * 「我是来改代码的」等长句 / 任务句由规则侧 !task/!tool + charLen 再挡。
+ */
+export function isSelfIntro(textNorm: string, dict: HeuristicDict): boolean {
+  const s = textNorm.replace(/[\s\p{P}\p{S}]+/gu, '')
+  if (!s) return false
+  const prefixes = [...(dict.selfIntroPrefixes ?? [])].sort((a, b) => b.length - a.length)
+  for (const raw of prefixes) {
+    const p = raw.replace(/\s+/g, '')
+    if (!p || !s.startsWith(p)) continue
+    const rest = s.slice(p.length)
+    if (rest.length < 1 || rest.length > 12) continue
+    return true
+  }
+  return false
+}
+
 /** 供 json-rules-engine 的 facts（全为可序列化标量） */
 export function factsFromCtx(ctx: HeuristicCtx): Record<string, string | number | boolean> {
   return {
@@ -161,6 +182,7 @@ export function factsFromCtx(ctx: HeuristicCtx): Record<string, string | number 
     questionMarkCount: ctx.questionMarkCount,
     listItemCount: ctx.listItemCount,
     hitGreetingOnly: ctx.hitGreetingOnly,
+    hitSelfIntro: ctx.hitSelfIntro,
     hitTaskVerb: ctx.hitTaskVerb,
     hitToolVerb: ctx.hitToolVerb,
     hitNegateTool: ctx.hitNegateTool,

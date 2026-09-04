@@ -137,6 +137,7 @@ export function materialize(input: MaterializeInput): RouteDecision {
     acc.score === 0 &&
     !acc.bandOverride &&
     !input.ctx.hitGreetingOnly &&
+    !input.ctx.hitSelfIntro &&
     input.ctx.charLen > 0 &&
     input.ctx.charLen < 40 &&
     input.ctx.dictCoverage === 'none'
@@ -155,6 +156,7 @@ export function materialize(input: MaterializeInput): RouteDecision {
     acc.score === 0 &&
     !acc.bandOverride &&
     !input.ctx.hitGreetingOnly &&
+    !input.ctx.hitSelfIntro &&
     !confident
   ) {
     band = 'unknown'

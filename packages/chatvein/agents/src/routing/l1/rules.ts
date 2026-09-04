@@ -114,6 +114,29 @@ export function createDefaultRules(): object[] {
       },
     },
     {
+      name: 'self_intro_trivial',
+      priority: 795,
+      conditions: {
+        all: [
+          { fact: 'hitSelfIntro', operator: 'equal', value: true },
+          { fact: 'hitTaskVerb', operator: 'equal', value: false },
+          { fact: 'hitToolVerb', operator: 'equal', value: false },
+          { fact: 'charLen', operator: 'lessThanInclusive', value: 30 },
+        ],
+      },
+      event: {
+        type: 'route.override',
+        params: {
+          ruleId: 'self_intro_trivial',
+          reason: 'self_intro',
+          band: 'trivial',
+          confident: true,
+          skipBm25: true,
+          policy: { modelTier: 'weak', tools: 'none', maxSteps: 0, memoryRecall: false },
+        } satisfies RuleEventParams,
+      },
+    },
+    {
       name: 'negate_tools',
       priority: 700,
       conditions: { all: [{ fact: 'hitNegateTool', operator: 'equal', value: true }] },

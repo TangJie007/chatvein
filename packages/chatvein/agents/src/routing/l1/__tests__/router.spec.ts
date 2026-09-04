@@ -19,6 +19,22 @@ describe('L1HeuristicRouter', () => {
     expect(d.ruleIds).toContain('greeting_trivial')
   })
 
+  it('自我介绍 → trivial + weak + 本地可短路', async () => {
+    const d = await router.route({ text: '我叫唐杰' })
+    expect(d.band).toBe('trivial')
+    expect(d.policy.modelTier).toBe('weak')
+    expect(d.policy.tools).toBe('none')
+    expect(d.policy.maxSteps).toBe(0)
+    expect(d.confident).toBe(true)
+    expect(d.ruleIds).toContain('self_intro_trivial')
+  })
+
+  it('自我介绍夹任务 → 不走 trivial', async () => {
+    const d = await router.route({ text: '我叫唐杰，帮我写个登录' })
+    expect(d.band).not.toBe('trivial')
+    expect(d.ruleIds).not.toContain('self_intro_trivial')
+  })
+
   it('slash → terminal', async () => {
     const d = await router.route({ text: '/clear' })
     expect(d.terminal?.kind).toBe('slash')

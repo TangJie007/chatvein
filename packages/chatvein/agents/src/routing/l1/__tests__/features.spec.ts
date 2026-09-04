@@ -17,6 +17,14 @@ describe('extractFacts', () => {
     expect(ctx.dictCoverage).toBe('full')
   })
 
+  it('自我介绍短句 → hitSelfIntro', () => {
+    expect(extractFacts('我叫唐杰', session).hitSelfIntro).toBe(true)
+    expect(extractFacts('我的名字是张三', session).hitSelfIntro).toBe(true)
+    const mixed = extractFacts('我叫唐杰，帮我写个登录', session)
+    expect(mixed.hitSelfIntro).toBe(true)
+    expect(mixed.hitTaskVerb).toBe(true)
+  })
+
   it('你好 + 长任务 → 不得 greeting only', () => {
     const ctx = extractFacts('你好，帮我设计一个分布式缓存', session)
     expect(ctx.hitGreetingOnly).toBe(false)
