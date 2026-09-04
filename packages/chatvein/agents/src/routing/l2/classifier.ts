@@ -20,8 +20,12 @@ export function createL2Classifier(): L2Classifier {
   return new PassthroughL2Classifier()
 }
 
-/** 是否应进入 L2：低置信或 unknown，且非 terminal */
+/** 是否应进入 L2：低置信、band unknown、或 tools 待判（unknown） */
 export function shouldEscalateToL2(decision: RouteDecision): boolean {
   if (decision.terminal) return false
-  return !decision.confident || decision.band === 'unknown'
+  return (
+    !decision.confident ||
+    decision.band === 'unknown' ||
+    decision.policy.tools === 'unknown'
+  )
 }

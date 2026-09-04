@@ -53,6 +53,11 @@ describe('L1HeuristicRouter', () => {
     expect(d.policy.allowSubAgents).toBe(true)
   })
 
+  it('工具动词 → tools unknown（交 L2）', async () => {
+    const d = await router.route({ text: '查询一下今天北京的天气' })
+    expect(d.policy.tools).toBe('unknown')
+  })
+
   it('否定工具 → tools none', async () => {
     const d = await router.route({ text: '解释一下闭包，不要改文件' })
     expect(d.policy.tools).toBe('none')

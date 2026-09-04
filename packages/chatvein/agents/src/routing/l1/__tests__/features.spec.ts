@@ -53,4 +53,10 @@ describe('extractFacts', () => {
     expect(isGreetingOnly('你好呀', dict)).toBe(true)
     expect(isGreetingOnly('你好世界怎么实现', dict)).toBe(false)
   })
+
+  it('查询天气命中 tool 词典', () => {
+    const ctx = extractFacts('查询一下今天北京的天气', session)
+    expect(ctx.hitToolVerb).toBe(true)
+    expect(ctx.hitGreetingOnly).toBe(false)
+  })
 })

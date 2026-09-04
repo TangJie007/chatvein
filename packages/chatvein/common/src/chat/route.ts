@@ -8,7 +8,13 @@ import type { ModelTier } from '../core/types'
 /** 复杂度分档 */
 export type ComplexityBand = 'trivial' | 'simple' | 'standard' | 'complex' | 'unknown'
 
-export type ToolPolicy = 'none' | 'read_only' | 'full'
+/**
+ * 工具策略：
+ * - `none`：禁止工具
+ * - `unknown`：L1 不确定，需 L2 再判
+ * - `full`：完整工具（仍受角色白名单）
+ */
+export type ToolPolicy = 'none' | 'unknown' | 'full'
 
 export interface RoutePolicy {
   modelTier: ModelTier
@@ -63,7 +69,7 @@ export const ComplexityBandSchema = z.enum([
   'unknown',
 ])
 
-export const ToolPolicySchema = z.enum(['none', 'read_only', 'full'])
+export const ToolPolicySchema = z.enum(['none', 'unknown', 'full'])
 
 export const RoutePolicySchema = z.object({
   modelTier: z.enum(['strong', 'medium', 'weak']),

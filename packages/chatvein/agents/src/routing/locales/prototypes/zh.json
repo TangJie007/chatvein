@@ -1,16 +1,512 @@
 [
-  { "id": "zh-hi", "text": "你好", "band": "trivial", "tools": "none", "lang": "zh" },
-  { "id": "zh-thanks", "text": "谢谢", "band": "trivial", "tools": "none", "lang": "zh" },
-  { "id": "zh-ok", "text": "好的", "band": "trivial", "tools": "none", "lang": "zh" },
-  { "id": "zh-what-is", "text": "什么是闭包", "band": "simple", "tools": "none", "lang": "zh" },
-  { "id": "zh-explain", "text": "用一句话解释 Promise", "band": "simple", "tools": "none", "lang": "zh" },
-  { "id": "zh-fix", "text": "帮我修复这个 TypeScript 报错", "band": "standard", "tools": "full", "lang": "zh" },
-  { "id": "zh-read", "text": "读取 package.json 看看依赖", "band": "standard", "tools": "read_only", "lang": "zh" },
-  { "id": "zh-impl", "text": "实现一个带单测的加法函数", "band": "standard", "tools": "full", "lang": "zh" },
-  { "id": "zh-refactor", "text": "重构这段代码并保持测试通过", "band": "complex", "tools": "full", "lang": "zh" },
-  { "id": "zh-arch", "text": "帮我做前后端架构选型对比", "band": "complex", "tools": "none", "lang": "zh" },
-  { "id": "zh-debug", "text": "根据 stacktrace 调试失败原因", "band": "complex", "tools": "full", "lang": "zh" },
-  { "id": "zh-multi", "text": "先分析需求然后分步实现最后写测试", "band": "complex", "tools": "full", "lang": "zh" },
-  { "id": "zh-group", "text": "拉个群一起评审方案", "band": "standard", "tools": "none", "lang": "zh", "tags": ["hint-group"] },
-  { "id": "zh-forge", "text": "交给 forge 自动写代码并跑测试", "band": "complex", "tools": "full", "lang": "zh", "tags": ["hint-forge"] }
+  {
+    "id": "zh-hi",
+    "text": "你好",
+    "band": "trivial",
+    "tools": "none",
+    "lang": "zh"
+  },
+  {
+    "id": "zh-hello",
+    "text": "您好",
+    "band": "trivial",
+    "tools": "none",
+    "lang": "zh"
+  },
+  {
+    "id": "zh-hi2",
+    "text": "嗨",
+    "band": "trivial",
+    "tools": "none",
+    "lang": "zh"
+  },
+  {
+    "id": "zh-morning",
+    "text": "早上好",
+    "band": "trivial",
+    "tools": "none",
+    "lang": "zh"
+  },
+  {
+    "id": "zh-evening",
+    "text": "晚上好",
+    "band": "trivial",
+    "tools": "none",
+    "lang": "zh"
+  },
+  {
+    "id": "zh-there",
+    "text": "在吗",
+    "band": "trivial",
+    "tools": "none",
+    "lang": "zh"
+  },
+  {
+    "id": "zh-thanks",
+    "text": "谢谢",
+    "band": "trivial",
+    "tools": "none",
+    "lang": "zh"
+  },
+  {
+    "id": "zh-thanks2",
+    "text": "多谢帮忙",
+    "band": "trivial",
+    "tools": "none",
+    "lang": "zh"
+  },
+  {
+    "id": "zh-ok",
+    "text": "好的",
+    "band": "trivial",
+    "tools": "none",
+    "lang": "zh"
+  },
+  {
+    "id": "zh-ok2",
+    "text": "收到",
+    "band": "trivial",
+    "tools": "none",
+    "lang": "zh"
+  },
+  {
+    "id": "zh-ok3",
+    "text": "明白了",
+    "band": "trivial",
+    "tools": "none",
+    "lang": "zh"
+  },
+  {
+    "id": "zh-bye",
+    "text": "再见",
+    "band": "trivial",
+    "tools": "none",
+    "lang": "zh"
+  },
+  {
+    "id": "zh-what-is",
+    "text": "什么是闭包",
+    "band": "simple",
+    "tools": "none",
+    "lang": "zh"
+  },
+  {
+    "id": "zh-what-is2",
+    "text": "HTTP 和 HTTPS 有什么区别",
+    "band": "simple",
+    "tools": "none",
+    "lang": "zh"
+  },
+  {
+    "id": "zh-explain",
+    "text": "用一句话解释 Promise",
+    "band": "simple",
+    "tools": "none",
+    "lang": "zh"
+  },
+  {
+    "id": "zh-explain2",
+    "text": "简单说说什么是 REST API",
+    "band": "simple",
+    "tools": "none",
+    "lang": "zh"
+  },
+  {
+    "id": "zh-translate",
+    "text": "把这段话翻译成英文",
+    "band": "simple",
+    "tools": "none",
+    "lang": "zh"
+  },
+  {
+    "id": "zh-polish",
+    "text": "帮我润色一下这段文案",
+    "band": "simple",
+    "tools": "none",
+    "lang": "zh"
+  },
+  {
+    "id": "zh-summary-short",
+    "text": "用三句话总结这段文字",
+    "band": "simple",
+    "tools": "none",
+    "lang": "zh"
+  },
+  {
+    "id": "zh-weather",
+    "text": "查询一下今天北京的天气",
+    "band": "simple",
+    "tools": "none",
+    "lang": "zh",
+    "tags": [
+      "query"
+    ]
+  },
+  {
+    "id": "zh-weather2",
+    "text": "今天上海天气怎么样",
+    "band": "simple",
+    "tools": "none",
+    "lang": "zh",
+    "tags": [
+      "query"
+    ]
+  },
+  {
+    "id": "zh-weather3",
+    "text": "帮我查下明天会不会下雨",
+    "band": "simple",
+    "tools": "none",
+    "lang": "zh",
+    "tags": [
+      "query"
+    ]
+  },
+  {
+    "id": "zh-query-time",
+    "text": "现在几点了",
+    "band": "simple",
+    "tools": "none",
+    "lang": "zh",
+    "tags": [
+      "query"
+    ]
+  },
+  {
+    "id": "zh-query-info",
+    "text": "查一下这个公司的基本信息",
+    "band": "simple",
+    "tools": "none",
+    "lang": "zh",
+    "tags": [
+      "query"
+    ]
+  },
+  {
+    "id": "zh-search-web",
+    "text": "帮我搜索一下最新的 Node 版本",
+    "band": "simple",
+    "tools": "none",
+    "lang": "zh",
+    "tags": [
+      "query"
+    ]
+  },
+  {
+    "id": "zh-calc",
+    "text": "帮我算一下 128 乘以 64",
+    "band": "simple",
+    "tools": "none",
+    "lang": "zh"
+  },
+  {
+    "id": "zh-read",
+    "text": "读取 package.json 看看依赖",
+    "band": "standard",
+    "tools": "unknown",
+    "lang": "zh"
+  },
+  {
+    "id": "zh-read2",
+    "text": "打开 src/main.ts 看一下实现",
+    "band": "standard",
+    "tools": "unknown",
+    "lang": "zh"
+  },
+  {
+    "id": "zh-read3",
+    "text": "这个函数是干什么的，帮我解释代码",
+    "band": "standard",
+    "tools": "unknown",
+    "lang": "zh"
+  },
+  {
+    "id": "zh-grep",
+    "text": "在项目里搜索一下 TODO 注释",
+    "band": "standard",
+    "tools": "unknown",
+    "lang": "zh"
+  },
+  {
+    "id": "zh-list",
+    "text": "列出当前目录有哪些文件",
+    "band": "standard",
+    "tools": "unknown",
+    "lang": "zh"
+  },
+  {
+    "id": "zh-log",
+    "text": "看看日志里最近的报错信息",
+    "band": "standard",
+    "tools": "unknown",
+    "lang": "zh"
+  },
+  {
+    "id": "zh-fix",
+    "text": "帮我修复这个 TypeScript 报错",
+    "band": "standard",
+    "tools": "full",
+    "lang": "zh"
+  },
+  {
+    "id": "zh-fix2",
+    "text": "这个 bug 怎么修",
+    "band": "standard",
+    "tools": "full",
+    "lang": "zh"
+  },
+  {
+    "id": "zh-impl",
+    "text": "实现一个带单测的加法函数",
+    "band": "standard",
+    "tools": "full",
+    "lang": "zh"
+  },
+  {
+    "id": "zh-impl2",
+    "text": "写一个登录接口的示例代码",
+    "band": "standard",
+    "tools": "full",
+    "lang": "zh"
+  },
+  {
+    "id": "zh-add-feature",
+    "text": "给这个页面加上搜索框",
+    "band": "standard",
+    "tools": "full",
+    "lang": "zh"
+  },
+  {
+    "id": "zh-edit",
+    "text": "改一下配置文件里的端口号",
+    "band": "standard",
+    "tools": "full",
+    "lang": "zh"
+  },
+  {
+    "id": "zh-test",
+    "text": "给这段逻辑补几个单元测试",
+    "band": "standard",
+    "tools": "full",
+    "lang": "zh"
+  },
+  {
+    "id": "zh-run",
+    "text": "帮我运行一下测试看看结果",
+    "band": "standard",
+    "tools": "full",
+    "lang": "zh"
+  },
+  {
+    "id": "zh-install",
+    "text": "安装一下项目依赖",
+    "band": "standard",
+    "tools": "full",
+    "lang": "zh"
+  },
+  {
+    "id": "zh-commit",
+    "text": "帮我写个 commit message 并提交",
+    "band": "standard",
+    "tools": "full",
+    "lang": "zh"
+  },
+  {
+    "id": "zh-refactor",
+    "text": "重构这段代码并保持测试通过",
+    "band": "complex",
+    "tools": "full",
+    "lang": "zh"
+  },
+  {
+    "id": "zh-refactor2",
+    "text": "把这个模块拆成更清晰的结构",
+    "band": "complex",
+    "tools": "full",
+    "lang": "zh"
+  },
+  {
+    "id": "zh-debug",
+    "text": "根据 stacktrace 调试失败原因",
+    "band": "complex",
+    "tools": "full",
+    "lang": "zh"
+  },
+  {
+    "id": "zh-debug2",
+    "text": "线上报错如何定位根因",
+    "band": "complex",
+    "tools": "full",
+    "lang": "zh"
+  },
+  {
+    "id": "zh-multi",
+    "text": "先分析需求然后分步实现最后写测试",
+    "band": "complex",
+    "tools": "full",
+    "lang": "zh"
+  },
+  {
+    "id": "zh-multi2",
+    "text": "第一步设计接口，第二步实现，第三步联调",
+    "band": "complex",
+    "tools": "full",
+    "lang": "zh"
+  },
+  {
+    "id": "zh-arch",
+    "text": "帮我做前后端架构选型对比",
+    "band": "complex",
+    "tools": "none",
+    "lang": "zh"
+  },
+  {
+    "id": "zh-arch2",
+    "text": "Redis 和 Memcached 哪个更适合我们",
+    "band": "complex",
+    "tools": "none",
+    "lang": "zh"
+  },
+  {
+    "id": "zh-perf",
+    "text": "分析并优化这个接口的性能瓶颈",
+    "band": "complex",
+    "tools": "full",
+    "lang": "zh"
+  },
+  {
+    "id": "zh-migrate",
+    "text": "把项目从 CommonJS 迁移到 ESM",
+    "band": "complex",
+    "tools": "full",
+    "lang": "zh"
+  },
+  {
+    "id": "zh-security",
+    "text": "做一次安全评审看看有没有注入风险",
+    "band": "complex",
+    "tools": "unknown",
+    "lang": "zh"
+  },
+  {
+    "id": "zh-design-doc",
+    "text": "写一份技术方案设计文档大纲",
+    "band": "complex",
+    "tools": "none",
+    "lang": "zh"
+  },
+  {
+    "id": "zh-group",
+    "text": "拉个群一起评审方案",
+    "band": "standard",
+    "tools": "none",
+    "lang": "zh",
+    "tags": [
+      "hint-group"
+    ]
+  },
+  {
+    "id": "zh-group2",
+    "text": "建个群讨论一下架构",
+    "band": "standard",
+    "tools": "none",
+    "lang": "zh",
+    "tags": [
+      "hint-group"
+    ]
+  },
+  {
+    "id": "zh-group3",
+    "text": "拉人进来多方讨论这个需求",
+    "band": "standard",
+    "tools": "none",
+    "lang": "zh",
+    "tags": [
+      "hint-group"
+    ]
+  },
+  {
+    "id": "zh-multi-agent",
+    "text": "从产品和工程两个视角分别看看",
+    "band": "complex",
+    "tools": "none",
+    "lang": "zh",
+    "tags": [
+      "sub-agents"
+    ]
+  },
+  {
+    "id": "zh-forge",
+    "text": "交给 forge 自动写代码并跑测试",
+    "band": "complex",
+    "tools": "full",
+    "lang": "zh",
+    "tags": [
+      "hint-forge"
+    ]
+  },
+  {
+    "id": "zh-forge2",
+    "text": "无人值守实现这个需求并修到测试通过",
+    "band": "complex",
+    "tools": "full",
+    "lang": "zh",
+    "tags": [
+      "hint-forge"
+    ]
+  },
+  {
+    "id": "zh-correction",
+    "text": "不对，按我说的再改一下",
+    "band": "standard",
+    "tools": "full",
+    "lang": "zh",
+    "tags": [
+      "correction"
+    ]
+  },
+  {
+    "id": "zh-correction2",
+    "text": "错了重来，不是这个意思",
+    "band": "standard",
+    "tools": "full",
+    "lang": "zh",
+    "tags": [
+      "correction"
+    ]
+  },
+  {
+    "id": "zh-more-detail",
+    "text": "再说详细一点",
+    "band": "simple",
+    "tools": "none",
+    "lang": "zh"
+  },
+  {
+    "id": "zh-continue",
+    "text": "继续",
+    "band": "simple",
+    "tools": "none",
+    "lang": "zh"
+  },
+  {
+    "id": "zh-only-explain",
+    "text": "只解释原理，不要改文件",
+    "band": "simple",
+    "tools": "none",
+    "lang": "zh",
+    "tags": [
+      "negate-tools"
+    ]
+  },
+  {
+    "id": "zh-no-edit",
+    "text": "看看问题在哪，别动代码",
+    "band": "standard",
+    "tools": "none",
+    "lang": "zh",
+    "tags": [
+      "negate-tools"
+    ]
+  }
 ]

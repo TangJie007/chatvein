@@ -13,12 +13,20 @@ describe('RouteBm25Index', () => {
     const prototypes = loadDefaultPrototypes()
     idx.reload(prototypes)
     expect(idx.size).toBe(prototypes.length)
-    expect(idx.size).toBeGreaterThan(5)
+    expect(idx.size).toBeGreaterThan(40)
     const hits = idx.search('修复 TypeScript 报错', 'zh')
     expect(hits.length).toBeGreaterThan(0)
     const vote = idx.vote(hits)
     expect(vote).not.toBeNull()
     expect(vote!.band).toBeTruthy()
+  })
+
+  it('天气查询类能命中先例', () => {
+    const idx = new RouteBm25Index({ scoreMin: 0.01, voteRatio: 0.5 })
+    idx.reload(loadDefaultPrototypes())
+    const hits = idx.search('查询一下今天北京的天气', 'zh')
+    expect(hits.length).toBeGreaterThan(0)
+    expect(hits.some((h) => h.id.startsWith('zh-weather') || h.band === 'simple')).toBe(true)
   })
 
   it('低分不返回 hits', () => {

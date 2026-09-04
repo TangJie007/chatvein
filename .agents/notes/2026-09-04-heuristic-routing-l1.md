@@ -27,4 +27,4 @@
 
 - 收益：可测的确定性分流；思考面板可见 band/tier；为子 Agent 与 UI 提示留钩子。
 - 代价：agents 新增 json-rules-engine、wink-bm25 依赖；先例语料需持续扩充。
-- 后续注意：工具白名单落地后按 `policy.tools` 裁剪；L2 接 `unknown`；UI 结构化消费 `hintUserCreateGroup`。
+- 后续注意：工具白名单落地后按 `policy.tools` 裁剪；L2 须消化 `band/tools` 的 `unknown`（见 [`2026-09-04-tool-policy-unknown.md`](./2026-09-04-tool-policy-unknown.md)）；UI 结构化消费 `hintUserCreateGroup`。

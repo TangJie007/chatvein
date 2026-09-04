@@ -13,6 +13,7 @@ import {
   DEFAULT_SCORE_TABLE,
   mergePolicy,
   policyForBand,
+  synthesizeTools,
   type ScoreTable,
 } from './defaults'
 import type { HeuristicCtx } from './features'
@@ -45,6 +46,8 @@ interface Acc {
   skipBm25: boolean
   forbidTrivial: boolean
   forceUnknown: boolean
+  /** negate_tools：工具策略锁定为 none，BM25 不可抬升 */
+  lockToolsNone: boolean
 }
 
 export function materialize(input: MaterializeInput): RouteDecision {
@@ -57,6 +60,7 @@ export function materialize(input: MaterializeInput): RouteDecision {
     skipBm25: Boolean(input.skipBm25),
     forbidTrivial: false,
     forceUnknown: false,
+    lockToolsNone: false,
   }
 
   for (const ev of input.events) {
@@ -103,11 +107,15 @@ export function materialize(input: MaterializeInput): RouteDecision {
     band = acc.forceUnknown || inGrey ? 'unknown' : fromScore
     confident = acc.confident ?? (!inGrey && !acc.forceUnknown && acc.score > 0)
 
-    // BM25：无硬 band override 时可采纳
+    // BM25：无硬 band override 时可采纳；tools 与规则合成（unknown 粘性，negate 锁定）
     const vote = input.bm25Vote
     if (vote?.adopted && !acc.bandOverride) {
       band = vote.band
-      acc.policyPatch.tools = vote.tools
+      acc.policyPatch.tools = synthesizeTools(
+        acc.policyPatch.tools ?? 'none',
+        [vote.tools],
+        acc.lockToolsNone,
+      )
       confident = true
       acc.reasons.push(`bm25_vote:${vote.band}:${vote.ratio.toFixed(2)}`)
     } else if (vote && !vote.adopted) {
@@ -180,6 +188,9 @@ function applyEvent(acc: Acc, params: RuleEventParams, ctx: HeuristicCtx): void 
     acc.score += Math.round(BAND_INHERIT_SCORE[ctx.lastBand] * 0.5)
   }
   if (params.policy) acc.policyPatch = mergePolicyPatch(acc.policyPatch, params.policy)
+  if (params.ruleId === 'negate_tools' || params.reason === 'negate_tools') {
+    acc.lockToolsNone = true
+  }
   if (params.band) acc.bandOverride = params.band
   if (params.terminal) {
     acc.terminal = params.terminal

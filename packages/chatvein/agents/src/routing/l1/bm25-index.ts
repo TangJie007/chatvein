@@ -108,7 +108,7 @@ export class RouteBm25Index {
         bestBand = b as Exclude<ComplexityBand, 'unknown'>
       }
     }
-    const toolOrder: ToolPolicy[] = ['none', 'read_only', 'full']
+    const toolOrder: ToolPolicy[] = ['none', 'unknown', 'full']
     let bestTools: ToolPolicy = 'none'
     let bestToolW = -1
     for (const t of toolOrder) {

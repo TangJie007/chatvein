@@ -52,9 +52,11 @@ function bandPolicy(band: ComplexityBand): RoutePolicy {
   }
 }
 
-const TOOL_RANK: Record<ToolPolicy, number> = { none: 0, read_only: 1, full: 2 }
+const TOOL_RANK: Record<'none' | 'full', number> = { none: 0, full: 1 }
 
 export function maxToolPolicy(a: ToolPolicy, b: ToolPolicy): ToolPolicy {
+  // unknown 不参与强度 max；合成见 synthesizeTools
+  if (a === 'unknown' || b === 'unknown') return 'unknown'
   return TOOL_RANK[a] >= TOOL_RANK[b] ? a : b
 }
 
@@ -70,16 +72,23 @@ export function mergePolicy(base: RoutePolicy, patch: Partial<RoutePolicy>): Rou
   }
 }
 
-/** 工具策略合成：抬升用 max；若出现 none 锁定（否定工具）则封顶为 none */
+/**
+ * 工具策略合成：
+ * - negate 锁定 → none
+ * - 任一为 unknown → unknown（交 L2）
+ * - 否则在 none|full 间取更开放者
+ */
 export function synthesizeTools(
   base: ToolPolicy,
   patches: Array<ToolPolicy | undefined>,
   lockNone: boolean,
 ): ToolPolicy {
   if (lockNone) return 'none'
-  let t = base
-  for (const p of patches) {
-    if (p) t = maxToolPolicy(t, p)
+  const all = [base, ...patches].filter((t): t is ToolPolicy => t != null)
+  if (all.some((t) => t === 'unknown')) return 'unknown'
+  let t: 'none' | 'full' = base === 'full' ? 'full' : 'none'
+  for (const p of all) {
+    if (p === 'full') t = 'full'
   }
   return t
 }

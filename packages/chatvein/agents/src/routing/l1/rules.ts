@@ -159,7 +159,7 @@ export function createDefaultRules(): object[] {
           ruleId: 'tool_verb',
           reason: 'tool_verb',
           scoreDelta: 20,
-          policy: { tools: 'read_only' },
+          policy: { tools: 'unknown' },
         } satisfies RuleEventParams,
       },
     },
