@@ -21,7 +21,7 @@ JSON 字段（全部必填除非标注可选）：
 - reason: 可选，≤40 字中文短因
 
 分档直觉：
-- trivial: 纯寒暄/确认，可无工具、0 步
+- trivial: 纯寒暄/确认，可无工具、宜短答
 - simple: 短问答，通常无工具
 - standard: 默认单 Agent 任务
 - complex: 多步/对比/重工具，可 allowSubAgents

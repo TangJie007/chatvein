@@ -209,8 +209,8 @@ export class ChatService {
     }
 
     const recursionLimit = Math.max(1, maxSteps)
-    // modelTier：一期无分档模型表，仍用 Agent 绑定模型；weak 注入短回复约束
-    const systemPrompt = systemPromptForTier(agent.systemPrompt, route.policy.modelTier)
+    // 路由约束写入 system：L2/策略 trivial → 友好短答；weak → 简短不列清单
+    const systemPrompt = systemPromptForRoute(agent.systemPrompt, route)
     const llm = createLangChainChatModel({
       id: model.id,
       baseUrl: model.baseUrl,
@@ -419,7 +419,7 @@ export class ChatService {
     }
 
     const recursionLimit = Math.max(1, maxSteps)
-    const systemPrompt = systemPromptForTier(agent.systemPrompt, route.policy.modelTier)
+    const systemPrompt = systemPromptForRoute(agent.systemPrompt, route)
     const llm = createLangChainChatModel({
       id: model.id,
       baseUrl: model.baseUrl,
@@ -657,11 +657,13 @@ function formatPolicyApply(route: RouteDecision): string {
     `tools=${p.tools}${p.tools === 'full' ? '（白名单未接，暂仍无工具）' : ' → 禁用工具'}`,
     `maxSteps=${p.maxSteps}${p.maxSteps <= 0 ? ' → 将本地短路' : ` → recursionLimit=${Math.max(1, p.maxSteps)}`}`,
   ]
-  if (p.modelTier === 'weak' && !(p.maxSteps <= 0 && (route.reasons.includes('greeting_only') || route.reasons.includes('self_intro')))) {
+  if (route.band === 'trivial') {
+    lines.push('trivial → 主模型友好短答（非 L1 本地模板）')
+  } else if (p.modelTier === 'weak' && !(p.maxSteps <= 0 && (route.reasons.includes('greeting_only') || route.reasons.includes('self_intro')))) {
     lines.push('weak → 注入短回复约束（一两句，不列清单）')
   }
   if (p.maxSteps <= 0 && !(route.reasons.includes('greeting_only') || route.reasons.includes('self_intro'))) {
-    lines.push('maxSteps=0 但非寒暄/自我介绍 → 仍调 LLM（recursionLimit≥1）')
+    lines.push('maxSteps=0 但非 L1 寒暄/自我介绍 → 仍调 LLM（recursionLimit≥1）')
   }
   if (p.hintUserCreateGroup) lines.push('hint：提示用户拉群（不自动建群）')
   if (p.hintUserForge) lines.push('hint：提示用户派 Forge（不自动派单）')
@@ -669,17 +671,29 @@ function formatPolicyApply(route: RouteDecision): string {
   return `${lines.join('\n')}\n`
 }
 
-/** weak 档：在 Agent persona 后追加短回复约束 */
+/**
+ * 按路由给主模型追加回答约束（仅 LLM 路径；L1 本地短路不会走到这里）。
+ * - band=trivial（含 L2 拍板）：友好简短寒暄式回复
+ * - modelTier=weak：一两句、不列清单
+ */
+const TRIVIAL_BAND_BRIEF =
+  '（路由：闲聊/寒暄档）请友好、简短地回复一两句，像正常打招呼或确认；不要列能力清单，不要长篇展开。'
 const WEAK_TIER_BRIEF = '（路由：简短档）请用一两句回复，不要列清单。'
 
-function systemPromptForTier(
+function systemPromptForRoute(
   agentPrompt: string | undefined,
-  tier: RouteDecision['policy']['modelTier'],
+  route: RouteDecision,
 ): string | undefined {
   const base = agentPrompt?.trim() || ''
-  if (tier !== 'weak') return base || undefined
-  if (!base) return WEAK_TIER_BRIEF
-  return `${base}\n\n${WEAK_TIER_BRIEF}`
+  const extras: string[] = []
+  if (route.band === 'trivial') {
+    extras.push(TRIVIAL_BAND_BRIEF)
+  } else if (route.policy.modelTier === 'weak') {
+    extras.push(WEAK_TIER_BRIEF)
+  }
+  if (extras.length === 0) return base || undefined
+  if (!base) return extras.join('\n')
+  return `${base}\n\n${extras.join('\n')}`
 }
 
 /** maxSteps=0 时的本地礼貌回复；开发环境追加「· 命中L1本地短路」便于验证 */
