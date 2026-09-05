@@ -8,12 +8,12 @@
 
 ## 决策
 
-- DB：`userData/forge/chat.db`，`drizzle-orm`（`sqlite-core` + `node-sqlite` / `node:sqlite`），**仅**表 `conversations`（元数据）；`PRAGMA foreign_keys=ON`。
-- 消息：写在会话工作区 `{workspacePath}/messages.json`，不进 SQLite。
+- DB：`userData/forge/chat.db`，`drizzle-orm`（`sqlite-core` + `node-sqlite` / `node:sqlite`），表 `conversations`（元数据）+ `messages`（会话历史）；`PRAGMA foreign_keys=ON`，删会话 CASCADE 消息。
+- 工作区目录：只放 `scripts/`、`runs/` 等产物，**不**存聊天记录。
 - 设置：仅配置工作区根；废弃独立 `runsRoot`。
-- 新建会话：`slug = YYYYMMDD-HHmmss-<8hex>`；`workspacePath = effectiveWorkspaceRoot/slug`；`sandboxPath = workspacePath/runs`（另建 `scripts/`）。
+- 新建会话：`slug = YYYYMMDD-HHmmss-<8hex>`；`workspacePath = effectiveWorkspaceRoot/slug`；`sandboxPath = workspacePath/runs`。
 - 工具绑定：`resolveChatTools` 使用该会话的 `workspacePath`，不再一律用全局根。
-- 删除：删库行 + 尽力 `rm` 会话根目录（含 `runs/`、消息文件）；列表提供删除按钮。
+- 删除：删库行（CASCADE 消息）+ 尽力 `rm` 会话根目录；列表提供删除按钮。
 - 启动：不再自动 `create`；空列表提示用户点「+」。首条发送若无会话仍会 `ensureActive` 建一条。
 
 ## 备选方案

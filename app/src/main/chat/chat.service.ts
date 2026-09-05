@@ -94,7 +94,7 @@ export class ChatService {
     const removed = await this.store.remove(id)
     if (!removed) throw new NotFoundException(`conversation:${id}`)
     this.lastBandByConv.delete(id)
-    // 会话根目录包含 runs/ 与 messages.json；删根即可
+    // 会话根目录包含 runs/ 与 scripts/；聊天历史在 SQLite，删库行即可
     await fs.rm(removed.workspacePath, { recursive: true, force: true }).catch(() => undefined)
     return { ok: true }
   }
@@ -371,7 +371,7 @@ export class ChatService {
       updatedAt: Date.now(),
     }
     await this.store.updateMeta(conv.id, { updatedAt: conv.updatedAt })
-    await this.store.replaceMessages(conv.workspacePath, conv.messages)
+    await this.store.replaceMessages(conv.id, conv.messages)
 
     return this.regenerateAfterUser(conv, userMessage, emit)
   }
@@ -656,7 +656,7 @@ export class ChatService {
       agentId: next.agentId,
       updatedAt: next.updatedAt,
     })
-    await this.store.replaceMessages(next.workspacePath, next.messages)
+    await this.store.replaceMessages(next.id, next.messages)
 
     return {
       conversation: next,
@@ -700,7 +700,7 @@ export class ChatService {
       agentId: next.agentId,
       updatedAt: next.updatedAt,
     })
-    await this.store.replaceMessages(next.workspacePath, next.messages)
+    await this.store.replaceMessages(next.id, next.messages)
     return {
       conversation: next,
       userMessage,

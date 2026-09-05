@@ -133,7 +133,7 @@ async function onAdd() {
 async function onRemove(id: string) {
   const target = chat.conversations.find((c) => c.id === id)
   if (!target) return
-  const ok = window.confirm(`删除对话「${target.title}」？\n将同时移除该会话目录（含 runs/ 与消息）。`)
+  const ok = window.confirm(`删除对话「${target.title}」？\n将同时移除该会话目录（含 runs/）与聊天历史。`)
   if (!ok) return
   await chat.remove(id)
   status.value = '已删除对话'

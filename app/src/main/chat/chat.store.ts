@@ -1,16 +1,15 @@
 import { Injectable } from '@electrum/common'
-import { desc, eq } from 'drizzle-orm'
+import { asc, desc, eq } from 'drizzle-orm'
 import { promises as fs } from 'node:fs'
 import { join } from 'node:path'
 import { app } from 'electron'
 import { getChatDb, type ChatDb } from '../db/client'
-import { conversations } from '../db/schema'
-import type { ChatMessage, Conversation } from './chat.types'
-
-const MESSAGES_FILE = 'messages.json'
+import { conversations, messages } from '../db/schema'
+import type { ChatMessage, Conversation, TokenUsage } from './chat.types'
 
 /**
- * 会话元数据 → SQLite；消息 → 会话工作区 messages.json。
+ * 会话元数据 + 历史消息 → SQLite（userData/forge/chat.db）。
+ * 工作区目录只承载脚本/产物，不存聊天记录。
  */
 @Injectable()
 export class ChatStore {
@@ -55,7 +54,9 @@ export class ChatStore {
         updatedAt: conv.updatedAt,
       })
       .run()
-    await this.writeMessages(conv.workspacePath, conv.messages)
+    if (conv.messages.length) {
+      await this.replaceMessages(conv.id, conv.messages)
+    }
     return conv
   }
 
@@ -72,9 +73,24 @@ export class ChatStore {
     db.update(conversations).set(next).where(eq(conversations.id, id)).run()
   }
 
-  /** 消息写入会话工作区，不进 SQLite */
-  async replaceMessages(workspacePath: string, list: ChatMessage[]): Promise<void> {
-    await this.writeMessages(workspacePath, list)
+  async replaceMessages(conversationId: string, list: ChatMessage[]): Promise<void> {
+    const db = this.getDb()
+    db.delete(messages).where(eq(messages.conversationId, conversationId)).run()
+    if (list.length === 0) return
+    db.insert(messages)
+      .values(
+        list.map((m) => ({
+          id: m.id,
+          conversationId,
+          role: m.role,
+          content: m.content,
+          createdAt: m.createdAt,
+          usageJson: m.usage ? JSON.stringify(m.usage) : null,
+          latencyMs: m.latencyMs ?? null,
+          failed: Boolean(m.failed),
+        })),
+      )
+      .run()
   }
 
   async remove(id: string): Promise<Conversation | null> {
@@ -95,6 +111,13 @@ export class ChatStore {
     createdAt: number
     updatedAt: number
   }): Promise<Conversation> {
+    const db = this.getDb()
+    const msgs = db
+      .select()
+      .from(messages)
+      .where(eq(messages.conversationId, row.id))
+      .orderBy(asc(messages.createdAt))
+      .all()
     return {
       id: row.id,
       title: row.title,
@@ -104,31 +127,16 @@ export class ChatStore {
       slug: row.slug,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
-      messages: await this.readMessages(row.workspacePath),
+      messages: msgs.map((m) => ({
+        id: m.id,
+        role: m.role as ChatMessage['role'],
+        content: m.content,
+        createdAt: m.createdAt,
+        usage: parseUsage(m.usageJson),
+        latencyMs: m.latencyMs ?? undefined,
+        failed: m.failed ? true : undefined,
+      })),
     }
-  }
-
-  private messagesPath(workspacePath: string): string {
-    return join(workspacePath, MESSAGES_FILE)
-  }
-
-  private async readMessages(workspacePath: string): Promise<ChatMessage[]> {
-    try {
-      const raw = await fs.readFile(this.messagesPath(workspacePath), 'utf8')
-      const parsed = JSON.parse(raw) as unknown
-      if (!Array.isArray(parsed)) return []
-      return parsed as ChatMessage[]
-    } catch {
-      return []
-    }
-  }
-
-  private async writeMessages(workspacePath: string, list: ChatMessage[]): Promise<void> {
-    await fs.mkdir(workspacePath, { recursive: true })
-    const path = this.messagesPath(workspacePath)
-    const tmp = `${path}.tmp`
-    await fs.writeFile(tmp, JSON.stringify(list, null, 2), 'utf8')
-    await fs.rename(tmp, path)
   }
 
   private async clearLegacyFileOnce(): Promise<void> {
@@ -141,5 +149,14 @@ export class ChatStore {
     } catch {
       // ignore
     }
+  }
+}
+
+function parseUsage(raw: string | null): TokenUsage | undefined {
+  if (!raw) return undefined
+  try {
+    return JSON.parse(raw) as TokenUsage
+  } catch {
+    return undefined
   }
 }

@@ -1,6 +1,7 @@
 /**
  * Chat 持久化 schema（drizzle-orm/sqlite-core + node:sqlite）。
- * 仅会话元数据；消息落在会话工作区 messages.json，不进 SQLite。
+ * conversations = 会话元数据；messages = 会话历史。
+ * 工作区目录只放脚本/产物（scripts、runs），不存聊天记录。
  */
 import { integer, sqliteTable, text } from 'drizzle-orm/sqlite-core'
 
@@ -18,4 +19,19 @@ export const conversations = sqliteTable('conversations', {
   updatedAt: integer('updated_at', { mode: 'number' }).notNull(),
 })
 
+export const messages = sqliteTable('messages', {
+  id: text('id').primaryKey(),
+  conversationId: text('conversation_id')
+    .notNull()
+    .references(() => conversations.id, { onDelete: 'cascade' }),
+  role: text('role').notNull(),
+  content: text('content').notNull(),
+  createdAt: integer('created_at', { mode: 'number' }).notNull(),
+  /** JSON：TokenUsage */
+  usageJson: text('usage_json'),
+  latencyMs: integer('latency_ms', { mode: 'number' }),
+  failed: integer('failed', { mode: 'boolean' }).notNull().default(false),
+})
+
 export type ConversationRow = typeof conversations.$inferSelect
+export type MessageRow = typeof messages.$inferSelect

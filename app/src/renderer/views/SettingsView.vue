@@ -121,7 +121,7 @@ onMounted(async () => {
       </Field>
       <p class="mt-1.5 font-mono text-[11px] text-[var(--color-ink-3)]">有效路径：{{ effectiveWorkspace }}</p>
       <p class="mt-1 font-mono text-[11px] text-[var(--color-ink-3)]">
-        布局：&lt;根&gt;/&lt;slug&gt;/ · messages.json · scripts/ · runs/
+        布局：&lt;根&gt;/&lt;slug&gt;/ · scripts/ · runs/（聊天历史在 SQLite）
       </p>
     </Card>
 
