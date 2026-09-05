@@ -93,7 +93,7 @@ export class AgentStore {
       tint: 'violet',
       modelId: '',
       enabled: true,
-      tools: ['file_read'],
+      tools: ['read_file'],
       skills: ['frontend-code-review'],
       knowledgeBases: [],
       systemPrompt:

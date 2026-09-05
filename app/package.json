@@ -12,6 +12,7 @@
   "dependencies": {
     "@chatvein/agents": "workspace:*",
     "@chatvein/models": "workspace:*",
+    "@chatvein/tools": "workspace:*",
     "@electrum/client": "workspace:*",
     "@electrum/common": "workspace:*",
     "@electrum/core": "workspace:*",

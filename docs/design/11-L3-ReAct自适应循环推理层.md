@@ -116,7 +116,7 @@ runChatTurn(input: L3RunInput): Promise<L3RunResult>
 | 循环 | `langchain.createAgent`（底层 LangGraph），**不自研 while** |
 | 调用 | `invokeReactChatAgent` + `recursionLimit` |
 | 步数 | `recursionLimit = max(1, route.policy.maxSteps)` |
-| 工具 | 一期 app 多绑 `tools: []`；`policy.tools=full` 白名单待接 |
+| 工具 | `policy.tools=full` → `@chatvein/tools` `resolveChatTools`（∩ 角色白名单）；`none/unknown` → `[]` |
 | 短答约束 | `systemPromptForRoute`：`band=trivial` / `tier=weak` 注入 |
 | 本地短路 | 仅 L1 `greeting_only` / `self_intro`（在 app，非 L3） |
 | 子 Agent / 人机 / 多阶段图 | **未落地** |
@@ -187,7 +187,7 @@ complex          → ComplexGraph
 | 阶段 | 内容 | 依赖 |
 |------|------|------|
 | **L3-0（今）** | createAgent + policy 裁剪 + trivial/weak prompt | agents + app |
-| **L3-1** | 工具白名单与 `tools` policy 真正求交；BudgetGuard 接满 | tools / context |
+| **L3-1** | 工具目录求交（T0 已接）；BudgetGuard 接满；写/shell 进沙箱 | tools / context |
 | **L3-2** | 对外 `runChatTurn`；内部按 band 选图（可仍单 ReAct 实现） | agents API 整理 |
 | **L3-3** | complex：plan-execute 子图 + interrupt | LangGraph checkpoint |
 | **L3-4** | allowSubAgents 扇出/汇合 + 共享预算 | BudgetGuard 细则 |
@@ -200,6 +200,7 @@ complex          → ComplexGraph
 - 路由 L1/L1.5：[09-启发式规则路由](./09-启发式规则路由.md)  
 - 路由 L2：[10-L2语义路由层](./10-L2语义路由层.md)  
 - 代码：`packages/chatvein/agents/src/react-agent.ts`  
+- 工具：[`12-Agent工具层.md`](./12-Agent工具层.md) · `packages/chatvein/tools`  
 - 消费方：`app/src/main/chat/chat.service.ts`
 
 ---

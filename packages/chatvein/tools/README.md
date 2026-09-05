@@ -1,7 +1,29 @@
 # `@chatvein/tools`
 
-Agent 工具层：读/写文件、补丁、目录与检索、受限 shell、git、服务启动与冒烟探测。
+Agent 工具层：按七大品类组织目录，经 `resolveChatTools` 与 `RouteDecision.policy.tools` / 角色白名单求交后交给 L3 ReAct。
 
-每条工具必须超时、输出截断（经 `@chatvein/context`）、命令白名单，并写 trace。实际进程执行只走 `@chatvein/sandbox` 的 `SandboxProvider`，禁止直接 spawn 宿主任意路径。
+## 品类
 
-Chat 轨由 `@chatvein/agents` 按角色白名单绑定本包工具。
+1. **search** — DuckDuckGo（默认）；Brave / SerpAPI（密钥）
+2. **compute** — Calculator、受限 `js_eval`；Wolfram（密钥）
+3. **local_fs** — `read_file` / `list_dir` / `grep_search`（workspace jail）
+4. **web** — `fetch_url`
+5. **news_finance** — Google Trends（SerpAPI）
+6. **database** — `sqlite_query`（只读）
+7. **knowledge** — Wikipedia、Stack Exchange
+
+社区实现优先来自 `@langchain/community`（已 sunset，作过渡锚点）；本地危险能力自研薄封装。设计见 `docs/design/12-Agent工具层.md`。
+
+## API
+
+```ts
+import { resolveChatTools, TOOL_CATALOG } from '@chatvein/tools'
+
+const tools = await resolveChatTools({
+  policy: 'full',
+  allowIds: 'all',
+  workspaceRoot: 'D:/Chatvein/workspaces',
+})
+```
+
+横切：超时、输出截断、路径越界拒绝。Shell / 写文件走后续沙箱（见 `docs/design/07-沙箱方案.md`）。

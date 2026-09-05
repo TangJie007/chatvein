@@ -11,11 +11,15 @@ import {
   isLlmDebugLogEnabled,
   safeJsonStringify,
 } from '@chatvein/models'
+import { resolveChatTools } from '@chatvein/tools'
+import type { StructuredToolInterface } from '@chatvein/tools'
 import { randomUUID } from 'node:crypto'
 import { AgentService } from '../agent/agent.service'
 import { MAIN_AGENT_ID } from '../agent/agent.types'
+import type { AgentConfig } from '../agent/agent.types'
 import { ModelService } from '../model/model.service'
 import type { ModelConfig } from '../model/model.types'
+import { SettingsService } from '../settings/settings.service'
 import { ChatStore } from './chat.store'
 import type {
   ChatMessage,
@@ -35,6 +39,9 @@ export class ChatService {
 
   @Inject(ModelService)
   private models!: ModelService
+
+  @Inject(SettingsService)
+  private settings!: SettingsService
 
   private lastBandByConv = new Map<string, ComplexityBand>()
   /** 已为该模型 id 注入过 Structured L2，避免每轮重建 */
@@ -82,7 +89,7 @@ export class ChatService {
 
   /**
    * 普通对话：L1/L1.5 →（灰区）L2 结构化分类 → Agent ReAct。
-   * 工具白名单尚未落地时 tools=[]；路由 policy 供后续裁剪与 UI 提示。
+   * `policy.tools=full` 时经 `@chatvein/tools` 绑定目录工具（∩ 角色白名单）。
    */
   async send(
     input: ChatSendInput,
@@ -220,9 +227,18 @@ export class ChatService {
       maxTokens: model.maxTokens > 0 ? model.maxTokens : undefined,
     })
 
+    const boundTools = await this.resolveBoundTools(agent, toolPolicy)
+    if (boundTools.length > 0) {
+      emit?.({
+        type: 'thinking_delta',
+        runId,
+        conversationId: conv.id,
+        delta: `绑定工具：${boundTools.map((t) => t.name).join(', ')}\n`,
+      })
+    }
     const reactAgent = createReactChatAgent({
       model: llm,
-      tools: [], // tools=none|unknown → 空；full 待白名单落地
+      tools: boundTools,
       systemPrompt,
       name: agent.name,
     })
@@ -244,7 +260,7 @@ export class ChatService {
         systemPrompt: systemPrompt ?? null,
         recursionLimit,
         toolsPolicy: toolPolicy,
-        toolsBound: [],
+        toolsBound: boundTools.map((t) => t.name),
         route: {
           band: route.band,
           score: route.score,
@@ -428,9 +444,10 @@ export class ChatService {
       temperature: temperatureForTier(route.policy.modelTier, model.temperature),
       maxTokens: model.maxTokens > 0 ? model.maxTokens : undefined,
     })
+    const boundTools = await this.resolveBoundTools(agent, route.policy.tools)
     const reactAgent = createReactChatAgent({
       model: llm,
-      tools: [],
+      tools: boundTools,
       systemPrompt,
       name: agent.name,
     })
@@ -484,6 +501,28 @@ export class ChatService {
         true,
       )
     }
+  }
+
+  /**
+   * policy.tools ∩ 角色白名单 → LangChain 工具实例。
+   * `agent.tools` 为空 = 尚未配置白名单，视为允许目录默认集。
+   */
+  private async resolveBoundTools(
+    agent: AgentConfig,
+    toolPolicy: RouteDecision['policy']['tools'],
+  ): Promise<StructuredToolInterface[]> {
+    const settings = await this.settings.get()
+    return resolveChatTools({
+      policy: toolPolicy,
+      allowIds: agent.tools.length > 0 ? agent.tools : 'all',
+      workspaceRoot: settings.effectiveWorkspaceRoot,
+      secrets: {
+        serpApiKey: process.env.SERPAPI_API_KEY,
+        braveApiKey: process.env.BRAVE_SEARCH_API_KEY,
+        tavilyApiKey: process.env.TAVILY_API_KEY,
+        wolframAppId: process.env.WOLFRAM_ALPHA_APPID,
+      },
+    })
   }
 
   /**
@@ -654,7 +693,7 @@ function formatPolicyApply(route: RouteDecision): string {
   const p = route.policy
   const lines = [
     `应用 policy：tier=${p.modelTier}（一期仍用 Agent 绑定模型）`,
-    `tools=${p.tools}${p.tools === 'full' ? '（白名单未接，暂仍无工具）' : ' → 禁用工具'}`,
+    `tools=${p.tools}${p.tools === 'full' ? ' → 绑定 @chatvein/tools 目录' : ' → 禁用工具'}`,
     `maxSteps=${p.maxSteps}${p.maxSteps <= 0 ? ' → 将本地短路' : ` → recursionLimit=${Math.max(1, p.maxSteps)}`}`,
   ]
   if (route.band === 'trivial') {

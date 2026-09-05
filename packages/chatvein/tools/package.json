@@ -18,14 +18,21 @@
       "default": "./dist/index.js"
     }
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch",
     "test": "vitest run"
   },
   "dependencies": {
-    "@chatvein/common": "workspace:*"
+    "@chatvein/common": "workspace:*",
+    "@langchain/community": "^1.1.29",
+    "@langchain/core": "^1.2.9",
+    "duck-duck-scrape": "^2.2.7",
+    "es-toolkit": "^1.52.0",
+    "zod": "^4.5.4"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",

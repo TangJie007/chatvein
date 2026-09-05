@@ -17,9 +17,8 @@
 | [08-流式对话与 Markdown 渲染](./08-流式对话与Markdown渲染) | LangGraph `astream` → IPC `ChatEvent`；markdown-it + Shiki + DOMPurify | CP1 |
 | [09-启发式规则路由](./09-启发式规则路由) | L1 `json-rules-engine` + L1.5 MiniSearch；`RouteDecision`；**拉群仅 UI 提示、Agent 用子 Agent** | CP1 末 / CP2（R0–R2） |
 | [10-L2 语义路由层](./10-L2语义路由层) | 灰区弱模 JSON 结构化决策（Cascade L2）；与主 ReAct 意图解耦 | CP1 R3（已落地） |
-| [11-L3 ReAct 自适应循环](./11-L3-ReAct自适应循环推理层) | 核心执行层：按 RouteDecision 跑 ReAct / 演进 StateGraph；人机与子 Agent | CP0 基线；L3-1+ 演进 |
-| [11-L3 ReAct 自适应循环](./11-L3-ReAct自适应循环推理层) | 核心执行层：policy 约束下的 ReAct / 演进 StateGraph；子图预置非运行时画边 | CP0 基线；L3-1+ 演进 |
 | [11-L3 ReAct 自适应循环](./11-L3-ReAct自适应循环推理层) | 核心执行层：policy→ReAct/StateGraph；trivial 谁答、子图预置、人机/子 Agent 演进 | CP0 基线 ✅；L3-1+ 演进 |
+| [12-Agent 工具层](./12-Agent工具层) | 七大品类目录；`@langchain/community` + builtin；`resolveChatTools` × policy | L3-1 T0 ✅ |
 
 > **LangGraph 分工**：不自研 Agent 循环。Forge 编码 = `orchestrator` + `StateGraph`；普通对话 = `agents` + `createReactAgent`。见 [02](./02-agent循环方案) §8、[phase1/03](../phase1/03-开发计划书.md) §1.1。
 >
