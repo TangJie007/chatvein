@@ -68,6 +68,8 @@ export interface ChatArtifactItem {
   title: string
   kind?: string
   detail?: string
+  /** 绝对路径；点击在资源管理器中显示 */
+  absPath?: string
 }
 
 export type ChatStreamEvent =

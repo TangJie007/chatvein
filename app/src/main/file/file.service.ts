@@ -7,6 +7,7 @@ import {
 } from '@electrum/common'
 import { promises as fs } from 'node:fs'
 import { watch, type FSWatcher } from 'node:fs'
+import { shell } from 'electron'
 import type { AppConfig } from '../config.service'
 
 @Injectable()
@@ -30,6 +31,18 @@ export class FileService implements OnModuleInit, OnModuleDestroy {
 
   async write(filePath: string, content: string): Promise<void> {
     await fs.writeFile(filePath, content, 'utf-8')
+  }
+
+  /** 在资源管理器 / Finder 中打开并选中文件（或打开目录） */
+  async showInFolder(targetPath: string): Promise<void> {
+    const p = targetPath?.trim()
+    if (!p) throw new NotFoundException('(empty path)')
+    try {
+      await fs.access(p)
+    } catch {
+      throw new NotFoundException(p)
+    }
+    shell.showItemInFolder(p)
   }
 
   watch(filePath: string, callback: (change: { event: string; filename: string | null }) => void) {

@@ -31,6 +31,12 @@ export class FileController {
     return { ok: true, path: data.path }
   }
 
+  @IpcHandle('showInFolder')
+  async showInFolder(filePath: string): Promise<{ ok: true }> {
+    await this.fileService.showInFolder(filePath)
+    return { ok: true }
+  }
+
   @IpcOn('watch')
   onWatch(event: IpcMainEvent, filePath: string): void {
     this.fileService.watch(filePath, (change) => {

@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
+import { createClient } from '@electrum/client'
 import AppIcon from '../AppIcon.vue'
 import DisclosureSection from '../ui/DisclosureSection.vue'
 import type { TraceStep } from './AgentTrace.vue'
+import type { IpcApi } from '../../ipc-api'
 
 export interface ThinkingArtifact {
   id: string
@@ -10,6 +12,8 @@ export interface ThinkingArtifact {
   /** 如 file / script / report */
   kind?: string
   detail?: string
+  /** 绝对路径；点击在资源管理器中显示 */
+  absPath?: string
 }
 
 const props = withDefaults(
@@ -31,6 +35,7 @@ const props = withDefaults(
   },
 )
 
+const api = createClient<IpcApi>()
 const thoughtBodyRef = ref<HTMLElement | null>(null)
 /** remount Disclosure 以在新一轮强制 defaultOpen */
 const thoughtKey = ref(0)
@@ -45,6 +50,16 @@ const thoughtBadge = computed(() =>
 )
 
 const artifactBadge = computed(() => String(props.artifacts.length))
+
+async function openArtifactFolder(a: ThinkingArtifact): Promise<void> {
+  const target = a.absPath?.trim()
+  if (!target) return
+  try {
+    await api.file.showInFolder(target)
+  } catch (e) {
+    console.warn('[ThinkingPanel] showInFolder failed', e)
+  }
+}
 
 watch(
   () => props.active,
@@ -163,10 +178,14 @@ watch(
         panel-class="max-h-[min(40vh,320px)]"
       >
         <template v-if="artifacts.length">
-          <div
+          <button
             v-for="a in artifacts"
             :key="a.id"
-            class="rounded-[10px] bg-[var(--color-elevated)] px-2.5 py-2 shadow-[inset_0_0_0_1px_rgba(223,227,232,0.55)]"
+            type="button"
+            class="w-full rounded-[10px] border-0 bg-[var(--color-elevated)] px-2.5 py-2 text-left shadow-[inset_0_0_0_1px_rgba(223,227,232,0.55)] transition-colors hover:bg-[var(--color-hover)] focus-visible:outline-2 focus-visible:outline-[var(--color-brand)] focus-visible:outline-offset-1"
+            :title="a.absPath ? `在文件夹中显示：${a.absPath}` : a.detail"
+            :disabled="!a.absPath"
+            @click="openArtifactFolder(a)"
           >
             <div class="flex items-center gap-1.5">
               <AppIcon name="folder" :size="12" :stroke-width="2" class="shrink-0 text-[var(--color-ink-3)]" />
@@ -177,7 +196,7 @@ watch(
               >{{ a.kind }}</span>
             </div>
             <p v-if="a.detail" class="m-0 mt-1 text-[11.5px] leading-[1.45] text-[var(--color-ink-2)]">{{ a.detail }}</p>
-          </div>
+          </button>
         </template>
         <p v-else class="m-0 px-0.5 py-1 text-[11.5px] leading-[1.5] text-[var(--color-ink-3)]">
           会话工作区暂无文件。脚本、导出等会出现在这里。

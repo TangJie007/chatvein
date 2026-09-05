@@ -5,7 +5,7 @@
 import type { BaseMessage } from '@langchain/core/messages'
 import { AIMessage } from '@langchain/core/messages'
 import { promises as fs } from 'node:fs'
-import { basename, join, relative } from 'node:path'
+import { basename, isAbsolute as isAbs, join, relative } from 'node:path'
 
 export interface WorkspaceFileEntry {
   absPath: string
@@ -21,6 +21,8 @@ export interface ChatArtifactItem {
   title: string
   kind?: string
   detail?: string
+  /** 绝对路径；点击「在文件夹中显示」用 */
+  absPath?: string
 }
 
 const SKIP_DIRS = new Set(['node_modules', '.git', '.venv', '__pycache__', '.cache'])
@@ -107,6 +109,7 @@ export function artifactsFromReactMessages(
         title: basename(rel.replace(/\\/g, '/')) || rel,
         kind: kindFromRel(rel),
         detail: rel,
+        absPath: isAbs(pathArg) ? pathArg : join(workspaceRoot, rel),
       })
     }
   }
@@ -129,6 +132,7 @@ function fileToArtifact(f: WorkspaceFileEntry): ChatArtifactItem {
     title: basename(f.relPath) || f.relPath,
     kind: kindFromRel(f.relPath),
     detail: f.relPath,
+    absPath: f.absPath,
   }
 }
 

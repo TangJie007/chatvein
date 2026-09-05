@@ -11,6 +11,8 @@ export interface IpcApi {
   'app:ping': (message: string) => Promise<{ echo: string; at: number }>
   'file:read': (path: string) => Promise<string>
   'file:write': (data: { path: string; content: string }) => Promise<{ ok: true; path: string }>
+  /** 在系统文件管理器中打开并选中该文件 */
+  'file:showInFolder': (path: string) => Promise<{ ok: true }>
   'user:list': () => Promise<Array<{ id: number; name: string; email: string }>>
   'user:get': (id: number) => Promise<{ id: number; name: string; email: string }>
   'user:create': (data: {
@@ -235,6 +237,7 @@ export interface ChatArtifactItem {
   title: string
   kind?: string
   detail?: string
+  absPath?: string
 }
 
 export type ChatStreamEvent =
