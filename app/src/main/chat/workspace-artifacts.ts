@@ -25,7 +25,7 @@ export interface ChatArtifactItem {
   absPath?: string
 }
 
-const SKIP_DIRS = new Set(['node_modules', '.git', '.venv', '__pycache__', '.cache'])
+const SKIP_DIRS = new Set(['node_modules', '.git', '.venv', '__pycache__', '.cache', 'logs'])
 
 const WRITE_TOOL_RE = /write|create|edit|save|append|mkdir|move|copy|upload|generate/i
 

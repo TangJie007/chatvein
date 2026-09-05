@@ -41,6 +41,7 @@ import {
   mergeArtifacts,
   snapshotWorkspaceMtimes,
 } from './workspace-artifacts'
+import { readThinkingLog, writeThinkingLog } from './thinking-log'
 import type { BaseMessage } from '@langchain/core/messages'
 
 @Injectable()
@@ -83,6 +84,7 @@ export class ChatService {
     await fs.mkdir(workspacePath, { recursive: true })
     await fs.mkdir(sandboxPath, { recursive: true })
     await fs.mkdir(join(workspacePath, 'scripts'), { recursive: true })
+    await fs.mkdir(join(workspacePath, 'logs'), { recursive: true })
 
     const conv: Conversation = {
       id: randomUUID(),
@@ -115,14 +117,31 @@ export class ChatService {
     return artifactsFromWorkspaceDiff(new Map(), files)
   }
 
+  /** 读取某条助手回复对应的思考流日志 */
+  async getThinkingLog(conversationId: string, messageId: string): Promise<{ text: string | null }> {
+    const conv = await this.store.get(conversationId)
+    if (!conv) throw new NotFoundException(`conversation:${conversationId}`)
+    try {
+      const text = await readThinkingLog(conv.workspacePath, messageId)
+      return { text }
+    } catch {
+      return { text: null }
+    }
+  }
+
   /**
    * 普通对话：L1/L1.5 →（灰区）L2 结构化分类 → Agent ReAct。
    * `policy.tools=full` 时经 `@chatvein/tools` 绑定目录工具（∩ 角色白名单）。
    */
   async send(
     input: ChatSendInput,
-    emit?: (evt: ChatStreamEvent) => void,
+    emitOuter?: (evt: ChatStreamEvent) => void,
   ): Promise<ChatSendResult> {
+    const thinkingParts: string[] = []
+    const emit = (evt: ChatStreamEvent) => {
+      if (evt.type === 'thinking_delta') thinkingParts.push(evt.delta)
+      emitOuter?.(evt)
+    }
     const content = (input.content || '').trim()
     if (!content) throw new ValidationException('消息不能为空', [])
 
@@ -154,7 +173,7 @@ export class ChatService {
       .map((m) => ({ role: m.role as 'user' | 'assistant', content: m.content }))
 
     const runId = randomUUID()
-    emit?.({
+    emit({
       type: 'run_start',
       runId,
       conversationId: conv.id,
@@ -178,13 +197,13 @@ export class ChatService {
     })
     this.lastBandByConv.set(conv.id, route.band)
 
-    emit?.({
+    emit({
       type: 'route',
       runId,
       conversationId: conv.id,
       decision: route,
     })
-    emit?.({
+    emit({
       type: 'thinking_delta',
       runId,
       conversationId: conv.id,
@@ -194,21 +213,21 @@ export class ChatService {
     if (route.terminal?.kind === 'slash') {
       const cmd = String(route.terminal.payload?.slashCmd ?? '')
       const text = `已识别命令 /${cmd}（本地处理占位；尚未绑定具体动作）。`
-      emit?.({ type: 'thinking_done', runId, conversationId: conv.id })
-      return this.persistAssistant(conv, agentId, userMessage, text, 0, model.model, route)
+      emit({ type: 'thinking_done', runId, conversationId: conv.id })
+      return this.persistAssistant(conv, agentId, userMessage, text, 0, model.model, route, false, undefined, thinkingParts.join(''))
     }
 
     if (route.terminal?.kind === 'empty') {
       const text = '（空消息，已忽略）'
-      emit?.({ type: 'thinking_done', runId, conversationId: conv.id })
-      return this.persistAssistant(conv, agentId, userMessage, text, 0, model.model, route)
+      emit({ type: 'thinking_done', runId, conversationId: conv.id })
+      return this.persistAssistant(conv, agentId, userMessage, text, 0, model.model, route, false, undefined, thinkingParts.join(''))
     }
 
     // —— 吃满 L1 policy（开发验证）——
     const maxSteps = route.policy.maxSteps
     const toolPolicy = route.policy.tools
 
-    emit?.({
+    emit({
       type: 'thinking_delta',
       runId,
       conversationId: conv.id,
@@ -222,7 +241,7 @@ export class ChatService {
 
     if (allowLocalShortCircuit) {
       const text = localReplyForRoute(route, content)
-      emit?.({
+      emit({
         type: 'thinking_delta',
         runId,
         conversationId: conv.id,
@@ -239,8 +258,8 @@ export class ChatService {
         },
         localReply: text,
       })
-      emit?.({ type: 'thinking_done', runId, conversationId: conv.id })
-      return this.persistAssistant(conv, agentId, userMessage, text, 0, model.model, route)
+      emit({ type: 'thinking_done', runId, conversationId: conv.id })
+      return this.persistAssistant(conv, agentId, userMessage, text, 0, model.model, route, false, undefined, thinkingParts.join(''))
     }
 
     const recursionLimit = Math.max(1, maxSteps)
@@ -253,7 +272,7 @@ export class ChatService {
 
     const boundTools = await this.resolveBoundTools(agent, toolPolicy, conv.workspacePath)
     if (boundTools.length > 0) {
-      emit?.({
+      emit({
         type: 'thinking_delta',
         runId,
         conversationId: conv.id,
@@ -318,7 +337,7 @@ export class ChatService {
         latencyMs: Date.now() - started,
       })
     } catch (err) {
-      emit?.({ type: 'thinking_done', runId, conversationId: conv.id })
+      emit({ type: 'thinking_done', runId, conversationId: conv.id })
       return this.persistAssistant(
         conv,
         agentId,
@@ -328,11 +347,13 @@ export class ChatService {
         model.model,
         route,
         true,
+        undefined,
+        thinkingParts.join(''),
       )
     }
     const latencyMs = Date.now() - started
     await this.emitRunArtifacts(emit, runId, conv, beforeSnap, reactMessages)
-    emit?.({ type: 'thinking_done', runId, conversationId: conv.id })
+    emit({ type: 'thinking_done', runId, conversationId: conv.id })
 
     if (!text) {
       return this.persistAssistant(
@@ -344,6 +365,8 @@ export class ChatService {
         model.model,
         route,
         true,
+        undefined,
+        thinkingParts.join(''),
       )
     }
 
@@ -357,6 +380,7 @@ export class ChatService {
       route,
       false,
       usage,
+      thinkingParts.join(''),
     )
     } finally {
       clearLlmDebug?.()
@@ -400,8 +424,15 @@ export class ChatService {
   private async regenerateAfterUser(
     conv: Conversation,
     userMessage: ChatMessage,
-    emit?: (evt: ChatStreamEvent) => void,
+    emitOuter?: (evt: ChatStreamEvent) => void,
   ): Promise<ChatSendResult> {
+    const thinkingParts: string[] = []
+    const emit = (evt: ChatStreamEvent) => {
+      if (evt.type === 'thinking_delta') thinkingParts.push(evt.delta)
+      emitOuter?.(evt)
+    }
+    const thinkingLog = () => thinkingParts.join('')
+
     const agentId = conv.agentId || MAIN_AGENT_ID
     const agent = await this.agents.get(agentId)
     if (!agent.enabled) throw new ValidationException(`Agent「${agent.name}」已停用`, [])
@@ -420,7 +451,7 @@ export class ChatService {
       .map((m) => ({ role: m.role as 'user' | 'assistant', content: m.content }))
 
     const runId = randomUUID()
-    emit?.({
+    emit({
       type: 'run_start',
       runId,
       conversationId: conv.id,
@@ -443,8 +474,8 @@ export class ChatService {
     })
     this.lastBandByConv.set(conv.id, route.band)
 
-    emit?.({ type: 'route', runId, conversationId: conv.id, decision: route })
-    emit?.({
+    emit({ type: 'route', runId, conversationId: conv.id, decision: route })
+    emit({
       type: 'thinking_delta',
       runId,
       conversationId: conv.id,
@@ -458,8 +489,8 @@ export class ChatService {
 
     if (allowLocalShortCircuit) {
       const text = localReplyForRoute(route, content)
-      emit?.({ type: 'thinking_done', runId, conversationId: conv.id })
-      return this.appendAssistant(conv, agentId, userMessage, text, 0, model.model, route)
+      emit({ type: 'thinking_done', runId, conversationId: conv.id })
+      return this.appendAssistant(conv, agentId, userMessage, text, 0, model.model, route, false, undefined, thinkingLog())
     }
 
     const recursionLimit = Math.max(1, maxSteps)
@@ -486,7 +517,7 @@ export class ChatService {
       })
       const text = result.content.trim()
       await this.emitRunArtifacts(emit, runId, conv, beforeSnap, result.messages)
-      emit?.({ type: 'thinking_done', runId, conversationId: conv.id })
+      emit({ type: 'thinking_done', runId, conversationId: conv.id })
       if (!text) {
         return this.appendAssistant(
           conv,
@@ -497,6 +528,8 @@ export class ChatService {
           model.model,
           route,
           true,
+          undefined,
+          thinkingLog(),
         )
       }
       return this.appendAssistant(
@@ -509,9 +542,10 @@ export class ChatService {
         route,
         false,
         result.usage,
+        thinkingLog(),
       )
     } catch (err) {
-      emit?.({ type: 'thinking_done', runId, conversationId: conv.id })
+      emit({ type: 'thinking_done', runId, conversationId: conv.id })
       return this.appendAssistant(
         conv,
         agentId,
@@ -521,6 +555,8 @@ export class ChatService {
         model.model,
         route,
         true,
+        undefined,
+        thinkingLog(),
       )
     }
     } finally {
@@ -674,6 +710,7 @@ export class ChatService {
     route: RouteDecision,
     failed = false,
     usage?: TokenUsage,
+    thinkingLog = '',
   ): Promise<ChatSendResult> {
     const assistantMessage: ChatMessage = {
       id: randomUUID(),
@@ -703,6 +740,9 @@ export class ChatService {
       updatedAt: next.updatedAt,
     })
     await this.store.replaceMessages(next.id, next.messages)
+    await writeThinkingLog(conv.workspacePath, assistantMessage.id, thinkingLog).catch((err) => {
+      console.warn('[ChatService] writeThinkingLog failed', err)
+    })
 
     return {
       conversation: next,
@@ -726,6 +766,7 @@ export class ChatService {
     route: RouteDecision,
     failed = false,
     usage?: TokenUsage,
+    thinkingLog = '',
   ): Promise<ChatSendResult> {
     const assistantMessage: ChatMessage = {
       id: randomUUID(),
@@ -747,6 +788,9 @@ export class ChatService {
       updatedAt: next.updatedAt,
     })
     await this.store.replaceMessages(next.id, next.messages)
+    await writeThinkingLog(conv.workspacePath, assistantMessage.id, thinkingLog).catch((err) => {
+      console.warn('[ChatService] writeThinkingLog failed', err)
+    })
     return {
       conversation: next,
       userMessage,

@@ -37,11 +37,22 @@ const activeModel = computed(() => {
 
 const messages = computed(() => chat.current?.messages ?? [])
 
-// 思考面板：仅展示当前会话的运行（事件带 conversationId，切会话时不串）
+// 思考面板：运行中显示实时流；结束后 / 点击气泡显示对应日志
 const panelActive = computed(
   () => chat.thinking.active && chat.thinking.conversationId === chat.currentId,
 )
-const panelThought = computed(() => (panelActive.value ? chat.thinking.text : ''))
+const panelThought = computed(() => {
+  if (chat.thinking.conversationId && chat.thinking.conversationId !== chat.currentId) return ''
+  if (panelActive.value) return chat.thinking.text
+  if (chat.selectedThinkingMessageId) return chat.thinking.text
+  return ''
+})
+
+async function onSelectThinking(messageId: string, role: string): Promise<void> {
+  if (role !== 'assistant' || chat.sending) return
+  await chat.selectThinking(messageId)
+  if (!tracePanelOpen.value) tracePanelOpen.value = true
+}
 
 function toggleTrace() {
   tracePanelOpen.value = !tracePanelOpen.value
@@ -312,16 +323,37 @@ onMounted(async () => {
           class="flex flex-col gap-1.5"
           :class="m.role === 'user' ? 'items-end' : 'items-start'"
         >
+          <button
+            v-if="m.role === 'assistant'"
+            type="button"
+            class="max-w-full rounded-[14px] border-0 bg-transparent p-0 text-left transition-[box-shadow] focus-visible:outline-2 focus-visible:outline-[var(--color-brand)] focus-visible:outline-offset-2"
+            :class="
+              chat.selectedThinkingMessageId === m.id
+                ? 'shadow-[0_0_0_2px_rgb(97_120_208/0.45)]'
+                : 'hover:shadow-[0_0_0_1px_rgba(223,227,232,0.9)]'
+            "
+            :title="'点击查看该回复的思考流'"
+            @click="onSelectThinking(m.id, m.role)"
+          >
+            <ChatMessage
+              role="agent"
+              :initial="activeAgent?.initial || 'A'"
+              :tint="activeAgent?.tint || 'indigo'"
+              :author="activeAgent?.name"
+              :role-mini="activeAgent?.role"
+              :time="formatTime(m.createdAt)"
+              :content="m.content"
+              :token-label="!m.failed ? formatTokenLabel(m) : ''"
+              :token-title="!m.failed ? formatTokenTitle(m) : ''"
+            />
+          </button>
           <ChatMessage
-            :role="m.role === 'assistant' ? 'agent' : 'user'"
-            :initial="m.role === 'assistant' ? activeAgent?.initial || 'A' : '我'"
-            :tint="m.role === 'assistant' ? activeAgent?.tint || 'indigo' : 'sky'"
-            :author="m.role === 'assistant' ? activeAgent?.name : undefined"
-            :role-mini="m.role === 'assistant' ? activeAgent?.role : undefined"
+            v-else
+            role="user"
+            initial="我"
+            tint="sky"
             :time="formatTime(m.createdAt)"
             :content="m.content"
-            :token-label="m.role === 'assistant' && !m.failed ? formatTokenLabel(m) : ''"
-            :token-title="m.role === 'assistant' && !m.failed ? formatTokenTitle(m) : ''"
           />
           <button
             v-if="m.failed && m.role === 'assistant' && !chat.sending"
@@ -376,6 +408,7 @@ onMounted(async () => {
       :agent="chat.thinking.agent"
       :thought="panelThought"
       :artifacts="chat.artifacts"
+      :selected-message-id="chat.selectedThinkingMessageId"
     />
   </main>
 </template>

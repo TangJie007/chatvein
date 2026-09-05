@@ -24,6 +24,8 @@ const props = withDefaults(
     thought?: string
     steps?: TraceStep[]
     artifacts?: ThinkingArtifact[]
+    /** 正在回看的助手消息 id（非 live） */
+    selectedMessageId?: string
   }>(),
   {
     active: false,
@@ -32,6 +34,7 @@ const props = withDefaults(
     thought: '',
     steps: () => [],
     artifacts: () => [],
+    selectedMessageId: '',
   },
 )
 
@@ -209,7 +212,10 @@ watch(
         <template v-if="active">
           {{ phase === 'thinking' ? '推理内容来自模型 reasoning 字段' : '思考完成，正文生成中' }}
         </template>
-        <template v-else>空闲 · 等待下一轮对话</template>
+        <template v-else-if="selectedMessageId">
+          回看 · logs/{{ selectedMessageId.slice(0, 8) }}….txt
+        </template>
+        <template v-else>空闲 · 点击助手回复可回看思考流</template>
       </div>
     </div>
   </aside>

@@ -53,4 +53,10 @@ export class ChatController {
   listArtifacts(conversationId: string) {
     return this.chat.listArtifacts(conversationId)
   }
+
+  /** 读取助手消息对应的思考流日志 */
+  @IpcHandle('getThinkingLog')
+  getThinkingLog(data: { conversationId: string; messageId: string }) {
+    return this.chat.getThinkingLog(data.conversationId, data.messageId)
+  }
 }

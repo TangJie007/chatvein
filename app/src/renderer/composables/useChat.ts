@@ -13,6 +13,8 @@ const loaded = ref(false)
 const error = ref('')
 /** 当前会话产物（磁盘回填 / 本轮 artifacts 事件） */
 const artifacts = ref<ChatArtifactItem[]>([])
+/** 侧栏正在展示的思考流对应的助手消息 id（点击气泡 / 本轮结束后） */
+const selectedThinkingMessageId = ref('')
 
 /**
  * 当前运行的思考过程状态（由主进程 `chat:event` 事件驱动）。
@@ -41,6 +43,7 @@ api.on('chat:event', (evt: unknown) => {
       thinking.agent = e.agent
       thinking.text = ''
       artifacts.value = []
+      selectedThinkingMessageId.value = ''
       break
     case 'thinking_delta':
       if (e.runId === thinking.runId) thinking.text += e.delta
@@ -84,6 +87,31 @@ function applySendResult(result: ChatSendResult): void {
     ...conversations.value.filter((c) => c.id !== result.conversation.id),
   ]
   currentId.value = result.conversation.id
+  // 本轮结束后侧栏继续展示该回复的思考流
+  selectedThinkingMessageId.value = result.assistantMessage.id
+  thinking.conversationId = result.conversation.id
+}
+
+async function selectThinking(messageId: string): Promise<void> {
+  const conv = current()
+  if (!conv || !messageId) return
+  if (thinking.active) return
+  try {
+    const { text } = await api.chat.getThinkingLog(
+      toIpcPayload({ conversationId: conv.id, messageId }),
+    )
+    selectedThinkingMessageId.value = messageId
+    thinking.conversationId = conv.id
+    thinking.phase = 'answering'
+    thinking.text =
+      text != null && text.trim()
+        ? text
+        : '（该回复没有保存思考流日志，可能是旧消息或落盘失败）'
+  } catch (e) {
+    console.warn('[chat] getThinkingLog failed', e)
+    selectedThinkingMessageId.value = messageId
+    thinking.text = '（读取思考流失败）'
+  }
 }
 
 async function refresh(): Promise<void> {
@@ -119,11 +147,15 @@ async function create(input?: { title?: string; agentId?: string }): Promise<Con
   conversations.value = [created, ...conversations.value]
   currentId.value = created.id
   artifacts.value = []
+  selectedThinkingMessageId.value = ''
+  thinking.text = ''
   return created
 }
 
 async function select(id: string): Promise<Conversation | null> {
   currentId.value = id
+  selectedThinkingMessageId.value = ''
+  if (!thinking.active) thinking.text = ''
   const local = conversations.value.find((c) => c.id === id)
   if (local) {
     void refreshArtifacts(id)
@@ -282,11 +314,13 @@ export function useChat() {
     error,
     thinking,
     artifacts,
+    selectedThinkingMessageId,
     get current() {
       return current()
     },
     refresh,
     refreshArtifacts,
+    selectThinking,
     ensureActive,
     create,
     select,

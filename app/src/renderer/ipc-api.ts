@@ -58,6 +58,10 @@ export interface IpcApi {
   'chat:send': (input: ChatSendInput) => Promise<ChatSendResult>
   'chat:retry': (input: ChatRetryInput) => Promise<ChatSendResult>
   'chat:listArtifacts': (conversationId: string) => Promise<ChatArtifactItem[]>
+  'chat:getThinkingLog': (data: {
+    conversationId: string
+    messageId: string
+  }) => Promise<{ text: string | null }>
 
   // ---- 应用设置（路径 / 护栏）----
   'settings:get': () => Promise<AppSettingsView>
