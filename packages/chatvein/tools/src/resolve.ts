@@ -6,7 +6,7 @@ import { createKnowledgeTools } from './categories/knowledge'
 import { createNewsFinanceTools } from './categories/news-finance'
 import { createSearchTools } from './categories/search'
 import { createWebTools } from './categories/web'
-import { loadMcpTools, withDefaultMcpFilesystem, withDefaultMcpModsearch, withDefaultMcpOpenfile } from './mcp'
+import { loadMcpTools, withDefaultMcpFilesystem, withDefaultMcpModsearch, withDefaultMcpOpenfile, withDefaultMcpVmsandbox } from './mcp'
 import type { ResolveChatToolsOptions, ToolCatalogEntry, ToolSecrets } from './types'
 
 function hasSecret(entry: ToolCatalogEntry, secrets?: ToolSecrets): boolean {
@@ -26,7 +26,12 @@ function hasSecret(entry: ToolCatalogEntry, secrets?: ToolSecrets): boolean {
 }
 
 function needsWorkspace(id: string): boolean {
-  return id === 'sqlite_query' || id === 'mcp_filesystem' || id === 'mcp_openfile'
+  return (
+    id === 'sqlite_query' ||
+    id === 'mcp_filesystem' ||
+    id === 'mcp_openfile' ||
+    id === 'mcp_vmsandbox'
+  )
 }
 
 /** 根据 policy / 白名单 / 密钥 / MCP 解析可绑定工具列表 */
@@ -65,6 +70,8 @@ export async function resolveChatTools(
     options.mcpOpenfile !== false && selected.some((e) => e.id === 'mcp_openfile')
   const wantModsearch =
     options.mcpModsearch !== false && selected.some((e) => e.id === 'mcp_modsearch')
+  const wantVmsandbox =
+    options.mcpVmsandbox !== false && selected.some((e) => e.id === 'mcp_vmsandbox')
 
   let mcpServers = withDefaultMcpFilesystem(
     wantFs ? options.workspaceRoot : undefined,
@@ -77,6 +84,11 @@ export async function resolveChatTools(
     wantOpen,
   )
   mcpServers = withDefaultMcpModsearch(mcpServers, wantModsearch)
+  mcpServers = withDefaultMcpVmsandbox(
+    wantVmsandbox ? options.workspaceRoot : undefined,
+    mcpServers,
+    wantVmsandbox,
+  )
 
   const mcpTools = mcpServers
     ? await loadMcpTools({

@@ -1,0 +1,46 @@
+{
+  "name": "@chatvein/mcp-vmsandbox-sdk",
+  "version": "0.1.0",
+  "description": "MCP: workspace scripts via vm2 NodeVM; trusted npm install (allowlist / high downloads)",
+  "main": "./dist/index.js",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.mts",
+        "default": "./dist/index.mjs"
+      },
+      "require": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "default": "./dist/index.js"
+    }
+  },
+  "bin": {
+    "mcp-vmsandbox": "./dist/cli.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "test": "vitest run",
+    "start": "node ./dist/cli.js",
+    "inspect": "pnpm build && mcp-inspector node ./dist/cli.js ."
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "vm2": "^3.12.1",
+    "zod": "^4.5.4"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "tsup": "^8.5.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.0"
+  },
+  "license": "MIT"
+}

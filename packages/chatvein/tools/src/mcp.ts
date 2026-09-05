@@ -46,6 +46,9 @@ export const MCP_OPENFILE_SERVER_NAME = 'openfile'
 /** 默认 MCP modsearch server 名（工具前缀 `modsearch__*`） */
 export const MCP_MODSEARCH_SERVER_NAME = 'modsearch'
 
+/** 默认 MCP vmsandbox server 名（工具前缀 `vmsandbox__*`） */
+export const MCP_VMSANDBOX_SERVER_NAME = 'vmsandbox'
+
 const requireFromHere = createRequire(
   typeof __filename !== 'undefined' ? __filename : fileURLToPath(import.meta.url),
 )
@@ -79,6 +82,14 @@ export function resolveMcpOpenfileServerEntry(): string {
  */
 export function resolveMcpModsearchServerEntry(): string {
   const main = requireFromHere.resolve('@chatvein/mcp-modsearch-sdk')
+  return join(dirname(main), 'cli.js')
+}
+
+/**
+ * 解析 `@chatvein/mcp-vmsandbox-sdk` CLI 入口（包内 dist/cli.js）。
+ */
+export function resolveMcpVmsandboxServerEntry(): string {
+  const main = requireFromHere.resolve('@chatvein/mcp-vmsandbox-sdk')
   return join(dirname(main), 'cli.js')
 }
 
@@ -128,6 +139,39 @@ export function createMcpModsearchServer(options?: {
   }
   if (options?.fallback === false) {
     args.push('--no-fallback')
+  }
+  return {
+    transport: 'stdio',
+    command: process.execPath,
+    args,
+    env: electronRunAsNodeEnv(),
+  }
+}
+
+/**
+ * 挂 MCP vmsandbox（vm2 执行工作区 scripts/ 下的 Node 脚本）。
+ */
+export function createMcpVmsandboxServer(
+  workspaceRoot: string,
+  options?: {
+    timeoutMs?: number
+    maxOutputChars?: number
+    allowAnyJs?: boolean
+  },
+): McpServerConnection {
+  const root = workspaceRoot.trim()
+  if (!root) {
+    throw new Error('createMcpVmsandboxServer: workspaceRoot 不能为空')
+  }
+  const args = [resolveMcpVmsandboxServerEntry(), root]
+  if (options?.timeoutMs && options.timeoutMs > 0) {
+    args.push(`--timeout=${options.timeoutMs}`)
+  }
+  if (options?.maxOutputChars && options.maxOutputChars > 0) {
+    args.push(`--max-output=${options.maxOutputChars}`)
+  }
+  if (options?.allowAnyJs) {
+    args.push('--allow-any-js')
   }
   return {
     transport: 'stdio',
@@ -197,6 +241,22 @@ export function withDefaultMcpModsearch(
   if (servers?.[MCP_MODSEARCH_SERVER_NAME]) return servers
   return mergeMcpServers(
     { [MCP_MODSEARCH_SERVER_NAME]: createMcpModsearchServer() },
+    servers,
+  )
+}
+
+/**
+ * 默认注入 `vmsandbox`（需 workspaceRoot；可用同名配置覆盖）。
+ */
+export function withDefaultMcpVmsandbox(
+  workspaceRoot: string | undefined,
+  servers: Record<string, McpServerConnection> | undefined,
+  enabled = true,
+): Record<string, McpServerConnection> | undefined {
+  if (!enabled || !workspaceRoot?.trim()) return servers
+  if (servers?.[MCP_VMSANDBOX_SERVER_NAME]) return servers
+  return mergeMcpServers(
+    { [MCP_VMSANDBOX_SERVER_NAME]: createMcpVmsandboxServer(workspaceRoot) },
     servers,
   )
 }
@@ -283,5 +343,11 @@ export function hasMcpOpenfileTools(tools: StructuredToolInterface[]): boolean {
 /** 是否已拉到 modsearch MCP 工具 */
 export function hasMcpModsearchTools(tools: StructuredToolInterface[]): boolean {
   const prefix = `${MCP_MODSEARCH_SERVER_NAME}__`
+  return tools.some((t) => t.name.startsWith(prefix))
+}
+
+/** 是否已拉到 vmsandbox MCP 工具 */
+export function hasMcpVmsandboxTools(tools: StructuredToolInterface[]): boolean {
+  const prefix = `${MCP_VMSANDBOX_SERVER_NAME}__`
   return tools.some((t) => t.name.startsWith(prefix))
 }

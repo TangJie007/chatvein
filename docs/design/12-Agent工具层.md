@@ -22,10 +22,11 @@
 ## 2 接入优先级：MCP 优先
 
 ```
-resolveChatTools({ workspaceRoot, mcpServers, mcpFilesystem?, mcpOpenfile?, mcpModsearch? })
+resolveChatTools({ workspaceRoot, mcpServers, mcpFilesystem?, mcpOpenfile?, mcpModsearch?, mcpVmsandbox? })
   ├─ withDefaultMcpFilesystem(workspaceRoot)  → server `filesystem`
   ├─ withDefaultMcpOpenfile(workspaceRoot)    → server `openfile`
   ├─ withDefaultMcpModsearch()                → server `modsearch`（不依赖 workspace）
+  ├─ withDefaultMcpVmsandbox()                → server `vmsandbox`（vm2；不依赖 workspace）
   ├─ loadMcpTools(mcpServers)
   └─ catalog / community / 其它 builtin（计算、sqlite、fetch…）
        → createReactChatAgent({ tools })
@@ -36,20 +37,23 @@ resolveChatTools({ workspaceRoot, mcpServers, mcpFilesystem?, mcpOpenfile?, mcpM
 | **MCP `filesystem`** | 本地读写/列/搜：`@modelcontextprotocol/server-filesystem`，args=`[workspaceRoot]` |
 | **MCP `openfile`** | 系统文件管理器打开目录：`@chatvein/mcp-openfile-sdk`（文件 → 父目录） |
 | **MCP `modsearch`** | 联网搜索 / 读页：`@chatvein/mcp-modsearch-sdk`（ModSearch → DuckDuckGo 兜底） |
+| **MCP `vmsandbox`** | 工作区脚本：`@chatvein/mcp-vmsandbox-sdk`（vm2 跑 `scripts/`；需 workspaceRoot） |
 | **其它 MCP**（`CHATVEIN_MCP_SERVERS`） | 用户自带 server；可覆盖同名 server |
-| **builtin** | `js_eval` / `fetch_url` / `sqlite_query`（非 local_fs） |
+| **builtin** | `fetch_url` / `sqlite_query`；`js_eval` 默认关 |
 | **community（过渡）** | calculator / wikipedia；`duckduckgo_search` 默认关 |
 
-### 2.1 默认 MCP filesystem / openfile / modsearch
+### 2.1 默认 MCP filesystem / openfile / modsearch / vmsandbox
 
 - filesystem：`@modelcontextprotocol/server-filesystem` → `filesystem__*`；目录 id `mcp_filesystem`
 - openfile：`@chatvein/mcp-openfile-sdk`（`packages/mcps/openfile`）→ `openfile__*`；目录 id `mcp_openfile`
 - modsearch：`@chatvein/mcp-modsearch-sdk`（`packages/mcps/modsearch`）→ `modsearch__*`；目录 id `mcp_modsearch`；**不依赖** workspace
+- vmsandbox：`@chatvein/mcp-vmsandbox-sdk` → `vmsandbox__run_workspace_script` / `ensure_trusted_packages` 等；目录 id `mcp_vmsandbox`；**需** workspace；默认仅 `scripts/`；require 仅工作区 node_modules，安装须过信任校验
 - 启动：`process.execPath` + 包内 CLI/entry（Electron 设 `ELECTRON_RUN_AS_NODE=1`）
 - **无** builtin `read_file` / `list_dir` / `grep_search` / `shell.openPath`
-- 关闭：`mcpFilesystem` / `mcpOpenfile` / `mcpModsearch: false`，或 env 覆盖同名连接
+- 关闭：`mcpFilesystem` / `mcpOpenfile` / `mcpModsearch` / `mcpVmsandbox: false`，或 env 覆盖同名连接
 
-**否决**：专用 CLI 包装包作默认联网（改走 MCP modsearch）；MCP filesystem **不带** workspace 根；local_fs builtin 后备；Electron `shell.openPath` 直接绑工具。
+**否决**：专用 CLI 包装包作默认联网（改走 MCP modsearch）；MCP filesystem **不带** workspace 根；local_fs builtin 后备；Electron `shell.openPath` 直接绑工具。  
+**注意**：vmsandbox ≠ design/07 工作区沙箱；vm2 已停维，仅软隔离。
 
 其它 MCP 示例：
 
@@ -73,7 +77,7 @@ CHATVEIN_MCP_SERVERS='{"brave":{"command":"npx","args":["-y","@modelcontextproto
 | 品类 id | 名称 | 一期默认可跑 | 需密钥 / 可选 |
 |---------|------|--------------|---------------|
 | `search` | 搜索 / 联网检索 | **MCP `modsearch__*`**（`mcp_modsearch`） | Brave / SerpAPI；community DDG 默认关 |
-| `compute` | 计算 & 代码执行 | `calculator`、`js_eval` | Wolfram；真 shell → sandbox |
+| `compute` | 计算 & 代码执行 | `calculator`、**MCP `vmsandbox__*`（工作区 scripts + vm2）** | Wolfram；builtin `js_eval` 默认关；真 shell → sandbox |
 | `local_fs` | 本地文件 & 系统 | MCP `filesystem__*` + `openfile__*`（`mcp_filesystem` / `mcp_openfile`） | shell → 沙箱 |
 | `web` | 网页解析 & 爬虫 | `fetch_url` | **优先 MCP 读页** |
 | `news_finance` | 资讯 & 金融 | — | `google_trends` |
@@ -97,14 +101,18 @@ function resolveChatTools(options: {
   mcpOpenfile?: boolean
   /** 默认 true：自动挂 modsearch MCP（不依赖 workspace） */
   mcpModsearch?: boolean
+  /** 默认 true：自动挂 vmsandbox MCP（vm2；不依赖 workspace） */
+  mcpVmsandbox?: boolean
 }): Promise<StructuredToolInterface[]>
 
 function createMcpFilesystemServer(workspaceRoot: string): McpServerConnection
 function createMcpOpenfileServer(workspaceRoot: string): McpServerConnection
 function createMcpModsearchServer(opts?: { timeoutMs?: number; fallback?: boolean }): McpServerConnection
+function createMcpVmsandboxServer(workspaceRoot: string, opts?: { timeoutMs?: number; maxOutputChars?: number; allowAnyJs?: boolean }): McpServerConnection
 function withDefaultMcpFilesystem(...): ...
 function withDefaultMcpOpenfile(...): ...
 function withDefaultMcpModsearch(...): ...
+function withDefaultMcpVmsandbox(workspaceRoot, ...): ...
 ```
 横切：`timeoutMs`、`maxOutputChars`；MCP 用上游目录白名单；builtin 路径 jail。
 

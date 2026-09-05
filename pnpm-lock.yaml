@@ -465,6 +465,9 @@ importers:
       '@chatvein/mcp-openfile-sdk':
         specifier: workspace:*
         version: link:../../mcps/openfile
+      '@chatvein/mcp-vmsandbox-sdk':
+        specifier: workspace:*
+        version: link:../../mcps/vmsandbox
       '@langchain/community':
         specifier: ^1.1.29
         version: 1.1.29(@browserbasehq/sdk@2.19.1)(@browserbasehq/stagehand@1.14.0(@playwright/test@1.62.1)(deepmerge@4.3.1)(dotenv@16.4.5)(openai@7.9.0(undici@8.10.2)(ws@8.21.3)(zod@4.5.4))(zod@4.5.4))(@ibm-cloud/watsonx-ai@1.7.16)(@langchain/core@1.2.9(openai@7.9.0(undici@8.10.2)(ws@8.21.3)(zod@4.5.4))(ws@8.21.3))(better-sqlite3@12.11.1)(duck-duck-scrape@2.2.7)(ibm-cloud-sdk-core@5.6.0)(jsonwebtoken@9.0.3)(openai@7.9.0(undici@8.10.2)(ws@8.21.3)(zod@4.5.4))(playwright@1.62.1)(undici@8.10.2)(ws@8.21.3)
@@ -688,6 +691,31 @@ importers:
       '@modelcontextprotocol/sdk':
         specifier: ^1.30.0
         version: 1.30.0(@cfworker/json-schema@4.1.1)(zod@4.5.4)
+      zod:
+        specifier: ^4.5.4
+        version: 4.5.4
+    devDependencies:
+      '@types/node':
+        specifier: ^24.0.0
+        version: 24.13.3
+      tsup:
+        specifier: ^8.5.0
+        version: 8.5.1(jiti@2.7.0)(postcss@8.5.26)(typescript@5.9.3)(yaml@2.9.0)
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: ^4.1.0
+        version: 4.1.11(@types/node@24.13.3)(vite@8.2.2(@types/node@24.13.3)(esbuild@0.27.7)(jiti@2.7.0)(yaml@2.9.0))
+
+  packages/mcps/vmsandbox:
+    dependencies:
+      '@modelcontextprotocol/sdk':
+        specifier: ^1.30.0
+        version: 1.30.0(@cfworker/json-schema@4.1.1)(zod@4.5.4)
+      vm2:
+        specifier: ^3.12.1
+        version: 3.12.1
       zod:
         specifier: ^4.5.4
         version: 4.5.4
@@ -2689,6 +2717,10 @@ packages:
   accepts@2.0.0:
     resolution: {integrity: sha512-5cvg6CtKwfgdmVqY1WIiXKc3Q1bkRqGLi+2W/6ao+6Y7gu/RCwRuAhGEzh5B4KlszSuTLgZYuqFqo5bImjNKng==}
     engines: {node: '>= 0.6'}
+
+  acorn-walk@8.3.5:
+    resolution: {integrity: sha512-HEHNfbars9v4pgpW6SO1KSPkfoS0xVOM/9UzkJltjlsHZmJasxg8aXkuZa7SMf8vKGIBhpUsPluQSqhJFCqebw==}
+    engines: {node: '>=0.4.0'}
 
   acorn@8.18.0:
     resolution: {integrity: sha512-lGq+9yr1/GuAWaVYIHRjvvySG5/4VfKIvC8EWxStPdcDh/Ka7FG3twP6v4d5BkravUilhIAsG4Qj83t02LWUPQ==}
@@ -4823,6 +4855,11 @@ packages:
       jsdom:
         optional: true
 
+  vm2@3.12.1:
+    resolution: {integrity: sha512-VMqg/4swWz7lkse95rxPlgtnb7WkHL2wfDtrgcNIaIjvpskjRmEmS+MKoItl4npwtW+u2Kalle4zarf3aEWjGQ==}
+    engines: {node: '>=6.0'}
+    hasBin: true
+
   vue-router@4.6.4:
     resolution: {integrity: sha512-Hz9q5sa33Yhduglwz6g9skT8OBPii+4bFn88w6J+J4MfEo4KRRpmiNG/hHHkdbRFlLBOqxN8y8gf2Fb0MTUgVg==}
     peerDependencies:
@@ -6404,6 +6441,10 @@ snapshots:
     dependencies:
       mime-types: 3.0.2
       negotiator: 1.1.0
+
+  acorn-walk@8.3.5:
+    dependencies:
+      acorn: 8.18.0
 
   acorn@8.18.0: {}
 
@@ -8567,6 +8608,11 @@ snapshots:
       '@types/node': 24.13.3
     transitivePeerDependencies:
       - msw
+
+  vm2@3.12.1:
+    dependencies:
+      acorn: 8.18.0
+      acorn-walk: 8.3.5
 
   vue-router@4.6.4(vue@3.5.41(typescript@5.9.3)):
     dependencies:

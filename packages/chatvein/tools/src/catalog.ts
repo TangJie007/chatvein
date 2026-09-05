@@ -50,12 +50,21 @@ export const TOOL_CATALOG: readonly ToolCatalogEntry[] = [
     defaultEnabled: true,
   },
   {
+    id: 'mcp_vmsandbox',
+    category: 'compute',
+    title: '工作区 JS 沙箱（vm2 MCP）',
+    description:
+      '经 @chatvein/mcp-vmsandbox-sdk：绑定 workspace，NodeVM 跑 `scripts/`（可 require 工作区 node_modules）；依赖须经信任校验安装（白名单/高下载量）。工具前缀 vmsandbox__*。',
+    source: 'mcp:@chatvein/mcp-vmsandbox-sdk',
+    defaultEnabled: true,
+  },
+  {
     id: 'js_eval',
     category: 'compute',
-    title: '受限 JS 求值',
-    description: '在 node:vm 沙箱中执行短 JS（无 IO / 无 require）。',
+    title: '受限 JS 求值（builtin）',
+    description: 'node:vm 短 JS（无 IO / 无 require）；默认关闭——优先 mcp_vmsandbox。',
     source: 'builtin',
-    defaultEnabled: true,
+    defaultEnabled: false,
   },
   {
     id: 'wolfram_alpha',

@@ -3,17 +3,21 @@ import {
   createMcpFilesystemServer,
   createMcpModsearchServer,
   createMcpOpenfileServer,
+  createMcpVmsandboxServer,
   mergeMcpServers,
   parseMcpServersJson,
   resolveMcpFilesystemServerEntry,
   resolveMcpModsearchServerEntry,
   resolveMcpOpenfileServerEntry,
+  resolveMcpVmsandboxServerEntry,
   withDefaultMcpFilesystem,
   withDefaultMcpModsearch,
   withDefaultMcpOpenfile,
+  withDefaultMcpVmsandbox,
   MCP_FILESYSTEM_SERVER_NAME,
   MCP_MODSEARCH_SERVER_NAME,
   MCP_OPENFILE_SERVER_NAME,
+  MCP_VMSANDBOX_SERVER_NAME,
 } from '../mcp'
 
 describe('parseMcpServersJson', () => {
@@ -152,5 +156,34 @@ describe('withDefaultMcpModsearch', () => {
       [MCP_MODSEARCH_SERVER_NAME]: custom,
     })
     expect(servers?.[MCP_MODSEARCH_SERVER_NAME]).toEqual(custom)
+  })
+})
+
+describe('createMcpVmsandboxServer', () => {
+  it('points node at mcp-vmsandbox-sdk cli with workspace root', () => {
+    const conn = createMcpVmsandboxServer('E:/ws')
+    expect(conn).toMatchObject({
+      transport: 'stdio',
+      command: process.execPath,
+    })
+    if (!('args' in conn) || !conn.args) throw new Error('expected args')
+    expect(conn.args[0]).toBe(resolveMcpVmsandboxServerEntry())
+    expect(conn.args[1]).toBe('E:/ws')
+    expect(conn.args[0]).toMatch(/vmsandbox[/\\]dist[/\\]cli\.js$/)
+  })
+
+  it('rejects empty root', () => {
+    expect(() => createMcpVmsandboxServer('  ')).toThrow(/workspaceRoot/)
+  })
+})
+
+describe('withDefaultMcpVmsandbox', () => {
+  it('injects vmsandbox when missing', () => {
+    const servers = withDefaultMcpVmsandbox('D:/ws', {})
+    expect(servers?.[MCP_VMSANDBOX_SERVER_NAME]).toBeDefined()
+  })
+
+  it('skips without workspace', () => {
+    expect(withDefaultMcpVmsandbox(undefined, {})).toEqual({})
   })
 })

@@ -64,6 +64,10 @@ export interface ResolveChatToolsOptions {
    * 是否自动挂 MCP modsearch（默认 true；不依赖 workspace）。
    */
   mcpModsearch?: boolean
+  /**
+   * 是否在有 workspaceRoot 时自动挂 MCP vmsandbox（默认 true）。
+   */
+  mcpVmsandbox?: boolean
 }
 
 export type { StructuredToolInterface, ToolPolicy }

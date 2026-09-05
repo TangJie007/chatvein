@@ -22,7 +22,7 @@ const tools = await resolveChatTools({
 ## 品类
 
 1. **search** — **MCP modsearch**（默认）；community DDG 默认关  
-2. **compute** — Calculator、`js_eval`  
+2. **compute** — Calculator、**MCP vmsandbox**（工作区 `scripts/` + NodeVM / 可信包）；builtin `js_eval` 默认关  
 3. **local_fs** — **仅 MCP**（`mcp_filesystem`、`mcp_openfile`）  
 4. **web** — `fetch_url`  
 5. **news_finance** — Google Trends  
@@ -33,4 +33,4 @@ const tools = await resolveChatTools({
 
 ## 调试 MCP
 
-根目录：`pnpm mcp:inspect` / `mcp:inspect:openfile|modsearch|filesystem`（`@modelcontextprotocol/inspector`）。说明见 `packages/mcps/README.md`。
+根目录：`pnpm mcp:inspect` / `mcp:inspect:openfile|modsearch|vmsandbox|filesystem`（`@modelcontextprotocol/inspector`）。说明见 `packages/mcps/README.md`。
