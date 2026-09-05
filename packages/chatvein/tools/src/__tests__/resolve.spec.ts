@@ -39,6 +39,11 @@ describe('TOOL_CATALOG', () => {
     expect(TOOL_CATALOG.find((e) => e.id === 'mcp_pyodide')?.defaultEnabled).toBe(true)
     expect(TOOL_CATALOG.find((e) => e.id === 'js_eval')?.defaultEnabled).toBe(false)
   })
+
+  it('web includes mcp_playwright by default', () => {
+    expect(TOOL_CATALOG.find((e) => e.id === 'mcp_playwright')?.defaultEnabled).toBe(true)
+    expect(TOOL_CATALOG.find((e) => e.id === 'mcp_playwright')?.category).toBe('web')
+  })
 })
 
 describe('resolveInWorkspace', () => {

@@ -93,6 +93,7 @@ withDefaultMcpFilesystem(...) → withDefaultMcpOpenfile(...) → withDefaultMcp
 | 自动 | `modsearch` | 目录选中 `mcp_modsearch` 且未 `mcpModsearch:false`（**不依赖** workspace） |
 | 自动 | `vmsandbox` | 有 `workspaceRoot` 且目录选中 `mcp_vmsandbox` 且未 `mcpVmsandbox:false`（NodeVM 跑 `scripts/`） |
 | 自动 | `pyodide` | 有 `workspaceRoot` 且目录选中 `mcp_pyodide` 且未 `mcpPyodide:false`（Pyodide 跑 `scripts/**/*.py`） |
+| 自动 | `playwright` | 目录选中 `mcp_playwright` 且未 `mcpPlaywright:false`（浏览器自动化；**不依赖** workspace） |
 | 环境变量 | `CHATVEIN_MCP_SERVERS` JSON | `parseMcpServersJson`；可覆盖同名 server |
 | （未落地） | 设置页 MCP UI | 现为 mock，未写入 `resolveChatTools` |
 
@@ -106,6 +107,7 @@ withDefaultMcpFilesystem(...) → withDefaultMcpOpenfile(...) → withDefaultMcp
 - modsearch `args` = `[@chatvein/mcp-modsearch-sdk dist/cli.js]`（可选 `--timeout=` / `--no-fallback`）
 - vmsandbox `args` = `[@chatvein/mcp-vmsandbox-sdk dist/cli.js, workspaceRoot]`（可选 `--timeout=` / `--max-output=` / `--allow-any-js`）
 - pyodide `args` = `[@chatvein/mcp-pyodide-sdk dist/cli.js, workspaceRoot]`（可选 `--timeout=` / `--max-output=` / `--allow-any-py`）
+- playwright `args` = `[@playwright/mcp cli.js, --headless]`（可选 `--browser=`）
 - Electron：`ELECTRON_RUN_AS_NODE=1`
 
 ### 2.3 拉工具
@@ -146,6 +148,7 @@ selected = TOOL_CATALOG ∩ allowIds ∩ defaultEnabled/密钥/workspace 条件
 | `duckduckgo_search` / `calculator` / … | community 动态 import |
 | `vmsandbox__run_workspace_script` / `ensure_trusted_packages` 等 | MCP `vmsandbox`（NodeVM + 可信包安装） |
 | `pyodide__run_workspace_script` / `ensure_trusted_packages` 等 | MCP `pyodide`（Pyodide + 可信包安装） |
+| `playwright__*` | MCP `playwright`（`@playwright/mcp` 浏览器自动化） |
 | `fetch_url` / `sqlite_query` / `js_eval`(默认关) | builtin |
 
 ### 3.3 组装与挂到 Agent
@@ -180,6 +183,7 @@ ChatService:
 | `pnpm mcp:inspect:filesystem` | 官方 `server-filesystem`，jail=`.` |
 | `pnpm mcp:inspect:vmsandbox` | `packages/mcps/vmsandbox/dist/cli.js` |
 | `pnpm mcp:inspect:pyodide` | `packages/mcps/pyodide/dist/cli.js` |
+| `pnpm mcp:inspect:playwright` | `node_modules/@playwright/mcp/cli.js --headless` |
 
 详见 [`packages/mcps/README.md`](../../packages/mcps/README.md)。
 

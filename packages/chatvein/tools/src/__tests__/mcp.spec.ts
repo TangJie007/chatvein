@@ -5,6 +5,7 @@ import {
   createMcpOpenfileServer,
   createMcpVmsandboxServer,
   createMcpPyodideServer,
+  createMcpPlaywrightServer,
   mergeMcpServers,
   parseMcpServersJson,
   resolveMcpFilesystemServerEntry,
@@ -12,16 +13,19 @@ import {
   resolveMcpOpenfileServerEntry,
   resolveMcpVmsandboxServerEntry,
   resolveMcpPyodideServerEntry,
+  resolveMcpPlaywrightServerEntry,
   withDefaultMcpFilesystem,
   withDefaultMcpModsearch,
   withDefaultMcpOpenfile,
   withDefaultMcpVmsandbox,
   withDefaultMcpPyodide,
+  withDefaultMcpPlaywright,
   MCP_FILESYSTEM_SERVER_NAME,
   MCP_MODSEARCH_SERVER_NAME,
   MCP_OPENFILE_SERVER_NAME,
   MCP_VMSANDBOX_SERVER_NAME,
   MCP_PYODIDE_SERVER_NAME,
+  MCP_PLAYWRIGHT_SERVER_NAME,
 } from '../mcp'
 
 describe('parseMcpServersJson', () => {
@@ -218,5 +222,37 @@ describe('withDefaultMcpPyodide', () => {
 
   it('skips without workspace', () => {
     expect(withDefaultMcpPyodide(undefined, {})).toEqual({})
+  })
+})
+
+describe('createMcpPlaywrightServer', () => {
+  it('points node at @playwright/mcp cli with headless', () => {
+    const conn = createMcpPlaywrightServer()
+    expect(conn).toMatchObject({
+      transport: 'stdio',
+      command: process.execPath,
+    })
+    if (!('args' in conn) || !conn.args) throw new Error('expected args')
+    expect(conn.args[0]).toBe(resolveMcpPlaywrightServerEntry())
+    expect(conn.args).toContain('--headless')
+    expect(conn.args[0]).toMatch(/@playwright[/\\]mcp[/\\]cli\.js$/)
+  })
+
+  it('can disable headless', () => {
+    const conn = createMcpPlaywrightServer({ headless: false, browser: 'firefox' })
+    if (!('args' in conn) || !conn.args) throw new Error('expected args')
+    expect(conn.args).not.toContain('--headless')
+    expect(conn.args).toContain('--browser=firefox')
+  })
+})
+
+describe('withDefaultMcpPlaywright', () => {
+  it('injects playwright when missing', () => {
+    const servers = withDefaultMcpPlaywright({})
+    expect(servers?.[MCP_PLAYWRIGHT_SERVER_NAME]).toBeDefined()
+  })
+
+  it('skips when disabled', () => {
+    expect(withDefaultMcpPlaywright({}, false)).toEqual({})
   })
 })

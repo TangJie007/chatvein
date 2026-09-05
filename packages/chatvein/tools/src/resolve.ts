@@ -6,7 +6,7 @@ import { createKnowledgeTools } from './categories/knowledge'
 import { createNewsFinanceTools } from './categories/news-finance'
 import { createSearchTools } from './categories/search'
 import { createWebTools } from './categories/web'
-import { loadMcpTools, withDefaultMcpFilesystem, withDefaultMcpModsearch, withDefaultMcpOpenfile, withDefaultMcpPyodide, withDefaultMcpVmsandbox } from './mcp'
+import { loadMcpTools, withDefaultMcpFilesystem, withDefaultMcpModsearch, withDefaultMcpOpenfile, withDefaultMcpPlaywright, withDefaultMcpPyodide, withDefaultMcpVmsandbox } from './mcp'
 import type { ResolveChatToolsOptions, ToolCatalogEntry, ToolSecrets } from './types'
 
 function hasSecret(entry: ToolCatalogEntry, secrets?: ToolSecrets): boolean {
@@ -75,6 +75,8 @@ export async function resolveChatTools(
     options.mcpVmsandbox !== false && selected.some((e) => e.id === 'mcp_vmsandbox')
   const wantPyodide =
     options.mcpPyodide !== false && selected.some((e) => e.id === 'mcp_pyodide')
+  const wantPlaywright =
+    options.mcpPlaywright !== false && selected.some((e) => e.id === 'mcp_playwright')
 
   let mcpServers = withDefaultMcpFilesystem(
     wantFs ? options.workspaceRoot : undefined,
@@ -97,6 +99,7 @@ export async function resolveChatTools(
     mcpServers,
     wantPyodide,
   )
+  mcpServers = withDefaultMcpPlaywright(mcpServers, wantPlaywright)
 
   const mcpTools = mcpServers
     ? await loadMcpTools({

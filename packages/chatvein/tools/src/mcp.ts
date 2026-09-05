@@ -52,6 +52,9 @@ export const MCP_VMSANDBOX_SERVER_NAME = 'vmsandbox'
 /** 默认 MCP pyodide server 名（工具前缀 `pyodide__*`） */
 export const MCP_PYODIDE_SERVER_NAME = 'pyodide'
 
+/** 默认 MCP playwright server 名（工具前缀 `playwright__*`） */
+export const MCP_PLAYWRIGHT_SERVER_NAME = 'playwright'
+
 const requireFromHere = createRequire(
   typeof __filename !== 'undefined' ? __filename : fileURLToPath(import.meta.url),
 )
@@ -102,6 +105,14 @@ export function resolveMcpVmsandboxServerEntry(): string {
 export function resolveMcpPyodideServerEntry(): string {
   const main = requireFromHere.resolve('@chatvein/mcp-pyodide-sdk')
   return join(dirname(main), 'cli.js')
+}
+
+/**
+ * 解析 `@playwright/mcp` CLI 入口（包内 cli.js）。
+ */
+export function resolveMcpPlaywrightServerEntry(): string {
+  const pkgJson = requireFromHere.resolve('@playwright/mcp/package.json')
+  return join(dirname(pkgJson), 'cli.js')
 }
 
 /**
@@ -322,6 +333,50 @@ export function withDefaultMcpPyodide(
 }
 
 /**
+ * 挂 MCP Playwright（浏览器自动化；默认 headless）。
+ * 不依赖 workspace。首次使用前需已安装浏览器：`pnpm exec playwright install chromium`。
+ */
+export function createMcpPlaywrightServer(options?: {
+  /** 默认 true（桌面 Agent 更稳） */
+  headless?: boolean
+  browser?: 'chrome' | 'firefox' | 'webkit' | 'msedge'
+  /** 额外 CLI 参数，如 `--caps=vision` */
+  extraArgs?: string[]
+}): McpServerConnection {
+  const args = [resolveMcpPlaywrightServerEntry()]
+  if (options?.headless !== false) {
+    args.push('--headless')
+  }
+  if (options?.browser) {
+    args.push(`--browser=${options.browser}`)
+  }
+  if (options?.extraArgs?.length) {
+    args.push(...options.extraArgs)
+  }
+  return {
+    transport: 'stdio',
+    command: process.execPath,
+    args,
+    env: electronRunAsNodeEnv(),
+  }
+}
+
+/**
+ * 默认注入 `playwright`（不依赖 workspace；可用同名配置覆盖）。
+ */
+export function withDefaultMcpPlaywright(
+  servers: Record<string, McpServerConnection> | undefined,
+  enabled = true,
+): Record<string, McpServerConnection> | undefined {
+  if (!enabled) return servers
+  if (servers?.[MCP_PLAYWRIGHT_SERVER_NAME]) return servers
+  return mergeMcpServers(
+    { [MCP_PLAYWRIGHT_SERVER_NAME]: createMcpPlaywrightServer() },
+    servers,
+  )
+}
+
+/**
  * 从已配置的 MCP servers 拉工具列表，转成 LangChain StructuredTool。
  * 无 servers 时返回 []；单 server 失败默认忽略，不拖垮整轮 Chat。
  */
@@ -415,5 +470,11 @@ export function hasMcpVmsandboxTools(tools: StructuredToolInterface[]): boolean 
 /** 是否已拉到 pyodide MCP 工具 */
 export function hasMcpPyodideTools(tools: StructuredToolInterface[]): boolean {
   const prefix = `${MCP_PYODIDE_SERVER_NAME}__`
+  return tools.some((t) => t.name.startsWith(prefix))
+}
+
+/** 是否已拉到 playwright MCP 工具 */
+export function hasMcpPlaywrightTools(tools: StructuredToolInterface[]): boolean {
+  const prefix = `${MCP_PLAYWRIGHT_SERVER_NAME}__`
   return tools.some((t) => t.name.startsWith(prefix))
 }

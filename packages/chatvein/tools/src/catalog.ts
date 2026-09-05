@@ -107,10 +107,19 @@ export const TOOL_CATALOG: readonly ToolCatalogEntry[] = [
 
   // —— 4 网页解析 ——
   {
+    id: 'mcp_playwright',
+    category: 'web',
+    title: '浏览器自动化（Playwright MCP）',
+    description:
+      '经 @playwright/mcp：无障碍树快照驱动的浏览器导航/点击/填表等（工具前缀 playwright__*）。默认 headless；需已安装浏览器二进制。',
+    source: 'mcp:@playwright/mcp',
+    defaultEnabled: true,
+  },
+  {
     id: 'fetch_url',
     category: 'web',
     title: '抓取网页文本',
-    description: 'HTTP GET 后去标签截断；复杂抓取优先走 MCP。',
+    description: 'HTTP GET 后去标签截断；复杂交互优先走 mcp_playwright / modsearch read_page。',
     source: 'builtin',
     defaultEnabled: true,
   },
