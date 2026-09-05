@@ -40,9 +40,20 @@ export interface LoadMcpToolsOptions {
 /** 默认 MCP filesystem server 名（工具前缀 `filesystem__*`） */
 export const MCP_FILESYSTEM_SERVER_NAME = 'filesystem'
 
+/** 默认 MCP openfile server 名（工具前缀 `openfile__*`） */
+export const MCP_OPENFILE_SERVER_NAME = 'openfile'
+
 const requireFromHere = createRequire(
   typeof __filename !== 'undefined' ? __filename : fileURLToPath(import.meta.url),
 )
+
+function electronRunAsNodeEnv(): Record<string, string> {
+  const env: Record<string, string> = { ...process.env } as Record<string, string>
+  if (process.versions.electron) {
+    env.ELECTRON_RUN_AS_NODE = '1'
+  }
+  return env
+}
 
 /**
  * 解析 `@modelcontextprotocol/server-filesystem` 入口（包内 dist，不依赖 PATH/`npx`）。
@@ -50,6 +61,14 @@ const requireFromHere = createRequire(
 export function resolveMcpFilesystemServerEntry(): string {
   const pkgJson = requireFromHere.resolve('@modelcontextprotocol/server-filesystem/package.json')
   return join(dirname(pkgJson), 'dist', 'index.js')
+}
+
+/**
+ * 解析 `@chatvein/mcp-openfile-sdk` CLI 入口（包内 dist/cli.js）。
+ */
+export function resolveMcpOpenfileServerEntry(): string {
+  const main = requireFromHere.resolve('@chatvein/mcp-openfile-sdk')
+  return join(dirname(main), 'cli.js')
 }
 
 /**
@@ -61,16 +80,27 @@ export function createMcpFilesystemServer(workspaceRoot: string): McpServerConne
   if (!root) {
     throw new Error('createMcpFilesystemServer: workspaceRoot 不能为空')
   }
-  const entry = resolveMcpFilesystemServerEntry()
-  const env: Record<string, string> = { ...process.env } as Record<string, string>
-  if (process.versions.electron) {
-    env.ELECTRON_RUN_AS_NODE = '1'
+  return {
+    transport: 'stdio',
+    command: process.execPath,
+    args: [resolveMcpFilesystemServerEntry(), root],
+    env: electronRunAsNodeEnv(),
+  }
+}
+
+/**
+ * 把工作区根挂成 MCP openfile server（在资源管理器中打开文件夹；文件则打开父目录）。
+ */
+export function createMcpOpenfileServer(workspaceRoot: string): McpServerConnection {
+  const root = workspaceRoot.trim()
+  if (!root) {
+    throw new Error('createMcpOpenfileServer: workspaceRoot 不能为空')
   }
   return {
     transport: 'stdio',
     command: process.execPath,
-    args: [entry, root],
-    env,
+    args: [resolveMcpOpenfileServerEntry(), root],
+    env: electronRunAsNodeEnv(),
   }
 }
 
@@ -102,6 +132,23 @@ export function withDefaultMcpFilesystem(
   if (servers?.[MCP_FILESYSTEM_SERVER_NAME]) return servers
   return mergeMcpServers(
     { [MCP_FILESYSTEM_SERVER_NAME]: createMcpFilesystemServer(workspaceRoot) },
+    servers,
+  )
+}
+
+/**
+ * 有 workspaceRoot 时默认注入 `openfile`（可用已有同名配置覆盖）。
+ * `enabled === false` 时不注入。
+ */
+export function withDefaultMcpOpenfile(
+  workspaceRoot: string | undefined,
+  servers: Record<string, McpServerConnection> | undefined,
+  enabled = true,
+): Record<string, McpServerConnection> | undefined {
+  if (!enabled || !workspaceRoot?.trim()) return servers
+  if (servers?.[MCP_OPENFILE_SERVER_NAME]) return servers
+  return mergeMcpServers(
+    { [MCP_OPENFILE_SERVER_NAME]: createMcpOpenfileServer(workspaceRoot) },
     servers,
   )
 }
@@ -176,5 +223,11 @@ export function parseMcpServersJson(
 /** 是否已拉到 filesystem MCP 工具 */
 export function hasMcpFilesystemTools(tools: StructuredToolInterface[]): boolean {
   const prefix = `${MCP_FILESYSTEM_SERVER_NAME}__`
+  return tools.some((t) => t.name.startsWith(prefix))
+}
+
+/** 是否已拉到 openfile MCP 工具 */
+export function hasMcpOpenfileTools(tools: StructuredToolInterface[]): boolean {
+  const prefix = `${MCP_OPENFILE_SERVER_NAME}__`
   return tools.some((t) => t.name.startsWith(prefix))
 }

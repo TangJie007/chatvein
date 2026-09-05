@@ -22,10 +22,10 @@ describe('TOOL_CATALOG', () => {
     )
   })
 
-  it('local_fs is MCP-only (no builtin read/list/grep)', () => {
+  it('local_fs is MCP-only (filesystem + openfile)', () => {
     const local = TOOL_CATALOG.filter((e) => e.category === 'local_fs')
-    expect(local.map((e) => e.id)).toEqual(['mcp_filesystem'])
-    expect(local[0]?.source).toMatch(/^mcp:/)
+    expect(local.map((e) => e.id)).toEqual(['mcp_filesystem', 'mcp_openfile'])
+    expect(local.every((e) => e.source.startsWith('mcp:'))).toBe(true)
   })
 })
 

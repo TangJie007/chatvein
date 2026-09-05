@@ -1,7 +1,7 @@
 # Agent 工具层（`@chatvein/tools`）
 
-> 版本：v0.3 ｜ 日期：2026-09-05  
-> **决策状态：一期落地（目录 + MCP filesystem 唯一本地文件源）**  
+> 版本：v0.4 ｜ 日期：2026-09-05  
+> **决策状态：一期落地（目录 + MCP filesystem / openfile）**  
 > 上位：[`01-核心骨架.md`](./01-核心骨架.md)、[`02-agent循环方案.md`](./02-agent循环方案.md)、[`07-沙箱方案.md`](./07-沙箱方案.md)、[`11-L3-ReAct自适应循环推理层.md`](./11-L3-ReAct自适应循环推理层.md)  
 > 实现：`packages/chatvein/tools`
 
@@ -22,8 +22,9 @@
 ## 2 接入优先级：MCP 优先
 
 ```
-resolveChatTools({ workspaceRoot, mcpServers, mcpFilesystem? })
+resolveChatTools({ workspaceRoot, mcpServers, mcpFilesystem?, mcpOpenfile? })
   ├─ withDefaultMcpFilesystem(workspaceRoot)  → server `filesystem`
+  ├─ withDefaultMcpOpenfile(workspaceRoot)    → server `openfile`
   ├─ loadMcpTools(mcpServers)
   └─ catalog / community / 其它 builtin（计算、sqlite、fetch…）
        → createReactChatAgent({ tools })
@@ -31,20 +32,21 @@ resolveChatTools({ workspaceRoot, mcpServers, mcpFilesystem? })
 
 | 来源 | 用途 |
 |------|------|
-| **MCP `filesystem`** | **唯一**本地文件能力：`@modelcontextprotocol/server-filesystem`，args=`[workspaceRoot]` |
-| **其它 MCP**（`CHATVEIN_MCP_SERVERS`） | 搜索、抓取、用户自带 server；可覆盖同名 `filesystem` |
+| **MCP `filesystem`** | 本地读写/列/搜：`@modelcontextprotocol/server-filesystem`，args=`[workspaceRoot]` |
+| **MCP `openfile`** | 系统文件管理器打开目录：`@chatvein/mcp-openfile-sdk`（文件 → 父目录） |
+| **其它 MCP**（`CHATVEIN_MCP_SERVERS`） | 搜索、抓取、用户自带 server；可覆盖同名 server |
 | **builtin** | `js_eval` / `fetch_url` / `sqlite_query`（非 local_fs） |
 | **community（过渡）** | calculator / wikipedia / duckduckgo 等 |
 
-### 2.1 默认 MCP filesystem
+### 2.1 默认 MCP filesystem / openfile
 
-- 包：`@modelcontextprotocol/server-filesystem`（workspace 依赖）
-- 启动：`process.execPath` + 包内 `dist/index.js` + `workspaceRoot`（Electron 设 `ELECTRON_RUN_AS_NODE=1`）
-- 工具名前缀：`filesystem__*`
-- 目录项：`mcp_filesystem`（白名单用）；**无** builtin `read_file` / `list_dir` / `grep_search`
-- 关闭：`resolveChatTools({ mcpFilesystem: false })` 或 env 覆盖 `filesystem` 连接
+- filesystem：`@modelcontextprotocol/server-filesystem` → `filesystem__*`；目录 id `mcp_filesystem`
+- openfile：`@chatvein/mcp-openfile-sdk`（`packages/mcps/openfile`）→ `openfile__*`；目录 id `mcp_openfile`
+- 启动：`process.execPath` + 包内 CLI/entry + `workspaceRoot`（Electron 设 `ELECTRON_RUN_AS_NODE=1`）
+- **无** builtin `read_file` / `list_dir` / `grep_search` / `shell.openPath`
+- 关闭：`mcpFilesystem: false` / `mcpOpenfile: false`，或 env 覆盖同名连接
 
-**否决**：专用 CLI 包装包作默认联网；MCP filesystem **不带** workspace 根；local_fs builtin 后备（干扰模型选型）。
+**否决**：专用 CLI 包装包作默认联网；MCP **不带** workspace 根；local_fs builtin 后备；Electron `shell.openPath` 直接绑工具（MCP 子进程无法用主进程 shell）。
 
 其它 MCP 示例：
 
@@ -69,7 +71,7 @@ CHATVEIN_MCP_SERVERS='{"brave":{"command":"npx","args":["-y","@modelcontextproto
 |---------|------|--------------|---------------|
 | `search` | 搜索 / 联网检索 | `duckduckgo_search`（过渡） | Brave / SerpAPI；**优先 MCP** |
 | `compute` | 计算 & 代码执行 | `calculator`、`js_eval` | Wolfram；真 shell → sandbox |
-| `local_fs` | 本地文件 & 系统 | **仅 MCP `filesystem__*`**（目录 id `mcp_filesystem`） | shell → 沙箱 |
+| `local_fs` | 本地文件 & 系统 | MCP `filesystem__*` + `openfile__*`（`mcp_filesystem` / `mcp_openfile`） | shell → 沙箱 |
 | `web` | 网页解析 & 爬虫 | `fetch_url` | **优先 MCP 读页** |
 | `news_finance` | 资讯 & 金融 | — | `google_trends` |
 | `database` | 数据库 & 查询 | `sqlite_query` | 远程（二期） |
@@ -88,17 +90,17 @@ function resolveChatTools(options: {
   mcpServers?: Record<string, McpServerConnection>
   /** 默认 true：有 workspaceRoot 时自动挂 filesystem MCP */
   mcpFilesystem?: boolean
+  /** 默认 true：有 workspaceRoot 时自动挂 openfile MCP */
+  mcpOpenfile?: boolean
 }): Promise<StructuredToolInterface[]>
 
 function createMcpFilesystemServer(workspaceRoot: string): McpServerConnection
-function withDefaultMcpFilesystem(
-  workspaceRoot: string | undefined,
-  servers: Record<string, McpServerConnection> | undefined,
-  enabled?: boolean,
-): Record<string, McpServerConnection> | undefined
+function createMcpOpenfileServer(workspaceRoot: string): McpServerConnection
+function withDefaultMcpFilesystem(...): ...
+function withDefaultMcpOpenfile(...): ...
 ```
 
-横切：`timeoutMs`、`maxOutputChars`；MCP filesystem 用上游目录白名单；builtin 路径 jail。
+横切：`timeoutMs`、`maxOutputChars`；MCP 用上游目录白名单；builtin 路径 jail。
 
 ---
 
@@ -119,7 +121,7 @@ RouteDecision.policy.tools = full
 
 | 阶段 | 内容 |
 |------|------|
-| **T0（今）** | 目录 + **唯一 MCP filesystem（workspace）** + env 其它 MCP |
+| **T0（今）** | 目录 + MCP filesystem / openfile（workspace）+ env 其它 MCP |
 | **T1** | MCP 设置页落盘；写操作与 `confirmWrites` 对齐 |
 | **T2** | 危险执行走 `SandboxProvider`；MCP 与沙箱 cwd 统一 |
 | **T3** | community 残余迁出 |

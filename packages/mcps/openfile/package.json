@@ -1,7 +1,7 @@
 {
-  "name": "@chatvein/tools",
+  "name": "@chatvein/mcp-openfile-sdk",
   "version": "0.1.0",
-  "description": "Agent tool layer: file/shell/git/search tools with timeout, output truncation and command allowlist",
+  "description": "MCP server: open a folder in the OS file manager (file path → parent folder)",
   "main": "./dist/index.js",
   "module": "./dist/index.mjs",
   "types": "./dist/index.d.ts",
@@ -18,32 +18,21 @@
       "default": "./dist/index.js"
     }
   },
+  "bin": {
+    "mcp-openfile": "./dist/cli.js"
+  },
   "files": [
     "dist"
   ],
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch",
-    "test": "vitest run"
+    "test": "vitest run",
+    "start": "node ./dist/cli.js"
   },
   "dependencies": {
-    "@chatvein/common": "workspace:*",
-    "@chatvein/mcp-openfile-sdk": "workspace:*",
-    "@langchain/community": "^1.1.29",
-    "@langchain/core": "^1.2.9",
-    "@langchain/mcp-adapters": "^1.1.4",
-    "@modelcontextprotocol/server-filesystem": "2026.8.31",
-    "duck-duck-scrape": "^2.2.7",
-    "es-toolkit": "^1.52.0",
+    "@modelcontextprotocol/sdk": "^1.30.0",
     "zod": "^4.5.4"
-  },
-  "peerDependencies": {
-    "@langchain/langgraph": "^1.4.10"
-  },
-  "peerDependenciesMeta": {
-    "@langchain/langgraph": {
-      "optional": true
-    }
   },
   "devDependencies": {
     "@types/node": "^24.0.0",

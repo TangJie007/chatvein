@@ -16,11 +16,16 @@ export {
   loadMcpTools,
   parseMcpServersJson,
   createMcpFilesystemServer,
+  createMcpOpenfileServer,
   resolveMcpFilesystemServerEntry,
+  resolveMcpOpenfileServerEntry,
   mergeMcpServers,
   withDefaultMcpFilesystem,
+  withDefaultMcpOpenfile,
   hasMcpFilesystemTools,
+  hasMcpOpenfileTools,
   MCP_FILESYSTEM_SERVER_NAME,
+  MCP_OPENFILE_SERVER_NAME,
 } from './mcp'
 
 export type {

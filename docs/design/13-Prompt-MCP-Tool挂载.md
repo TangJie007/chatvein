@@ -81,30 +81,31 @@
 ### 2.1 配置来源（合并顺序）
 
 ```
-withDefaultMcpFilesystem(workspaceRoot, envServers, enabled)
-  = { filesystem: createMcpFilesystemServer(root) }  ∪  envServers
+withDefaultMcpFilesystem(...) → 再 withDefaultMcpOpenfile(...)
+  = { filesystem?, openfile? }  ∪  envServers
     （后者同名覆盖前者）
 ```
 
 | 来源 | 键 | 说明 |
 |------|-----|------|
 | 自动 | `filesystem` | 有 `workspaceRoot` 且目录选中 `mcp_filesystem` 且未 `mcpFilesystem:false` |
-| 环境变量 | `CHATVEIN_MCP_SERVERS` JSON | `parseMcpServersJson`；可覆盖 `filesystem` |
+| 自动 | `openfile` | 有 `workspaceRoot` 且目录选中 `mcp_openfile` 且未 `mcpOpenfile:false` |
+| 环境变量 | `CHATVEIN_MCP_SERVERS` JSON | `parseMcpServersJson`；可覆盖同名 server |
 | （未落地） | 设置页 MCP UI | 现为 mock，未写入 `resolveChatTools` |
 
-### 2.2 filesystem 默认如何起进程
+### 2.2 默认如何起进程
 
-`createMcpFilesystemServer(root)`：
+`createMcpFilesystemServer(root)` / `createMcpOpenfileServer(root)`：
 
 - `command` = `process.execPath`
-- `args` = `[包内 dist/index.js, workspaceRoot]`（仅允许该根）
+- filesystem `args` = `[server-filesystem dist/index.js, workspaceRoot]`
+- openfile `args` = `[@chatvein/mcp-openfile-sdk dist/cli.js, workspaceRoot]`
 - Electron：`ELECTRON_RUN_AS_NODE=1`
-- 包：`@modelcontextprotocol/server-filesystem`
 
 ### 2.3 拉工具
 
 `loadMcpTools({ servers })` → `@langchain/mcp-adapters` `MultiServerMCPClient` → `getTools()`  
-工具名默认带前缀：`{server}__{tool}`（如 `filesystem__read_text_file`）。
+工具名默认带前缀：`{server}__{tool}`（如 `filesystem__read_text_file`、`openfile__open_folder`）。
 
 连接失败默认 `onConnectionError: 'ignore'`，不拖垮整轮 Chat；**无 builtin FS 后备**。
 
@@ -135,6 +136,7 @@ selected = TOOL_CATALOG ∩ allowIds ∩ defaultEnabled/密钥/workspace 条件
 | catalog id | 实现来源 |
 |------------|----------|
 | `mcp_filesystem` | **不**经工厂造同名工具；只作开关，触发 MCP `filesystem` |
+| `mcp_openfile` | 同上，触发 MCP `openfile`（`open_folder`） |
 | `duckduckgo_search` / `calculator` / … | community 动态 import |
 | `js_eval` / `fetch_url` / `sqlite_query` | builtin |
 

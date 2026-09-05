@@ -1,11 +1,15 @@
 import { describe, expect, it } from 'vitest'
 import {
   createMcpFilesystemServer,
+  createMcpOpenfileServer,
   mergeMcpServers,
   parseMcpServersJson,
   resolveMcpFilesystemServerEntry,
+  resolveMcpOpenfileServerEntry,
   withDefaultMcpFilesystem,
+  withDefaultMcpOpenfile,
   MCP_FILESYSTEM_SERVER_NAME,
+  MCP_OPENFILE_SERVER_NAME,
 } from '../mcp'
 
 describe('parseMcpServersJson', () => {
@@ -47,6 +51,24 @@ describe('createMcpFilesystemServer', () => {
   })
 })
 
+describe('createMcpOpenfileServer', () => {
+  it('points node at mcp-openfile-sdk cli with workspace root', () => {
+    const conn = createMcpOpenfileServer('E:/ws')
+    expect(conn).toMatchObject({
+      transport: 'stdio',
+      command: process.execPath,
+    })
+    if (!('args' in conn) || !conn.args) throw new Error('expected args')
+    expect(conn.args[0]).toBe(resolveMcpOpenfileServerEntry())
+    expect(conn.args[1]).toBe('E:/ws')
+    expect(conn.args[0]).toMatch(/openfile[/\\]dist[/\\]cli\.js$/)
+  })
+
+  it('rejects empty root', () => {
+    expect(() => createMcpOpenfileServer('  ')).toThrow(/workspaceRoot/)
+  })
+})
+
 describe('withDefaultMcpFilesystem', () => {
   it('injects filesystem when missing', () => {
     const servers = withDefaultMcpFilesystem('D:/Chatvein/workspaces', {
@@ -70,5 +92,23 @@ describe('withDefaultMcpFilesystem', () => {
       { a: { command: '2', args: ['x'] } },
     )
     expect(merged?.a).toMatchObject({ command: '2' })
+  })
+})
+
+describe('withDefaultMcpOpenfile', () => {
+  it('injects openfile when missing', () => {
+    const servers = withDefaultMcpOpenfile('D:/ws', {
+      brave: { command: 'npx', args: ['-y', 'x'] },
+    })
+    expect(servers?.[MCP_OPENFILE_SERVER_NAME]).toBeDefined()
+    expect(servers?.brave).toBeDefined()
+  })
+
+  it('does not override existing openfile', () => {
+    const custom = { command: 'echo', args: ['noop'] }
+    const servers = withDefaultMcpOpenfile('D:/ws', {
+      [MCP_OPENFILE_SERVER_NAME]: custom,
+    })
+    expect(servers?.[MCP_OPENFILE_SERVER_NAME]).toEqual(custom)
   })
 })

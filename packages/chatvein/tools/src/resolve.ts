@@ -6,7 +6,7 @@ import { createKnowledgeTools } from './categories/knowledge'
 import { createNewsFinanceTools } from './categories/news-finance'
 import { createSearchTools } from './categories/search'
 import { createWebTools } from './categories/web'
-import { loadMcpTools, withDefaultMcpFilesystem } from './mcp'
+import { loadMcpTools, withDefaultMcpFilesystem, withDefaultMcpOpenfile } from './mcp'
 import type { ResolveChatToolsOptions, ToolCatalogEntry, ToolSecrets } from './types'
 
 function hasSecret(entry: ToolCatalogEntry, secrets?: ToolSecrets): boolean {
@@ -26,7 +26,7 @@ function hasSecret(entry: ToolCatalogEntry, secrets?: ToolSecrets): boolean {
 }
 
 function needsWorkspace(id: string): boolean {
-  return id === 'sqlite_query' || id === 'mcp_filesystem'
+  return id === 'sqlite_query' || id === 'mcp_filesystem' || id === 'mcp_openfile'
 }
 
 /** 根据 policy / 白名单 / 密钥 / MCP 解析可绑定工具列表 */
@@ -58,14 +58,21 @@ export async function resolveChatTools(
     maxOutputChars: options.maxOutputChars,
   }
 
-  // 本地文件只走 MCP filesystem（无 builtin 读/列/grep）
+  // 本地文件只走 MCP filesystem / openfile（无 builtin 读/列/grep）
   const wantFs =
     options.mcpFilesystem !== false && selected.some((e) => e.id === 'mcp_filesystem')
+  const wantOpen =
+    options.mcpOpenfile !== false && selected.some((e) => e.id === 'mcp_openfile')
 
-  const mcpServers = withDefaultMcpFilesystem(
+  let mcpServers = withDefaultMcpFilesystem(
     wantFs ? options.workspaceRoot : undefined,
     options.mcpServers,
     wantFs,
+  )
+  mcpServers = withDefaultMcpOpenfile(
+    wantOpen ? options.workspaceRoot : undefined,
+    mcpServers,
+    wantOpen,
   )
 
   const mcpTools = mcpServers

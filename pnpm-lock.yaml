@@ -441,6 +441,9 @@ importers:
       '@chatvein/common':
         specifier: workspace:*
         version: link:../common
+      '@chatvein/mcp-openfile-sdk':
+        specifier: workspace:*
+        version: link:../../mcps/openfile
       '@langchain/community':
         specifier: ^1.1.29
         version: 1.1.29(@browserbasehq/sdk@2.19.1)(@browserbasehq/stagehand@1.14.0(@playwright/test@1.62.1)(deepmerge@4.3.1)(dotenv@16.4.5)(openai@7.9.0(undici@7.29.0)(ws@8.21.3)(zod@4.5.4))(zod@4.5.4))(@ibm-cloud/watsonx-ai@1.7.16)(@langchain/core@1.2.9(openai@7.9.0(undici@7.29.0)(ws@8.21.3)(zod@4.5.4))(ws@8.21.3))(better-sqlite3@12.11.1)(duck-duck-scrape@2.2.7)(ibm-cloud-sdk-core@5.6.0)(jsonwebtoken@9.0.3)(openai@7.9.0(undici@7.29.0)(ws@8.21.3)(zod@4.5.4))(playwright@1.62.1)(undici@7.29.0)(ws@8.21.3)
@@ -631,14 +634,11 @@ importers:
         specifier: ^2.0.0
         version: 2.1.9(@types/node@24.13.3)(lightningcss@1.32.0)
 
-  packages/tools/modsearch:
+  packages/mcps/openfile:
     dependencies:
-      '@langchain/core':
-        specifier: ^1.2.9
-        version: 1.2.9(openai@7.9.0(undici@7.29.0)(ws@8.21.3)(zod@4.5.4))(ws@8.21.3)
-      '@liustack/modsearch':
-        specifier: 5.10.1
-        version: 5.10.1
+      '@modelcontextprotocol/sdk':
+        specifier: ^1.30.0
+        version: 1.30.0(@cfworker/json-schema@4.1.1)(zod@4.5.4)
       zod:
         specifier: ^4.5.4
         version: 4.5.4
@@ -1844,11 +1844,6 @@ packages:
     peerDependencies:
       '@langchain/core': ^1.0.0
 
-  '@liustack/modsearch@5.10.1':
-    resolution: {integrity: sha512-9u2BmoHxXl3/lCYnFUuFjUAS7XBfFClUxFRSBB1pT+nkRz5JZava+jTMhndf67WyF/zTZPeOEKDv3hu/GGmo4Q==}
-    engines: {node: '>=22.13'}
-    hasBin: true
-
   '@modelcontextprotocol/sdk@1.30.0':
     resolution: {integrity: sha512-xKd8OIzlqNzcqcNumGAa6g+PW2kjD5vrpcKOnfldAUPP3j7lnqMPwlTXQm8gF+UwH72z0lqaRbjr9hqGz0eITA==}
     engines: {node: '>=18'}
@@ -2565,10 +2560,6 @@ packages:
 
   comma-separated-tokens@2.0.3:
     resolution: {integrity: sha512-Fu4hJdvzeylCfQPp9SGWidpzrMs7tTrlu6Vb8XGaRGck8QSNZJJp538Wrb60Lax4fPwR64ViY468OIUTbRlGZg==}
-
-  commander@13.1.0:
-    resolution: {integrity: sha512-/rFeCpNJQbhSZjGVwO9RFV3xPqbnERS8MmIQzCtD/zl6gpJuV/bMLuN92oG3F7d8oDEHHRrujSXNUr8fpjntKw==}
-    engines: {node: '>=18'}
 
   commander@4.1.1:
     resolution: {integrity: sha512-NOKm8xhkzAjzFx8B2v5OAHT+u5pRQc2UCa2Vq9jYL/31o2wi9mxBA7LIFs3sV5VSC49z6pEhfbMULvShKj26WA==}
@@ -4939,11 +4930,6 @@ snapshots:
       '@langchain/core': 1.2.9(openai@7.9.0(undici@7.29.0)(ws@8.21.3)(zod@4.5.4))(ws@8.21.3)
       js-tiktoken: 1.0.21
 
-  '@liustack/modsearch@5.10.1':
-    dependencies:
-      commander: 13.1.0
-      undici: 7.29.0
-
   '@modelcontextprotocol/sdk@1.30.0(@cfworker/json-schema@4.1.1)(zod@4.5.4)':
     dependencies:
       '@hono/node-server': 2.1.1(hono@4.13.7)
@@ -5661,8 +5647,6 @@ snapshots:
       delayed-stream: 1.0.0
 
   comma-separated-tokens@2.0.3: {}
-
-  commander@13.1.0: {}
 
   commander@4.1.1: {}
 
@@ -7009,7 +6993,8 @@ snapshots:
 
   undici-types@7.18.2: {}
 
-  undici@7.29.0: {}
+  undici@7.29.0:
+    optional: true
 
   unist-util-is@6.0.1:
     dependencies:

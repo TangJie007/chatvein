@@ -67,6 +67,15 @@ export const TOOL_CATALOG: readonly ToolCatalogEntry[] = [
     source: 'mcp:@modelcontextprotocol/server-filesystem',
     defaultEnabled: true,
   },
+  {
+    id: 'mcp_openfile',
+    category: 'local_fs',
+    title: '打开文件夹（MCP）',
+    description:
+      '经 @chatvein/mcp-openfile-sdk 在系统文件管理器中打开目录；若路径是文件则打开其所在目录（工具名前缀 openfile__*）。',
+    source: 'mcp:@chatvein/mcp-openfile-sdk',
+    defaultEnabled: true,
+  },
 
   // —— 4 网页解析 ——
   {
