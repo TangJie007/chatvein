@@ -4,20 +4,24 @@ import {
   createMcpModsearchServer,
   createMcpOpenfileServer,
   createMcpVmsandboxServer,
+  createMcpPyodideServer,
   mergeMcpServers,
   parseMcpServersJson,
   resolveMcpFilesystemServerEntry,
   resolveMcpModsearchServerEntry,
   resolveMcpOpenfileServerEntry,
   resolveMcpVmsandboxServerEntry,
+  resolveMcpPyodideServerEntry,
   withDefaultMcpFilesystem,
   withDefaultMcpModsearch,
   withDefaultMcpOpenfile,
   withDefaultMcpVmsandbox,
+  withDefaultMcpPyodide,
   MCP_FILESYSTEM_SERVER_NAME,
   MCP_MODSEARCH_SERVER_NAME,
   MCP_OPENFILE_SERVER_NAME,
   MCP_VMSANDBOX_SERVER_NAME,
+  MCP_PYODIDE_SERVER_NAME,
 } from '../mcp'
 
 describe('parseMcpServersJson', () => {
@@ -185,5 +189,34 @@ describe('withDefaultMcpVmsandbox', () => {
 
   it('skips without workspace', () => {
     expect(withDefaultMcpVmsandbox(undefined, {})).toEqual({})
+  })
+})
+
+describe('createMcpPyodideServer', () => {
+  it('points node at mcp-pyodide-sdk cli with workspace root', () => {
+    const conn = createMcpPyodideServer('E:/ws')
+    expect(conn).toMatchObject({
+      transport: 'stdio',
+      command: process.execPath,
+    })
+    if (!('args' in conn) || !conn.args) throw new Error('expected args')
+    expect(conn.args[0]).toBe(resolveMcpPyodideServerEntry())
+    expect(conn.args[1]).toBe('E:/ws')
+    expect(conn.args[0]).toMatch(/pyodide[/\\]dist[/\\]cli\.js$/)
+  })
+
+  it('rejects empty root', () => {
+    expect(() => createMcpPyodideServer('  ')).toThrow(/workspaceRoot/)
+  })
+})
+
+describe('withDefaultMcpPyodide', () => {
+  it('injects pyodide when missing', () => {
+    const servers = withDefaultMcpPyodide('D:/ws', {})
+    expect(servers?.[MCP_PYODIDE_SERVER_NAME]).toBeDefined()
+  })
+
+  it('skips without workspace', () => {
+    expect(withDefaultMcpPyodide(undefined, {})).toEqual({})
   })
 })

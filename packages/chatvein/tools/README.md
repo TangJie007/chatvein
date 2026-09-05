@@ -18,11 +18,13 @@ const tools = await resolveChatTools({
 | `mcp_filesystem` | `filesystem` | `@modelcontextprotocol/server-filesystem` |
 | `mcp_openfile` | `openfile` | `@chatvein/mcp-openfile-sdk` |
 | `mcp_modsearch` | `modsearch` | `@chatvein/mcp-modsearch-sdk`（ModSearch → DuckDuckGo 兜底） |
+| `mcp_vmsandbox` | `vmsandbox` | `@chatvein/mcp-vmsandbox-sdk`（工作区 JS + 可信 npm） |
+| `mcp_pyodide` | `pyodide` | `@chatvein/mcp-pyodide-sdk`（工作区 Python + 可信包） |
 
 ## 品类
 
 1. **search** — **MCP modsearch**（默认）；community DDG 默认关  
-2. **compute** — Calculator、**MCP vmsandbox**（工作区 `scripts/` + NodeVM / 可信包）；builtin `js_eval` 默认关  
+2. **compute** — Calculator、**MCP vmsandbox / pyodide**（工作区 `scripts/`）；builtin `js_eval` 默认关  
 3. **local_fs** — **仅 MCP**（`mcp_filesystem`、`mcp_openfile`）  
 4. **web** — `fetch_url`  
 5. **news_finance** — Google Trends  
@@ -33,4 +35,4 @@ const tools = await resolveChatTools({
 
 ## 调试 MCP
 
-根目录：`pnpm mcp:inspect` / `mcp:inspect:openfile|modsearch|vmsandbox|filesystem`（`@modelcontextprotocol/inspector`）。说明见 `packages/mcps/README.md`。
+根目录：`pnpm mcp:inspect` / `mcp:inspect:openfile|modsearch|vmsandbox|pyodide|filesystem`（`@modelcontextprotocol/inspector`）。说明见 `packages/mcps/README.md`。

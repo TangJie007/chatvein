@@ -34,8 +34,9 @@ describe('TOOL_CATALOG', () => {
     expect(search.find((e) => e.id === 'duckduckgo_search')?.defaultEnabled).toBe(false)
   })
 
-  it('compute prefers mcp_vmsandbox over js_eval', () => {
+  it('compute prefers mcp_vmsandbox / mcp_pyodide over js_eval', () => {
     expect(TOOL_CATALOG.find((e) => e.id === 'mcp_vmsandbox')?.defaultEnabled).toBe(true)
+    expect(TOOL_CATALOG.find((e) => e.id === 'mcp_pyodide')?.defaultEnabled).toBe(true)
     expect(TOOL_CATALOG.find((e) => e.id === 'js_eval')?.defaultEnabled).toBe(false)
   })
 })

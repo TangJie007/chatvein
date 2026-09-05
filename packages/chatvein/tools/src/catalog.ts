@@ -59,6 +59,15 @@ export const TOOL_CATALOG: readonly ToolCatalogEntry[] = [
     defaultEnabled: true,
   },
   {
+    id: 'mcp_pyodide',
+    category: 'compute',
+    title: '工作区 Python 沙箱（Pyodide MCP）',
+    description:
+      '经 @chatvein/mcp-pyodide-sdk：绑定 workspace，Pyodide 跑 `scripts/**/*.py`；依赖须经信任校验（白名单/PyPI 高下载量）后 loadPackage/micropip。工具前缀 pyodide__*。',
+    source: 'mcp:@chatvein/mcp-pyodide-sdk',
+    defaultEnabled: true,
+  },
+  {
     id: 'js_eval',
     category: 'compute',
     title: '受限 JS 求值（builtin）',

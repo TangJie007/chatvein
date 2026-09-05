@@ -31,6 +31,7 @@
     "@chatvein/mcp-modsearch-sdk": "workspace:*",
     "@chatvein/mcp-openfile-sdk": "workspace:*",
     "@chatvein/mcp-vmsandbox-sdk": "workspace:*",
+    "@chatvein/mcp-pyodide-sdk": "workspace:*",
     "@langchain/community": "^1.1.29",
     "@langchain/core": "^1.2.9",
     "@langchain/mcp-adapters": "^1.1.4",

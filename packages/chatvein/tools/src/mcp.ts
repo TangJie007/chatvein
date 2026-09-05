@@ -49,6 +49,9 @@ export const MCP_MODSEARCH_SERVER_NAME = 'modsearch'
 /** 默认 MCP vmsandbox server 名（工具前缀 `vmsandbox__*`） */
 export const MCP_VMSANDBOX_SERVER_NAME = 'vmsandbox'
 
+/** 默认 MCP pyodide server 名（工具前缀 `pyodide__*`） */
+export const MCP_PYODIDE_SERVER_NAME = 'pyodide'
+
 const requireFromHere = createRequire(
   typeof __filename !== 'undefined' ? __filename : fileURLToPath(import.meta.url),
 )
@@ -90,6 +93,14 @@ export function resolveMcpModsearchServerEntry(): string {
  */
 export function resolveMcpVmsandboxServerEntry(): string {
   const main = requireFromHere.resolve('@chatvein/mcp-vmsandbox-sdk')
+  return join(dirname(main), 'cli.js')
+}
+
+/**
+ * 解析 `@chatvein/mcp-pyodide-sdk` CLI 入口（包内 dist/cli.js）。
+ */
+export function resolveMcpPyodideServerEntry(): string {
+  const main = requireFromHere.resolve('@chatvein/mcp-pyodide-sdk')
   return join(dirname(main), 'cli.js')
 }
 
@@ -262,6 +273,55 @@ export function withDefaultMcpVmsandbox(
 }
 
 /**
+ * 挂 MCP pyodide（Pyodide 执行工作区 scripts/ 下的 Python）。
+ */
+export function createMcpPyodideServer(
+  workspaceRoot: string,
+  options?: {
+    timeoutMs?: number
+    maxOutputChars?: number
+    allowAnyPy?: boolean
+  },
+): McpServerConnection {
+  const root = workspaceRoot.trim()
+  if (!root) {
+    throw new Error('createMcpPyodideServer: workspaceRoot 不能为空')
+  }
+  const args = [resolveMcpPyodideServerEntry(), root]
+  if (options?.timeoutMs && options.timeoutMs > 0) {
+    args.push(`--timeout=${options.timeoutMs}`)
+  }
+  if (options?.maxOutputChars && options.maxOutputChars > 0) {
+    args.push(`--max-output=${options.maxOutputChars}`)
+  }
+  if (options?.allowAnyPy) {
+    args.push('--allow-any-py')
+  }
+  return {
+    transport: 'stdio',
+    command: process.execPath,
+    args,
+    env: electronRunAsNodeEnv(),
+  }
+}
+
+/**
+ * 默认注入 `pyodide`（需 workspaceRoot；可用同名配置覆盖）。
+ */
+export function withDefaultMcpPyodide(
+  workspaceRoot: string | undefined,
+  servers: Record<string, McpServerConnection> | undefined,
+  enabled = true,
+): Record<string, McpServerConnection> | undefined {
+  if (!enabled || !workspaceRoot?.trim()) return servers
+  if (servers?.[MCP_PYODIDE_SERVER_NAME]) return servers
+  return mergeMcpServers(
+    { [MCP_PYODIDE_SERVER_NAME]: createMcpPyodideServer(workspaceRoot) },
+    servers,
+  )
+}
+
+/**
  * 从已配置的 MCP servers 拉工具列表，转成 LangChain StructuredTool。
  * 无 servers 时返回 []；单 server 失败默认忽略，不拖垮整轮 Chat。
  */
@@ -349,5 +409,11 @@ export function hasMcpModsearchTools(tools: StructuredToolInterface[]): boolean 
 /** 是否已拉到 vmsandbox MCP 工具 */
 export function hasMcpVmsandboxTools(tools: StructuredToolInterface[]): boolean {
   const prefix = `${MCP_VMSANDBOX_SERVER_NAME}__`
+  return tools.some((t) => t.name.startsWith(prefix))
+}
+
+/** 是否已拉到 pyodide MCP 工具 */
+export function hasMcpPyodideTools(tools: StructuredToolInterface[]): boolean {
+  const prefix = `${MCP_PYODIDE_SERVER_NAME}__`
   return tools.some((t) => t.name.startsWith(prefix))
 }

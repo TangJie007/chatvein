@@ -6,7 +6,7 @@ import { createKnowledgeTools } from './categories/knowledge'
 import { createNewsFinanceTools } from './categories/news-finance'
 import { createSearchTools } from './categories/search'
 import { createWebTools } from './categories/web'
-import { loadMcpTools, withDefaultMcpFilesystem, withDefaultMcpModsearch, withDefaultMcpOpenfile, withDefaultMcpVmsandbox } from './mcp'
+import { loadMcpTools, withDefaultMcpFilesystem, withDefaultMcpModsearch, withDefaultMcpOpenfile, withDefaultMcpPyodide, withDefaultMcpVmsandbox } from './mcp'
 import type { ResolveChatToolsOptions, ToolCatalogEntry, ToolSecrets } from './types'
 
 function hasSecret(entry: ToolCatalogEntry, secrets?: ToolSecrets): boolean {
@@ -30,7 +30,8 @@ function needsWorkspace(id: string): boolean {
     id === 'sqlite_query' ||
     id === 'mcp_filesystem' ||
     id === 'mcp_openfile' ||
-    id === 'mcp_vmsandbox'
+    id === 'mcp_vmsandbox' ||
+    id === 'mcp_pyodide'
   )
 }
 
@@ -72,6 +73,8 @@ export async function resolveChatTools(
     options.mcpModsearch !== false && selected.some((e) => e.id === 'mcp_modsearch')
   const wantVmsandbox =
     options.mcpVmsandbox !== false && selected.some((e) => e.id === 'mcp_vmsandbox')
+  const wantPyodide =
+    options.mcpPyodide !== false && selected.some((e) => e.id === 'mcp_pyodide')
 
   let mcpServers = withDefaultMcpFilesystem(
     wantFs ? options.workspaceRoot : undefined,
@@ -88,6 +91,11 @@ export async function resolveChatTools(
     wantVmsandbox ? options.workspaceRoot : undefined,
     mcpServers,
     wantVmsandbox,
+  )
+  mcpServers = withDefaultMcpPyodide(
+    wantPyodide ? options.workspaceRoot : undefined,
+    mcpServers,
+    wantPyodide,
   )
 
   const mcpTools = mcpServers
