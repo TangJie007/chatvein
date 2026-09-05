@@ -30,3 +30,7 @@ const tools = await resolveChatTools({
 7. **knowledge** — Wikipedia、Stack Exchange  
 
 设计见 `docs/design/12-Agent工具层.md`。
+
+## 调试 MCP
+
+根目录：`pnpm mcp:inspect` / `mcp:inspect:openfile|modsearch|filesystem`（`@modelcontextprotocol/inspector`）。说明见 `packages/mcps/README.md`。

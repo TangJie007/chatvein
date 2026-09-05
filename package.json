@@ -17,13 +17,18 @@
     "clean:lock": "rimraf pnpm-lock.yaml node_modules",
     "docs:dev": "vitepress dev docs",
     "docs:build": "vitepress build docs",
-    "docs:preview": "vitepress preview docs"
+    "docs:preview": "vitepress preview docs",
+    "mcp:inspect": "mcp-inspector",
+    "mcp:inspect:openfile": "pnpm --filter @chatvein/mcp-openfile-sdk build && mcp-inspector node packages/mcps/openfile/dist/cli.js",
+    "mcp:inspect:modsearch": "pnpm --filter @chatvein/mcp-modsearch-sdk build && mcp-inspector node packages/mcps/modsearch/dist/cli.js",
+    "mcp:inspect:filesystem": "mcp-inspector node node_modules/@modelcontextprotocol/server-filesystem/dist/index.js ."
   },
   "engines": {
     "node": ">=22.12.0"
   },
   "license": "MIT",
   "devDependencies": {
+    "@modelcontextprotocol/inspector": "^2.5.0",
     "@wetspace/wetspec-cli": "^1.2.2",
     "rimraf": "^6.1.3",
     "vitepress": "^1.6.4"

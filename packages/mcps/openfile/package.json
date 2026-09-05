@@ -28,7 +28,8 @@
     "build": "tsup",
     "dev": "tsup --watch",
     "test": "vitest run",
-    "start": "node ./dist/cli.js"
+    "start": "node ./dist/cli.js",
+    "inspect": "pnpm build && mcp-inspector node ./dist/cli.js"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",

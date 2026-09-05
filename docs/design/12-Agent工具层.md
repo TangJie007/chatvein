@@ -140,4 +140,6 @@ RouteDecision.policy.tools = full
 - L3：[11-L3-ReAct自适应循环推理层](./11-L3-ReAct自适应循环推理层.md)  
 - 沙箱：[07-沙箱方案](./07-沙箱方案.md)  
 - 依赖：[../phase1/04-依赖选型.md](../phase1/04-依赖选型.md)  
+- 自研 MCP：`packages/mcps/`（[README](../../packages/mcps/README.md)）  
+- **调试**：根目录 `pnpm mcp:inspect` / `mcp:inspect:openfile|modsearch|filesystem`（`@modelcontextprotocol/inspector`）  
 - 代码：`packages/chatvein/tools`

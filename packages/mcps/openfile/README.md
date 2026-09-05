@@ -17,6 +17,14 @@ node dist/cli.js /path/to/workspace
 
 未传允许目录时，可打开任意已存在路径（仅适合本机调试；Chat 默认会传入 `workspaceRoot`）。
 
+## Inspector
+
+```bash
+pnpm --filter @chatvein/mcp-openfile-sdk inspect
+# 或：pnpm mcp:inspect:openfile
+# 带 jail：mcp-inspector node dist/cli.js D:/Chatvein/workspaces/my-ws
+```
+
 ## Cursor / MCP 配置示例
 
 ```json

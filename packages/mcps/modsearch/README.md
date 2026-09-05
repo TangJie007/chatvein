@@ -18,6 +18,14 @@ node dist/cli.js
 node dist/cli.js --timeout=90000 --no-fallback
 ```
 
+## Inspector
+
+```bash
+pnpm --filter @chatvein/mcp-modsearch-sdk inspect
+# 或：pnpm mcp:inspect:modsearch
+mcp-inspector --cli node dist/cli.js --method tools/list
+```
+
 ## Chatvein
 
 目录 id：`mcp_modsearch` → 自动挂 server 名 `modsearch`（工具前缀 `modsearch__*`）。

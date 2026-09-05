@@ -28,7 +28,8 @@
     "build": "tsup",
     "dev": "tsup --watch",
     "test": "vitest run",
-    "start": "node ./dist/cli.js"
+    "start": "node ./dist/cli.js",
+    "inspect": "pnpm build && mcp-inspector node ./dist/cli.js"
   },
   "dependencies": {
     "@liustack/modsearch": "^5.10.1",

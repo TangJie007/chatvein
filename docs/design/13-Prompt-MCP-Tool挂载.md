@@ -162,19 +162,33 @@ ChatService:
 
 `react:request` 的 `tools` / `toolsBound` / `systemPrompt` 经 `llm_debug` 推到渲染进程 DevTools。
 
+### 3.5 MCP Inspector（进程外调试）
+
+根 `devDependency`：`@modelcontextprotocol/inspector`。不经过 Chat / LangChain，直接连 stdio server：
+
+| 脚本 | 目标 |
+|------|------|
+| `pnpm mcp:inspect` | 空 UI，手动选 server |
+| `pnpm mcp:inspect:openfile` | `packages/mcps/openfile/dist/cli.js` |
+| `pnpm mcp:inspect:modsearch` | `packages/mcps/modsearch/dist/cli.js` |
+| `pnpm mcp:inspect:filesystem` | 官方 `server-filesystem`，jail=`.` |
+
+详见 [`packages/mcps/README.md`](../../packages/mcps/README.md)。
+
 ---
 
 ## 4 一张表：改哪里
 
 | 你想改… | 改这里 |
-|---------|--------|
+|--------|--------|
 | 角色人设文案 | Agents UI → `AgentConfig.systemPrompt` |
 | 闲聊短答约束 | `systemPromptForRoute` 常量 |
 | L2 分类规则文案 | `agents/.../l2/prompt.ts` |
 | 默认有哪些 catalog 工具 | `tools/src/catalog.ts` |
 | 某品类如何构造 | `tools/src/categories/*` |
-| 默认 FS MCP | `tools/src/mcp.ts` `createMcpFilesystemServer` |
+| 默认 FS / openfile / modsearch MCP | `tools/src/mcp.ts` |
 | 额外 MCP server | 环境变量 `CHATVEIN_MCP_SERVERS` |
+| 本机调试 MCP 工具 | `pnpm mcp:inspect*` / 子包 `inspect` |
 | policy → 空工具 / 满工具 | L1 rules / L2 schema 与 merge |
 | 最终 bind 到图 | `react-agent.ts` `createAgent({ tools, systemPrompt })` |
 
@@ -182,7 +196,8 @@ ChatService:
 
 ## 5 相关链接
 
-- 工具目录与 MCP filesystem：[12-Agent工具层](./12-Agent工具层.md)  
+- 工具目录与 MCP：[12-Agent工具层](./12-Agent工具层.md)  
 - L3 执行：[11-L3-ReAct自适应循环推理层](./11-L3-ReAct自适应循环推理层.md)  
 - L2 路由：[10-L2语义路由层](./10-L2语义路由层.md)  
-- 笔记：[mcp-first](../../.agents/notes/2026-09-05-mcp-first-tools.md)、[mcp-filesystem](../../.agents/notes/2026-09-05-mcp-filesystem-workspace.md)
+- 自研 MCP 包：[packages/mcps/README.md](../../packages/mcps/README.md)  
+- 笔记：[mcp-first](../../.agents/notes/2026-09-05-mcp-first-tools.md)、[mcp-filesystem](../../.agents/notes/2026-09-05-mcp-filesystem-workspace.md)、[mcp-modsearch](../../.agents/notes/2026-09-05-mcp-modsearch.md)、[mcp-inspector](../../.agents/notes/2026-09-05-mcp-inspector.md)
