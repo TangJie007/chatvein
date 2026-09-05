@@ -18,12 +18,17 @@
     "@electrum/core": "workspace:*",
     "@electrum/preload": "workspace:*",
     "@headlessui/vue": "^1.7.23",
+    "dompurify": "^3.4.14",
     "es-toolkit": "^1.52.0",
+    "highlight.js": "^11.12.0",
+    "markdown-it": "^15.0.1",
     "vue": "^3.5.0",
     "vue-router": "^4.5.0"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.3",
+    "@types/dompurify": "^3.2.0",
+    "@types/markdown-it": "^14.2.0",
     "@types/node": "^24.0.0",
     "@vitejs/plugin-vue": "^6.0.0",
     "electron": "^44.0.0",

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { AvatarTint } from '../../data/types'
-import Avatar from '../ui/Avatar.vue'
+import MarkdownText from './MarkdownText.vue'
 
 withDefaults(
   defineProps<{
@@ -10,8 +10,10 @@ withDefaults(
     author?: string
     roleMini?: string
     time?: string
-    /** 纯文本内容；有 slot 时 slot 优先 */
+    /** 正文；agent 默认 Markdown；有 slot 时 slot 优先 */
     content?: string
+    /** 助手回复流式中（配对符补全 + rAF） */
+    streaming?: boolean
     /** 助手回复的 token 用量文案，展示在时间旁 */
     tokenLabel?: string
     tokenTitle?: string
@@ -22,6 +24,7 @@ withDefaults(
     roleMini: '',
     time: '',
     content: '',
+    streaming: false,
     tokenLabel: '',
     tokenTitle: '',
   },
@@ -53,7 +56,7 @@ withDefaults(
       </div>
 
       <div
-        class="px-[15px] py-[11px] text-sm leading-[1.55] shadow-[var(--shadow-1)]"
+        class="px-[15px] py-[11px] text-sm leading-[1.55] shadow-[var(--shadow-1)] select-text"
         :class="
           role === 'user'
             ? 'rounded-[var(--radius-bubble)] rounded-br-[6px] text-white shadow-[var(--shadow-brand)] bg-[linear-gradient(135deg,#6C81D2,#4A5FBB)]'
@@ -61,7 +64,12 @@ withDefaults(
         "
       >
         <slot>
-          <div class="whitespace-pre-wrap break-words">{{ content }}</div>
+          <MarkdownText
+            v-if="role === 'agent'"
+            :text="content"
+            :streaming="streaming"
+          />
+          <div v-else class="whitespace-pre-wrap break-words">{{ content }}</div>
         </slot>
         <div
           v-if="time && role === 'user'"

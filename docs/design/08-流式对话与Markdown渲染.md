@@ -1,10 +1,11 @@
 # 流式对话与 Markdown 渲染方案
 
-> 版本：v1.1 ｜ 日期：2026-09-03  
-> **决策状态：已锁定（选型）**  
+> 版本：v1.4 ｜ 日期：2026-09-05  
+> **决策状态：已锁定（选型）；Markdown 渲染已落地（app `<MarkdownText>`，一期 highlight.js）**  
 > 上位：[`../phase1/02-方案设计.md`](../phase1/02-方案设计.md)、[`./02-agent循环方案.md`](./02-agent循环方案.md)  
 > 关联：[`./01-核心骨架.md`](./01-核心骨架.md)（对话 / 群组）、[`./06-插件运行时-Cordis.md`](./06-插件运行时-Cordis.md)  
-> 排期：[`../phase1/03-开发计划书.md`](../phase1/03-开发计划书.md) **CP1**
+> 排期：[`../phase1/03-开发计划书.md`](../phase1/03-开发计划书.md) **CP1**  
+> 决策笔记：[`../../.agents/notes/2026-09-05-chat-markdown-render.md`](../../.agents/notes/2026-09-05-chat-markdown-render.md)
 
 ---
 
@@ -18,7 +19,7 @@
 | **事件协议** | `ChatEvent` 联合类型，放 `@chatvein/common` | 主/渲染共享类型；run 以 `runId` 归并 |
 | **执行过程 UI** | 结构化事件时间线（`AgentTrace`） | 思考/工具/护栏/handoff 与「最终回答 Markdown」**分开渲染** |
 | **Markdown 解析** | **`markdown-it`** | 与 VSCode/Cursor 同引擎；Vue 社区主流；插件生态全 |
-| **代码高亮** | **Shiki**（默认）/ highlight.js（降级） | Shiki 为 VSCode 级 TextMate 高亮；流式期最后一块先纯文本，定稿再高亮 |
+| **代码高亮** | **highlight.js（一期）** / Shiki（可换） | 一期同步高亮、流式友好；Shiki 仍可通过同一 `highlight` 回调替换 |
 | **HTML 消毒** | **`dompurify`** | 走 `v-html`，工具返回 / RAG 片段不可信，必须消毒 |
 | **流式渲染策略** | 累积全量重解析 + rAF 节流 + 配对符补全 + 定稿重渲染 | 不做增量解析；见 §5 |
 | **取消** | `AbortSignal` + IPC `chat:cancel` | 贯穿 LangGraph astream |
@@ -210,7 +211,7 @@ onBeforeUnmount(() => cancelAnimationFrame(raf))
 
 ## 9 边界与待定
 
-- **Shiki vs highlight.js**：默认 Shiki（观感优先，Electron 本地无网络请求）；若包体/首屏敏感，切 highlight.js 仅改高亮回调，接口不变。
+- **Shiki vs highlight.js**：一期落地 **highlight.js**（同步、包体轻）；design 原默认 Shiki，可随时换 `highlight` 回调，接口不变。
 - **token 合批阈值**：16ms（≈一帧）起步，弱机/大输出可调到 50ms；以 IPC 消息数与流畅度平衡为准。
 - **Markdown 内原始 HTML**：一期 `html:false` + DOMPurify 双保险；若后续要支持模型产出受信 HTML 片段，再按白名单放开。
 - **历史消息**：流式策略仅针对进行中的 run；已落库消息一次性定稿渲染即可。
