@@ -10,7 +10,7 @@ export const conversations = sqliteTable('conversations', {
   agentId: text('agent_id').notNull(),
   /** 配置 workspaceRoot 下的时间戳会话目录 */
   workspacePath: text('workspace_path').notNull(),
-  /** 配置 runsRoot 下的时间戳沙箱目录 */
+  /** 会话目录下 runs/（sandboxPath = workspacePath/runs） */
   sandboxPath: text('sandbox_path').notNull(),
   /** 目录名 slug，如 20260906-001209-a1b2c3d4 */
   slug: text('slug').notNull(),

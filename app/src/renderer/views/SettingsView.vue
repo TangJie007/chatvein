@@ -15,7 +15,6 @@ const store = useSettings()
 
 const form = reactive({
   workspaceRoot: '',
-  runsRoot: '',
   cmdAllowlist: true,
   confirmWrites: true,
   reduceMotion: false,
@@ -23,13 +22,10 @@ const form = reactive({
 
 const dirty = ref(false)
 const saving = ref(false)
-const foot = ref('路径建议放到非系统盘（如 D:），避免 C 盘被 runs / node_modules 占满')
+const foot = ref('路径建议放到非系统盘（如 D:），避免 C 盘被会话目录与依赖占满')
 
 const effectiveWorkspace = computed(
   () => store.settings?.effectiveWorkspaceRoot || form.workspaceRoot || '未设置',
-)
-const effectiveRuns = computed(
-  () => store.settings?.effectiveRunsRoot || form.runsRoot || '未设置',
 )
 
 function markDirty() {
@@ -40,7 +36,6 @@ function loadForm() {
   const s = store.settings
   if (!s) return
   form.workspaceRoot = s.workspaceRoot
-  form.runsRoot = s.runsRoot
   form.cmdAllowlist = s.cmdAllowlist
   form.confirmWrites = s.confirmWrites
   form.reduceMotion = s.reduceMotion
@@ -58,24 +53,12 @@ async function pickWorkspace() {
   }
 }
 
-async function pickRuns() {
-  const path = await store.pickFolder({
-    title: '选择沙箱运行根目录',
-    defaultPath: form.runsRoot || store.settings?.defaultRunsRoot,
-  })
-  if (path) {
-    form.runsRoot = path
-    markDirty()
-  }
-}
-
 async function save() {
   if (saving.value) return
   saving.value = true
   try {
     await store.update({
       workspaceRoot: form.workspaceRoot.trim(),
-      runsRoot: form.runsRoot.trim(),
       cmdAllowlist: form.cmdAllowlist,
       confirmWrites: form.confirmWrites,
       reduceMotion: form.reduceMotion,
@@ -91,7 +74,7 @@ async function save() {
 }
 
 async function reset() {
-  if (!window.confirm('恢复默认路径与护栏？将改回「文档/Chatvein」下的默认目录。')) return
+  if (!window.confirm('恢复默认路径与护栏？将改回「文档/Chatvein/workspaces」。')) return
   await store.reset()
   loadForm()
   foot.value = '已恢复默认'
@@ -120,12 +103,15 @@ onMounted(async () => {
       </div>
       <div>
         <div class="font-serif text-[22px] leading-[1.15] tracking-[0.2px] text-[var(--color-ink-1)]">偏好设置</div>
-        <div class="mt-[3px] text-xs text-[var(--color-ink-3)]">工作区路径 · 沙箱运行目录 · 护栏</div>
+        <div class="mt-[3px] text-xs text-[var(--color-ink-3)]">工作区根目录 · 护栏</div>
       </div>
     </template>
 
     <Card idx="1" title="存储位置" side="避免占满 C 盘">
-      <Field label="工作区根目录" hint="用户项目 / 日常工作文件的默认落点；建议选 D: 或大容量盘">
+      <Field
+        label="工作区根目录"
+        hint="会话落在「根/时间戳/」；运行沙箱在「根/时间戳/runs/」。建议选 D: 或大容量盘"
+      >
         <div class="flex gap-1.5">
           <TextInput v-model="form.workspaceRoot" mono placeholder="D:\Chatvein\workspaces" @update:model-value="markDirty" />
           <AppButton size="sm" @click="pickWorkspace">
@@ -134,22 +120,13 @@ onMounted(async () => {
         </div>
       </Field>
       <p class="mt-1.5 font-mono text-[11px] text-[var(--color-ink-3)]">有效路径：{{ effectiveWorkspace }}</p>
-
-      <div class="mt-3.5">
-        <Field label="沙箱运行根目录" hint="runs/&lt;run_id&gt;/workspace 建在此下；含依赖安装，最吃磁盘">
-          <div class="flex gap-1.5">
-            <TextInput v-model="form.runsRoot" mono placeholder="D:\Chatvein\runs" @update:model-value="markDirty" />
-            <AppButton size="sm" @click="pickRuns">
-              <AppIcon name="folder" :size="13" /> 浏览
-            </AppButton>
-          </div>
-        </Field>
-        <p class="mt-1.5 font-mono text-[11px] text-[var(--color-ink-3)]">有效路径：{{ effectiveRuns }}</p>
-      </div>
+      <p class="mt-1 font-mono text-[11px] text-[var(--color-ink-3)]">
+        布局：&lt;根&gt;/&lt;slug&gt;/ · messages.json · scripts/ · runs/
+      </p>
     </Card>
 
     <Card idx="2" title="沙箱与护栏" side="sandbox">
-      <KvRow k="默认沙箱提供方" sub="一期：独立工作区 + 受限 child_process">
+      <KvRow k="默认沙箱提供方" sub="一期：会话目录下 runs/ + 受限执行">
         <span class="font-mono text-xs">local (P0)</span>
       </KvRow>
       <KvRow k="命令白名单">

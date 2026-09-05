@@ -18,15 +18,11 @@ export class SettingsStore {
     return join(app.getPath('documents'), 'Chatvein', 'workspaces')
   }
 
-  defaultRunsRoot(): string {
-    return join(app.getPath('documents'), 'Chatvein', 'runs')
-  }
-
   async load(): Promise<AppSettings> {
     if (this.cache) return this.cache
     try {
       const raw = await fs.readFile(this.file, 'utf-8')
-      this.cache = this.migrate(JSON.parse(raw) as Partial<AppSettings>)
+      this.cache = this.migrate(JSON.parse(raw) as Partial<AppSettings> & { runsRoot?: string })
     } catch {
       this.cache = this.defaults()
       await this.persist()
@@ -46,12 +42,12 @@ export class SettingsStore {
     await fs.rename(tmp, this.file)
   }
 
-  private migrate(data: Partial<AppSettings>): AppSettings {
+  private migrate(data: Partial<AppSettings> & { runsRoot?: string }): AppSettings {
     const d = this.defaults()
+    // 旧版 runsRoot 已废弃：沙箱改为会话目录下 runs/
     return {
       version: 1,
       workspaceRoot: typeof data.workspaceRoot === 'string' ? data.workspaceRoot : d.workspaceRoot,
-      runsRoot: typeof data.runsRoot === 'string' ? data.runsRoot : d.runsRoot,
       cmdAllowlist: data.cmdAllowlist !== false,
       confirmWrites: data.confirmWrites !== false,
       reduceMotion: data.reduceMotion === true,
@@ -61,9 +57,7 @@ export class SettingsStore {
   private defaults(): AppSettings {
     return {
       version: 1,
-      // 首次即指向「文档」下，避免默认堆在 AppData（C 盘）
       workspaceRoot: this.defaultWorkspaceRoot(),
-      runsRoot: this.defaultRunsRoot(),
       cmdAllowlist: true,
       confirmWrites: true,
       reduceMotion: false,

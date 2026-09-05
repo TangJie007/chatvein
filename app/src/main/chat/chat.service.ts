@@ -71,9 +71,9 @@ export class ChatService {
     const settings = await this.settings.get()
     const slug = makeConversationSlug(now)
     const workspacePath = join(settings.effectiveWorkspaceRoot, slug)
-    const sandboxPath = join(settings.effectiveRunsRoot, slug)
+    const sandboxPath = join(workspacePath, 'runs')
     await fs.mkdir(workspacePath, { recursive: true })
-    await fs.mkdir(join(sandboxPath, 'workspace'), { recursive: true })
+    await fs.mkdir(sandboxPath, { recursive: true })
     await fs.mkdir(join(workspacePath, 'scripts'), { recursive: true })
 
     const conv: Conversation = {
@@ -94,11 +94,8 @@ export class ChatService {
     const removed = await this.store.remove(id)
     if (!removed) throw new NotFoundException(`conversation:${id}`)
     this.lastBandByConv.delete(id)
-    // 尽力清理会话目录（失败不阻断删除）
-    await Promise.allSettled([
-      fs.rm(removed.workspacePath, { recursive: true, force: true }),
-      fs.rm(removed.sandboxPath, { recursive: true, force: true }),
-    ])
+    // 会话根目录包含 runs/ 与 messages.json；删根即可
+    await fs.rm(removed.workspacePath, { recursive: true, force: true }).catch(() => undefined)
     return { ok: true }
   }
 

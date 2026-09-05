@@ -25,11 +25,7 @@ export class SettingsService {
     if (patch.workspaceRoot != null) {
       next.workspaceRoot = normalizePath(patch.workspaceRoot)
     }
-    if (patch.runsRoot != null) {
-      next.runsRoot = normalizePath(patch.runsRoot)
-    }
     await ensureDir(this.effectiveWorkspace(next))
-    await ensureDir(this.effectiveRuns(next))
     await this.store.save(next)
     return this.toView(next)
   }
@@ -38,13 +34,11 @@ export class SettingsService {
     const next: AppSettings = {
       version: 1,
       workspaceRoot: this.store.defaultWorkspaceRoot(),
-      runsRoot: this.store.defaultRunsRoot(),
       cmdAllowlist: true,
       confirmWrites: true,
       reduceMotion: false,
     }
     await ensureDir(next.workspaceRoot)
-    await ensureDir(next.runsRoot)
     await this.store.save(next)
     return this.toView(next)
   }
@@ -68,22 +62,15 @@ export class SettingsService {
 
   private toView(s: AppSettings): AppSettingsView {
     const defaultWorkspaceRoot = this.store.defaultWorkspaceRoot()
-    const defaultRunsRoot = this.store.defaultRunsRoot()
     return {
       ...s,
       defaultWorkspaceRoot,
-      defaultRunsRoot,
       effectiveWorkspaceRoot: this.effectiveWorkspace(s),
-      effectiveRunsRoot: this.effectiveRuns(s),
     }
   }
 
   private effectiveWorkspace(s: AppSettings): string {
     return s.workspaceRoot.trim() || this.store.defaultWorkspaceRoot()
-  }
-
-  private effectiveRuns(s: AppSettings): string {
-    return s.runsRoot.trim() || this.store.defaultRunsRoot()
   }
 }
 

@@ -10,9 +10,10 @@
 
 - DB：`userData/forge/chat.db`，`drizzle-orm`（`sqlite-core` + `node-sqlite` / `node:sqlite`），**仅**表 `conversations`（元数据）；`PRAGMA foreign_keys=ON`。
 - 消息：写在会话工作区 `{workspacePath}/messages.json`，不进 SQLite。
-- 新建会话：`slug = YYYYMMDD-HHmmss-<8hex>`；`workspacePath = effectiveWorkspaceRoot/slug`；`sandboxPath = effectiveRunsRoot/slug`（含 `workspace/`、工作区 `scripts/`）。
+- 设置：仅配置工作区根；废弃独立 `runsRoot`。
+- 新建会话：`slug = YYYYMMDD-HHmmss-<8hex>`；`workspacePath = effectiveWorkspaceRoot/slug`；`sandboxPath = workspacePath/runs`（另建 `scripts/`）。
 - 工具绑定：`resolveChatTools` 使用该会话的 `workspacePath`，不再一律用全局根。
-- 删除：删库行 + 尽力 `rm` 两个目录（消息文件随工作区一并消失）；列表提供删除按钮。
+- 删除：删库行 + 尽力 `rm` 会话根目录（含 `runs/`、消息文件）；列表提供删除按钮。
 - 启动：不再自动 `create`；空列表提示用户点「+」。首条发送若无会话仍会 `ensureActive` 建一条。
 
 ## 备选方案

@@ -133,7 +133,7 @@ async function onAdd() {
 async function onRemove(id: string) {
   const target = chat.conversations.find((c) => c.id === id)
   if (!target) return
-  const ok = window.confirm(`删除对话「${target.title}」？\n将同时移除工作区与沙箱目录。`)
+  const ok = window.confirm(`删除对话「${target.title}」？\n将同时移除该会话目录（含 runs/ 与消息）。`)
   if (!ok) return
   await chat.remove(id)
   status.value = '已删除对话'
@@ -296,7 +296,7 @@ onMounted(async () => {
             {{ chat.current ? '开始对话' : '暂无对话' }}
           </div>
           <p class="max-w-sm text-xs leading-relaxed text-[var(--color-ink-3)]">
-            <template v-if="!chat.current">点击左侧「+」新建会话；将创建带时间戳的工作区与沙箱目录。</template>
+            <template v-if="!chat.current">点击左侧「+」新建会话；将在工作区根下创建「时间戳」目录（含 runs/）。</template>
             <template v-else>
               消息将发送给「{{ activeAgent?.name || '主对话 Agent' }}」。
               <template v-if="!activeModel">请先在 Agents 中为该角色绑定模型并填写 API Key。</template>

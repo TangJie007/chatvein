@@ -128,7 +128,7 @@ function onDelete(e: Event, id: string) {
         <template #icon>
           <AppIcon name="chat" :size="12" :stroke-width="2.2" />
         </template>
-        新建会话会在工作区 / 运行目录下创建带时间戳的子目录；会话索引进 SQLite，消息落在工作区。
+        新建会话落在「工作区根/时间戳/」；沙箱在同目录下 `runs/`，消息为工作区内 `messages.json`。
       </HintCard>
     </template>
   </ListPane>

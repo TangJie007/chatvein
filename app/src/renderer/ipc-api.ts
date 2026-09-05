@@ -158,18 +158,15 @@ export interface AgentInput {
 export interface AppSettingsView {
   version: 1
   workspaceRoot: string
-  runsRoot: string
   cmdAllowlist: boolean
   confirmWrites: boolean
   reduceMotion: boolean
   effectiveWorkspaceRoot: string
-  effectiveRunsRoot: string
   defaultWorkspaceRoot: string
-  defaultRunsRoot: string
 }
 
 export type AppSettingsPatch = Partial<
-  Pick<AppSettingsView, 'workspaceRoot' | 'runsRoot' | 'cmdAllowlist' | 'confirmWrites' | 'reduceMotion'>
+  Pick<AppSettingsView, 'workspaceRoot' | 'cmdAllowlist' | 'confirmWrites' | 'reduceMotion'>
 >
 
 // ---- 普通对话 ----------------------------------------------------------

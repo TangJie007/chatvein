@@ -28,7 +28,7 @@ export interface Conversation {
   agentId: string
   /** 本会话工作区绝对路径：settings.workspaceRoot / {slug} */
   workspacePath: string
-  /** 本会话沙箱绝对路径：settings.runsRoot / {slug} */
+  /** 本会话沙箱绝对路径：workspacePath / runs */
   sandboxPath: string
   /** 目录名 slug（时间戳） */
   slug: string
