@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { Disclosure, DisclosureButton, DisclosurePanel } from '@headlessui/vue'
 import AppIcon from '../AppIcon.vue'
 
 export interface TraceStep {
@@ -10,7 +10,7 @@ export interface TraceStep {
   detail: string
 }
 
-const props = withDefaults(
+withDefaults(
   defineProps<{
     steps: TraceStep[]
     pill: string
@@ -20,24 +20,19 @@ const props = withDefaults(
   }>(),
   { pillTone: 'run', defaultOpen: false },
 )
-
-const isOpen = ref(props.defaultOpen)
 </script>
 
 <template>
-  <div class="ml-11 max-w-[82%]">
-    <button
-      type="button"
+  <Disclosure v-slot="{ open }" as="div" class="ml-11 max-w-[82%]" :default-open="defaultOpen">
+    <DisclosureButton
       class="flex w-full flex-wrap items-center gap-2 rounded-xl border-0 bg-[var(--color-track)] px-3 py-2 text-left font-mono text-xs font-medium text-[var(--color-ink-3)] shadow-[inset_0_0_0_1px_rgba(223,227,232,0.7)] transition-colors hover:bg-[var(--color-hover)] focus-visible:outline-2 focus-visible:outline-[var(--color-brand)] focus-visible:outline-offset-2"
-      :aria-expanded="isOpen"
-      @click="isOpen = !isOpen"
     >
       <AppIcon
         name="chevron"
         :size="10"
         :stroke-width="3"
         class="shrink-0 transition-transform duration-200"
-        :class="isOpen ? 'rotate-90' : ''"
+        :class="open ? 'rotate-90' : ''"
       />
       <span
         class="inline-flex items-center gap-1.5 rounded-full px-2.5 py-[3px] font-mono text-[11.5px] font-medium"
@@ -51,9 +46,9 @@ const isOpen = ref(props.defaultOpen)
         >{{ pill }}</span
       >
       <span>{{ meta }}</span>
-    </button>
+    </DisclosureButton>
 
-    <div v-show="isOpen" class="mt-1.5 flex flex-col gap-1.5">
+    <DisclosurePanel class="mt-1.5 flex flex-col gap-1.5">
       <div
         v-for="(s, i) in steps"
         :key="i"
@@ -79,6 +74,6 @@ const isOpen = ref(props.defaultOpen)
           <p class="m-0 mt-[5px] text-[12.5px] leading-[1.5] text-[var(--color-ink-2)]">{{ s.detail }}</p>
         </div>
       </div>
-    </div>
-  </div>
+    </DisclosurePanel>
+  </Disclosure>
 </template>
