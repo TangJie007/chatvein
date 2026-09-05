@@ -1,6 +1,6 @@
 import { reactive, ref } from 'vue'
 import { createClient } from '@electrum/client'
-import type { IpcApi, Conversation, ChatSendResult, ChatStreamEvent, ChatMessage } from '../ipc-api'
+import type { IpcApi, Conversation, ChatSendResult, ChatStreamEvent, ChatMessage, ChatArtifactItem } from '../ipc-api'
 import { toIpcPayload } from '../utils/toIpcPayload'
 
 const api = createClient<IpcApi>()
@@ -11,6 +11,8 @@ const loading = ref(false)
 const sending = ref(false)
 const loaded = ref(false)
 const error = ref('')
+/** 当前会话产物（磁盘回填 / 本轮 artifacts 事件） */
+const artifacts = ref<ChatArtifactItem[]>([])
 
 /**
  * 当前运行的思考过程状态（由主进程 `chat:event` 事件驱动）。
@@ -38,12 +40,16 @@ api.on('chat:event', (evt: unknown) => {
       thinking.conversationId = e.conversationId
       thinking.agent = e.agent
       thinking.text = ''
+      artifacts.value = []
       break
     case 'thinking_delta':
       if (e.runId === thinking.runId) thinking.text += e.delta
       break
     case 'thinking_done':
       if (e.runId === thinking.runId) thinking.phase = 'answering'
+      break
+    case 'artifacts':
+      if (e.runId === thinking.runId) artifacts.value = e.items
       break
     case 'route':
       // 路由详情已写入 thinking_delta；此处预留 UI 结构化消费
@@ -89,6 +95,7 @@ async function refresh(): Promise<void> {
     if (currentId.value && !conversations.value.some((c) => c.id === currentId.value)) {
       currentId.value = conversations.value[0]?.id ?? ''
     }
+    if (currentId.value) void refreshArtifacts(currentId.value)
   } catch (e) {
     error.value = (e as Error)?.message ?? String(e)
   } finally {
@@ -111,19 +118,39 @@ async function create(input?: { title?: string; agentId?: string }): Promise<Con
   const created = await api.chat.create(input ? toIpcPayload(input) : undefined)
   conversations.value = [created, ...conversations.value]
   currentId.value = created.id
+  artifacts.value = []
   return created
 }
 
 async function select(id: string): Promise<Conversation | null> {
   currentId.value = id
   const local = conversations.value.find((c) => c.id === id)
-  if (local) return local
+  if (local) {
+    void refreshArtifacts(id)
+    return local
+  }
   try {
     const remote = await api.chat.get(id)
     conversations.value = [remote, ...conversations.value.filter((c) => c.id !== id)]
+    void refreshArtifacts(id)
     return remote
   } catch {
     return null
+  }
+}
+
+/** 从磁盘回填产物（切会话 / 发送后兜底） */
+async function refreshArtifacts(conversationId: string): Promise<void> {
+  if (!conversationId) return
+  // 运行中以事件为准，避免覆盖本轮增量
+  if (thinking.active && thinking.conversationId === conversationId) return
+  try {
+    const items = await api.chat.listArtifacts(conversationId)
+    if (currentId.value !== conversationId) return
+    if (thinking.active && thinking.conversationId === conversationId) return
+    artifacts.value = Array.isArray(items) ? items : []
+  } catch (e) {
+    console.warn('[chat] listArtifacts failed', e)
   }
 }
 
@@ -186,10 +213,9 @@ async function send(content: string): Promise<ChatSendResult> {
   } finally {
     sending.value = false
     thinking.active = false
+    void refreshArtifacts(conv.id)
   }
 }
-
-/** 重试失败的助手回复（保留原用户消息） */
 async function retry(failedMessageId: string): Promise<ChatSendResult> {
   const conv = current()
   if (!conv) throw new Error('没有当前会话')
@@ -242,6 +268,7 @@ async function retry(failedMessageId: string): Promise<ChatSendResult> {
   } finally {
     sending.value = false
     thinking.active = false
+    void refreshArtifacts(conv.id)
   }
 }
 
@@ -254,10 +281,12 @@ export function useChat() {
     loaded,
     error,
     thinking,
+    artifacts,
     get current() {
       return current()
     },
     refresh,
+    refreshArtifacts,
     ensureActive,
     create,
     select,

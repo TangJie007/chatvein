@@ -47,4 +47,10 @@ export class ChatController {
   retry(input: ChatRetryInput): Promise<ChatSendResult> {
     return this.chat.retry(input, (evt) => this.emitEvent(evt))
   }
+
+  /** 会话工作区现有文件（供产物面板回填） */
+  @IpcHandle('listArtifacts')
+  listArtifacts(conversationId: string) {
+    return this.chat.listArtifacts(conversationId)
+  }
 }

@@ -34,6 +34,14 @@ import type {
   Conversation,
   TokenUsage,
 } from './chat.types'
+import {
+  artifactsFromReactMessages,
+  artifactsFromWorkspaceDiff,
+  listWorkspaceFiles,
+  mergeArtifacts,
+  snapshotWorkspaceMtimes,
+} from './workspace-artifacts'
+import type { BaseMessage } from '@langchain/core/messages'
 
 @Injectable()
 export class ChatService {
@@ -97,6 +105,14 @@ export class ChatService {
     // 会话根目录包含 runs/ 与 scripts/；聊天历史在 SQLite，删库行即可
     await fs.rm(removed.workspacePath, { recursive: true, force: true }).catch(() => undefined)
     return { ok: true }
+  }
+
+  /** 列出会话工作区现有文件（产物面板回填；不含空目录） */
+  async listArtifacts(conversationId: string) {
+    const conv = await this.store.get(conversationId)
+    if (!conv) throw new NotFoundException(`conversation:${conversationId}`)
+    const files = await listWorkspaceFiles(conv.workspacePath)
+    return artifactsFromWorkspaceDiff(new Map(), files)
   }
 
   /**
@@ -252,8 +268,10 @@ export class ChatService {
     })
 
     const started = Date.now()
+    const beforeSnap = await snapshotWorkspaceMtimes(conv.workspacePath)
     let text: string
     let usage: TokenUsage | undefined
+    let reactMessages: BaseMessage[] = []
     try {
       this.emitLlmDebug(emit, runId, conv.id, 'react:request', {
         model: {
@@ -290,6 +308,7 @@ export class ChatService {
       })
       text = result.content.trim()
       usage = result.usage
+      reactMessages = result.messages
 
       this.emitLlmDebug(emit, runId, conv.id, 'react:response', {
         content: result.content,
@@ -312,6 +331,7 @@ export class ChatService {
       )
     }
     const latencyMs = Date.now() - started
+    await this.emitRunArtifacts(emit, runId, conv, beforeSnap, reactMessages)
     emit?.({ type: 'thinking_done', runId, conversationId: conv.id })
 
     if (!text) {
@@ -457,6 +477,7 @@ export class ChatService {
     })
 
     const started = Date.now()
+    const beforeSnap = await snapshotWorkspaceMtimes(conv.workspacePath)
     try {
       const result = await invokeReactChatAgent(reactAgent, {
         message: content,
@@ -464,6 +485,7 @@ export class ChatService {
         recursionLimit,
       })
       const text = result.content.trim()
+      await this.emitRunArtifacts(emit, runId, conv, beforeSnap, result.messages)
       emit?.({ type: 'thinking_done', runId, conversationId: conv.id })
       if (!text) {
         return this.appendAssistant(
@@ -503,6 +525,30 @@ export class ChatService {
     }
     } finally {
       clearLlmDebug?.()
+    }
+  }
+
+  /**
+   * 本轮结束后：工作区磁盘 diff ∪ 写文件类 tool_calls → `artifacts` 事件。
+   */
+  private async emitRunArtifacts(
+    emit: ((evt: ChatStreamEvent) => void) | undefined,
+    runId: string,
+    conv: Conversation,
+    beforeSnap: Map<string, number>,
+    messages: BaseMessage[],
+  ): Promise<void> {
+    if (!emit) return
+    try {
+      const after = await listWorkspaceFiles(conv.workspacePath)
+      const items = mergeArtifacts(
+        artifactsFromWorkspaceDiff(beforeSnap, after),
+        artifactsFromReactMessages(messages, conv.workspacePath),
+      )
+      if (items.length === 0) return
+      emit({ type: 'artifacts', runId, conversationId: conv.id, items })
+    } catch (err) {
+      console.warn('[ChatService] emitRunArtifacts failed', err)
     }
   }
 

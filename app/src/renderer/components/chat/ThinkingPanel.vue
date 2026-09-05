@@ -180,7 +180,7 @@ watch(
           </div>
         </template>
         <p v-else class="m-0 px-0.5 py-1 text-[11.5px] leading-[1.5] text-[var(--color-ink-3)]">
-          本轮尚无产物。脚本、导出文件等会出现在这里。
+          会话工作区暂无文件。脚本、导出等会出现在这里。
         </p>
       </DisclosureSection>
     </div>

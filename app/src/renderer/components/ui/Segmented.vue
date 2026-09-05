@@ -16,16 +16,19 @@ const emit = defineEmits<{ 'update:modelValue': [T] }>()
       :key="opt"
       v-slot="{ checked }"
       :value="opt"
-      as="button"
-      type="button"
-      class="rounded-[7px] border-0 bg-transparent px-3 py-1.5 text-xs font-medium transition-colors duration-200 ease-[var(--ease-soft)] focus-visible:outline-2 focus-visible:outline-[var(--color-brand)] focus-visible:outline-offset-1"
-      :class="
-        checked
-          ? 'bg-[var(--color-elevated)] text-[var(--color-ink-1)] shadow-[0_1px_3px_rgb(43_44_48/0.08)]'
-          : 'text-[var(--color-ink-2)]'
-      "
+      as="template"
     >
-      {{ opt }}
+      <button
+        type="button"
+        class="rounded-[7px] border-0 bg-transparent px-3 py-1.5 text-xs font-medium transition-colors duration-200 ease-[var(--ease-soft)] focus-visible:outline-2 focus-visible:outline-[var(--color-brand)] focus-visible:outline-offset-1"
+        :class="
+          checked
+            ? 'bg-[var(--color-elevated)] text-[var(--color-ink-1)] shadow-[0_1px_3px_rgb(43_44_48/0.08)]'
+            : 'text-[var(--color-ink-2)]'
+        "
+      >
+        {{ opt }}
+      </button>
     </RadioGroupOption>
   </RadioGroup>
 </template>

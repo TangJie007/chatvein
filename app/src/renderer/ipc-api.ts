@@ -55,6 +55,7 @@ export interface IpcApi {
   'chat:remove': (id: string) => Promise<{ ok: true }>
   'chat:send': (input: ChatSendInput) => Promise<ChatSendResult>
   'chat:retry': (input: ChatRetryInput) => Promise<ChatSendResult>
+  'chat:listArtifacts': (conversationId: string) => Promise<ChatArtifactItem[]>
 
   // ---- 应用设置（路径 / 护栏）----
   'settings:get': () => Promise<AppSettingsView>
@@ -229,6 +230,13 @@ export interface ChatSendResult {
  * 一期承载思考过程：reasoning 增量逐块推送，渲染层思考面板消费。
  * 与主进程 chat.types.ts 的 ChatStreamEvent 保持一致。
  */
+export interface ChatArtifactItem {
+  id: string
+  title: string
+  kind?: string
+  detail?: string
+}
+
 export type ChatStreamEvent =
   | { type: 'run_start'; runId: string; conversationId: string; agent: string; ts: number }
   | { type: 'thinking_delta'; runId: string; conversationId: string; delta: string }
@@ -238,6 +246,12 @@ export type ChatStreamEvent =
       runId: string
       conversationId: string
       decision: import('@chatvein/common').RouteDecision
+    }
+  | {
+      type: 'artifacts'
+      runId: string
+      conversationId: string
+      items: ChatArtifactItem[]
     }
   | {
       type: 'llm_debug'

@@ -198,6 +198,8 @@ onMounted(async () => {
   // 新装/空库：列表保持为空，由用户点「+」创建；不自动建会话
   if (chat.conversations.length && !chat.currentId) {
     await chat.select(chat.conversations[0].id)
+  } else if (chat.currentId) {
+    await chat.refreshArtifacts(chat.currentId)
   }
   const cur = chat.current
   setCrumbItem(cur?.title || '对话')
@@ -373,6 +375,7 @@ onMounted(async () => {
       :phase="chat.thinking.phase"
       :agent="chat.thinking.agent"
       :thought="panelThought"
+      :artifacts="chat.artifacts"
     />
   </main>
 </template>

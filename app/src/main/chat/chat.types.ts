@@ -62,6 +62,14 @@ export interface ChatRetryInput {
  * 运行状态提示；流式 reasoning / token（design/08）见 CP1-2。
  * 事件均带 `conversationId`，渲染层按当前会话过滤。
  */
+/** 思考侧栏「产物」条目（与 ThinkingPanel.ThinkingArtifact 对齐） */
+export interface ChatArtifactItem {
+  id: string
+  title: string
+  kind?: string
+  detail?: string
+}
+
 export type ChatStreamEvent =
   | { type: 'run_start'; runId: string; conversationId: string; agent: string; ts: number }
   | { type: 'thinking_delta'; runId: string; conversationId: string; delta: string }
@@ -71,6 +79,13 @@ export type ChatStreamEvent =
       runId: string
       conversationId: string
       decision: import('@chatvein/common').RouteDecision
+    }
+  | {
+      /** 本轮工作区新增/改写的文件等 */
+      type: 'artifacts'
+      runId: string
+      conversationId: string
+      items: ChatArtifactItem[]
     }
   | {
       /** 开发环境：单次 LLM 返回全量，渲染进程 console.log */
