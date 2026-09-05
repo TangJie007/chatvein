@@ -14,6 +14,8 @@ export interface ReactChatInput {
   history?: Array<{ role: 'user' | 'assistant' | 'system'; content: string }>
   /** LangGraph 递归上限（一轮模型调用或工具调用计 1）；默认 25 */
   recursionLimit?: number
+  /** 可选：LangGraph 线程 id；传了即走有状态调用（checkpointer 接管跨轮存储） */
+  threadId?: string
 }
 
 export interface ReactChatResult {
@@ -39,6 +41,13 @@ export interface CreateReactChatAgentOptions {
   systemPrompt?: string
   /** Agent 名（trace / 多 Agent 区分） */
   name?: string
+  /**
+   * 可选 LangGraph checkpointer：启用后跨轮消息轨迹由它持久化（有状态调用）。
+   * 当前 ChatService.send 走无状态范式（每次传完整 history），故默认不传；
+   * 若改为只传本轮增量 + threadId，即可让 checkpointer 接管「存储」层。
+   * 注意：它与本模块的短期记忆摘要态（short-term.store.ts）是不同层，互不替代。
+   */
+  checkpointer?: unknown
 }
 
 /**
@@ -55,6 +64,7 @@ export function createReactChatAgent(options: CreateReactChatAgentOptions) {
     tools: options.tools ?? [],
     systemPrompt: options.systemPrompt,
     name: options.name,
+    ...(options.checkpointer ? { checkpointer: options.checkpointer as never } : {}),
   })
 }
 
@@ -68,10 +78,11 @@ export async function invokeReactChatAgent(
   input: ReactChatInput,
 ): Promise<ReactChatResult> {
   const messages = toLangChainMessages(input)
-  const state = await agent.invoke(
-    { messages },
-    { recursionLimit: input.recursionLimit ?? 25 },
-  )
+  const config = {
+    recursionLimit: input.recursionLimit ?? 25,
+    ...(input.threadId ? { configurable: { thread_id: input.threadId } } : {}),
+  }
+  const state = await agent.invoke({ messages }, config)
   return {
     content: extractFinalAssistantText(state.messages),
     messages: state.messages,

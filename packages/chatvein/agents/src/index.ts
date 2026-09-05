@@ -18,6 +18,11 @@ export {
   type ReactChatResult,
 } from './react-agent'
 
+export {
+  WorkspaceCheckpointer,
+  type WorkspaceCheckpointerOptions,
+} from './checkpointer'
+
 export { defineAgentTool } from './define-tool'
 
 export {

@@ -4,6 +4,7 @@ import {
   createReactChatAgent,
   getDefaultHeuristicRouter,
   invokeReactChatAgent,
+  WorkspaceCheckpointer,
 } from '@chatvein/agents'
 import type { ComplexityBand, RouteDecision } from '@chatvein/common'
 import {
@@ -15,6 +16,15 @@ import {
 } from '@chatvein/models'
 import { resolveChatTools, summarizeToolsForDebug, parseMcpServersJson } from '@chatvein/tools'
 import type { StructuredToolInterface } from '@chatvein/tools'
+import {
+  buildSummarizePrompt,
+  consolidateShortTerm,
+  planShortTerm,
+  type ShortTermMessage,
+  type ShortTermPlan,
+  type ShortTermState,
+} from '@chatvein/memory'
+import { createEndpointModel } from '@chatvein/models'
 import { randomUUID } from 'node:crypto'
 import { promises as fs } from 'node:fs'
 import { join } from 'node:path'
@@ -42,6 +52,7 @@ import {
   snapshotWorkspaceMtimes,
 } from './workspace-artifacts'
 import { readThinkingLog, writeThinkingLog } from './thinking-log'
+import { readShortTermState, resetShortTermState, writeShortTermState } from './short-term.store'
 import type { BaseMessage } from '@langchain/core/messages'
 
 @Injectable()
@@ -61,6 +72,10 @@ export class ChatService {
   private lastBandByConv = new Map<string, ComplexityBand>()
   /** 已为该模型 id 注入过 Structured L2，避免每轮重建 */
   private l2BoundModelId: string | null = null
+  /** 每会话串行化短期记忆压缩，避免并发写同一份状态 */
+  private shortTermQueue = new Map<string, Promise<void>>()
+  /** 按工作区缓存 LangGraph checkpointer（跨进程持久化 agent 工作记忆） */
+  private checkpointers = new Map<string, WorkspaceCheckpointer>()
 
   async list(): Promise<Conversation[]> {
     return this.store.list()
@@ -104,9 +119,30 @@ export class ChatService {
     const removed = await this.store.remove(id)
     if (!removed) throw new NotFoundException(`conversation:${id}`)
     this.lastBandByConv.delete(id)
+    this.shortTermQueue.delete(id)
+    const cp = this.checkpointers.get(removed.workspacePath)
+    if (cp) {
+      cp.close()
+      this.checkpointers.delete(removed.workspacePath)
+    }
     // 会话根目录包含 runs/ 与 scripts/；聊天历史在 SQLite，删库行即可
+    await resetShortTermState(removed.workspacePath).catch(() => undefined)
     await fs.rm(removed.workspacePath, { recursive: true, force: true }).catch(() => undefined)
     return { ok: true }
+  }
+
+  /**
+   * 取（或创建）某工作区的 LangGraph checkpointer：把 agent 每轮消息轨迹落盘到
+   * `{workspacePath}/memory/checkpoints.db`，跨进程持久化、支持 thread resume。
+   */
+  private getCheckpointer(workspacePath: string): WorkspaceCheckpointer {
+    let cp = this.checkpointers.get(workspacePath)
+    if (!cp) {
+      const dbPath = join(workspacePath, 'memory', 'checkpoints.db')
+      cp = new WorkspaceCheckpointer({ dbPath })
+      this.checkpointers.set(workspacePath, cp)
+    }
+    return cp
   }
 
   /** 列出会话工作区现有文件（产物面板回填；不含空目录） */
@@ -168,9 +204,9 @@ export class ChatService {
       createdAt: now,
     }
 
-    const history = conv.messages
-      .filter((m) => m.role === 'user' || m.role === 'assistant')
-      .map((m) => ({ role: m.role as 'user' | 'assistant', content: m.content }))
+    const shortTermState = await readShortTermState(conv.workspacePath)
+    const shortTerm = await this.buildShortTermHistory(conv, shortTermState)
+    const history = shortTerm.history
 
     const runId = randomUUID()
     emit({
@@ -208,6 +244,12 @@ export class ChatService {
       runId,
       conversationId: conv.id,
       delta: formatRouteThinking(route),
+    })
+    emit({
+      type: 'thinking_delta',
+      runId,
+      conversationId: conv.id,
+      delta: formatShortTermThinking(shortTerm.plan),
     })
 
     if (route.terminal?.kind === 'slash') {
@@ -279,11 +321,14 @@ export class ChatService {
         delta: `绑定工具：${boundTools.map((t) => t.name).join(', ')}\n`,
       })
     }
+    const checkpointer = this.getCheckpointer(conv.workspacePath)
+    await checkpointer.deleteThread(conv.id)
     const reactAgent = createReactChatAgent({
       model: llm,
       tools: boundTools,
       systemPrompt,
       name: agent.name,
+      checkpointer,
     })
 
     const started = Date.now()
@@ -318,12 +363,15 @@ export class ChatService {
         },
         history,
         message: content,
+        /** 短期记忆裁剪结果：摘要覆盖 / 窗口 / 待摘要 / 估算 token */
+        shortTerm: shortTermDebugInfo(shortTerm.plan),
       })
 
       const result = await invokeReactChatAgent(reactAgent, {
         message: content,
         history,
         recursionLimit,
+        threadId: conv.id,
       })
       text = result.content.trim()
       usage = result.usage
@@ -370,7 +418,7 @@ export class ChatService {
       )
     }
 
-    return this.persistAssistant(
+    const result = await this.persistAssistant(
       conv,
       agentId,
       userMessage,
@@ -382,6 +430,9 @@ export class ChatService {
       usage,
       thinkingParts.join(''),
     )
+    // 短期记忆：本轮一问一答已落库，异步把挤出窗口的旧消息并入滚动摘要
+    this.scheduleShortTermConsolidation(result.conversation, emit, runId)
+    return result
     } finally {
       clearLlmDebug?.()
     }
@@ -445,10 +496,10 @@ export class ChatService {
     if (!model.model?.trim()) throw new ValidationException('模型 ID 为空', [])
 
     const content = userMessage.content
-    const history = conv.messages
-      .filter((m) => m.role === 'user' || m.role === 'assistant')
-      .slice(0, -1)
-      .map((m) => ({ role: m.role as 'user' | 'assistant', content: m.content }))
+    const shortTermState = await readShortTermState(conv.workspacePath)
+    // 会话末尾那条就是本轮输入（retry 场景），不算历史
+    const shortTerm = await this.buildShortTermHistory(conv, shortTermState, { dropLast: true })
+    const history = shortTerm.history
 
     const runId = randomUUID()
     emit({
@@ -481,6 +532,12 @@ export class ChatService {
       conversationId: conv.id,
       delta: formatRouteThinking(route),
     })
+    emit({
+      type: 'thinking_delta',
+      runId,
+      conversationId: conv.id,
+      delta: formatShortTermThinking(shortTerm.plan),
+    })
 
     const maxSteps = route.policy.maxSteps
     const allowLocalShortCircuit =
@@ -500,11 +557,14 @@ export class ChatService {
       maxTokens: model.maxTokens > 0 ? model.maxTokens : undefined,
     })
     const boundTools = await this.resolveBoundTools(agent, route.policy.tools, conv.workspacePath)
+    const checkpointer = this.getCheckpointer(conv.workspacePath)
+    await checkpointer.deleteThread(conv.id)
     const reactAgent = createReactChatAgent({
       model: llm,
       tools: boundTools,
       systemPrompt,
       name: agent.name,
+      checkpointer,
     })
 
     const started = Date.now()
@@ -514,6 +574,7 @@ export class ChatService {
         message: content,
         history,
         recursionLimit,
+        threadId: conv.id,
       })
       const text = result.content.trim()
       await this.emitRunArtifacts(emit, runId, conv, beforeSnap, result.messages)
@@ -532,7 +593,7 @@ export class ChatService {
           thinkingLog(),
         )
       }
-      return this.appendAssistant(
+      const ok = await this.appendAssistant(
         conv,
         agentId,
         userMessage,
@@ -544,6 +605,8 @@ export class ChatService {
         result.usage,
         thinkingLog(),
       )
+      this.scheduleShortTermConsolidation(ok.conversation, emit, runId)
+      return ok
     } catch (err) {
       emit({ type: 'thinking_done', runId, conversationId: conv.id })
       return this.appendAssistant(
@@ -561,6 +624,102 @@ export class ChatService {
     }
     } finally {
       clearLlmDebug?.()
+    }
+  }
+
+  /**
+   * 短期记忆读路径：会话全量历史 → `摘要块（system） + 近因窗口`。
+   * `dropLast` 用于 retry：会话末尾那条用户消息是本轮输入，不算历史。
+   */
+  private async buildShortTermHistory(
+    conv: Conversation,
+    state: ShortTermState | null,
+    opts?: { dropLast?: boolean },
+  ): {
+    history: Array<{ role: 'user' | 'assistant' | 'system'; content: string }>
+    plan: ShortTermPlan
+  } {
+    const source = opts?.dropLast ? conv.messages.slice(0, -1) : conv.messages
+    const messages = toShortTermMessages(source)
+    const plan = await planShortTerm({ messages, state, reserveTokens: SHORT_TERM_RESERVE_TOKENS })
+    const history: Array<{ role: 'user' | 'assistant' | 'system'; content: string }> = []
+    if (plan.summaryBlock) history.push(plan.summaryBlock)
+    for (const m of plan.active) history.push({ role: m.role, content: m.content })
+    return { history, plan }
+  }
+
+  /** 本轮结束后异步压缩短期记忆（不阻塞回复返回，按会话串行） */
+  private scheduleShortTermConsolidation(
+    conv: Conversation,
+    emit: ((evt: ChatStreamEvent) => void) | undefined,
+    runId: string,
+  ): void {
+    const prev = this.shortTermQueue.get(conv.id) ?? Promise.resolve()
+    const next = prev
+      .catch(() => undefined)
+      .then(() => this.runShortTermConsolidation(conv, emit, runId))
+      .catch((err) => {
+        console.warn('[ChatService] short-term consolidation failed', err)
+      })
+    this.shortTermQueue.set(conv.id, next)
+    void next.finally(() => {
+      if (this.shortTermQueue.get(conv.id) === next) this.shortTermQueue.delete(conv.id)
+    })
+  }
+
+  private async runShortTermConsolidation(
+    conv: Conversation,
+    emit: ((evt: ChatStreamEvent) => void) | undefined,
+    runId: string,
+  ): Promise<void> {
+    const state = await readShortTermState(conv.workspacePath)
+    const messages = toShortTermMessages(conv.messages)
+
+    // 先探一次：没有待摘要消息就不必解析模型配置
+    if ((await planShortTerm({ messages, state })).pending.length === 0) return
+
+    const agent = await this.agents.get(conv.agentId || MAIN_AGENT_ID)
+    if (!agent?.modelId) return
+    const model = await this.models.get(agent.modelId)
+    if (!model?.enabled || !model.baseUrl?.trim() || !model.model?.trim()) return
+
+    const summarizer = await this.shortTermSummarizer(model)
+    const result = await consolidateShortTerm({ messages, state, summarizer })
+    if (result.consolidated === 0) return
+
+    await writeShortTermState(conv.workspacePath, result.state)
+    this.emitLlmDebug(emit, runId, conv.id, 'memory:short-term', {
+      consolidated: result.consolidated,
+      viaModel: result.viaModel,
+      summarizedCount: result.state.summarizedCount,
+      summaryChars: result.state.summary.length,
+      summary: result.state.summary,
+    })
+  }
+
+  /** 摘要器：weak 档模型 + 短输出；调用失败由 consolidate 内部降级 */
+  private async shortTermSummarizer(agentModel: ModelConfig) {
+    const weak = await this.resolveL2Model(agentModel)
+    const endpoint = createEndpointModel({
+      id: weak.id,
+      baseUrl: weak.baseUrl,
+      apiKey: weak.apiKey,
+      model: weak.model,
+      temperature: 0,
+      maxTokens: 512,
+    })
+    return async (
+      input: Parameters<typeof buildSummarizePrompt>[0],
+    ): Promise<string> => {
+      const [system, user] = buildSummarizePrompt(input)
+      const res = await endpoint.invoke(
+        [
+          { role: 'system', content: system.content },
+          { role: 'user', content: user.content },
+        ],
+        { timeoutMs: 20_000 },
+      )
+      return res.content
     }
   }
 
@@ -800,6 +959,46 @@ export class ChatService {
       route,
       ...(failed ? { failed: true } : {}),
     }
+  }
+}
+
+/** 短期记忆：给本轮用户消息预留的 token（不占用窗口预算） */
+const SHORT_TERM_RESERVE_TOKENS = 800
+
+/** ChatMessage[] → ShortTermMessage[]（id 作摘要游标） */
+function toShortTermMessages(messages: Conversation['messages']): ShortTermMessage[] {
+  return messages.map((m) => ({
+    id: m.id,
+    role: m.role === 'assistant' ? 'assistant' : m.role === 'system' ? 'system' : 'user',
+    content: m.content,
+    ...(m.failed ? { failed: true } : {}),
+  }))
+}
+
+/** 短期记忆裁剪结果 → 思考面板一行 */
+function formatShortTermThinking(plan: ShortTermPlan): string {
+  const s = plan.stats
+  const parts = [
+    `窗口 ${s.activeCount} 条`,
+    `摘要覆盖 ${s.summarizedCount} 条`,
+    `待摘要 ${s.pendingCount} 条`,
+    `约 ${s.estimatedTokens} tokens`,
+  ]
+  if (s.truncatedCount > 0) parts.push(`折叠 ${s.truncatedCount} 条`)
+  if (!s.cursorValid) parts.push('游标失效→重算')
+  return `短期记忆：${parts.join(' / ')}\n`
+}
+
+/** 短期记忆 → llm_debug 字段 */
+function shortTermDebugInfo(plan: ShortTermPlan) {
+  return {
+    activeCount: plan.stats.activeCount,
+    summarizedCount: plan.stats.summarizedCount,
+    pendingCount: plan.stats.pendingCount,
+    estimatedTokens: plan.stats.estimatedTokens,
+    truncatedCount: plan.stats.truncatedCount,
+    cursorValid: plan.stats.cursorValid,
+    summaryChars: plan.summaryBlock?.content.length ?? 0,
   }
 }
 

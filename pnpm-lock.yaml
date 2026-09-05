@@ -26,6 +26,9 @@ importers:
       '@chatvein/agents':
         specifier: workspace:*
         version: link:../packages/chatvein/agents
+      '@chatvein/memory':
+        specifier: workspace:*
+        version: link:../packages/chatvein/memory
       '@chatvein/models':
         specifier: workspace:*
         version: link:../packages/chatvein/models
@@ -123,6 +126,9 @@ importers:
       '@langchain/langgraph':
         specifier: ^1.4.13
         version: 1.4.13(@langchain/core@1.2.9(openai@7.9.0(undici@8.10.2)(ws@8.21.3)(zod@4.5.4))(ws@8.21.3))(react@19.2.8)(zod@4.5.4)
+      '@langchain/langgraph-checkpoint':
+        specifier: ^1.1.5
+        version: 1.1.5(@langchain/core@1.2.9(openai@7.9.0(undici@8.10.2)(ws@8.21.3)(zod@4.5.4))(ws@8.21.3))
       es-toolkit:
         specifier: ^1.52.0
         version: 1.52.0
@@ -306,9 +312,15 @@ importers:
       '@chatvein/common':
         specifier: workspace:*
         version: link:../common
+      '@chatvein/context':
+        specifier: workspace:*
+        version: link:../context
       '@chatvein/observability':
         specifier: workspace:*
         version: link:../observability
+      '@langchain/core':
+        specifier: ^1.2.9
+        version: 1.2.9(openai@7.9.0(undici@8.10.2)(ws@8.21.3)(zod@4.5.4))(ws@8.21.3)
     devDependencies:
       '@types/node':
         specifier: ^24.0.0

@@ -20,6 +20,7 @@
 | [11-L3 ReAct 自适应循环](./11-L3-ReAct自适应循环推理层) | 核心执行层：policy→ReAct/StateGraph；trivial 谁答、子图预置、人机/子 Agent 演进 | CP0 基线 ✅；L3-1+ 演进 |
 | [12-Agent 工具层](./12-Agent工具层) | 七大品类；MCP filesystem 唯一本地文件源；`resolveChatTools` × policy | L3-1 T0 ✅ |
 | [13-Prompt / MCP / Tool 挂载](./13-Prompt-MCP-Tool挂载) | **现状地图**：system/L2 prompt、MCP servers、StructuredTool 挂到哪 | 与 11/12 配套 |
+| [14-短期记忆方案](./14-短期记忆方案) | **已落地**：近因窗口 + 滚动摘要 + token 预算；缓存友好布局；弱模型摘要与抽取式降级 | CP2 前置（先行） |
 
 > **LangGraph 分工**：不自研 Agent 循环。Forge 编码 = `orchestrator` + `StateGraph`；普通对话 = `agents` + `createReactAgent`。见 [02](./02-agent循环方案) §8、[phase1/03](../phase1/03-开发计划书.md) §1.1。
 >
