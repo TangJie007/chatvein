@@ -188,6 +188,8 @@ export interface ChatMessage {
   content: string
   createdAt: number
   usage?: TokenUsage
+  /** 本轮生成耗时（ms）；仅 assistant */
+  latencyMs?: number
   /** 助手回复失败占位；可触发重试 */
   failed?: boolean
 }

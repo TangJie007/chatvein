@@ -11,7 +11,7 @@ import {
   isLlmDebugLogEnabled,
   safeJsonStringify,
 } from '@chatvein/models'
-import { resolveChatTools } from '@chatvein/tools'
+import { resolveChatTools, summarizeToolsForDebug } from '@chatvein/tools'
 import type { StructuredToolInterface } from '@chatvein/tools'
 import { randomUUID } from 'node:crypto'
 import { AgentService } from '../agent/agent.service'
@@ -27,6 +27,7 @@ import type {
   ChatSendResult,
   ChatStreamEvent,
   Conversation,
+  TokenUsage,
 } from './chat.types'
 
 @Injectable()
@@ -245,6 +246,7 @@ export class ChatService {
 
     const started = Date.now()
     let text: string
+    let usage: TokenUsage | undefined
     try {
       this.emitLlmDebug(emit, runId, conv.id, 'react:request', {
         model: {
@@ -261,6 +263,8 @@ export class ChatService {
         recursionLimit,
         toolsPolicy: toolPolicy,
         toolsBound: boundTools.map((t) => t.name),
+        /** 与真实 bind 对齐的工具描述 + JSON Schema（便于对照网关 tools 字段） */
+        tools: summarizeToolsForDebug(boundTools),
         route: {
           band: route.band,
           score: route.score,
@@ -278,11 +282,13 @@ export class ChatService {
         recursionLimit,
       })
       text = result.content.trim()
+      usage = result.usage
 
       this.emitLlmDebug(emit, runId, conv.id, 'react:response', {
         content: result.content,
         messageCount: result.messages.length,
         messages: result.messages,
+        usage: result.usage,
         latencyMs: Date.now() - started,
       })
     } catch (err) {
@@ -328,6 +334,8 @@ export class ChatService {
       latencyMs,
       model.model,
       route,
+      false,
+      usage,
     )
   }
 
@@ -485,6 +493,8 @@ export class ChatService {
         Date.now() - started,
         model.model,
         route,
+        false,
+        result.usage,
       )
     } catch (err) {
       emit?.({ type: 'thinking_done', runId, conversationId: conv.id })
@@ -592,12 +602,15 @@ export class ChatService {
     modelId: string,
     route: RouteDecision,
     failed = false,
+    usage?: TokenUsage,
   ): Promise<ChatSendResult> {
     const assistantMessage: ChatMessage = {
       id: randomUUID(),
       role: 'assistant',
       content: text,
       createdAt: Date.now(),
+      latencyMs,
+      ...(usage && usage.totalTokens > 0 ? { usage } : {}),
       ...(failed ? { failed: true } : {}),
     }
 
@@ -641,12 +654,15 @@ export class ChatService {
     modelId: string,
     route: RouteDecision,
     failed = false,
+    usage?: TokenUsage,
   ): Promise<ChatSendResult> {
     const assistantMessage: ChatMessage = {
       id: randomUUID(),
       role: 'assistant',
       content: text,
       createdAt: Date.now(),
+      latencyMs,
+      ...(usage && usage.totalTokens > 0 ? { usage } : {}),
       ...(failed ? { failed: true } : {}),
     }
     const next: Conversation = {

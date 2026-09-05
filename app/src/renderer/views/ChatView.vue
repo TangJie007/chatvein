@@ -71,16 +71,41 @@ function formatTime(ts: number): string {
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
 }
 
-function formatTokenLabel(m: { usage?: { promptTokens: number; completionTokens: number; totalTokens: number } }): string {
+function formatTokenLabel(m: {
+  usage?: { promptTokens: number; completionTokens: number; totalTokens: number }
+  latencyMs?: number
+}): string {
+  const parts: string[] = []
+  if (m.latencyMs != null && m.latencyMs > 0) {
+    parts.push(formatLatency(m.latencyMs))
+  }
   const u = m.usage
-  if (!u || u.totalTokens <= 0) return ''
-  return `${formatCount(u.totalTokens)} tok`
+  if (u && u.totalTokens > 0) {
+    parts.push(`${formatCount(u.totalTokens)} tok`)
+  }
+  return parts.join(' · ')
 }
 
-function formatTokenTitle(m: { usage?: { promptTokens: number; completionTokens: number; totalTokens: number } }): string {
+function formatTokenTitle(m: {
+  usage?: { promptTokens: number; completionTokens: number; totalTokens: number }
+  latencyMs?: number
+}): string {
+  const parts: string[] = []
+  if (m.latencyMs != null && m.latencyMs > 0) {
+    parts.push(`耗时 ${formatLatency(m.latencyMs)}`)
+  }
   const u = m.usage
-  if (!u) return ''
-  return `输入 ${formatCount(u.promptTokens)} · 输出 ${formatCount(u.completionTokens)} · 合计 ${formatCount(u.totalTokens)}`
+  if (u && u.totalTokens > 0) {
+    parts.push(
+      `输入 ${formatCount(u.promptTokens)} · 输出 ${formatCount(u.completionTokens)} · 合计 ${formatCount(u.totalTokens)}`,
+    )
+  }
+  return parts.join('\n')
+}
+
+function formatLatency(ms: number): string {
+  if (ms < 1000) return `${ms} ms`
+  return `${(ms / 1000).toFixed(ms < 10_000 ? 1 : 0)} s`
 }
 
 function formatCount(n: number): string {

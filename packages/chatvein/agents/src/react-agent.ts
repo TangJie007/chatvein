@@ -2,6 +2,8 @@ import type { BaseMessage } from '@langchain/core/messages'
 import { AIMessage, HumanMessage, SystemMessage } from '@langchain/core/messages'
 import type { LanguageModelLike } from '@langchain/core/language_models/base'
 import type { StructuredToolInterface } from '@langchain/core/tools'
+import type { TokenUsage } from '@chatvein/common'
+import { addTokenUsage, emptyTokenUsage } from '@chatvein/common'
 import { createAgent } from 'langchain'
 
 /** 单轮对话输入（最简 ReAct） */
@@ -19,6 +21,8 @@ export interface ReactChatResult {
   content: string
   /** 完整消息轨迹（含 ToolMessage） */
   messages: BaseMessage[]
+  /** 轨迹内各次模型调用的 token 合计（供应商不回传时为 0） */
+  usage: TokenUsage
 }
 
 export interface CreateReactChatAgentOptions {
@@ -71,6 +75,7 @@ export async function invokeReactChatAgent(
   return {
     content: extractFinalAssistantText(state.messages),
     messages: state.messages,
+    usage: aggregateTokenUsage(state.messages),
   }
 }
 
@@ -96,6 +101,52 @@ export function extractFinalAssistantText(messages: BaseMessage[]): string {
     if (text) return text
   }
   return ''
+}
+
+/** 汇总轨迹中 AIMessage 的 usage_metadata / response_metadata */
+export function aggregateTokenUsage(messages: BaseMessage[]): TokenUsage {
+  let total = emptyTokenUsage()
+  for (const m of messages) {
+    const one = tokenUsageFromMessage(m)
+    if (one) total = addTokenUsage(total, one)
+  }
+  return total
+}
+
+export function tokenUsageFromMessage(message: BaseMessage): TokenUsage | null {
+  if (!AIMessage.isInstance(message)) return null
+  const meta = message.usage_metadata
+  if (meta) {
+    const promptTokens = Number(meta.input_tokens) || 0
+    const completionTokens = Number(meta.output_tokens) || 0
+    const totalTokens = Number(meta.total_tokens) || promptTokens + completionTokens
+    if (promptTokens || completionTokens || totalTokens) {
+      return { promptTokens, completionTokens, totalTokens }
+    }
+  }
+  const rm = message.response_metadata as
+    | {
+        tokenUsage?: { promptTokens?: number; completionTokens?: number; totalTokens?: number }
+        usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number }
+      }
+    | undefined
+  if (rm?.tokenUsage) {
+    const promptTokens = Number(rm.tokenUsage.promptTokens) || 0
+    const completionTokens = Number(rm.tokenUsage.completionTokens) || 0
+    const totalTokens = Number(rm.tokenUsage.totalTokens) || promptTokens + completionTokens
+    if (promptTokens || completionTokens || totalTokens) {
+      return { promptTokens, completionTokens, totalTokens }
+    }
+  }
+  if (rm?.usage) {
+    const promptTokens = Number(rm.usage.prompt_tokens) || 0
+    const completionTokens = Number(rm.usage.completion_tokens) || 0
+    const totalTokens = Number(rm.usage.total_tokens) || promptTokens + completionTokens
+    if (promptTokens || completionTokens || totalTokens) {
+      return { promptTokens, completionTokens, totalTokens }
+    }
+  }
+  return null
 }
 
 function messageContentToString(content: unknown): string {

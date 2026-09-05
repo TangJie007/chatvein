@@ -11,6 +11,7 @@ export { TOOL_CATALOG, catalogById, catalogByCategory } from './catalog'
 export { resolveChatTools, defaultChatToolIds } from './resolve'
 export { resolveInWorkspace, truncateOutput, withTimeout } from './guards'
 export { wrapToolGuards, defineBuiltinTool } from './wrap'
+export { summarizeToolsForDebug } from './debug'
 
 export type {
   ToolCategory,

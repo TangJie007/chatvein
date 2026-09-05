@@ -10,6 +10,8 @@ export {
   createReactChatAgent,
   invokeReactChatAgent,
   extractFinalAssistantText,
+  aggregateTokenUsage,
+  tokenUsageFromMessage,
   type CreateReactChatAgentOptions,
   type ReactChatAgent,
   type ReactChatInput,

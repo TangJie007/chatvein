@@ -14,6 +14,8 @@ export interface ChatMessage {
   createdAt: number
   /** 仅 assistant 消息；部分供应商可能不回传 */
   usage?: TokenUsage
+  /** 本轮生成耗时（ms）；仅 assistant */
+  latencyMs?: number
   /** 助手回复失败占位；可触发重试，用户消息仍保留 */
   failed?: boolean
 }
