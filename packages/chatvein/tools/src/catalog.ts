@@ -57,32 +57,14 @@ export const TOOL_CATALOG: readonly ToolCatalogEntry[] = [
     requiresSecret: 'wolfram',
   },
 
-  // —— 3 本地文件 ——
+  // —— 3 本地文件（仅 MCP，无 builtin）——
   {
-    id: 'read_file',
+    id: 'mcp_filesystem',
     category: 'local_fs',
-    title: '读文件',
+    title: '工作区文件系统（MCP）',
     description:
-      '读取工作区内文本文件（builtin 后备）。有 workspace 时优先 MCP `filesystem__read_text_file`。',
-    source: 'builtin',
-    defaultEnabled: true,
-  },
-  {
-    id: 'list_dir',
-    category: 'local_fs',
-    title: '列目录',
-    description:
-      '列出工作区内目录（builtin 后备）。优先 MCP `filesystem__list_directory`。',
-    source: 'builtin',
-    defaultEnabled: true,
-  },
-  {
-    id: 'grep_search',
-    category: 'local_fs',
-    title: '文本检索',
-    description:
-      '工作区内内容检索（builtin 后备）。优先 MCP `filesystem__search_files`。',
-    source: 'builtin',
+      '经 @modelcontextprotocol/server-filesystem 提供读/写/列/搜等（工具名前缀 filesystem__*）；仅允许 workspaceRoot。',
+    source: 'mcp:@modelcontextprotocol/server-filesystem',
     defaultEnabled: true,
   },
 

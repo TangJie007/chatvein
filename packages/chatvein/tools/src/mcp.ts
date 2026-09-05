@@ -173,7 +173,7 @@ export function parseMcpServersJson(
   }
 }
 
-/** 是否已拉到 filesystem MCP 工具（用于决定是否跳过 builtin local_fs） */
+/** 是否已拉到 filesystem MCP 工具 */
 export function hasMcpFilesystemTools(tools: StructuredToolInterface[]): boolean {
   const prefix = `${MCP_FILESYSTEM_SERVER_NAME}__`
   return tools.some((t) => t.name.startsWith(prefix))

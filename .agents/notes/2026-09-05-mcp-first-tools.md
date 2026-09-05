@@ -9,8 +9,8 @@
 ## 决策
 
 - **外部能力优先 MCP**：`@chatvein/tools` 用 `@langchain/mcp-adapters` 的 `MultiServerMCPClient` 拉工具；`resolveChatTools({ mcpServers })` 合并结果，**同名时 MCP 覆盖 catalog**。
-- Chat 主进程通过 `CHATVEIN_MCP_SERVERS` JSON 注入额外 server；**有工作区时默认再挂 MCP filesystem**（见 [2026-09-05-mcp-filesystem-workspace.md](./2026-09-05-mcp-filesystem-workspace.md)）。
-- **本地差异化**：builtin 仅作 MCP filesystem 失败时的读/列/grep 后备；sqlite / `js_eval` / `fetch_url` 仍 builtin。
+- Chat 主进程通过 `CHATVEIN_MCP_SERVERS` JSON 注入额外 server；**有工作区时默认挂 MCP filesystem**（见 [2026-09-05-mcp-filesystem-workspace.md](./2026-09-05-mcp-filesystem-workspace.md)）。
+- **本地文件仅 MCP**：无 builtin 读/列/grep；`js_eval` / `fetch_url` / `sqlite_query` 仍可 builtin。
 - **删除** `@tools/modsearch` 及一切引用；不再以专用 CLI 包装包作为默认联网方案。
 - community 计算器/百科/DDG 等保留为无 MCP 时的过渡默认集。
 
@@ -32,6 +32,6 @@
 
 ## 影响
 
-- 收益：联网/第三方可热插拔；工作区 FS 走官方 MCP；去掉 modsearch 包依赖。
-- 代价：开箱联网仍可能依赖 community/DDG；FS 写能力需后续确认流。
+- 收益：联网/第三方可热插拔；工作区 FS 走官方 MCP 单轨。
+- 代价：开箱联网仍可能依赖 community/DDG；FS 依赖 MCP 子进程成功启动。
 - 后续：设置页持久化 MCP 配置；community 日落。

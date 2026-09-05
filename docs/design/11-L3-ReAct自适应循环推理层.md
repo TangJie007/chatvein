@@ -116,8 +116,9 @@ runChatTurn(input: L3RunInput): Promise<L3RunResult>
 | 循环 | `langchain.createAgent`（底层 LangGraph），**不自研 while** |
 | 调用 | `invokeReactChatAgent` + `recursionLimit` |
 | 步数 | `recursionLimit = max(1, route.policy.maxSteps)`；band 默认 simple=8 / standard=16 / complex=64（trivial=0） |
-| 工具 | `policy.tools=full` → `@chatvein/tools` `resolveChatTools`（∩ 角色白名单）；`none/unknown` → `[]` |
+| 工具 | `policy.tools=full` → `@chatvein/tools` `resolveChatTools`（∩ 角色白名单 + MCP）；`none/unknown` → `[]` |
 | 短答约束 | `systemPromptForRoute`：`band=trivial` / `tier=weak` 注入 |
+| 挂载地图 | 见 [13-Prompt-MCP-Tool挂载](./13-Prompt-MCP-Tool挂载.md) |
 | 本地短路 | 仅 L1 `greeting_only` / `self_intro`（在 app，非 L3） |
 | 子 Agent / 人机 / 多阶段图 | **未落地** |
 

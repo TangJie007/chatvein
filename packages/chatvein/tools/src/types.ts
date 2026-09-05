@@ -53,7 +53,7 @@ export interface ResolveChatToolsOptions {
   mcpServers?: Record<string, import('./mcp').McpServerConnection>
   /**
    * 是否在有 workspaceRoot 时自动挂 MCP filesystem（默认 true）。
-   * 设为 false 可只用 builtin local_fs / 自定义 mcpServers。
+   * 设为 false 则不注入 filesystem（本地文件能力为空，除非 mcpServers 自行配置）。
    */
   mcpFilesystem?: boolean
 }

@@ -21,6 +21,12 @@ describe('TOOL_CATALOG', () => {
       ]),
     )
   })
+
+  it('local_fs is MCP-only (no builtin read/list/grep)', () => {
+    const local = TOOL_CATALOG.filter((e) => e.category === 'local_fs')
+    expect(local.map((e) => e.id)).toEqual(['mcp_filesystem'])
+    expect(local[0]?.source).toMatch(/^mcp:/)
+  })
 })
 
 describe('resolveInWorkspace', () => {
@@ -35,7 +41,7 @@ describe('resolveChatTools', () => {
     expect(tools).toEqual([])
   })
 
-  it('binds calculator and local read when full + workspace (no MCP fs)', async () => {
+  it('binds calculator without builtin local_fs', async () => {
     const root = await mkdtemp(join(tmpdir(), 'chatvein-tools-'))
     await writeFile(join(root, 'hello.txt'), 'hello-tools', 'utf8')
     await mkdir(join(root, 'sub'))
@@ -43,16 +49,12 @@ describe('resolveChatTools', () => {
     const tools = await resolveChatTools({
       policy: 'full',
       workspaceRoot: root,
-      allowIds: ['calculator', 'read_file', 'list_dir', 'js_eval'],
-      /** 单测不拉真 MCP 子进程 */
+      allowIds: ['calculator', 'js_eval'],
       mcpFilesystem: false,
     })
     const names = tools.map((t) => t.name).sort()
-    expect(names).toEqual(['calculator', 'js_eval', 'list_dir', 'read_file'])
-
-    const read = tools.find((t) => t.name === 'read_file')!
-    const text = await read.invoke({ path: 'hello.txt' })
-    expect(text).toContain('hello-tools')
+    expect(names).toEqual(['calculator', 'js_eval'])
+    expect(names.some((n) => n === 'read_file' || n.startsWith('filesystem__'))).toBe(false)
 
     const calc = tools.find((t) => t.name === 'calculator')!
     const sum = await calc.invoke('2+3')

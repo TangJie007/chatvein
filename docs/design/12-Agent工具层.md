@@ -1,7 +1,7 @@
 # Agent 工具层（`@chatvein/tools`）
 
 > 版本：v0.3 ｜ 日期：2026-09-05  
-> **决策状态：一期落地（目录 + MCP filesystem 默认 + builtin 后备）**  
+> **决策状态：一期落地（目录 + MCP filesystem 唯一本地文件源）**  
 > 上位：[`01-核心骨架.md`](./01-核心骨架.md)、[`02-agent循环方案.md`](./02-agent循环方案.md)、[`07-沙箱方案.md`](./07-沙箱方案.md)、[`11-L3-ReAct自适应循环推理层.md`](./11-L3-ReAct自适应循环推理层.md)  
 > 实现：`packages/chatvein/tools`
 
@@ -24,27 +24,27 @@
 ```
 resolveChatTools({ workspaceRoot, mcpServers, mcpFilesystem? })
   ├─ withDefaultMcpFilesystem(workspaceRoot)  → server `filesystem`
-  ├─ loadMcpTools(mcpServers)                 ← 同名覆盖 catalog
-  ├─ catalog / community（过渡）
-  └─ builtin local_fs                         ← 仅当 MCP filesystem 未拉起时后备
+  ├─ loadMcpTools(mcpServers)
+  └─ catalog / community / 其它 builtin（计算、sqlite、fetch…）
        → createReactChatAgent({ tools })
 ```
 
 | 来源 | 用途 |
 |------|------|
-| **MCP `filesystem`** | 默认：`@modelcontextprotocol/server-filesystem`，args=`[workspaceRoot]` |
+| **MCP `filesystem`** | **唯一**本地文件能力：`@modelcontextprotocol/server-filesystem`，args=`[workspaceRoot]` |
 | **其它 MCP**（`CHATVEIN_MCP_SERVERS`） | 搜索、抓取、用户自带 server；可覆盖同名 `filesystem` |
-| **builtin** | MCP 失败时的读/列/grep；sqlite / `js_eval` / `fetch_url` |
+| **builtin** | `js_eval` / `fetch_url` / `sqlite_query`（非 local_fs） |
 | **community（过渡）** | calculator / wikipedia / duckduckgo 等 |
 
 ### 2.1 默认 MCP filesystem
 
-- 包：`@modelcontextprotocol/server-filesystem`（workspace 依赖，不靠每次 `npx` 拉网）
+- 包：`@modelcontextprotocol/server-filesystem`（workspace 依赖）
 - 启动：`process.execPath` + 包内 `dist/index.js` + `workspaceRoot`（Electron 设 `ELECTRON_RUN_AS_NODE=1`）
-- 工具名前缀：`filesystem__*`（如 `filesystem__read_text_file`、`filesystem__list_directory`、`filesystem__search_files`、`filesystem__write_file` …）
+- 工具名前缀：`filesystem__*`
+- 目录项：`mcp_filesystem`（白名单用）；**无** builtin `read_file` / `list_dir` / `grep_search`
 - 关闭：`resolveChatTools({ mcpFilesystem: false })` 或 env 覆盖 `filesystem` 连接
 
-**否决**：专用 CLI 包装包作默认联网；MCP filesystem **不带** workspace 根（越权）；自研 ReAct 循环。
+**否决**：专用 CLI 包装包作默认联网；MCP filesystem **不带** workspace 根；local_fs builtin 后备（干扰模型选型）。
 
 其它 MCP 示例：
 
@@ -59,7 +59,7 @@ CHATVEIN_MCP_SERVERS='{"brave":{"command":"npx","args":["-y","@modelcontextproto
 | 事实 | 我们的做法 |
 |------|------------|
 | `@langchain/community` **已 sunset** | 仅作残余过渡；新外部能力走 MCP |
-| 本地文件 | **MCP filesystem（限 workspace）**；builtin 作后备 |
+| 本地文件 | **仅 MCP filesystem（限 workspace）**；无 builtin 读/列/grep |
 
 ---
 
@@ -69,7 +69,7 @@ CHATVEIN_MCP_SERVERS='{"brave":{"command":"npx","args":["-y","@modelcontextproto
 |---------|------|--------------|---------------|
 | `search` | 搜索 / 联网检索 | `duckduckgo_search`（过渡） | Brave / SerpAPI；**优先 MCP** |
 | `compute` | 计算 & 代码执行 | `calculator`、`js_eval` | Wolfram；真 shell → sandbox |
-| `local_fs` | 本地文件 & 系统 | **MCP `filesystem__*`**；builtin 读/列/grep 后备 | write 已由 MCP 提供；shell → 沙箱 |
+| `local_fs` | 本地文件 & 系统 | **仅 MCP `filesystem__*`**（目录 id `mcp_filesystem`） | shell → 沙箱 |
 | `web` | 网页解析 & 爬虫 | `fetch_url` | **优先 MCP 读页** |
 | `news_finance` | 资讯 & 金融 | — | `google_trends` |
 | `database` | 数据库 & 查询 | `sqlite_query` | 远程（二期） |
@@ -119,7 +119,7 @@ RouteDecision.policy.tools = full
 
 | 阶段 | 内容 |
 |------|------|
-| **T0（今）** | 目录 + **默认 MCP filesystem（workspace）** + builtin 后备 + env 其它 MCP |
+| **T0（今）** | 目录 + **唯一 MCP filesystem（workspace）** + env 其它 MCP |
 | **T1** | MCP 设置页落盘；写操作与 `confirmWrites` 对齐 |
 | **T2** | 危险执行走 `SandboxProvider`；MCP 与沙箱 cwd 统一 |
 | **T3** | community 残余迁出 |
@@ -128,6 +128,7 @@ RouteDecision.policy.tools = full
 
 ## 8 相关链接
 
+- **挂载地图**：[13-Prompt-MCP-Tool挂载](./13-Prompt-MCP-Tool挂载.md)  
 - L3：[11-L3-ReAct自适应循环推理层](./11-L3-ReAct自适应循环推理层.md)  
 - 沙箱：[07-沙箱方案](./07-沙箱方案.md)  
 - 依赖：[../phase1/04-依赖选型.md](../phase1/04-依赖选型.md)  
