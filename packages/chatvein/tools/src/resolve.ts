@@ -6,7 +6,7 @@ import { createKnowledgeTools } from './categories/knowledge'
 import { createNewsFinanceTools } from './categories/news-finance'
 import { createSearchTools } from './categories/search'
 import { createWebTools } from './categories/web'
-import { loadMcpTools, withDefaultMcpFilesystem, withDefaultMcpOpenfile } from './mcp'
+import { loadMcpTools, withDefaultMcpFilesystem, withDefaultMcpModsearch, withDefaultMcpOpenfile } from './mcp'
 import type { ResolveChatToolsOptions, ToolCatalogEntry, ToolSecrets } from './types'
 
 function hasSecret(entry: ToolCatalogEntry, secrets?: ToolSecrets): boolean {
@@ -63,6 +63,8 @@ export async function resolveChatTools(
     options.mcpFilesystem !== false && selected.some((e) => e.id === 'mcp_filesystem')
   const wantOpen =
     options.mcpOpenfile !== false && selected.some((e) => e.id === 'mcp_openfile')
+  const wantModsearch =
+    options.mcpModsearch !== false && selected.some((e) => e.id === 'mcp_modsearch')
 
   let mcpServers = withDefaultMcpFilesystem(
     wantFs ? options.workspaceRoot : undefined,
@@ -74,6 +76,7 @@ export async function resolveChatTools(
     mcpServers,
     wantOpen,
   )
+  mcpServers = withDefaultMcpModsearch(mcpServers, wantModsearch)
 
   const mcpTools = mcpServers
     ? await loadMcpTools({

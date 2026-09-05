@@ -27,6 +27,12 @@ describe('TOOL_CATALOG', () => {
     expect(local.map((e) => e.id)).toEqual(['mcp_filesystem', 'mcp_openfile'])
     expect(local.every((e) => e.source.startsWith('mcp:'))).toBe(true)
   })
+
+  it('search prefers mcp_modsearch by default', () => {
+    const search = TOOL_CATALOG.filter((e) => e.category === 'search')
+    expect(search.some((e) => e.id === 'mcp_modsearch' && e.defaultEnabled)).toBe(true)
+    expect(search.find((e) => e.id === 'duckduckgo_search')?.defaultEnabled).toBe(false)
+  })
 })
 
 describe('resolveInWorkspace', () => {

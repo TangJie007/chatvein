@@ -43,6 +43,9 @@ export const MCP_FILESYSTEM_SERVER_NAME = 'filesystem'
 /** 默认 MCP openfile server 名（工具前缀 `openfile__*`） */
 export const MCP_OPENFILE_SERVER_NAME = 'openfile'
 
+/** 默认 MCP modsearch server 名（工具前缀 `modsearch__*`） */
+export const MCP_MODSEARCH_SERVER_NAME = 'modsearch'
+
 const requireFromHere = createRequire(
   typeof __filename !== 'undefined' ? __filename : fileURLToPath(import.meta.url),
 )
@@ -68,6 +71,14 @@ export function resolveMcpFilesystemServerEntry(): string {
  */
 export function resolveMcpOpenfileServerEntry(): string {
   const main = requireFromHere.resolve('@chatvein/mcp-openfile-sdk')
+  return join(dirname(main), 'cli.js')
+}
+
+/**
+ * 解析 `@chatvein/mcp-modsearch-sdk` CLI 入口（包内 dist/cli.js）。
+ */
+export function resolveMcpModsearchServerEntry(): string {
+  const main = requireFromHere.resolve('@chatvein/mcp-modsearch-sdk')
   return join(dirname(main), 'cli.js')
 }
 
@@ -100,6 +111,28 @@ export function createMcpOpenfileServer(workspaceRoot: string): McpServerConnect
     transport: 'stdio',
     command: process.execPath,
     args: [resolveMcpOpenfileServerEntry(), root],
+    env: electronRunAsNodeEnv(),
+  }
+}
+
+/**
+ * 挂 MCP modsearch（联网搜索 / 读页；搜索失败兜底 DuckDuckGo）。
+ */
+export function createMcpModsearchServer(options?: {
+  timeoutMs?: number
+  fallback?: boolean
+}): McpServerConnection {
+  const args = [resolveMcpModsearchServerEntry()]
+  if (options?.timeoutMs && options.timeoutMs > 0) {
+    args.push(`--timeout=${options.timeoutMs}`)
+  }
+  if (options?.fallback === false) {
+    args.push('--no-fallback')
+  }
+  return {
+    transport: 'stdio',
+    command: process.execPath,
+    args,
     env: electronRunAsNodeEnv(),
   }
 }
@@ -149,6 +182,21 @@ export function withDefaultMcpOpenfile(
   if (servers?.[MCP_OPENFILE_SERVER_NAME]) return servers
   return mergeMcpServers(
     { [MCP_OPENFILE_SERVER_NAME]: createMcpOpenfileServer(workspaceRoot) },
+    servers,
+  )
+}
+
+/**
+ * 默认注入 `modsearch`（不依赖 workspace；可用同名配置覆盖）。
+ */
+export function withDefaultMcpModsearch(
+  servers: Record<string, McpServerConnection> | undefined,
+  enabled = true,
+): Record<string, McpServerConnection> | undefined {
+  if (!enabled) return servers
+  if (servers?.[MCP_MODSEARCH_SERVER_NAME]) return servers
+  return mergeMcpServers(
+    { [MCP_MODSEARCH_SERVER_NAME]: createMcpModsearchServer() },
     servers,
   )
 }
@@ -229,5 +277,11 @@ export function hasMcpFilesystemTools(tools: StructuredToolInterface[]): boolean
 /** 是否已拉到 openfile MCP 工具 */
 export function hasMcpOpenfileTools(tools: StructuredToolInterface[]): boolean {
   const prefix = `${MCP_OPENFILE_SERVER_NAME}__`
+  return tools.some((t) => t.name.startsWith(prefix))
+}
+
+/** 是否已拉到 modsearch MCP 工具 */
+export function hasMcpModsearchTools(tools: StructuredToolInterface[]): boolean {
+  const prefix = `${MCP_MODSEARCH_SERVER_NAME}__`
   return tools.some((t) => t.name.startsWith(prefix))
 }

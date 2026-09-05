@@ -93,7 +93,7 @@ export class AgentStore {
       tint: 'violet',
       modelId: '',
       enabled: true,
-      tools: ['mcp_filesystem', 'mcp_openfile'],
+      tools: ['mcp_filesystem', 'mcp_openfile', 'mcp_modsearch'],
       skills: ['frontend-code-review'],
       knowledgeBases: [],
       systemPrompt:

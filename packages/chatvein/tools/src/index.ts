@@ -17,15 +17,20 @@ export {
   parseMcpServersJson,
   createMcpFilesystemServer,
   createMcpOpenfileServer,
+  createMcpModsearchServer,
   resolveMcpFilesystemServerEntry,
   resolveMcpOpenfileServerEntry,
+  resolveMcpModsearchServerEntry,
   mergeMcpServers,
   withDefaultMcpFilesystem,
   withDefaultMcpOpenfile,
+  withDefaultMcpModsearch,
   hasMcpFilesystemTools,
   hasMcpOpenfileTools,
+  hasMcpModsearchTools,
   MCP_FILESYSTEM_SERVER_NAME,
   MCP_OPENFILE_SERVER_NAME,
+  MCP_MODSEARCH_SERVER_NAME,
 } from './mcp'
 
 export type {

@@ -4,12 +4,22 @@ import type { ToolCatalogEntry } from './types'
 export const TOOL_CATALOG: readonly ToolCatalogEntry[] = [
   // —— 1 搜索 / 联网 ——
   {
+    id: 'mcp_modsearch',
+    category: 'search',
+    title: '联网搜索（ModSearch MCP）',
+    description:
+      '经 @chatvein/mcp-modsearch-sdk：优先 ModSearch 引擎链，搜索失败兜底 DuckDuckGo；工具前缀 modsearch__*（web_search / read_page）。',
+    source: 'mcp:@chatvein/mcp-modsearch-sdk',
+    defaultEnabled: true,
+  },
+  {
     id: 'duckduckgo_search',
     category: 'search',
     title: 'DuckDuckGo 搜索',
-    description: '轻量联网检索（无密钥）；优先用已配置的 MCP 搜索服务器。',
+    description:
+      '轻量联网检索（community）；默认关闭——优先用 mcp_modsearch（内置 DDG 兜底）。',
     source: '@langchain/community/tools/duckduckgo_search',
-    defaultEnabled: true,
+    defaultEnabled: false,
   },
   {
     id: 'brave_search',

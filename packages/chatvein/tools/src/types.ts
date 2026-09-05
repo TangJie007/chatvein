@@ -48,7 +48,7 @@ export interface ResolveChatToolsOptions {
    * MCP servers（优先源）。配置后与目录工具合并；同名时 MCP 覆盖 catalog。
    * 通常由 `CHATVEIN_MCP_SERVERS` 或设置页注入。
    * 有 `workspaceRoot` 且未关闭对应开关时，会自动注入
-   * filesystem / openfile（仅允许该根）。
+   * filesystem / openfile（仅允许该根）；`mcp_modsearch` 选中时注入 modsearch（不依赖 workspace）。
    */
   mcpServers?: Record<string, import('./mcp').McpServerConnection>
   /**
@@ -60,6 +60,10 @@ export interface ResolveChatToolsOptions {
    * 是否在有 workspaceRoot 时自动挂 MCP openfile（默认 true）。
    */
   mcpOpenfile?: boolean
+  /**
+   * 是否自动挂 MCP modsearch（默认 true；不依赖 workspace）。
+   */
+  mcpModsearch?: boolean
 }
 
 export type { StructuredToolInterface, ToolPolicy }

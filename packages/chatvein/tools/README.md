@@ -1,10 +1,8 @@
 # `@chatvein/tools`
 
-Agent 工具层：七大品类目录 + **MCP 优先**；本地文件经 MCP filesystem / openfile（无 builtin 读/列/grep）。
+Agent 工具层：七大品类目录 + **MCP 优先**；本地文件经 MCP filesystem / openfile；联网经 MCP modsearch。
 
-## 默认 workspace MCP
-
-有 `workspaceRoot` 且目录含对应项时自动注入：
+## 默认 MCP
 
 ```ts
 const tools = await resolveChatTools({
@@ -12,18 +10,18 @@ const tools = await resolveChatTools({
   workspaceRoot: 'D:/Chatvein/workspaces',
   mcpServers: parseMcpServersJson(process.env.CHATVEIN_MCP_SERVERS),
 })
-// → filesystem__read_text_file / list_directory / …
-// → openfile__open_folder / list_allowed_directories
+// → filesystem__* / openfile__* / modsearch__web_search / modsearch__read_page
 ```
 
 | 目录 id | server | 包 |
 | --- | --- | --- |
 | `mcp_filesystem` | `filesystem` | `@modelcontextprotocol/server-filesystem` |
 | `mcp_openfile` | `openfile` | `@chatvein/mcp-openfile-sdk` |
+| `mcp_modsearch` | `modsearch` | `@chatvein/mcp-modsearch-sdk`（ModSearch → DuckDuckGo 兜底） |
 
 ## 品类
 
-1. **search** — DuckDuckGo（过渡）；优先其它 MCP  
+1. **search** — **MCP modsearch**（默认）；community DDG 默认关  
 2. **compute** — Calculator、`js_eval`  
 3. **local_fs** — **仅 MCP**（`mcp_filesystem`、`mcp_openfile`）  
 4. **web** — `fetch_url`  

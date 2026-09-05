@@ -81,8 +81,8 @@
 ### 2.1 配置来源（合并顺序）
 
 ```
-withDefaultMcpFilesystem(...) → 再 withDefaultMcpOpenfile(...)
-  = { filesystem?, openfile? }  ∪  envServers
+withDefaultMcpFilesystem(...) → withDefaultMcpOpenfile(...) → withDefaultMcpModsearch(...)
+  = { filesystem?, openfile?, modsearch? }  ∪  envServers
     （后者同名覆盖前者）
 ```
 
@@ -90,22 +90,24 @@ withDefaultMcpFilesystem(...) → 再 withDefaultMcpOpenfile(...)
 |------|-----|------|
 | 自动 | `filesystem` | 有 `workspaceRoot` 且目录选中 `mcp_filesystem` 且未 `mcpFilesystem:false` |
 | 自动 | `openfile` | 有 `workspaceRoot` 且目录选中 `mcp_openfile` 且未 `mcpOpenfile:false` |
+| 自动 | `modsearch` | 目录选中 `mcp_modsearch` 且未 `mcpModsearch:false`（**不依赖** workspace） |
 | 环境变量 | `CHATVEIN_MCP_SERVERS` JSON | `parseMcpServersJson`；可覆盖同名 server |
 | （未落地） | 设置页 MCP UI | 现为 mock，未写入 `resolveChatTools` |
 
 ### 2.2 默认如何起进程
 
-`createMcpFilesystemServer(root)` / `createMcpOpenfileServer(root)`：
+`createMcpFilesystemServer(root)` / `createMcpOpenfileServer(root)` / `createMcpModsearchServer()`：
 
 - `command` = `process.execPath`
 - filesystem `args` = `[server-filesystem dist/index.js, workspaceRoot]`
 - openfile `args` = `[@chatvein/mcp-openfile-sdk dist/cli.js, workspaceRoot]`
+- modsearch `args` = `[@chatvein/mcp-modsearch-sdk dist/cli.js]`（可选 `--timeout=` / `--no-fallback`）
 - Electron：`ELECTRON_RUN_AS_NODE=1`
 
 ### 2.3 拉工具
 
 `loadMcpTools({ servers })` → `@langchain/mcp-adapters` `MultiServerMCPClient` → `getTools()`  
-工具名默认带前缀：`{server}__{tool}`（如 `filesystem__read_text_file`、`openfile__open_folder`）。
+工具名默认带前缀：`{server}__{tool}`（如 `filesystem__read_text_file`、`openfile__open_folder`、`modsearch__web_search`）。
 
 连接失败默认 `onConnectionError: 'ignore'`，不拖垮整轮 Chat；**无 builtin FS 后备**。
 

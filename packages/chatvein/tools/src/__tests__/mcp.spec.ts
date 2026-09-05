@@ -1,14 +1,18 @@
 import { describe, expect, it } from 'vitest'
 import {
   createMcpFilesystemServer,
+  createMcpModsearchServer,
   createMcpOpenfileServer,
   mergeMcpServers,
   parseMcpServersJson,
   resolveMcpFilesystemServerEntry,
+  resolveMcpModsearchServerEntry,
   resolveMcpOpenfileServerEntry,
   withDefaultMcpFilesystem,
+  withDefaultMcpModsearch,
   withDefaultMcpOpenfile,
   MCP_FILESYSTEM_SERVER_NAME,
+  MCP_MODSEARCH_SERVER_NAME,
   MCP_OPENFILE_SERVER_NAME,
 } from '../mcp'
 
@@ -110,5 +114,43 @@ describe('withDefaultMcpOpenfile', () => {
       [MCP_OPENFILE_SERVER_NAME]: custom,
     })
     expect(servers?.[MCP_OPENFILE_SERVER_NAME]).toEqual(custom)
+  })
+})
+
+describe('createMcpModsearchServer', () => {
+  it('points node at mcp-modsearch-sdk cli', () => {
+    const conn = createMcpModsearchServer()
+    expect(conn).toMatchObject({
+      transport: 'stdio',
+      command: process.execPath,
+    })
+    if (!('args' in conn) || !conn.args) throw new Error('expected args')
+    expect(conn.args[0]).toBe(resolveMcpModsearchServerEntry())
+    expect(conn.args[0]).toMatch(/modsearch[/\\]dist[/\\]cli\.js$/)
+  })
+
+  it('passes timeout and no-fallback flags', () => {
+    const conn = createMcpModsearchServer({ timeoutMs: 90_000, fallback: false })
+    if (!('args' in conn) || !conn.args) throw new Error('expected args')
+    expect(conn.args).toContain('--timeout=90000')
+    expect(conn.args).toContain('--no-fallback')
+  })
+})
+
+describe('withDefaultMcpModsearch', () => {
+  it('injects modsearch when missing', () => {
+    const servers = withDefaultMcpModsearch({
+      brave: { command: 'npx', args: ['-y', 'x'] },
+    })
+    expect(servers?.[MCP_MODSEARCH_SERVER_NAME]).toBeDefined()
+    expect(servers?.brave).toBeDefined()
+  })
+
+  it('does not override existing modsearch', () => {
+    const custom = { command: 'echo', args: ['noop'] }
+    const servers = withDefaultMcpModsearch({
+      [MCP_MODSEARCH_SERVER_NAME]: custom,
+    })
+    expect(servers?.[MCP_MODSEARCH_SERVER_NAME]).toEqual(custom)
   })
 })
