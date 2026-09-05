@@ -22,6 +22,7 @@ const emit = defineEmits<{
   'update:modelValue': [string]
   select: [Conversation]
   add: []
+  remove: [string]
 }>()
 
 const query = ref('')
@@ -31,7 +32,7 @@ const filtered = computed(() =>
   props.conversations.filter((c) => {
     if (!q.value) return true
     const last = c.messages[c.messages.length - 1]?.content ?? ''
-    return [c.title, last].some((s) => s.toLowerCase().includes(q.value))
+    return [c.title, last, c.slug].some((s) => s.toLowerCase().includes(q.value))
   }),
 )
 
@@ -59,6 +60,11 @@ function formatTime(ts: number): string {
 function pick(c: Conversation) {
   emit('update:modelValue', c.id)
   emit('select', c)
+}
+
+function onDelete(e: Event, id: string) {
+  e.stopPropagation()
+  emit('remove', id)
 }
 </script>
 
@@ -97,6 +103,15 @@ function pick(c: Conversation) {
           <span class="whitespace-nowrap font-mono text-[10.5px] font-medium text-[var(--color-ink-3)]">
             {{ formatTime(c.updatedAt) }}
           </span>
+          <button
+            type="button"
+            class="mt-0.5 grid h-5 w-5 place-items-center rounded-md border-0 bg-transparent text-[var(--color-ink-3)] transition-colors hover:bg-[var(--color-hover)] hover:text-[var(--color-danger)]"
+            aria-label="删除对话"
+            title="删除"
+            @click="onDelete($event, c.id)"
+          >
+            <AppIcon name="x" :size="11" :stroke-width="2.4" />
+          </button>
         </template>
       </ListRow>
 
@@ -104,7 +119,7 @@ function pick(c: Conversation) {
         v-if="!filtered.length"
         class="px-2 py-10 text-center text-xs text-[var(--color-ink-3)]"
       >
-        {{ conversations.length ? '无匹配会话' : '点击「+」开始新对话' }}
+        {{ conversations.length ? '无匹配会话' : '暂无对话，点击「+」新建' }}
       </div>
     </template>
 
@@ -113,7 +128,7 @@ function pick(c: Conversation) {
         <template #icon>
           <AppIcon name="chat" :size="12" :stroke-width="2.2" />
         </template>
-        新会话默认使用「主对话」Agent 及其绑定模型。请先在模型选型中配置 Key。
+        新建会话会在工作区 / 运行目录下创建带时间戳的子目录；会话索引进 SQLite，消息落在工作区。
       </HintCard>
     </template>
   </ListPane>

@@ -126,8 +126,18 @@ function onSelect(c: Conversation) {
 async function onAdd() {
   const created = await chat.create({ agentId: mainAgent.value?.id })
   setCrumbItem(created.title)
-  status.value = '已新建对话'
+  status.value = `已新建 · ${created.slug}`
   await scrollBottom()
+}
+
+async function onRemove(id: string) {
+  const target = chat.conversations.find((c) => c.id === id)
+  if (!target) return
+  const ok = window.confirm(`删除对话「${target.title}」？\n将同时移除工作区与沙箱目录。`)
+  if (!ok) return
+  await chat.remove(id)
+  status.value = '已删除对话'
+  setCrumbItem(chat.current?.title || '对话')
 }
 
 async function onSend(text: string) {
@@ -185,9 +195,8 @@ onMounted(async () => {
     models.loaded ? Promise.resolve() : models.refresh(),
     chat.loaded ? Promise.resolve() : chat.refresh(),
   ])
-  if (!chat.conversations.length) {
-    await chat.create({ agentId: mainAgent.value?.id })
-  } else if (!chat.currentId) {
+  // 新装/空库：列表保持为空，由用户点「+」创建；不自动建会话
+  if (chat.conversations.length && !chat.currentId) {
     await chat.select(chat.conversations[0].id)
   }
   const cur = chat.current
@@ -206,6 +215,7 @@ onMounted(async () => {
     :agent-tint="agentTint"
     @select="onSelect"
     @add="onAdd"
+    @remove="onRemove"
   />
 
   <main
@@ -282,10 +292,15 @@ onMounted(async () => {
           >
             <AppIcon name="chat" :size="22" />
           </div>
-          <div class="font-serif text-lg text-[var(--color-ink-1)]">开始对话</div>
+          <div class="font-serif text-lg text-[var(--color-ink-1)]">
+            {{ chat.current ? '开始对话' : '暂无对话' }}
+          </div>
           <p class="max-w-sm text-xs leading-relaxed text-[var(--color-ink-3)]">
-            消息将发送给「{{ activeAgent?.name || '主对话 Agent' }}」。
-            <template v-if="!activeModel">请先在 Agents 中为该角色绑定模型并填写 API Key。</template>
+            <template v-if="!chat.current">点击左侧「+」新建会话；将创建带时间戳的工作区与沙箱目录。</template>
+            <template v-else>
+              消息将发送给「{{ activeAgent?.name || '主对话 Agent' }}」。
+              <template v-if="!activeModel">请先在 Agents 中为该角色绑定模型并填写 API Key。</template>
+            </template>
           </p>
         </div>
 

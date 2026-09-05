@@ -16,6 +16,8 @@ import {
 import { resolveChatTools, summarizeToolsForDebug, parseMcpServersJson } from '@chatvein/tools'
 import type { StructuredToolInterface } from '@chatvein/tools'
 import { randomUUID } from 'node:crypto'
+import { promises as fs } from 'node:fs'
+import { join } from 'node:path'
 import { AgentService } from '../agent/agent.service'
 import { MAIN_AGENT_ID } from '../agent/agent.types'
 import type { AgentConfig } from '../agent/agent.types'
@@ -23,6 +25,7 @@ import { ModelService } from '../model/model.service'
 import type { ModelConfig } from '../model/model.types'
 import { SettingsService } from '../settings/settings.service'
 import { ChatStore } from './chat.store'
+import { makeConversationSlug } from './session-paths'
 import type {
   ChatMessage,
   ChatSendInput,
@@ -51,42 +54,51 @@ export class ChatService {
   private l2BoundModelId: string | null = null
 
   async list(): Promise<Conversation[]> {
-    const data = await this.store.load()
-    return [...data.conversations].sort((a, b) => b.updatedAt - a.updatedAt)
+    return this.store.list()
   }
 
   async get(id: string): Promise<Conversation> {
-    const data = await this.store.load()
-    const conv = data.conversations.find((c) => c.id === id)
+    const conv = await this.store.get(id)
     if (!conv) throw new NotFoundException(`conversation:${id}`)
     return conv
   }
 
   async create(input?: { title?: string; agentId?: string }): Promise<Conversation> {
-    const data = await this.store.load()
     const now = Date.now()
     const agentId = input?.agentId || MAIN_AGENT_ID
     await this.agents.get(agentId)
+
+    const settings = await this.settings.get()
+    const slug = makeConversationSlug(now)
+    const workspacePath = join(settings.effectiveWorkspaceRoot, slug)
+    const sandboxPath = join(settings.effectiveRunsRoot, slug)
+    await fs.mkdir(workspacePath, { recursive: true })
+    await fs.mkdir(join(sandboxPath, 'workspace'), { recursive: true })
+    await fs.mkdir(join(workspacePath, 'scripts'), { recursive: true })
+
     const conv: Conversation = {
       id: randomUUID(),
       title: input?.title?.trim() || '新对话',
       agentId,
+      workspacePath,
+      sandboxPath,
+      slug,
       messages: [],
       createdAt: now,
       updatedAt: now,
     }
-    data.conversations.unshift(conv)
-    await this.store.save(data)
-    return conv
+    return this.store.insert(conv)
   }
 
   async remove(id: string): Promise<{ ok: true }> {
-    const data = await this.store.load()
-    const idx = data.conversations.findIndex((c) => c.id === id)
-    if (idx === -1) throw new NotFoundException(`conversation:${id}`)
-    data.conversations.splice(idx, 1)
+    const removed = await this.store.remove(id)
+    if (!removed) throw new NotFoundException(`conversation:${id}`)
     this.lastBandByConv.delete(id)
-    await this.store.save(data)
+    // 尽力清理会话目录（失败不阻断删除）
+    await Promise.allSettled([
+      fs.rm(removed.workspacePath, { recursive: true, force: true }),
+      fs.rm(removed.sandboxPath, { recursive: true, force: true }),
+    ])
     return { ok: true }
   }
 
@@ -101,10 +113,8 @@ export class ChatService {
     const content = (input.content || '').trim()
     if (!content) throw new ValidationException('消息不能为空', [])
 
-    const data = await this.store.load()
-    const idx = data.conversations.findIndex((c) => c.id === input.conversationId)
-    if (idx === -1) throw new NotFoundException(`conversation:${input.conversationId}`)
-    const conv = data.conversations[idx]
+    const conv = await this.store.get(input.conversationId)
+    if (!conv) throw new NotFoundException(`conversation:${input.conversationId}`)
 
     const agentId = input.agentId || conv.agentId || MAIN_AGENT_ID
     const agent = await this.agents.get(agentId)
@@ -172,13 +182,13 @@ export class ChatService {
       const cmd = String(route.terminal.payload?.slashCmd ?? '')
       const text = `已识别命令 /${cmd}（本地处理占位；尚未绑定具体动作）。`
       emit?.({ type: 'thinking_done', runId, conversationId: conv.id })
-      return this.persistAssistant(data, idx, conv, agentId, userMessage, text, 0, model.model, route)
+      return this.persistAssistant(conv, agentId, userMessage, text, 0, model.model, route)
     }
 
     if (route.terminal?.kind === 'empty') {
       const text = '（空消息，已忽略）'
       emit?.({ type: 'thinking_done', runId, conversationId: conv.id })
-      return this.persistAssistant(data, idx, conv, agentId, userMessage, text, 0, model.model, route)
+      return this.persistAssistant(conv, agentId, userMessage, text, 0, model.model, route)
     }
 
     // —— 吃满 L1 policy（开发验证）——
@@ -217,7 +227,7 @@ export class ChatService {
         localReply: text,
       })
       emit?.({ type: 'thinking_done', runId, conversationId: conv.id })
-      return this.persistAssistant(data, idx, conv, agentId, userMessage, text, 0, model.model, route)
+      return this.persistAssistant(conv, agentId, userMessage, text, 0, model.model, route)
     }
 
     const recursionLimit = Math.max(1, maxSteps)
@@ -228,7 +238,7 @@ export class ChatService {
       maxTokens: model.maxTokens > 0 ? model.maxTokens : undefined,
     })
 
-    const boundTools = await this.resolveBoundTools(agent, toolPolicy)
+    const boundTools = await this.resolveBoundTools(agent, toolPolicy, conv.workspacePath)
     if (boundTools.length > 0) {
       emit?.({
         type: 'thinking_delta',
@@ -294,8 +304,6 @@ export class ChatService {
     } catch (err) {
       emit?.({ type: 'thinking_done', runId, conversationId: conv.id })
       return this.persistAssistant(
-        data,
-        idx,
         conv,
         agentId,
         userMessage,
@@ -311,8 +319,6 @@ export class ChatService {
 
     if (!text) {
       return this.persistAssistant(
-        data,
-        idx,
         conv,
         agentId,
         userMessage,
@@ -325,8 +331,6 @@ export class ChatService {
     }
 
     return this.persistAssistant(
-      data,
-      idx,
       conv,
       agentId,
       userMessage,
@@ -349,10 +353,8 @@ export class ChatService {
     input: { conversationId: string; failedMessageId: string },
     emit?: (evt: ChatStreamEvent) => void,
   ): Promise<ChatSendResult> {
-    const data = await this.store.load()
-    const idx = data.conversations.findIndex((c) => c.id === input.conversationId)
-    if (idx === -1) throw new NotFoundException(`conversation:${input.conversationId}`)
-    let conv = data.conversations[idx]!
+    let conv = await this.store.get(input.conversationId)
+    if (!conv) throw new NotFoundException(`conversation:${input.conversationId}`)
 
     const failIdx = conv.messages.findIndex((m) => m.id === input.failedMessageId)
     if (failIdx < 0) throw new NotFoundException(`message:${input.failedMessageId}`)
@@ -366,23 +368,19 @@ export class ChatService {
     if (userIdx < 0) throw new ValidationException('找不到对应的用户消息', [])
     const userMessage = conv.messages[userIdx]!
 
-    // 去掉失败气泡（及误跟在后面的内容）
     conv = {
       ...conv,
       messages: conv.messages.slice(0, failIdx),
       updatedAt: Date.now(),
     }
-    data.conversations[idx] = conv
-    await this.store.save(data)
+    await this.store.updateMeta(conv.id, { updatedAt: conv.updatedAt })
+    await this.store.replaceMessages(conv.workspacePath, conv.messages)
 
-    // 复用 send：以已落库用户消息内容再跑一轮（会话末尾已是该用户消息）
-    return this.regenerateAfterUser(data, idx, conv, userMessage, emit)
+    return this.regenerateAfterUser(conv, userMessage, emit)
   }
 
   /** 会话末尾已是 userMessage 时，只生成助手回复并追加 */
   private async regenerateAfterUser(
-    data: Awaited<ReturnType<ChatStore['load']>>,
-    idx: number,
     conv: Conversation,
     userMessage: ChatMessage,
     emit?: (evt: ChatStreamEvent) => void,
@@ -444,7 +442,7 @@ export class ChatService {
     if (allowLocalShortCircuit) {
       const text = localReplyForRoute(route, content)
       emit?.({ type: 'thinking_done', runId, conversationId: conv.id })
-      return this.appendAssistant(data, idx, conv, agentId, userMessage, text, 0, model.model, route)
+      return this.appendAssistant(conv, agentId, userMessage, text, 0, model.model, route)
     }
 
     const recursionLimit = Math.max(1, maxSteps)
@@ -453,7 +451,7 @@ export class ChatService {
       temperature: temperatureForTier(route.policy.modelTier, model.temperature),
       maxTokens: model.maxTokens > 0 ? model.maxTokens : undefined,
     })
-    const boundTools = await this.resolveBoundTools(agent, route.policy.tools)
+    const boundTools = await this.resolveBoundTools(agent, route.policy.tools, conv.workspacePath)
     const reactAgent = createReactChatAgent({
       model: llm,
       tools: boundTools,
@@ -472,8 +470,6 @@ export class ChatService {
       emit?.({ type: 'thinking_done', runId, conversationId: conv.id })
       if (!text) {
         return this.appendAssistant(
-          data,
-          idx,
           conv,
           agentId,
           userMessage,
@@ -485,8 +481,6 @@ export class ChatService {
         )
       }
       return this.appendAssistant(
-        data,
-        idx,
         conv,
         agentId,
         userMessage,
@@ -500,8 +494,6 @@ export class ChatService {
     } catch (err) {
       emit?.({ type: 'thinking_done', runId, conversationId: conv.id })
       return this.appendAssistant(
-        data,
-        idx,
         conv,
         agentId,
         userMessage,
@@ -524,19 +516,19 @@ export class ChatService {
   private async resolveBoundTools(
     agent: AgentConfig,
     toolPolicy: RouteDecision['policy']['tools'],
+    workspaceRoot?: string,
   ): Promise<StructuredToolInterface[]> {
     const settings = await this.settings.get()
     return resolveChatTools({
       policy: toolPolicy,
       allowIds: agent.tools.length > 0 ? agent.tools : 'all',
-      workspaceRoot: settings.effectiveWorkspaceRoot,
+      workspaceRoot: workspaceRoot?.trim() || settings.effectiveWorkspaceRoot,
       secrets: {
         serpApiKey: process.env.SERPAPI_API_KEY,
         braveApiKey: process.env.BRAVE_SEARCH_API_KEY,
         tavilyApiKey: process.env.TAVILY_API_KEY,
         wolframAppId: process.env.WOLFRAM_ALPHA_APPID,
       },
-      /** 额外 MCP；有 workspace 时自动挂 filesystem（env 可覆盖同名） */
       mcpServers: parseMcpServersJson(process.env.CHATVEIN_MCP_SERVERS),
     })
   }
@@ -630,8 +622,6 @@ export class ChatService {
   }
 
   private async persistAssistant(
-    data: Awaited<ReturnType<ChatStore['load']>>,
-    idx: number,
     conv: Conversation,
     agentId: string,
     userMessage: ChatMessage,
@@ -664,10 +654,12 @@ export class ChatService {
       messages: [...conv.messages, userMessage, assistantMessage],
       updatedAt: Date.now(),
     }
-    data.conversations[idx] = next
-    data.conversations.splice(idx, 1)
-    data.conversations.unshift(next)
-    await this.store.save(data)
+    await this.store.updateMeta(next.id, {
+      title: next.title,
+      agentId: next.agentId,
+      updatedAt: next.updatedAt,
+    })
+    await this.store.replaceMessages(next.workspacePath, next.messages)
 
     return {
       conversation: next,
@@ -682,8 +674,6 @@ export class ChatService {
 
   /** 用户消息已在会话中时只追加助手 */
   private async appendAssistant(
-    data: Awaited<ReturnType<ChatStore['load']>>,
-    idx: number,
     conv: Conversation,
     agentId: string,
     userMessage: ChatMessage,
@@ -709,10 +699,11 @@ export class ChatService {
       messages: [...conv.messages, assistantMessage],
       updatedAt: Date.now(),
     }
-    data.conversations[idx] = next
-    data.conversations.splice(idx, 1)
-    data.conversations.unshift(next)
-    await this.store.save(data)
+    await this.store.updateMeta(next.id, {
+      agentId: next.agentId,
+      updatedAt: next.updatedAt,
+    })
+    await this.store.replaceMessages(next.workspacePath, next.messages)
     return {
       conversation: next,
       userMessage,

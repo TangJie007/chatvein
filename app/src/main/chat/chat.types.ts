@@ -26,6 +26,12 @@ export interface Conversation {
   title: string
   /** 绑定的 Agent id，一期默认主对话 Agent */
   agentId: string
+  /** 本会话工作区绝对路径：settings.workspaceRoot / {slug} */
+  workspacePath: string
+  /** 本会话沙箱绝对路径：settings.runsRoot / {slug} */
+  sandboxPath: string
+  /** 目录名 slug（时间戳） */
+  slug: string
   messages: ChatMessage[]
   createdAt: number
   updatedAt: number

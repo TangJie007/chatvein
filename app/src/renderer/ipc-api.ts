@@ -198,6 +198,9 @@ export interface Conversation {
   id: string
   title: string
   agentId: string
+  workspacePath: string
+  sandboxPath: string
+  slug: string
   messages: ChatMessage[]
   createdAt: number
   updatedAt: number
