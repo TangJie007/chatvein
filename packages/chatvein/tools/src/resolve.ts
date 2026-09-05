@@ -7,6 +7,7 @@ import { createLocalFsTools } from './categories/local-fs'
 import { createNewsFinanceTools } from './categories/news-finance'
 import { createSearchTools } from './categories/search'
 import { createWebTools } from './categories/web'
+import { loadMcpTools } from './mcp'
 import type { ResolveChatToolsOptions, ToolCatalogEntry, ToolSecrets } from './types'
 
 function hasSecret(entry: ToolCatalogEntry, secrets?: ToolSecrets): boolean {
@@ -34,7 +35,7 @@ function needsWorkspace(id: string): boolean {
   )
 }
 
-/** 根据 policy / 白名单 / 密钥解析可绑定工具列表 */
+/** 根据 policy / 白名单 / 密钥 / MCP 解析可绑定工具列表 */
 export async function resolveChatTools(
   options: ResolveChatToolsOptions,
 ): Promise<StructuredToolInterface[]> {
@@ -56,8 +57,6 @@ export async function resolveChatTools(
   })
 
   const ids = new Set(selected.map((e) => e.id))
-  if (ids.size === 0) return []
-
   const common = {
     ids,
     secrets: options.secrets,
@@ -65,24 +64,46 @@ export async function resolveChatTools(
     maxOutputChars: options.maxOutputChars,
   }
 
-  const parts = await Promise.all([
-    createSearchTools(common),
-    createComputeTools(common),
-    createNewsFinanceTools(common),
-    createKnowledgeTools(common),
-  ])
+  const catalogParts =
+    ids.size === 0
+      ? ([] as StructuredToolInterface[])
+      : (
+          await Promise.all([
+            createSearchTools(common),
+            createComputeTools(common),
+            createNewsFinanceTools(common),
+            createKnowledgeTools(common),
+          ])
+        ).flat()
 
-  const syncParts: StructuredToolInterface[] = [
-    ...createWebTools(common),
-    ...(options.workspaceRoot
-      ? [
-          ...createLocalFsTools({ ...common, workspaceRoot: options.workspaceRoot }),
-          ...createDatabaseTools({ ...common, workspaceRoot: options.workspaceRoot }),
+  const syncParts: StructuredToolInterface[] =
+    ids.size === 0
+      ? []
+      : [
+          ...createWebTools(common),
+          ...(options.workspaceRoot
+            ? [
+                ...createLocalFsTools({ ...common, workspaceRoot: options.workspaceRoot }),
+                ...createDatabaseTools({ ...common, workspaceRoot: options.workspaceRoot }),
+              ]
+            : []),
         ]
-      : []),
-  ]
 
-  return [...parts.flat(), ...syncParts]
+  const catalogTools = [...catalogParts, ...syncParts]
+
+  const mcpTools = options.mcpServers
+    ? await loadMcpTools({
+        servers: options.mcpServers,
+        onConnectionError: 'ignore',
+        prefixToolNameWithServerName: true,
+      })
+    : []
+
+  // 同名时 MCP 覆盖目录工具（外部能力优先走 MCP）
+  const byName = new Map<string, StructuredToolInterface>()
+  for (const t of catalogTools) byName.set(t.name, t)
+  for (const t of mcpTools) byName.set(t.name, t)
+  return [...byName.values()]
 }
 
 /** 默认可跑工具 id（无密钥、可无 workspace 的子集说明见 catalog） */

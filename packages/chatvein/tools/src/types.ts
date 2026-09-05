@@ -44,6 +44,11 @@ export interface ResolveChatToolsOptions {
   secrets?: ToolSecrets
   timeoutMs?: number
   maxOutputChars?: number
+  /**
+   * MCP servers（优先源）。配置后与目录工具合并；同名时 MCP 覆盖 catalog。
+   * 通常由 `CHATVEIN_MCP_SERVERS` 或设置页注入。
+   */
+  mcpServers?: Record<string, import('./mcp').McpServerConnection>
 }
 
 export type { StructuredToolInterface, ToolPolicy }

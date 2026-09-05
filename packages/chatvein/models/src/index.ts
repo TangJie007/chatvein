@@ -31,5 +31,7 @@ export {
   maybeDevLlmCallbacks,
   setLlmDebugSink,
   getLlmDebugSink,
+  forwardToActiveLlmDebugSink,
+  summarizeMessagesForDebug,
   type LlmDebugSink,
 } from './dev-llm-callback'

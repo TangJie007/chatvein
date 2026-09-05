@@ -6,7 +6,14 @@ import {
   safeJsonStringify,
   toIpcSafePayload,
 } from '../llm-debug-log'
-import { maybeDevLlmCallbacks } from '../dev-llm-callback'
+import {
+  DevLlmLogCallbackHandler,
+  forwardToActiveLlmDebugSink,
+  maybeDevLlmCallbacks,
+  setLlmDebugSink,
+  summarizeMessagesForDebug,
+} from '../dev-llm-callback'
+import { AIMessage, HumanMessage } from '@langchain/core/messages'
 
 describe('llm-debug-log', () => {
   const prev = { ...process.env }
@@ -72,5 +79,62 @@ describe('llm-debug-log', () => {
     a.self = a
     expect(safeJsonStringify(a)).toContain('[Circular]')
     expect(toIpcSafePayload(a)).toEqual({ self: '[Circular]' })
+  })
+})
+
+describe('dev-llm-callback', () => {
+  afterEach(() => {
+    setLlmDebugSink(undefined)
+    vi.useRealTimers()
+  })
+
+  it('summarizeMessagesForDebug 抽出 role/content', () => {
+    const out = summarizeMessagesForDebug([
+      new HumanMessage('hi'),
+      new AIMessage({
+        content: 'yo',
+        tool_calls: [{ name: 'calc', args: { x: 1 }, id: '1', type: 'tool_call' }],
+      }),
+    ]) as Array<Record<string, unknown>>
+    expect(out[0]).toMatchObject({ role: 'human', content: 'hi' })
+    expect(out[1]).toMatchObject({ role: 'ai', content: 'yo' })
+    expect(out[1]!.tool_calls).toHaveLength(1)
+  })
+
+  it('setLlmDebugSink + forwardToActiveLlmDebugSink 转发', () => {
+    const entries: Array<{ source: string; payload: unknown }> = []
+    const clear = setLlmDebugSink((source, payload) => entries.push({ source, payload }))
+    forwardToActiveLlmDebugSink('langchain:request', { n: 1 })
+    expect(entries).toEqual([{ source: 'langchain:request', payload: { n: 1 } }])
+    clear()
+    forwardToActiveLlmDebugSink('langchain:request', { n: 2 })
+    expect(entries).toHaveLength(1)
+  })
+
+  it('DevLlmLogCallbackHandler 异步写出 request/response', async () => {
+    vi.useFakeTimers()
+    const entries: Array<{ source: string; payload: unknown }> = []
+    const handler = new DevLlmLogCallbackHandler((source, payload) =>
+      entries.push({ source, payload }),
+    )
+    handler.handleChatModelStart(
+      { id: ['ChatOpenAI'] } as never,
+      [[new HumanMessage('ping')]],
+      'run-1',
+    )
+    handler.handleLLMEnd(
+      {
+        generations: [[{ text: 'pong', message: new AIMessage('pong') }]],
+        llmOutput: { tokenUsage: { totalTokens: 3 } },
+      } as never,
+      'run-1',
+    )
+    await vi.runAllTimersAsync()
+    expect(entries.map((e) => e.source)).toEqual([
+      'langchain:request',
+      'langchain:response',
+    ])
+    expect(entries[0]!.payload).toMatchObject({ runId: 'run-1' })
+    expect(entries[1]!.payload).toMatchObject({ runId: 'run-1' })
   })
 })

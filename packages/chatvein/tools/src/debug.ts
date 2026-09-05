@@ -8,7 +8,7 @@ export function summarizeToolsForDebug(tools: StructuredToolInterface[]): Array<
   parameters?: unknown
 }> {
   return tools.map((t) => {
-    const schema = (t as { schema?: z.ZodType }).schema
+    const schema = (t as unknown as { schema?: z.ZodType }).schema
     let parameters: unknown
     if (schema) {
       try {

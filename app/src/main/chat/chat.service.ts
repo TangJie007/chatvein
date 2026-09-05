@@ -8,10 +8,12 @@ import {
 import type { ComplexityBand, RouteDecision } from '@chatvein/common'
 import {
   createLangChainChatModel,
+  forwardToActiveLlmDebugSink,
   isLlmDebugLogEnabled,
   safeJsonStringify,
+  setLlmDebugSink,
 } from '@chatvein/models'
-import { resolveChatTools, summarizeToolsForDebug } from '@chatvein/tools'
+import { resolveChatTools, summarizeToolsForDebug, parseMcpServersJson } from '@chatvein/tools'
 import type { StructuredToolInterface } from '@chatvein/tools'
 import { randomUUID } from 'node:crypto'
 import { AgentService } from '../agent/agent.service'
@@ -137,8 +139,10 @@ export class ChatService {
       ts: Date.now(),
     })
 
-    // L1 →（灰区）L2 结构化分类 → ReAct；L2 用弱模偏好，无分档表时回退当前 Agent 模型
-    const router = await this.routerWithL2(model)
+    const clearLlmDebug = this.beginRequestLlmDebug(emit, runId, conv.id)
+    try {
+      // L1 →（灰区）L2 结构化分类 → ReAct；L2 用弱模偏好，无分档表时回退当前 Agent 模型
+      const router = await this.routerWithL2(model)
     const route = await router.route({
       text: content,
       session: {
@@ -219,11 +223,7 @@ export class ChatService {
     const recursionLimit = Math.max(1, maxSteps)
     // 路由约束写入 system：L2/策略 trivial → 友好短答；weak → 简短不列清单
     const systemPrompt = systemPromptForRoute(agent.systemPrompt, route)
-    const llm = createLangChainChatModel({
-      id: model.id,
-      baseUrl: model.baseUrl,
-      apiKey: model.apiKey,
-      model: model.model,
+    const llm = this.createDebugAwareLlm(model, {
       temperature: temperatureForTier(route.policy.modelTier, model.temperature),
       maxTokens: model.maxTokens > 0 ? model.maxTokens : undefined,
     })
@@ -337,6 +337,9 @@ export class ChatService {
       false,
       usage,
     )
+    } finally {
+      clearLlmDebug?.()
+    }
   }
 
   /**
@@ -410,6 +413,8 @@ export class ChatService {
       ts: Date.now(),
     })
 
+    const clearLlmDebug = this.beginRequestLlmDebug(emit, runId, conv.id)
+    try {
     const router = await this.routerWithL2(model)
     const route = await router.route({
       text: content,
@@ -444,11 +449,7 @@ export class ChatService {
 
     const recursionLimit = Math.max(1, maxSteps)
     const systemPrompt = systemPromptForRoute(agent.systemPrompt, route)
-    const llm = createLangChainChatModel({
-      id: model.id,
-      baseUrl: model.baseUrl,
-      apiKey: model.apiKey,
-      model: model.model,
+    const llm = this.createDebugAwareLlm(model, {
       temperature: temperatureForTier(route.policy.modelTier, model.temperature),
       maxTokens: model.maxTokens > 0 ? model.maxTokens : undefined,
     })
@@ -511,6 +512,9 @@ export class ChatService {
         true,
       )
     }
+    } finally {
+      clearLlmDebug?.()
+    }
   }
 
   /**
@@ -532,6 +536,8 @@ export class ChatService {
         tavilyApiKey: process.env.TAVILY_API_KEY,
         wolframAppId: process.env.WOLFRAM_ALPHA_APPID,
       },
+      /** 外部能力优先 MCP：`CHATVEIN_MCP_SERVERS` JSON，与 MultiServerMCPClient 同形 */
+      mcpServers: parseMcpServersJson(process.env.CHATVEIN_MCP_SERVERS),
     })
   }
 
@@ -544,17 +550,49 @@ export class ChatService {
     const router = getDefaultHeuristicRouter()
     if (this.l2BoundModelId === l2Model.id) return router
 
-    const llm = createLangChainChatModel({
-      id: l2Model.id,
-      baseUrl: l2Model.baseUrl,
-      apiKey: l2Model.apiKey,
-      model: l2Model.model,
+    const llm = this.createDebugAwareLlm(l2Model, {
       temperature: 0,
       maxTokens: 256,
     })
     router.setL2(createL2Classifier({ model: llm, timeoutMs: 12_000 }))
     this.l2BoundModelId = l2Model.id
     return router
+  }
+
+  /**
+   * 本轮请求期内挂上 LLM debug sink；L2 / ReAct 共用。
+   * 返回清理函数（finally 调用）。
+   */
+  private beginRequestLlmDebug(
+    emit: ((evt: ChatStreamEvent) => void) | undefined,
+    runId: string,
+    conversationId: string,
+  ): (() => void) | undefined {
+    if (!isLlmDebugLogEnabled() || !emit) return undefined
+    return setLlmDebugSink((source, payload) => {
+      this.emitLlmDebug(emit, runId, conversationId, source, payload)
+    })
+  }
+
+  /**
+   * 始终挂 forwardToActiveLlmDebugSink：无 activeSink 时为空操作。
+   * L2 模型会缓存，避免「首次未开 debug → 之后开了仍无逐步日志」。
+   */
+  private createDebugAwareLlm(
+    model: ModelConfig,
+    opts: { temperature?: number; maxTokens?: number },
+  ) {
+    return createLangChainChatModel(
+      {
+        id: model.id,
+        baseUrl: model.baseUrl,
+        apiKey: model.apiKey,
+        model: model.model,
+        temperature: opts.temperature ?? model.temperature,
+        maxTokens: opts.maxTokens,
+      },
+      { onLlmDebug: forwardToActiveLlmDebugSink },
+    )
   }
 
   private async resolveL2Model(agentModel: ModelConfig): Promise<ModelConfig> {
@@ -569,7 +607,7 @@ export class ChatService {
     return weakish ?? agentModel
   }
 
-  /** 开发环境：推渲染进程 DevTools（不挂 LangChain 回调） */
+  /** 开发环境：经 IPC 推渲染进程 DevTools（`[chatvein:llm:…]`） */
   private emitLlmDebug(
     emit: ((evt: ChatStreamEvent) => void) | undefined,
     runId: string,

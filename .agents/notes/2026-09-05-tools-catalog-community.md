@@ -1,6 +1,6 @@
 # 决策笔记：Agent 工具目录用 community + builtin
 
-状态：已落地
+状态：已落地（**外部接入策略已被 [MCP 优先](./2026-09-05-mcp-first-tools.md) 取代；本文仅保留目录 + builtin jail 依据**）
 
 ## 背景
 

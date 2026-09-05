@@ -30,9 +30,18 @@
     "@chatvein/common": "workspace:*",
     "@langchain/community": "^1.1.29",
     "@langchain/core": "^1.2.9",
+    "@langchain/mcp-adapters": "^1.1.4",
     "duck-duck-scrape": "^2.2.7",
     "es-toolkit": "^1.52.0",
     "zod": "^4.5.4"
+  },
+  "peerDependencies": {
+    "@langchain/langgraph": "^1.4.10"
+  },
+  "peerDependenciesMeta": {
+    "@langchain/langgraph": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@types/node": "^24.0.0",

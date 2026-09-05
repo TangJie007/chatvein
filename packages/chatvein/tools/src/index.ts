@@ -1,8 +1,8 @@
 /**
  * @chatvein/tools
  *
- * Agent tool layer: catalog by category, LangChain community + builtin tools,
- * policy intersection, timeout / output truncation, workspace path jail.
+ * Agent tool layer: catalog + MCP-first external tools + builtin jail,
+ * policy intersection, timeout / output truncation.
  */
 
 export const CHATVEIN_TOOLS_VERSION = '0.1.0'
@@ -12,6 +12,7 @@ export { resolveChatTools, defaultChatToolIds } from './resolve'
 export { resolveInWorkspace, truncateOutput, withTimeout } from './guards'
 export { wrapToolGuards, defineBuiltinTool } from './wrap'
 export { summarizeToolsForDebug } from './debug'
+export { loadMcpTools, parseMcpServersJson } from './mcp'
 
 export type {
   ToolCategory,
@@ -22,3 +23,4 @@ export type {
   StructuredToolInterface,
   ToolPolicy,
 } from './types'
+export type { McpServerConnection, LoadMcpToolsOptions } from './mcp'
