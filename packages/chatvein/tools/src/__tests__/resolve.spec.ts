@@ -35,7 +35,7 @@ describe('resolveChatTools', () => {
     expect(tools).toEqual([])
   })
 
-  it('binds calculator and local read when full + workspace', async () => {
+  it('binds calculator and local read when full + workspace (no MCP fs)', async () => {
     const root = await mkdtemp(join(tmpdir(), 'chatvein-tools-'))
     await writeFile(join(root, 'hello.txt'), 'hello-tools', 'utf8')
     await mkdir(join(root, 'sub'))
@@ -44,6 +44,8 @@ describe('resolveChatTools', () => {
       policy: 'full',
       workspaceRoot: root,
       allowIds: ['calculator', 'read_file', 'list_dir', 'js_eval'],
+      /** 单测不拉真 MCP 子进程 */
+      mcpFilesystem: false,
     })
     const names = tools.map((t) => t.name).sort()
     expect(names).toEqual(['calculator', 'js_eval', 'list_dir', 'read_file'])

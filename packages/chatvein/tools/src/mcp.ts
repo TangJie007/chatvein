@@ -1,3 +1,6 @@
+import { createRequire } from 'node:module'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import type { StructuredToolInterface } from '@langchain/core/tools'
 
 /**
@@ -32,6 +35,75 @@ export interface LoadMcpToolsOptions {
   onConnectionError?: 'throw' | 'ignore'
   /** 工具名是否加 `{server}__` 前缀，多 server 时建议 true */
   prefixToolNameWithServerName?: boolean
+}
+
+/** 默认 MCP filesystem server 名（工具前缀 `filesystem__*`） */
+export const MCP_FILESYSTEM_SERVER_NAME = 'filesystem'
+
+const requireFromHere = createRequire(
+  typeof __filename !== 'undefined' ? __filename : fileURLToPath(import.meta.url),
+)
+
+/**
+ * 解析 `@modelcontextprotocol/server-filesystem` 入口（包内 dist，不依赖 PATH/`npx`）。
+ */
+export function resolveMcpFilesystemServerEntry(): string {
+  const pkgJson = requireFromHere.resolve('@modelcontextprotocol/server-filesystem/package.json')
+  return join(dirname(pkgJson), 'dist', 'index.js')
+}
+
+/**
+ * 把工作区根挂成 MCP filesystem server（CLI args = 唯一允许目录 → 对齐沙箱 jail）。
+ * Electron 下用 `process.execPath` + `ELECTRON_RUN_AS_NODE`。
+ */
+export function createMcpFilesystemServer(workspaceRoot: string): McpServerConnection {
+  const root = workspaceRoot.trim()
+  if (!root) {
+    throw new Error('createMcpFilesystemServer: workspaceRoot 不能为空')
+  }
+  const entry = resolveMcpFilesystemServerEntry()
+  const env: Record<string, string> = { ...process.env } as Record<string, string>
+  if (process.versions.electron) {
+    env.ELECTRON_RUN_AS_NODE = '1'
+  }
+  return {
+    transport: 'stdio',
+    command: process.execPath,
+    args: [entry, root],
+    env,
+  }
+}
+
+/**
+ * 合并多份 mcpServers；后者覆盖同名 server。
+ * `undefined` / 空对象跳过。
+ */
+export function mergeMcpServers(
+  ...parts: Array<Record<string, McpServerConnection> | undefined>
+): Record<string, McpServerConnection> | undefined {
+  const out: Record<string, McpServerConnection> = {}
+  for (const part of parts) {
+    if (!part) continue
+    Object.assign(out, part)
+  }
+  return Object.keys(out).length > 0 ? out : undefined
+}
+
+/**
+ * 有 workspaceRoot 时默认注入 `filesystem`（可用已有同名配置覆盖）。
+ * `enabled === false` 时不注入。
+ */
+export function withDefaultMcpFilesystem(
+  workspaceRoot: string | undefined,
+  servers: Record<string, McpServerConnection> | undefined,
+  enabled = true,
+): Record<string, McpServerConnection> | undefined {
+  if (!enabled || !workspaceRoot?.trim()) return servers
+  if (servers?.[MCP_FILESYSTEM_SERVER_NAME]) return servers
+  return mergeMcpServers(
+    { [MCP_FILESYSTEM_SERVER_NAME]: createMcpFilesystemServer(workspaceRoot) },
+    servers,
+  )
 }
 
 /**
@@ -84,7 +156,9 @@ function normalizeMcpServers(
  * 解析 `CHATVEIN_MCP_SERVERS` JSON（与 MultiServerMCPClient 的 mcpServers 同形）。
  * 例：`{"brave":{"command":"npx","args":["-y","@modelcontextprotocol/server-brave-search"]}}`
  */
-export function parseMcpServersJson(raw: string | undefined): Record<string, McpServerConnection> | undefined {
+export function parseMcpServersJson(
+  raw: string | undefined,
+): Record<string, McpServerConnection> | undefined {
   if (!raw?.trim()) return undefined
   try {
     const parsed = JSON.parse(raw) as unknown
@@ -97,4 +171,10 @@ export function parseMcpServersJson(raw: string | undefined): Record<string, Mcp
     console.warn('[chatvein/tools] CHATVEIN_MCP_SERVERS invalid JSON:', err)
     return undefined
   }
+}
+
+/** 是否已拉到 filesystem MCP 工具（用于决定是否跳过 builtin local_fs） */
+export function hasMcpFilesystemTools(tools: StructuredToolInterface[]): boolean {
+  const prefix = `${MCP_FILESYSTEM_SERVER_NAME}__`
+  return tools.some((t) => t.name.startsWith(prefix))
 }

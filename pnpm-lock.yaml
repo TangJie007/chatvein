@@ -453,6 +453,9 @@ importers:
       '@langchain/mcp-adapters':
         specifier: ^1.1.4
         version: 1.1.4(@cfworker/json-schema@4.1.1)(@langchain/core@1.2.9(openai@7.9.0(undici@7.29.0)(ws@8.21.3)(zod@4.5.4))(ws@8.21.3))(@langchain/langgraph@1.4.13(@langchain/core@1.2.9(openai@7.9.0(undici@7.29.0)(ws@8.21.3)(zod@4.5.4))(ws@8.21.3))(zod@4.5.4))
+      '@modelcontextprotocol/server-filesystem':
+        specifier: 2026.8.31
+        version: 2026.8.31(@cfworker/json-schema@4.1.1)(zod@4.5.4)
       duck-duck-scrape:
         specifier: ^2.2.7
         version: 2.2.7
@@ -1856,6 +1859,10 @@ packages:
       '@cfworker/json-schema':
         optional: true
 
+  '@modelcontextprotocol/server-filesystem@2026.8.31':
+    resolution: {integrity: sha512-kKaFkyAh6oipvc9+EAbJ552JafnMnOq5nzmzWkp1jJdBhTAAGpmIpWihUG1+rfNhmEFM98gUZDdCHCDD4v6a7Q==}
+    hasBin: true
+
   '@napi-rs/lzma-linux-x64-gnu@1.5.1':
     resolution: {integrity: sha512-oTXEIha4SsuXdTA4Iyskj0kpdx2yVXdhd75c2v3xGrHFfVMsbhTPZU/nMPL4sWKo4pBHm3aucLaqGlF696dTyQ==}
     engines: {node: ^22.20 || ^24.12 || >=25}
@@ -2667,6 +2674,10 @@ packages:
 
   diff@5.2.2:
     resolution: {integrity: sha512-vtcDfH3TOjP8UekytvnHH1o1P4FcUdt4eQ1Y+Abap1tk/OB2MWQvcwS2ClCd1zuIhc3JKOx6p3kod8Vfys3E+A==}
+    engines: {node: '>=0.3.1'}
+
+  diff@8.0.4:
+    resolution: {integrity: sha512-DPi0FmjiSU5EvQV0++GFDOJ9ASQUVFh5kD+OzOnYdi7n3Wpm9hWWGfB/O2blfHcMVTL5WkQXSnRiK9makhrcnw==}
     engines: {node: '>=0.3.1'}
 
   dotenv@16.4.5:
@@ -4957,6 +4968,17 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
+  '@modelcontextprotocol/server-filesystem@2026.8.31(@cfworker/json-schema@4.1.1)(zod@4.5.4)':
+    dependencies:
+      '@modelcontextprotocol/sdk': 1.30.0(@cfworker/json-schema@4.1.1)(zod@4.5.4)
+      diff: 8.0.4
+      glob: 13.0.6
+      minimatch: 10.2.6
+    transitivePeerDependencies:
+      - '@cfworker/json-schema'
+      - supports-color
+      - zod
+
   '@napi-rs/lzma-linux-x64-gnu@1.5.1':
     optional: true
 
@@ -5706,6 +5728,8 @@ snapshots:
       dequal: 2.0.3
 
   diff@5.2.2: {}
+
+  diff@8.0.4: {}
 
   dotenv@16.4.5: {}
 

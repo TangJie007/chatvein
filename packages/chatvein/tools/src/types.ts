@@ -47,8 +47,15 @@ export interface ResolveChatToolsOptions {
   /**
    * MCP servers（优先源）。配置后与目录工具合并；同名时 MCP 覆盖 catalog。
    * 通常由 `CHATVEIN_MCP_SERVERS` 或设置页注入。
+   * 有 `workspaceRoot` 且未关闭 `mcpFilesystem` 时，会自动注入
+   * `@modelcontextprotocol/server-filesystem`（仅允许该根）。
    */
   mcpServers?: Record<string, import('./mcp').McpServerConnection>
+  /**
+   * 是否在有 workspaceRoot 时自动挂 MCP filesystem（默认 true）。
+   * 设为 false 可只用 builtin local_fs / 自定义 mcpServers。
+   */
+  mcpFilesystem?: boolean
 }
 
 export type { StructuredToolInterface, ToolPolicy }

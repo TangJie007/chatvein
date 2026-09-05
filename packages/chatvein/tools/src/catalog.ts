@@ -62,7 +62,8 @@ export const TOOL_CATALOG: readonly ToolCatalogEntry[] = [
     id: 'read_file',
     category: 'local_fs',
     title: '读文件',
-    description: '读取工作区内文本文件。',
+    description:
+      '读取工作区内文本文件（builtin 后备）。有 workspace 时优先 MCP `filesystem__read_text_file`。',
     source: 'builtin',
     defaultEnabled: true,
   },
@@ -70,7 +71,8 @@ export const TOOL_CATALOG: readonly ToolCatalogEntry[] = [
     id: 'list_dir',
     category: 'local_fs',
     title: '列目录',
-    description: '列出工作区内目录条目。',
+    description:
+      '列出工作区内目录（builtin 后备）。优先 MCP `filesystem__list_directory`。',
     source: 'builtin',
     defaultEnabled: true,
   },
@@ -78,7 +80,8 @@ export const TOOL_CATALOG: readonly ToolCatalogEntry[] = [
     id: 'grep_search',
     category: 'local_fs',
     title: '文本检索',
-    description: '在工作区内按正则/子串搜文件内容。',
+    description:
+      '工作区内内容检索（builtin 后备）。优先 MCP `filesystem__search_files`。',
     source: 'builtin',
     defaultEnabled: true,
   },

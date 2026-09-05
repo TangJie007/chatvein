@@ -7,7 +7,7 @@ import { createLocalFsTools } from './categories/local-fs'
 import { createNewsFinanceTools } from './categories/news-finance'
 import { createSearchTools } from './categories/search'
 import { createWebTools } from './categories/web'
-import { loadMcpTools } from './mcp'
+import { hasMcpFilesystemTools, loadMcpTools, withDefaultMcpFilesystem } from './mcp'
 import type { ResolveChatToolsOptions, ToolCatalogEntry, ToolSecrets } from './types'
 
 function hasSecret(entry: ToolCatalogEntry, secrets?: ToolSecrets): boolean {
@@ -34,6 +34,8 @@ function needsWorkspace(id: string): boolean {
     id === 'sqlite_query'
   )
 }
+
+const LOCAL_FS_IDS = new Set(['read_file', 'list_dir', 'grep_search'])
 
 /** 根据 policy / 白名单 / 密钥 / MCP 解析可绑定工具列表 */
 export async function resolveChatTools(
@@ -64,6 +66,26 @@ export async function resolveChatTools(
     maxOutputChars: options.maxOutputChars,
   }
 
+  const mcpServers = withDefaultMcpFilesystem(
+    options.workspaceRoot,
+    options.mcpServers,
+    options.mcpFilesystem !== false,
+  )
+
+  const mcpTools = mcpServers
+    ? await loadMcpTools({
+        servers: mcpServers,
+        onConnectionError: 'ignore',
+        prefixToolNameWithServerName: true,
+      })
+    : []
+
+  const useMcpFs = hasMcpFilesystemTools(mcpTools)
+  // MCP filesystem 成功时跳过 builtin 读/列/grep，避免两套 API 抢模型
+  const localFsIds = useMcpFs
+    ? new Set([...ids].filter((id) => !LOCAL_FS_IDS.has(id)))
+    : ids
+
   const catalogParts =
     ids.size === 0
       ? ([] as StructuredToolInterface[])
@@ -83,7 +105,11 @@ export async function resolveChatTools(
           ...createWebTools(common),
           ...(options.workspaceRoot
             ? [
-                ...createLocalFsTools({ ...common, workspaceRoot: options.workspaceRoot }),
+                ...createLocalFsTools({
+                  ...common,
+                  ids: localFsIds,
+                  workspaceRoot: options.workspaceRoot,
+                }),
                 ...createDatabaseTools({ ...common, workspaceRoot: options.workspaceRoot }),
               ]
             : []),
@@ -91,15 +117,7 @@ export async function resolveChatTools(
 
   const catalogTools = [...catalogParts, ...syncParts]
 
-  const mcpTools = options.mcpServers
-    ? await loadMcpTools({
-        servers: options.mcpServers,
-        onConnectionError: 'ignore',
-        prefixToolNameWithServerName: true,
-      })
-    : []
-
-  // 同名时 MCP 覆盖目录工具（外部能力优先走 MCP）
+  // 同名时 MCP 覆盖目录工具
   const byName = new Map<string, StructuredToolInterface>()
   for (const t of catalogTools) byName.set(t.name, t)
   for (const t of mcpTools) byName.set(t.name, t)

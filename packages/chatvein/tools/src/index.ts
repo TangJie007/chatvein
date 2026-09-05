@@ -12,7 +12,16 @@ export { resolveChatTools, defaultChatToolIds } from './resolve'
 export { resolveInWorkspace, truncateOutput, withTimeout } from './guards'
 export { wrapToolGuards, defineBuiltinTool } from './wrap'
 export { summarizeToolsForDebug } from './debug'
-export { loadMcpTools, parseMcpServersJson } from './mcp'
+export {
+  loadMcpTools,
+  parseMcpServersJson,
+  createMcpFilesystemServer,
+  resolveMcpFilesystemServerEntry,
+  mergeMcpServers,
+  withDefaultMcpFilesystem,
+  hasMcpFilesystemTools,
+  MCP_FILESYSTEM_SERVER_NAME,
+} from './mcp'
 
 export type {
   ToolCategory,

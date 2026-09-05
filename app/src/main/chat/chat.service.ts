@@ -536,7 +536,7 @@ export class ChatService {
         tavilyApiKey: process.env.TAVILY_API_KEY,
         wolframAppId: process.env.WOLFRAM_ALPHA_APPID,
       },
-      /** 外部能力优先 MCP：`CHATVEIN_MCP_SERVERS` JSON，与 MultiServerMCPClient 同形 */
+      /** 额外 MCP；有 workspace 时自动挂 filesystem（env 可覆盖同名） */
       mcpServers: parseMcpServersJson(process.env.CHATVEIN_MCP_SERVERS),
     })
   }
