@@ -11,7 +11,7 @@ export const L2JudgementSchema = z.object({
   /** 工具必须拍板：none | full（消化 L1 的 unknown） */
   tools: z.enum(['none', 'full']),
   modelTier: z.enum(['weak', 'medium', 'strong']).optional(),
-  maxSteps: z.number().int().min(0).max(32).optional(),
+  maxSteps: z.number().int().min(0).max(64).optional(),
   memoryRecall: z.boolean().optional(),
   allowSubAgents: z.boolean().optional(),
   hintUserCreateGroup: z.boolean().optional(),

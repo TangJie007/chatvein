@@ -164,7 +164,7 @@
     "id": "zh-weather",
     "text": "查询一下今天北京的天气",
     "band": "simple",
-    "tools": "none",
+    "tools": "full",
     "lang": "zh",
     "tags": [
       "query"
@@ -174,7 +174,7 @@
     "id": "zh-weather2",
     "text": "今天上海天气怎么样",
     "band": "simple",
-    "tools": "none",
+    "tools": "full",
     "lang": "zh",
     "tags": [
       "query"
@@ -184,7 +184,7 @@
     "id": "zh-weather3",
     "text": "帮我查下明天会不会下雨",
     "band": "simple",
-    "tools": "none",
+    "tools": "full",
     "lang": "zh",
     "tags": [
       "query"
@@ -194,7 +194,7 @@
     "id": "zh-query-time",
     "text": "现在几点了",
     "band": "simple",
-    "tools": "none",
+    "tools": "full",
     "lang": "zh",
     "tags": [
       "query"
@@ -204,7 +204,7 @@
     "id": "zh-query-info",
     "text": "查一下这个公司的基本信息",
     "band": "simple",
-    "tools": "none",
+    "tools": "full",
     "lang": "zh",
     "tags": [
       "query"
@@ -214,7 +214,7 @@
     "id": "zh-search-web",
     "text": "帮我搜索一下最新的 Node 版本",
     "band": "simple",
-    "tools": "none",
+    "tools": "full",
     "lang": "zh",
     "tags": [
       "query"
@@ -224,49 +224,49 @@
     "id": "zh-calc",
     "text": "帮我算一下 128 乘以 64",
     "band": "simple",
-    "tools": "none",
+    "tools": "full",
     "lang": "zh"
   },
   {
     "id": "zh-read",
     "text": "读取 package.json 看看依赖",
     "band": "standard",
-    "tools": "unknown",
+    "tools": "full",
     "lang": "zh"
   },
   {
     "id": "zh-read2",
     "text": "打开 src/main.ts 看一下实现",
     "band": "standard",
-    "tools": "unknown",
+    "tools": "full",
     "lang": "zh"
   },
   {
     "id": "zh-read3",
     "text": "这个函数是干什么的，帮我解释代码",
     "band": "standard",
-    "tools": "unknown",
+    "tools": "full",
     "lang": "zh"
   },
   {
     "id": "zh-grep",
     "text": "在项目里搜索一下 TODO 注释",
     "band": "standard",
-    "tools": "unknown",
+    "tools": "full",
     "lang": "zh"
   },
   {
     "id": "zh-list",
     "text": "列出当前目录有哪些文件",
     "band": "standard",
-    "tools": "unknown",
+    "tools": "full",
     "lang": "zh"
   },
   {
     "id": "zh-log",
     "text": "看看日志里最近的报错信息",
     "band": "standard",
-    "tools": "unknown",
+    "tools": "full",
     "lang": "zh"
   },
   {
@@ -413,7 +413,7 @@
     "id": "zh-security",
     "text": "做一次安全评审看看有没有注入风险",
     "band": "complex",
-    "tools": "unknown",
+    "tools": "full",
     "lang": "zh"
   },
   {

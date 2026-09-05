@@ -115,7 +115,7 @@ runChatTurn(input: L3RunInput): Promise<L3RunResult>
 | 包入口 | `packages/chatvein/agents/src/react-agent.ts` |
 | 循环 | `langchain.createAgent`（底层 LangGraph），**不自研 while** |
 | 调用 | `invokeReactChatAgent` + `recursionLimit` |
-| 步数 | `recursionLimit = max(1, route.policy.maxSteps)` |
+| 步数 | `recursionLimit = max(1, route.policy.maxSteps)`；band 默认 simple=8 / standard=16 / complex=64（trivial=0） |
 | 工具 | `policy.tools=full` → `@chatvein/tools` `resolveChatTools`（∩ 角色白名单）；`none/unknown` → `[]` |
 | 短答约束 | `systemPromptForRoute`：`band=trivial` / `tier=weak` 注入 |
 | 本地短路 | 仅 L1 `greeting_only` / `self_intro`（在 app，非 L3） |

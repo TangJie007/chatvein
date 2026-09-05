@@ -12,7 +12,7 @@ JSON 字段（全部必填除非标注可选）：
 - band: "trivial"|"simple"|"standard"|"complex"（禁止 unknown）
 - tools: "none"|"full"（禁止 unknown；消化 L1 的 tools=unknown）
 - modelTier: 可选 "weak"|"medium"|"strong"
-- maxSteps: 可选 0–32 整数
+- maxSteps: 可选 0–64 整数（simple≈8 / standard≈16 / complex≈64）
 - memoryRecall: 可选 boolean
 - allowSubAgents: 可选 boolean（Agent 可生子 Agent，不是拉群）
 - hintUserCreateGroup: 可选 boolean（仅提示用户拉群，禁止自动建群）

@@ -35,20 +35,24 @@ function bandPolicy(band: ComplexityBand): RoutePolicy {
     case 'trivial':
       return { modelTier: 'weak', tools: 'none', maxSteps: 0, memoryRecall: false }
     case 'simple':
-      return { modelTier: 'weak', tools: 'none', maxSteps: 2, memoryRecall: false }
+      // 8 ≈ 直接答或偶发 1–3 次工具轮（LangGraph hop）
+      return { modelTier: 'weak', tools: 'none', maxSteps: 8, memoryRecall: false }
     case 'standard':
-      return { modelTier: 'medium', tools: 'full', maxSteps: 8, memoryRecall: true }
+      // 16 ≈ 日常多轮读文件 / 检索
+      return { modelTier: 'medium', tools: 'full', maxSteps: 16, memoryRecall: true }
     case 'complex':
       return {
         modelTier: 'strong',
         tools: 'full',
-        maxSteps: 16,
+        // 64 ≈ 重任务熔断顶（约数十次工具轮）
+        maxSteps: 64,
         memoryRecall: true,
         allowSubAgents: true,
       }
     case 'unknown':
     default:
-      return { modelTier: 'medium', tools: 'full', maxSteps: 8, memoryRecall: true }
+      // 灰区保守对齐 standard
+      return { modelTier: 'medium', tools: 'full', maxSteps: 16, memoryRecall: true }
   }
 }
 

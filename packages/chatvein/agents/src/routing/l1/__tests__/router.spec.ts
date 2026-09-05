@@ -90,9 +90,14 @@ describe('L1HeuristicRouter', () => {
     expect(d.policy.allowSubAgents).toBe(true)
   })
 
-  it('工具动词 → tools unknown（交 L2）', async () => {
+  it('工具动词 → tools full', async () => {
     const d = await router.route({ text: '查询一下今天北京的天气' })
-    expect(d.policy.tools).toBe('unknown')
+    expect(d.policy.tools).toBe('full')
+  })
+
+  it('天气口语问法 → tools full（先例）', async () => {
+    const d = await router.route({ text: '今天惠阳天气怎么样' })
+    expect(d.policy.tools).toBe('full')
   })
 
   it('否定工具 → tools none', async () => {

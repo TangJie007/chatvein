@@ -54,14 +54,28 @@ describe('StructuredL2Classifier', () => {
     )
     const l2 = createL2Classifier({ callModel })
     const router = createHeuristicRouter({ l2 })
-    const d = await router.route({ text: '查询一下今天北京的天气' })
-    expect(shouldEscalateToL2(await createHeuristicRouter().route({ text: '查询一下今天北京的天气' }))).toBe(
+    // 英文灰区：band unknown → 必进 L2
+    const d = await router.route({ text: 'hello what is this about really' })
+    expect(shouldEscalateToL2(await createHeuristicRouter().route({ text: 'hello what is this about really' }))).toBe(
       true,
     )
     expect(d.policy.tools).toBe('full')
     expect(d.band).toBe('standard')
     expect(d.reasons).toContain('l2_classifier')
     expect(callModel).toHaveBeenCalledOnce()
+  })
+
+  it('天气查询 L1 已 tools=full，可不经 L2', async () => {
+    const callModel = vi.fn(async () =>
+      JSON.stringify({ band: 'simple', tools: 'none', confident: true }),
+    )
+    const l2 = createL2Classifier({ callModel })
+    const router = createHeuristicRouter({ l2 })
+    const d = await router.route({ text: '今天上海天气怎么样' })
+    expect(d.policy.tools).toBe('full')
+    if (!shouldEscalateToL2(d)) {
+      expect(callModel).not.toHaveBeenCalled()
+    }
   })
 
   it('callModel 失败则保留 L1 并标记 l2_failed', async () => {

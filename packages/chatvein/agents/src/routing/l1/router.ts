@@ -26,7 +26,7 @@ const CONSERVATIVE: RouteDecision = {
   policy: {
     modelTier: 'medium',
     tools: 'full',
-    maxSteps: 8,
+    maxSteps: 16,
     memoryRecall: true,
   },
   score: 0,

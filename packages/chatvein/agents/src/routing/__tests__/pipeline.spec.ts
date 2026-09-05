@@ -15,9 +15,12 @@ describe('pipeline HeuristicRouter', () => {
     expect(shouldEscalateToL2(d)).toBe(true)
   })
 
-  it('tools=unknown 也会 escalate 到 L2', async () => {
+  it('天气/查询类 L1 直接 tools=full，不必因 tools 进 L2', async () => {
     const d = await createHeuristicRouter().route({ text: '查询一下今天北京的天气' })
-    expect(d.policy.tools).toBe('unknown')
-    expect(shouldEscalateToL2(d)).toBe(true)
+    expect(d.policy.tools).toBe('full')
+    // 若 L1 已自信且 band 非 unknown，可不再 escalate
+    if (d.confident && d.band !== 'unknown') {
+      expect(shouldEscalateToL2(d)).toBe(false)
+    }
   })
 })
