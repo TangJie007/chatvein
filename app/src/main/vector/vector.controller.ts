@@ -18,4 +18,13 @@ export class VectorController {
   browseTable(name: string, limit?: number, offset?: number): Promise<VectorBrowseResult> {
     return this.svc.browseTable(name, limit, offset)
   }
+
+  /** 语义检索 tool_index：自然语言 query → 本地嵌入 → 余弦 Top-K（minScore 截断相似度下限） */
+  @IpcHandle('searchTable')
+  searchTable(
+    name: string,
+    data: { query: string; topK?: number; minScore?: number },
+  ): Promise<import('@chatvein/vector').VectorSearchHit[]> {
+    return this.svc.searchTable(name, data?.query ?? '', data?.topK, data?.minScore)
+  }
 }

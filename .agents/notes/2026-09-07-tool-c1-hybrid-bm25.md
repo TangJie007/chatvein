@@ -27,5 +27,5 @@
 
 - 收益：名/别名命中可抬升排序；与「工具 BM25 挂 tools」旧笔记一致。收窄主要靠 RRF 排序 + 后续 C2，而非压死 Top-K。
 - 代价：tools 多一个 `minisearch` 依赖；warmup 跳过写库路径必须传 tools。
-- 后续注意：别名质量仍靠 catalog `keywords`；可按埋点再调 `lexicalWeight` / `rrfK`。
+- 后续注意：别名质量仍靠 catalog `keywords`；可按埋点再调 `lexicalWeight` / `rrfK`。装配层空 query 不绑工具（见 `resolveBoundTools`），与索引 `select('')→[]` 一致且更严（不回退全量）。
 - 相关：[`2026-09-06-remove-l1-bm25-prototypes.md`](./2026-09-06-remove-l1-bm25-prototypes.md)、[`../docs/design/12-Agent工具层.md`](../docs/design/12-Agent工具层.md)。

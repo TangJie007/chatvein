@@ -8,7 +8,7 @@ import AppButton from '../components/ui/AppButton.vue'
 import AppIcon from '../components/AppIcon.vue'
 import { setCrumbItem } from '../composables/useUi'
 import { createClient } from '@electrum/client'
-import type { IpcApi, VectorBrowseResult, VectorTableInfo } from '../ipc-api'
+import type { IpcApi, VectorBrowseResult, VectorSearchHit, VectorTableInfo } from '../ipc-api'
 
 const api = createClient<IpcApi>()
 
@@ -122,6 +122,59 @@ const visibleRows = computed(() => {
   return rows.value.filter((r) => Object.values(r).some((v) => cellText('', v).toLowerCase().includes(k)))
 })
 
+const modeOptions = [
+  { value: 'browse', label: '浏览' },
+  { value: 'vector', label: '向量匹配' },
+] as const
+
+/** 记录卡查看方式：browse = 分页浏览 + 子串过滤；vector = 语义匹配（相似度阈值） */
+const mode = ref<'browse' | 'vector'>('browse')
+const vecQuery = ref('')
+const vecMin = ref('0.2')
+const searching = ref(false)
+const vecRan = ref(false)
+const vecHits = ref<VectorSearchHit[]>([])
+const vecError = ref('')
+
+/** 当前库中仅 tool_index 含向量列，可语义匹配 */
+const canVector = computed(() => selected.value === 'tool_index')
+const vecMinNum = computed(() => {
+  const n = Number.parseFloat(vecMin.value)
+  return Number.isFinite(n) ? n : 0.2
+})
+const vectorSummaryText = computed(() => {
+  const threshold = vecMinNum.value.toFixed(2)
+  if (!vecRan.value) return `向量匹配 · 阈值 ≥ ${threshold}`
+  const totalRows = selectedInfo.value?.count ?? 0
+  return `符合 ≥ ${threshold}：${vecHits.value.length} / ${totalRows}`
+})
+
+function scoreTone(s: number): { cls: string; label: string } {
+  if (s >= 0.65) return { cls: 'bg-[var(--color-brand-deep)] text-white', label: '高' }
+  if (s >= 0.45) return { cls: 'bg-[var(--color-brand-soft)] text-[var(--color-brand-deep)]', label: '中' }
+  if (s >= 0.2) return { cls: 'bg-[var(--color-canvas)] text-[var(--color-ink-3)]', label: '低' }
+  return { cls: 'bg-transparent text-[var(--color-ink-3)]', label: '极低' }
+}
+
+async function runVectorSearch() {
+  const q = vecQuery.value.trim()
+  if (!q || !selected.value || !canVector.value) return
+  searching.value = true
+  vecRan.value = true
+  vecError.value = ''
+  try {
+    vecHits.value = await api.vector.searchTable(selected.value, {
+      query: q,
+      minScore: vecMinNum.value,
+    })
+  } catch (e) {
+    vecHits.value = []
+    vecError.value = `查询失败：${(e as Error)?.message ?? String(e)}。首次查询需加载本地嵌入模型 bge-small-zh，请联网后重试（权重缓存于 userData/forge/hf-cache）。`
+  } finally {
+    searching.value = false
+  }
+}
+
 async function loadTables() {
   loadingTables.value = true
   error.value = ''
@@ -158,6 +211,7 @@ function selectTable(name: string) {
   if (name === selected.value) return
   selected.value = name
   offset.value = 0
+  if (name !== 'tool_index') mode.value = 'browse'
   void loadRows()
 }
 function prevPage() {
@@ -271,16 +325,72 @@ onMounted(async () => {
         <div v-else class="text-xs text-[var(--color-ink-3)]">请选择左侧数据表</div>
       </Card>
 
-      <Card title="记录" :side="rangeText">
-        <div class="mb-3 flex items-center gap-2">
-          <TextInput v-model="keyword" mono placeholder="在当前页按任意字段过滤" class="w-full" />
-          <div class="flex shrink-0 items-center gap-1">
-            <AppButton size="sm" :disabled="!canPrev" @click="prevPage">上一页</AppButton>
-            <AppButton size="sm" :disabled="!canNext" @click="nextPage">下一页</AppButton>
+      <Card title="记录" :side="mode === 'vector' ? vectorSummaryText : rangeText">
+        <div class="mb-3 flex flex-wrap items-center gap-2">
+          <!-- 查看方式切换 -->
+          <div class="inline-flex gap-0.5 rounded-[10px] bg-[var(--color-input)] p-[3px]">
+            <button
+              v-for="opt in modeOptions"
+              :key="opt.value"
+              type="button"
+              class="rounded-[7px] border-0 px-3 py-1.5 text-xs font-medium transition-colors duration-200 ease-[var(--ease-soft)] focus-visible:outline-2 focus-visible:outline-[var(--color-brand)] focus-visible:outline-offset-1"
+              :class="
+                mode === opt.value
+                  ? 'bg-[var(--color-elevated)] text-[var(--color-ink-1)] shadow-[0_1px_3px_rgb(43_44_48/0.08)]'
+                  : 'text-[var(--color-ink-2)]'
+              "
+              @click="mode = opt.value"
+            >
+              {{ opt.label }}
+            </button>
+          </div>
+
+          <!-- 浏览模式：关键字过滤 + 翻页 -->
+          <div v-if="mode === 'browse'" class="flex min-w-0 flex-1 items-center gap-2">
+            <div class="min-w-0 flex-1">
+              <TextInput v-model="keyword" mono placeholder="在当前页按任意字段过滤" />
+            </div>
+            <div class="flex shrink-0 items-center gap-1">
+              <AppButton size="sm" :disabled="!canPrev" @click="prevPage">上一页</AppButton>
+              <AppButton size="sm" :disabled="!canNext" @click="nextPage">下一页</AppButton>
+            </div>
+          </div>
+
+          <!-- 向量匹配模式：自然语言查询 + 分数阈值 + Top-K -->
+          <div v-else class="flex min-w-[320px] flex-1 flex-wrap items-center gap-2">
+            <div class="min-w-[180px] flex-1">
+              <TextInput
+                v-model="vecQuery"
+                mono
+                placeholder="自然语言查询：如 把结果保存为 md 文件"
+                @keydown.enter="runVectorSearch"
+              />
+            </div>
+            <label class="flex shrink-0 items-center gap-1 text-[11px] text-[var(--color-ink-3)]">
+              分数 ≥
+              <input
+                v-model="vecMin"
+                type="number"
+                min="0"
+                max="1"
+                step="0.05"
+                title="余弦相似度下限：score 低于该值的命中不展示"
+                class="w-14 rounded-[8px] border-0 bg-[var(--color-input)] px-1.5 py-[7px] font-mono text-xs text-[var(--color-ink-1)] focus:outline-none"
+              />
+            </label>
+            <AppButton
+              size="sm"
+              variant="primary"
+              :disabled="searching || !canVector || !vecQuery.trim()"
+              @click="runVectorSearch"
+            >
+              {{ searching ? '检索中…' : '查询' }}
+            </AppButton>
           </div>
         </div>
 
-        <div class="scroll-thin overflow-auto" style="max-height: calc(100vh - 380px)">
+        <!-- ============ 浏览模式内容 ============ -->
+        <div v-if="mode === 'browse'" class="scroll-thin overflow-auto" style="max-height: calc(100vh - 380px)">
           <div
             v-if="loadingRows && rows.length === 0"
             class="py-10 text-center text-xs text-[var(--color-ink-3)]"
@@ -330,6 +440,121 @@ onMounted(async () => {
             </tbody>
           </table>
           <div v-else class="text-xs text-[var(--color-ink-3)]">请选择左侧数据表</div>
+        </div>
+
+        <!-- ============ 向量匹配模式内容 ============ -->
+        <div v-else>
+          <div class="scroll-thin overflow-auto" style="max-height: calc(100vh - 380px)">
+            <div
+              v-if="!canVector"
+              class="mb-2 rounded-[10px] bg-[var(--color-canvas)] px-3 py-2 text-xs leading-[1.6] text-[var(--color-ink-3)]"
+            >
+              语义匹配需该表含向量列。当前库中仅
+              <code class="font-mono">tool_index</code> 可语义检索，其余表请切回「浏览」。
+            </div>
+
+            <div
+              v-else-if="searching && vecHits.length === 0"
+              class="py-10 text-center text-xs text-[var(--color-ink-3)]"
+            >
+              正在向量检索（首次需加载本地嵌入模型 bge-small-zh）…
+            </div>
+            <div
+              v-else-if="vecError"
+              class="rounded-[10px] bg-[rgba(220,80,80,0.08)] px-3 py-2 text-xs leading-[1.7] text-[var(--color-ink-2)]"
+            >
+              {{ vecError }}
+            </div>
+
+            <template v-else-if="vecRan">
+              <!-- 汇总：符合阈值 N 条 / 共 M 条 -->
+              <div
+                class="mb-2 flex flex-wrap items-baseline gap-x-2 gap-y-1 rounded-[10px] bg-[var(--color-canvas)] px-3 py-2 text-xs leading-[1.7] text-[var(--color-ink-3)]"
+              >
+                <span>得分 ≥</span>
+                <span class="font-mono font-semibold text-[var(--color-brand-deep)]">{{ vecMinNum.toFixed(2) }}</span>
+                <span>的有</span>
+                <span class="font-mono font-semibold text-[var(--color-ink-1)]">{{ vecHits.length }}</span>
+                <span>条</span>
+                <span class="text-[var(--color-ink-3)]">·</span>
+                <span>共 {{ selectedInfo?.count ?? 0 }} 条记录（按相似度从高到低）</span>
+              </div>
+
+              <table v-if="vecHits.length" class="w-full min-w-[720px] border-collapse text-left text-[12px]">
+              <thead>
+                <tr class="sticky top-0 bg-[var(--color-elevated)] text-[var(--color-ink-3)]">
+                  <th class="w-[110px] px-2 py-2 font-medium">得分</th>
+                  <th class="w-[170px] px-2 py-2 font-medium">id</th>
+                  <th class="px-2 py-2 font-medium">命中内容 / 摘要</th>
+                  <th class="w-[150px] px-2 py-2 font-medium">范围 / kind</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr
+                  v-for="h in vecHits"
+                  :key="h.id"
+                  class="border-t border-[rgba(165,177,193,0.18)] align-top hover:bg-[var(--color-canvas)]"
+                >
+                  <td class="px-2 py-2">
+                    <span class="inline-flex items-center gap-1.5">
+                      <span
+                        class="rounded-full px-1.5 py-0.5 text-[10.5px] font-semibold"
+                        :class="scoreTone(h.score).cls"
+                        :title="`${scoreTone(h.score).label}相关`"
+                        >{{ scoreTone(h.score).label }}</span
+                      >
+                      <span class="font-mono text-[var(--color-ink-2)]">{{ h.score.toFixed(3) }}</span>
+                    </span>
+                  </td>
+                  <td class="px-2 py-2">
+                    <span class="break-all font-mono text-[11px] text-[var(--color-brand-deep)]">{{ h.id }}</span>
+                  </td>
+                  <td class="px-2 py-2">
+                    <div
+                      class="line-clamp-3 max-w-[540px] leading-[1.55] text-[var(--color-ink-1)]"
+                      :title="h.content"
+                    >
+                      {{ h.content }}
+                    </div>
+                    <div v-if="h.summary" class="mt-0.5 text-[11px] text-[var(--color-ink-3)]">{{ h.summary }}</div>
+                    <details v-if="Object.keys(h.meta ?? {}).length" class="mt-1">
+                      <summary class="cursor-pointer select-none text-[11px] text-[var(--color-brand-deep)]">meta</summary>
+                      <pre class="mt-1 whitespace-pre-wrap break-all text-[11px] text-[var(--color-ink-2)]">{{
+                        JSON.stringify(h.meta, null, 1)
+                      }}</pre>
+                    </details>
+                  </td>
+                  <td class="px-2 py-2">
+                    <div class="flex flex-wrap gap-1">
+                      <span class="rounded bg-[var(--color-canvas)] px-1.5 py-0.5 text-[11px] text-[var(--color-ink-3)]">{{
+                        h.scope
+                      }}</span>
+                      <span class="rounded bg-[var(--color-canvas)] px-1.5 py-0.5 text-[11px] text-[var(--color-ink-3)]">{{
+                        h.kind
+                      }}</span>
+                      <span
+                        v-if="h.ownerId"
+                        class="rounded bg-[var(--color-canvas)] px-1.5 py-0.5 text-[11px] text-[var(--color-ink-3)]"
+                        >{{ h.ownerId }}</span
+                      >
+                    </div>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+              <div
+                v-else
+                class="rounded-[10px] bg-[var(--color-canvas)] px-3 py-10 text-center text-xs leading-[1.8] text-[var(--color-ink-3)]"
+              >
+                0 条达到阈值。向量分数是连续值，极少“零命中”：可把意图写完整
+                （如「把结果保存为 md 文件」），或调低阈值至 0.1 观察分数分布。
+              </div>
+            </template>
+
+            <div v-else class="py-10 text-center text-xs leading-[1.8] text-[var(--color-ink-3)]">
+              输入一句自然语言描述后点「查询」或直接回车，返回该表全部得分 ≥ 阈值（默认 0.2）的记录。
+            </div>
+          </div>
         </div>
       </Card>
     </template>

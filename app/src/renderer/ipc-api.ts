@@ -76,6 +76,7 @@ export interface IpcApi {
   // ---- 向量数据库（数据集浏览器）----
   'vector:inspectTables': () => Promise<VectorTableInfo[]>
   'vector:browseTable': (name: string, limit?: number, offset?: number) => Promise<VectorBrowseResult>
+  'vector:searchTable': (name: string, data: VectorSearchInput) => Promise<VectorSearchHit[]>
 }
 
 export type UserRow = { id: number; name: string; email: string }
@@ -198,6 +199,25 @@ export interface VectorTableInfo {
 export interface VectorBrowseResult {
   total: number
   rows: Record<string, unknown>[]
+}
+/** 单条语义检索命中（结构对齐 @chatvein/vector 的 VectorSearchHit） */
+export interface VectorSearchHit {
+  id: string
+  content: string
+  summary: string | null
+  /** 余弦相似度 ≈ score，范围 [-1,1]；≥0.2 视为弱相关以上 */
+  score: number
+  scope: string
+  ownerId: string
+  kind: string
+  meta: Record<string, unknown>
+}
+export interface VectorSearchInput {
+  query: string
+  /** 召回上限；省略或 ≤0 时以表总行数为上限（返回全部 ≥ minScore 的记录） */
+  topK?: number
+  /** 相似度下限：score < minScore 的命中直接丢弃（默认建议 0.2） */
+  minScore?: number
 }
 
 // ---- 普通对话 ----------------------------------------------------------

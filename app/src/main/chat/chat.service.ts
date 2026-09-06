@@ -873,9 +873,9 @@ export class ChatService implements OnAppReady {
 
   /**
    * policy.tools ∩ 角色白名单 → LangChain 工具实例。
-   * 链路：resolveChatTools → C1 向量/关键词预筛 → C2 弱模型精筛 → C3 预算裁剪。
+   * 链路：resolveChatTools → C1 混合预筛 → C2 弱模型精筛 → C3 预算裁剪。
    * 索引维护仅在启动 warmup / `refreshToolIndex`（MCP 菜单变更）；对话路径只读检索。
-   * query 应为 `route.rewrittenQuery ?? 原文`。
+   * query 应为 `route.rewrittenQuery ?? 原文`；**空 query → 不绑工具**（主模型纯聊）。
    */
   private async resolveBoundTools(
     agent: AgentConfig,
@@ -884,6 +884,10 @@ export class ChatService implements OnAppReady {
     query?: string,
     model?: ModelConfig,
   ): Promise<StructuredToolInterface[]> {
+    const q = query?.trim() ?? ''
+    // 无检索句无法做 C1/C2；不强行全量绑工具，避免空白输入拖进整库工具
+    if (!q) return []
+
     const settings = await this.settings.get()
     const candidateTools = await resolveChatTools({
       policy: toolPolicy,
@@ -901,7 +905,6 @@ export class ChatService implements OnAppReady {
 
     const byName = new Map(candidateTools.map((t) => [t.name, t]))
     const candidateNames = [...byName.keys()]
-    const q = query?.trim() ?? ''
 
     // 等待启动 warmup（若仍在跑），避免签名命中跳过写库后内存未 ready 导致本轮空召回
     await this.awaitToolIndexWarmup()
@@ -909,24 +912,22 @@ export class ChatService implements OnAppReady {
     // 层 C1：向量+BM25 混合预筛；未就绪/空命中 → 关键词兜底；再空 → 全候选
     let c1Source: 'hybrid' | 'keyword' | 'full' = 'full'
     let narrowed = candidateNames
-    if (q) {
-      const hybridHits = await this.prescreenWithVector(q, candidateNames)
-      if (hybridHits.length > 0) {
-        narrowed = hybridHits
-        c1Source = 'hybrid'
-      } else {
-        const kwHits = this.prescreenWithKeywords(q, candidateTools)
-        if (kwHits.length > 0 && kwHits.length < candidateNames.length) {
-          narrowed = kwHits
-          c1Source = 'keyword'
-        }
+    const hybridHits = await this.prescreenWithVector(q, candidateNames)
+    if (hybridHits.length > 0) {
+      narrowed = hybridHits
+      c1Source = 'hybrid'
+    } else {
+      const kwHits = this.prescreenWithKeywords(q, candidateTools)
+      if (kwHits.length > 0 && kwHits.length < candidateNames.length) {
+        narrowed = kwHits
+        c1Source = 'keyword'
       }
     }
 
     // 层 C2：弱模型精筛（候选已很少则跳过）
     let finalNames = narrowed
     let c2Status: LlmSelectToolsStatus | 'skipped' = 'skipped'
-    if (model && q && narrowed.length > this.toolSelectSkipBelow) {
+    if (model && narrowed.length > this.toolSelectSkipBelow) {
       const c2 = await this.llmSelectToolsForTurn(q, narrowed, candidateTools, model)
       finalNames = c2.toolIds
       c2Status = c2.status

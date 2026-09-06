@@ -168,7 +168,8 @@ RouteDecision.policy.tools = full
 2. **BM25 路**：进程内 MiniSearch（工具名 / humanize / 目录 keywords 别名 / title），CJK bigram 分词
 3. **融合**：RRF（`vectorWeight=1`，`lexicalWeight=1.25`）；召回上限 `max(prescreenTopK, 候选数)`（用候选数抬高）
 
-召回不足 / 未就绪 / 空 query 一律返回 `[]`，上层回退关键词或全候选（full），因此索引是**纯增益、无正确性依赖**。
+召回不足 / 未就绪一律返回 `[]`，上层回退关键词或全候选（full），因此索引是**纯增益、无正确性依赖**。
+**装配层**：`resolveBoundTools` 在检索 query（`rewrittenQuery ?? 原文`）为空时直接 `[]`，不绑工具、主模型纯聊——不把「无检索句」回退成全量工具。
 
 ```
 一轮消息 → L1/L2 → resolveBoundTools(候选全集)
@@ -188,7 +189,7 @@ RouteDecision.policy.tools = full
 |------|------|------|
 | **启动（内置基准）** | 解析**系统工具全集**（`resolveChatTools` full + all）→ 内容签名；与 `index-meta.json#builtinSignature` 一致且无下线 → **`markReady()` 零写入**；否则 `replace()` + `purge()` + 写回签名 | `ChatService.onAppReady()`，后台异步，失败仅告警 |
 | **配置变更（差量）** | MCP 菜单 / `CHATVEIN_MCP_SERVERS` 变更后 `refreshToolIndex()`：相对 `syncedNames` 新增 `sync()`；**不做删除**（白名单收窄会误删），下线收敛到下次启动 warmup | 配置保存路径显式调用（**对话回合不 sync**） |
-| **对话期（只读）** | 等待 warmup 完成后：`rewrittenQuery ?? 原文` → C1 **混合**预筛 → 关键词兜底 → C2 弱模精筛 → C3 预算；埋点 `c1=hybrid|keyword|full` | `resolveBoundTools` |
+| **对话期（只读）** | 等待 warmup 完成后：空 query → 不绑工具；否则 `rewrittenQuery ?? 原文` → C1 **混合**预筛 → 关键词兜底 → C2 弱模精筛 → C3 预算；埋点 `c1=hybrid|keyword|full` | `resolveBoundTools` |
 
 要点：
 
