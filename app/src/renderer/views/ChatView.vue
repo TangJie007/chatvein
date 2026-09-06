@@ -408,7 +408,9 @@ onMounted(async () => {
       :agent="chat.thinking.agent"
       :thought="panelThought"
       :artifacts="chat.artifacts"
+      :conversation-id="chat.currentId"
       :selected-message-id="chat.selectedThinkingMessageId"
+      @removed="chat.dropArtifact"
     />
   </main>
 </template>

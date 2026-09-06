@@ -24,6 +24,8 @@ const props = withDefaults(
     thought?: string
     steps?: TraceStep[]
     artifacts?: ThinkingArtifact[]
+    /** 当前会话 id；删除产物时调用 IPC */
+    conversationId?: string
     /** 正在回看的助手消息 id（非 live） */
     selectedMessageId?: string
   }>(),
@@ -34,15 +36,21 @@ const props = withDefaults(
     thought: '',
     steps: () => [],
     artifacts: () => [],
+    conversationId: '',
     selectedMessageId: '',
   },
 )
+
+const emit = defineEmits<{
+  removed: [artifactId: string]
+}>()
 
 const api = createClient<IpcApi>()
 const thoughtBodyRef = ref<HTMLElement | null>(null)
 /** remount Disclosure 以在新一轮强制 defaultOpen */
 const thoughtKey = ref(0)
 const artifactsKey = ref(0)
+const deletingId = ref('')
 
 const phaseLabel = computed(() =>
   props.phase === 'thinking' ? '思考中' : '已思考 · 生成正文',
@@ -61,6 +69,27 @@ async function openArtifactFolder(a: ThinkingArtifact): Promise<void> {
     await api.file.showInFolder(target)
   } catch (e) {
     console.warn('[ThinkingPanel] showInFolder failed', e)
+  }
+}
+
+async function deleteArtifact(a: ThinkingArtifact): Promise<void> {
+  const target = a.absPath?.trim()
+  const convId = props.conversationId?.trim()
+  if (!target || !convId || deletingId.value) return
+
+  const label = a.detail || a.title
+  const ok = window.confirm(`删除产物「${a.title}」？\n\n${label}\n\n此操作不可撤销。`)
+  if (!ok) return
+
+  deletingId.value = a.id
+  try {
+    await api.chat.removeArtifact({ conversationId: convId, absPath: target })
+    emit('removed', a.id)
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    window.alert(`删除失败：${msg}`)
+  } finally {
+    deletingId.value = ''
   }
 }
 
@@ -181,25 +210,39 @@ watch(
         panel-class="max-h-[min(40vh,320px)]"
       >
         <template v-if="artifacts.length">
-          <button
+          <div
             v-for="a in artifacts"
             :key="a.id"
-            type="button"
-            class="w-full rounded-[10px] border-0 bg-[var(--color-elevated)] px-2.5 py-2 text-left shadow-[inset_0_0_0_1px_rgba(223,227,232,0.55)] transition-colors hover:bg-[var(--color-hover)] focus-visible:outline-2 focus-visible:outline-[var(--color-brand)] focus-visible:outline-offset-1"
-            :title="a.absPath ? `在文件夹中显示：${a.absPath}` : a.detail"
-            :disabled="!a.absPath"
-            @click="openArtifactFolder(a)"
+            class="flex items-stretch gap-0.5 rounded-[10px] bg-[var(--color-elevated)] shadow-[inset_0_0_0_1px_rgba(223,227,232,0.55)]"
           >
-            <div class="flex items-center gap-1.5">
-              <AppIcon name="folder" :size="12" :stroke-width="2" class="shrink-0 text-[var(--color-ink-3)]" />
-              <span class="truncate text-[12px] font-semibold text-[var(--color-ink-1)]">{{ a.title }}</span>
-              <span
-                v-if="a.kind"
-                class="ml-auto shrink-0 rounded-md bg-[var(--color-hover)] px-1.5 py-0.5 font-mono text-[10px] text-[var(--color-ink-3)]"
-              >{{ a.kind }}</span>
-            </div>
-            <p v-if="a.detail" class="m-0 mt-1 text-[11.5px] leading-[1.45] text-[var(--color-ink-2)]">{{ a.detail }}</p>
-          </button>
+            <button
+              type="button"
+              class="min-w-0 flex-1 rounded-[10px] border-0 bg-transparent px-2.5 py-2 text-left transition-colors hover:bg-[var(--color-hover)] focus-visible:outline-2 focus-visible:outline-[var(--color-brand)] focus-visible:outline-offset-1"
+              :title="a.absPath ? `在文件夹中显示：${a.absPath}` : a.detail"
+              :disabled="!a.absPath"
+              @click="openArtifactFolder(a)"
+            >
+              <div class="flex items-center gap-1.5">
+                <AppIcon name="folder" :size="12" :stroke-width="2" class="shrink-0 text-[var(--color-ink-3)]" />
+                <span class="truncate text-[12px] font-semibold text-[var(--color-ink-1)]">{{ a.title }}</span>
+                <span
+                  v-if="a.kind"
+                  class="ml-auto shrink-0 rounded-md bg-[var(--color-hover)] px-1.5 py-0.5 font-mono text-[10px] text-[var(--color-ink-3)]"
+                >{{ a.kind }}</span>
+              </div>
+              <p v-if="a.detail" class="m-0 mt-1 text-[11.5px] leading-[1.45] text-[var(--color-ink-2)]">{{ a.detail }}</p>
+            </button>
+            <button
+              type="button"
+              class="m-1 grid h-7 w-7 shrink-0 place-items-center self-center rounded-lg border-0 bg-transparent text-[var(--color-ink-3)] transition-colors hover:bg-[rgb(248_101_118/0.14)] hover:text-[var(--color-danger-ink)] focus-visible:outline-2 focus-visible:outline-[var(--color-brand)] focus-visible:outline-offset-1 disabled:opacity-40"
+              :title="`删除 ${a.title}`"
+              :disabled="!a.absPath || !conversationId || deletingId === a.id"
+              :aria-label="`删除产物 ${a.title}`"
+              @click.stop="deleteArtifact(a)"
+            >
+              <AppIcon name="trash" :size="12" :stroke-width="2" />
+            </button>
+          </div>
         </template>
         <p v-else class="m-0 px-0.5 py-1 text-[11.5px] leading-[1.5] text-[var(--color-ink-3)]">
           会话工作区暂无文件。脚本、导出等会出现在这里。

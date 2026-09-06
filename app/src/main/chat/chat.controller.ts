@@ -54,6 +54,12 @@ export class ChatController {
     return this.chat.listArtifacts(conversationId)
   }
 
+  /** 删除产物文件（须在会话 workspace 内；二次确认在渲染层） */
+  @IpcHandle('removeArtifact')
+  removeArtifact(data: { conversationId: string; absPath: string }) {
+    return this.chat.removeArtifact(data.conversationId, data.absPath)
+  }
+
   /** 读取助手消息对应的思考流日志 */
   @IpcHandle('getThinkingLog')
   getThinkingLog(data: { conversationId: string; messageId: string }) {

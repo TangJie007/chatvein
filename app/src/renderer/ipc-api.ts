@@ -58,6 +58,10 @@ export interface IpcApi {
   'chat:send': (input: ChatSendInput) => Promise<ChatSendResult>
   'chat:retry': (input: ChatRetryInput) => Promise<ChatSendResult>
   'chat:listArtifacts': (conversationId: string) => Promise<ChatArtifactItem[]>
+  'chat:removeArtifact': (data: {
+    conversationId: string
+    absPath: string
+  }) => Promise<{ ok: true; absPath: string }>
   'chat:getThinkingLog': (data: {
     conversationId: string
     messageId: string

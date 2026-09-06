@@ -186,6 +186,11 @@ async function refreshArtifacts(conversationId: string): Promise<void> {
   }
 }
 
+/** 本地列表移除已删除产物（磁盘删除由 IPC 完成） */
+function dropArtifact(artifactId: string): void {
+  artifacts.value = artifacts.value.filter((a) => a.id !== artifactId)
+}
+
 async function remove(id: string): Promise<void> {
   await api.chat.remove(id)
   conversations.value = conversations.value.filter((c) => c.id !== id)
@@ -320,6 +325,7 @@ export function useChat() {
     },
     refresh,
     refreshArtifacts,
+    dropArtifact,
     selectThinking,
     ensureActive,
     create,

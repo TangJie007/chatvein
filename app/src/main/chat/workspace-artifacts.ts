@@ -25,11 +25,25 @@ export interface ChatArtifactItem {
   absPath?: string
 }
 
-const SKIP_DIRS = new Set(['node_modules', '.git', '.venv', '__pycache__', '.cache', 'logs'])
+/** 内部/噪音目录：不计入产物面板（含 memory：checkpoints / short-term） */
+const SKIP_DIRS = new Set([
+  'node_modules',
+  '.git',
+  '.venv',
+  '__pycache__',
+  '.cache',
+  'logs',
+  'memory',
+])
 
 const WRITE_TOOL_RE = /write|create|edit|save|append|mkdir|move|copy|upload|generate/i
 
-/** 递归列出工作区文件（跳过常见噪音目录） */
+function isInternalArtifactRel(rel: string): boolean {
+  const r = rel.replace(/\\/g, '/').replace(/^\.\//, '')
+  return r === 'memory' || r.startsWith('memory/')
+}
+
+/** 递归列出工作区文件（跳过常见噪音目录与 memory/） */
 export async function listWorkspaceFiles(root: string): Promise<WorkspaceFileEntry[]> {
   const out: WorkspaceFileEntry[] = []
   const base = root.trim()
@@ -52,9 +66,11 @@ export async function listWorkspaceFiles(root: string): Promise<WorkspaceFileEnt
       if (!ent.isFile()) continue
       try {
         const st = await fs.stat(abs)
+        const relPath = toPosixRel(base, abs)
+        if (isInternalArtifactRel(relPath)) continue
         out.push({
           absPath: abs,
-          relPath: toPosixRel(base, abs),
+          relPath,
           mtimeMs: st.mtimeMs,
           size: st.size,
         })
@@ -102,6 +118,7 @@ export function artifactsFromReactMessages(
       const pathArg = pathFromToolArgs(call.args)
       if (!pathArg) continue
       const rel = normalizeToolPath(pathArg, workspaceRoot)
+      if (isInternalArtifactRel(rel)) continue
       const id = rel
       if (byId.has(id)) continue
       byId.set(id, {

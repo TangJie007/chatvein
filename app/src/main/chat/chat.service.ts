@@ -27,7 +27,7 @@ import {
 import { createEndpointModel } from '@chatvein/models'
 import { randomUUID } from 'node:crypto'
 import { promises as fs } from 'node:fs'
-import { join } from 'node:path'
+import { isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { AgentService } from '../agent/agent.service'
 import { MAIN_AGENT_ID } from '../agent/agent.types'
 import type { AgentConfig } from '../agent/agent.types'
@@ -152,6 +152,59 @@ export class ChatService {
     if (!conv) throw new NotFoundException(`conversation:${conversationId}`)
     const files = await listWorkspaceFiles(conv.workspacePath)
     return artifactsFromWorkspaceDiff(new Map(), files)
+  }
+
+  /**
+   * 删除产物文件：必须落在该会话 workspace 内，且不得删 memory/ 等内部目录。
+   */
+  async removeArtifact(
+    conversationId: string,
+    absPath: string,
+  ): Promise<{ ok: true; absPath: string }> {
+    const conv = await this.store.get(conversationId)
+    if (!conv) throw new NotFoundException(`conversation:${conversationId}`)
+
+    const targetRaw = absPath?.trim()
+    if (!targetRaw) throw new ValidationException('产物路径不能为空')
+
+    const root = resolve(conv.workspacePath)
+    const target = resolve(isAbsolute(targetRaw) ? targetRaw : join(root, targetRaw))
+    const relToRoot = relative(root, target)
+    if (
+      !relToRoot ||
+      isAbsolute(relToRoot) ||
+      relToRoot === '..' ||
+      relToRoot.startsWith(`..${sep}`) ||
+      relToRoot.startsWith('../') ||
+      relToRoot.startsWith('..\\')
+    ) {
+      throw new ValidationException('只能删除当前会话工作区内的文件')
+    }
+
+    const relPosix = relToRoot.split(/[/\\]/).join('/')
+    if (relPosix === 'memory' || relPosix.startsWith('memory/')) {
+      throw new ValidationException('不能删除 memory 内部文件')
+    }
+    const top = relPosix.split('/')[0] ?? ''
+    if (['node_modules', '.git', '.venv', '__pycache__', '.cache', 'logs'].includes(top)) {
+      throw new ValidationException(`不能删除受保护目录：${top}`)
+    }
+
+    let st
+    try {
+      st = await fs.lstat(target)
+    } catch {
+      throw new NotFoundException(target)
+    }
+    if (st.isDirectory()) {
+      throw new ValidationException('产物面板仅支持删除文件，不支持删除目录')
+    }
+    if (st.isSymbolicLink()) {
+      throw new ValidationException('不能删除符号链接')
+    }
+
+    await fs.unlink(target)
+    return { ok: true, absPath: target }
   }
 
   /** 读取某条助手回复对应的思考流日志 */
