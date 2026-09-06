@@ -196,6 +196,17 @@ async function remove(id: string): Promise<void> {
   conversations.value = conversations.value.filter((c) => c.id !== id)
   if (currentId.value === id) {
     currentId.value = conversations.value[0]?.id ?? ''
+    // 产物 / 思考面板不再引用已删除会话
+    artifacts.value = []
+    selectedThinkingMessageId.value = ''
+    if (thinking.conversationId === id) {
+      thinking.active = false
+      thinking.phase = 'thinking'
+      thinking.runId = ''
+      thinking.conversationId = ''
+      thinking.text = ''
+    }
+    if (currentId.value) void refreshArtifacts(currentId.value)
   }
 }
 
