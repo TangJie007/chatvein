@@ -43,7 +43,7 @@ import {
   type ShortTermState,
 } from '@chatvein/memory'
 import { randomUUID } from 'node:crypto'
-import { tmpdir } from 'node:os'
+import { app } from 'electron'
 import { promises as fs } from 'node:fs'
 import { isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { AgentService } from '../agent/agent.service'
@@ -111,7 +111,7 @@ export class ChatService implements OnAppReady {
   /** 索引元信息内存缓存（index-meta.json 读一次，避免每轮磁盘 IO） */
   private toolIndexMetaCache: ToolIndexMeta | null = null
   private readonly toolIndexMetaStore = new ToolIndexMetaStore(
-    toolIndexMetaFile(join(tmpdir(), 'chatvein-tool-index')),
+    toolIndexMetaFile(join(app.getPath('userData'), 'forge', 'vector')),
   )
   /** 语义预筛召回上限（粗召回给 L2 精筛） */
   private readonly toolPrescreenTopK = 24
@@ -913,7 +913,14 @@ export class ChatService implements OnAppReady {
     this.toolIndexInit = (async () => {
       try {
         const vector = await import('@chatvein/vector')
-        const embedder: ToolEmbedder = vector.createBgeZhEmbedder({ cacheDir: this.hfCacheDir() })
+        const embedder: ToolEmbedder = vector.createBgeZhEmbedder({
+          cacheDir: this.hfCacheDir(),
+          // 国内直连 huggingface.co 易超时；可用 HF_ENDPOINT / CHATVEIN_HF_ENDPOINT 覆盖
+          remoteHost:
+            process.env.CHATVEIN_HF_ENDPOINT?.trim() ||
+            process.env.HF_ENDPOINT?.trim() ||
+            'https://hf-mirror.com/',
+        })
         const localStore = vector.createLocalVectorStore({
           dataDir: this.toolIndexDataDir(),
           embedder,
@@ -948,6 +955,7 @@ export class ChatService implements OnAppReady {
 
   /** App ready 后后台预建工具索引：版本化全量基准（幂等、失败仅告警，不阻塞窗口） */
   onAppReady(): void {
+    console.log('ChatService onAppReady')
     void this.warmupToolIndex().catch((e) =>
       console.warn('[ChatService] tool index warmup failed', e),
     )
@@ -1120,11 +1128,11 @@ export class ChatService implements OnAppReady {
   }
 
   private toolIndexDataDir(): string {
-    return join(tmpdir(), 'chatvein-tool-index')
+    return join(app.getPath('userData'), 'forge', 'vector')
   }
 
   private hfCacheDir(): string {
-    return join(tmpdir(), 'chatvein-hf-cache')
+    return join(app.getPath('userData'), 'forge', 'hf-cache')
   }
 
   /**

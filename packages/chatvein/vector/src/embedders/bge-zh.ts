@@ -16,6 +16,12 @@ export interface BgeZhEmbedderOptions {
   modelId?: string
   /** 本地缓存目录（默认 HuggingFace cache） */
   cacheDir?: string
+  /**
+   * 远端模型主机（Transformers.js `env.remoteHost`）。
+   * 默认读 `HF_ENDPOINT` / `CHATVEIN_HF_ENDPOINT`，再回落官方 Hub。
+   * 国内可设 `https://hf-mirror.com/`。
+   */
+  remoteHost?: string
   /** 是否允许远端拉权重（CI/离线可关） */
   allowRemoteModels?: boolean
   /** 量化 dtype；Node 默认 q8 更省内存 */
@@ -36,10 +42,11 @@ export class BgeZhEmbedder implements EmbeddingProvider {
   constructor(options: BgeZhEmbedderOptions = {}) {
     this.modelId = options.modelId ?? BGE_SMALL_ZH_ONNX_MODEL
     this.opts = {
+      ...options,
       dtype: options.dtype ?? 'q8',
       pooling: options.pooling ?? 'mean',
       allowRemoteModels: options.allowRemoteModels ?? true,
-      ...options,
+      remoteHost: options.remoteHost ?? defaultRemoteHost(),
     }
   }
 
@@ -50,6 +57,9 @@ export class BgeZhEmbedder implements EmbeddingProvider {
       env.cacheDir = this.opts.cacheDir
     }
     env.allowRemoteModels = this.opts.allowRemoteModels
+    if (this.opts.remoteHost?.trim()) {
+      env.remoteHost = normalizeRemoteHost(this.opts.remoteHost)
+    }
     this.pipe = await pipeline('feature-extraction', this.modelId, {
       dtype: this.opts.dtype,
     })
@@ -85,6 +95,20 @@ export class BgeZhEmbedder implements EmbeddingProvider {
 
 export function createBgeZhEmbedder(options?: BgeZhEmbedderOptions): BgeZhEmbedder {
   return new BgeZhEmbedder(options)
+}
+
+/** 官方 Hub；国内可设环境变量指向 hf-mirror 等 */
+function defaultRemoteHost(): string {
+  const fromEnv =
+    process.env.CHATVEIN_HF_ENDPOINT?.trim() ||
+    process.env.HF_ENDPOINT?.trim() ||
+    ''
+  return fromEnv || 'https://huggingface.co/'
+}
+
+function normalizeRemoteHost(host: string): string {
+  const t = host.trim()
+  return t.endsWith('/') ? t : `${t}/`
 }
 
 function tensorToFloat32(tensor: unknown, expectedDim: number): Float32Array {

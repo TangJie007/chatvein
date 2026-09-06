@@ -1,5 +1,5 @@
 import { Injectable } from '@electrum/common'
-import { tmpdir } from 'node:os'
+import { app } from 'electron'
 import { join } from 'node:path'
 
 export interface VectorTableColumn {
@@ -18,10 +18,10 @@ export interface VectorBrowseResult {
 
 /**
  * 工具索引落地目录：必须与 `chat.service.ts` 的 `toolIndexDataDir()` 保持一致。
- * 该 LanceDB 数据集在对话首次触发工具选用时懒建，落在系统临时目录。
+ * LanceDB 数据集落在 userData/forge/vector。
  */
 const TOOL_INDEX_TABLE = 'tool_index'
-const toolIndexDataDir = () => join(tmpdir(), 'chatvein-tool-index')
+const toolIndexDataDir = () => join(app.getPath('userData'), 'forge', 'vector')
 
 @Injectable()
 export class VectorService {

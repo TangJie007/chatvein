@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url'
 import tailwindcss from '@tailwindcss/vite'
 import vue from '@vitejs/plugin-vue'
 import { defineConfig, externalizeDepsPlugin } from 'electron-vite'
+import type { Plugin } from 'vite'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const commonSrc = resolve(__dirname, '../packages/electrum/common/src')
@@ -26,6 +27,52 @@ const chatveinMainAliases = {
 
 const chatveinMainExclude = Object.keys(chatveinMainAliases)
 
+/**
+ * 含原生 .node / 重型 ONNX 的包必须 runtime require，不能打进 electron-vite bundle。
+ * （ssr.noExternal=true 时，workspace 包常被解析成绝对路径，仅靠 deps 名匹配不够。）
+ */
+const NATIVE_VECTOR_EXTERNALS = [
+  '@chatvein/vector',
+  '@huggingface/transformers',
+  '@lancedb/lancedb',
+  'onnxruntime-node',
+  'sharp',
+] as const
+
+function externalizeNativeVector(): Plugin {
+  const pathRes = [
+    /[\\/]packages[\\/]chatvein[\\/]vector[\\/]/,
+    /[\\/]node_modules[\\/](?:@chatvein[\\/]vector|@huggingface[\\/]transformers|@lancedb[\\/]lancedb|onnxruntime-node|sharp)([\\/]|$)/,
+  ]
+  return {
+    name: 'externalize-native-vector',
+    enforce: 'pre',
+    config(config) {
+      const extras: Array<string | RegExp> = [...NATIVE_VECTOR_EXTERNALS, ...pathRes]
+      const prev = config.build?.rollupOptions?.external
+      const merged =
+        prev == null
+          ? extras
+          : Array.isArray(prev)
+            ? [...prev, ...extras]
+            : [prev, ...extras]
+      config.build ??= {}
+      config.build.rollupOptions = {
+        ...config.build.rollupOptions,
+        external: merged,
+      }
+      // 与 electron-vite 的 ssr.noExternal=true 配合：显式保留外部化
+      config.ssr = {
+        ...config.ssr,
+        external: [
+          ...(Array.isArray(config.ssr?.external) ? config.ssr.external : []),
+          ...NATIVE_VECTOR_EXTERNALS,
+        ],
+      }
+    },
+  }
+}
+
 export default defineConfig({
   main: {
     resolve: {
@@ -38,7 +85,9 @@ export default defineConfig({
     plugins: [
       externalizeDepsPlugin({
         exclude: ['@electrum/common', '@electrum/core', ...chatveinMainExclude],
+        include: [...NATIVE_VECTOR_EXTERNALS],
       }),
+      externalizeNativeVector(),
     ],
     build: {
       rollupOptions: {
