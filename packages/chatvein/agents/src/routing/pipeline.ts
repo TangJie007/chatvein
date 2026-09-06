@@ -1,6 +1,7 @@
 /**
- * 路由管线：L1（启发式）→ 可选 L2（弱模结构化）→ 预留 L3。
+ * 路由管线：L1（词典寒暄短路 + 规则软信号）→ 可选 L2（弱模结构化）→ 预留 L3。
  *
+ * L1 仅对 greeting / self_intro 高置信短路；其余 defer_to_l2。
  * L2 在 ReAct 之外；语义意图仍由主模型在 ReAct 内理解。
  */
 import type { RouteDecision, RoutePrototype } from '@chatvein/common'
@@ -12,7 +13,6 @@ import {
   type RouteInput,
 } from './l1'
 import { createL2Classifier, shouldEscalateToL2, type L2Classifier } from './l2'
-import { loadDefaultPrototypes } from './locales'
 
 export interface HeuristicRouterOptions extends L1RouterOptions {
   /** 注入 L2；默认无模型 → Passthrough */
@@ -46,6 +46,7 @@ export class HeuristicRouter {
     this.l1.reloadRules(rules)
   }
 
+  /** @deprecated BM25 先例已移除 */
   reloadPrototypes(prototypes: RoutePrototype[]): void {
     this.l1.reloadPrototypes(prototypes)
   }
@@ -60,7 +61,6 @@ export class HeuristicRouter {
       return l1Decision
     }
 
-    // —— 重点：仅灰区 escalate；terminal / 高置信寒暄不进 L2 ——
     const session = {
       turnIndex: input.session?.turnIndex ?? 0,
       lastBand: input.session?.lastBand,
@@ -94,4 +94,3 @@ export function createHeuristicRouter(options?: HeuristicRouterOptions): Heurist
 }
 
 export type { RouteInput }
-export { loadDefaultPrototypes }

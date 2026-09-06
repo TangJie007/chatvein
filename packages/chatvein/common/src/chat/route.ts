@@ -57,7 +57,7 @@ export interface RoutePrototype {
   text: string
   band: Exclude<ComplexityBand, 'unknown'>
   tools: ToolPolicy
-  lang?: 'zh' | 'en' | 'mix'
+  lang?: 'zh'
   tags?: string[]
 }
 

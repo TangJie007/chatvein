@@ -34,13 +34,6 @@ export function buildL2UserPrompt(ctx: HeuristicCtx, l1: RouteDecision): string 
     lang: ctx.lang,
     hitGreetingOnly: ctx.hitGreetingOnly,
     hitSelfIntro: ctx.hitSelfIntro,
-    hitTaskVerb: ctx.hitTaskVerb,
-    hitToolVerb: ctx.hitToolVerb,
-    hitNegateTool: ctx.hitNegateTool,
-    hitMultiStep: ctx.hitMultiStep,
-    hitCompare: ctx.hitCompare,
-    hitGroupIntent: ctx.hitGroupIntent,
-    hitForgeIntent: ctx.hitForgeIntent,
     hasCodeFence: ctx.hasCodeFence,
     hasPathLike: ctx.hasPathLike,
   }
@@ -48,12 +41,11 @@ export function buildL2UserPrompt(ctx: HeuristicCtx, l1: RouteDecision): string 
     '## 用户消息',
     ctx.text.slice(0, 2000),
     '',
-    '## L1 决策（供参考，请拍板灰区）',
+    '## L1 决策（供参考，请拍板）',
     JSON.stringify(
       {
         band: l1.band,
         confident: l1.confident,
-        score: l1.score,
         policy: l1.policy,
         reasons: l1.reasons.slice(0, 8),
         ruleIds: l1.ruleIds.slice(0, 12),

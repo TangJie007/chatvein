@@ -3,7 +3,6 @@ export {
   createHeuristicRouter,
   getDefaultHeuristicRouter,
   configureDefaultHeuristicRouter,
-  loadDefaultPrototypes,
   type HeuristicRouterOptions,
   type RouteInput,
 } from './pipeline'
@@ -13,15 +12,10 @@ export {
   createL1Router,
   extractFacts,
   isGreetingOnly,
+  isSelfIntro,
   factsFromCtx,
   createDefaultRules,
-  RouteBm25Index,
-  tokenizeForBm25,
   materialize,
-  eventsWantSkipBm25,
-  DEFAULT_SCORE_TABLE,
-  policyForBand,
-  bandFromScore,
   type HeuristicCtx,
   type HeuristicSession,
   type L1RouterOptions,
@@ -42,10 +36,16 @@ export {
 
 export {
   resolveDict,
-  mergeDicts,
+  ZH_DICT,
   DEFAULT_DICTS,
-  DEFAULT_PROTOTYPES,
   SUPPORTED_LANGS,
   type HeuristicDict,
   type SupportedLocale,
 } from './locales'
+
+export {
+  policyForBand,
+  mergePolicy,
+  POLICY_SHORT_CIRCUIT,
+  POLICY_DEFER_TO_L2,
+} from './policy'

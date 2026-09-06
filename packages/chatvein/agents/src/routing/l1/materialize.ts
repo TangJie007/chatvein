@@ -5,17 +5,7 @@ import {
   type RouteDecision,
   type RoutePolicy,
 } from '@chatvein/common'
-import type { Bm25SearchHit } from './bm25-index'
-import {
-  BAND_INHERIT_SCORE,
-  bandFromScore,
-  clampScore,
-  DEFAULT_SCORE_TABLE,
-  mergePolicy,
-  policyForBand,
-  synthesizeTools,
-  type ScoreTable,
-} from './defaults'
+import { mergePolicy, POLICY_DEFER_TO_L2, POLICY_SHORT_CIRCUIT } from '../policy'
 import type { HeuristicCtx } from './features'
 import type { FiredRuleEvent } from './rules-engine'
 import type { RuleEventParams } from './rules'
@@ -23,65 +13,47 @@ import type { RuleEventParams } from './rules'
 export interface MaterializeInput {
   ctx: HeuristicCtx
   events: FiredRuleEvent[]
-  bm25Hits?: Bm25SearchHit[]
-  bm25Vote?: {
-    band: Exclude<ComplexityBand, 'unknown'>
-    tools: RoutePolicy['tools']
-    ratio: number
-    adopted: boolean
-  } | null
-  scoreTable?: ScoreTable
-  /** 规则已要求跳过 BM25 时由上层传入；此处再读事件 */
-  skipBm25?: boolean
 }
 
 interface Acc {
-  score: number
   reasons: string[]
   ruleIds: string[]
   bandOverride?: ComplexityBand
   policyPatch: Partial<RoutePolicy>
   terminal?: RouteDecision['terminal']
   confident?: boolean
-  skipBm25: boolean
-  forbidTrivial: boolean
-  forceUnknown: boolean
-  /** negate_tools：工具策略锁定为 none，BM25 不可抬升 */
-  lockToolsNone: boolean
 }
 
+/**
+ * L1 只有两岔：
+ * 1) terminal / 寒暄短路 → SHORT_CIRCUIT（规则 patch 可覆盖，如 mention→standard）
+ * 2) 其余 → DEFER_TO_L2（band=unknown，交 L2）
+ */
 export function materialize(input: MaterializeInput): RouteDecision {
-  const table = input.scoreTable ?? DEFAULT_SCORE_TABLE
   const acc: Acc = {
-    score: 0,
     reasons: [],
     ruleIds: [],
     policyPatch: {},
-    skipBm25: Boolean(input.skipBm25),
-    forbidTrivial: false,
-    forceUnknown: false,
-    lockToolsNone: false,
   }
 
   for (const ev of input.events) {
-    applyEvent(acc, ev.params, input.ctx)
+    applyEvent(acc, ev.params)
   }
 
-  // forceTier：从 ctx 写入 policy
   if (input.ctx.forceTier) {
     acc.policyPatch.modelTier = input.ctx.forceTier
     acc.reasons.push('force_tier')
   }
 
-  // terminal 短路
   if (acc.terminal) {
     const band = acc.bandOverride ?? 'trivial'
-    const policy = mergePolicy(policyForBand(band), acc.policyPatch)
+    // mention 等规则已在 patch 里带全量 policy；底策仅补缺省
+    const base = band === 'trivial' ? POLICY_SHORT_CIRCUIT : POLICY_DEFER_TO_L2
     return parseRouteDecision({
       band,
       confident: acc.confident ?? true,
-      policy,
-      score: clampScore(acc.score),
+      policy: mergePolicy(base, acc.policyPatch),
+      score: 0,
       reasons: acc.reasons,
       ruleIds: acc.ruleIds,
       terminal: {
@@ -95,129 +67,52 @@ export function materialize(input: MaterializeInput): RouteDecision {
     })
   }
 
-  let band: ComplexityBand
-  let confident: boolean
-
-  if (acc.bandOverride) {
-    band = acc.bandOverride
-    confident = acc.confident ?? true
-  } else {
-    const fromScore = bandFromScore(acc.score, table)
-    const inGrey = acc.score >= table.greyLow && acc.score <= table.greyHigh
-    band = acc.forceUnknown || inGrey ? 'unknown' : fromScore
-    confident = acc.confident ?? (!inGrey && !acc.forceUnknown && acc.score > 0)
-
-    // BM25：无硬 band override 时可采纳；tools 与规则合成（unknown 粘性，negate 锁定）
-    // trivial 只认规则（greeting / self_intro），禁止 BM25 单独定档，避免「你好 + 真问题」误短路
-    const vote = input.bm25Vote
-    if (vote?.adopted && !acc.bandOverride) {
-      if (vote.band === 'trivial') {
-        acc.reasons.push(`bm25_trivial_ignored:${vote.ratio.toFixed(2)}`)
-      } else {
-        band = vote.band
-        acc.policyPatch.tools = synthesizeTools(
-          acc.policyPatch.tools ?? 'none',
-          [vote.tools],
-          acc.lockToolsNone,
-        )
-        confident = true
-        acc.reasons.push(`bm25_vote:${vote.band}:${vote.ratio.toFixed(2)}`)
-      }
-    } else if (vote && !vote.adopted) {
-      // 方案 A：弱投票只作灰区信号，不得自信定档（避免「整理成 md」→ simple/none）
-      acc.score = clampScore(acc.score + 5)
-      acc.reasons.push('bm25_weak_vote')
-      confident = false
-      if (!acc.bandOverride) {
-        band = 'unknown'
-      }
-    }
+  if (isGreetingShortCircuit(acc)) {
+    return parseRouteDecision({
+      band: 'trivial',
+      confident: true,
+      policy: mergePolicy(POLICY_SHORT_CIRCUIT, acc.policyPatch),
+      score: 0,
+      reasons: acc.reasons,
+      ruleIds: acc.ruleIds,
+    })
   }
 
-  if (acc.forbidTrivial && band === 'trivial') {
-    band = 'simple'
-    confident = false
-  }
-
-  // 无命中信号的短消息：保守 unknown，禁止当 trivial
-  if (
-    acc.score === 0 &&
-    !acc.bandOverride &&
-    !input.ctx.hitGreetingOnly &&
-    !input.ctx.hitSelfIntro &&
-    input.ctx.charLen > 0 &&
-    input.ctx.charLen < 40 &&
-    input.ctx.dictCoverage === 'none'
-  ) {
-    band = 'unknown'
-    confident = false
+  if (input.ctx.dictCoverage === 'none' && input.ctx.charLen > 0) {
     acc.reasons.push('no_signal_unsupported_lang')
   }
-
-  if (acc.score === 0 && !acc.bandOverride && band !== 'trivial' && !confident) {
-    band = 'unknown'
+  if (!acc.reasons.includes('defer_to_l2')) {
+    acc.reasons.push('defer_to_l2')
   }
-
-  // 无规则 bump 且 BM25 未自信采纳 → 保守 unknown（勿冲掉已采纳的 bm25_vote）
-  if (
-    acc.score === 0 &&
-    !acc.bandOverride &&
-    !input.ctx.hitGreetingOnly &&
-    !input.ctx.hitSelfIntro &&
-    !confident
-  ) {
-    band = 'unknown'
-    confident = false
-    if (!acc.reasons.includes('no_signal_unsupported_lang')) {
-      acc.reasons.push('no_strong_signal')
-    }
-  }
-
-  const policy = mergePolicy(policyForBand(band), acc.policyPatch)
 
   return parseRouteDecision({
-    band,
-    confident: Boolean(confident),
-    policy,
-    score: clampScore(acc.score),
+    band: 'unknown',
+    confident: false,
+    policy: mergePolicy(POLICY_DEFER_TO_L2, acc.policyPatch),
+    score: 0,
     reasons: acc.reasons,
     ruleIds: acc.ruleIds,
-    bm25Hits: input.bm25Hits?.map((h) => ({
-      id: h.id,
-      score: h.score,
-      band: h.band,
-      tools: h.tools,
-    })),
   })
 }
 
-function applyEvent(acc: Acc, params: RuleEventParams, ctx: HeuristicCtx): void {
-  const { ruleId, reason } = params
-  if (ruleId) acc.ruleIds.push(ruleId)
-  if (reason) acc.reasons.push(reason)
+function isGreetingShortCircuit(acc: Acc): boolean {
+  if (acc.confident !== true || acc.bandOverride !== 'trivial') return false
+  return (
+    acc.ruleIds.includes('greeting_trivial') || acc.ruleIds.includes('self_intro_trivial')
+  )
+}
 
-  if (params.scoreDelta) acc.score += params.scoreDelta
-  if (params.longTextTier) acc.score += longTextDelta(ctx.charLen)
-  if (params.inheritLastBand && ctx.lastBand && ctx.lastBand !== 'unknown') {
-    acc.score += Math.round(BAND_INHERIT_SCORE[ctx.lastBand] * 0.5)
-  }
+function applyEvent(acc: Acc, params: RuleEventParams): void {
+  if (params.ruleId) acc.ruleIds.push(params.ruleId)
+  if (params.reason) acc.reasons.push(params.reason)
   if (params.policy) acc.policyPatch = mergePolicyPatch(acc.policyPatch, params.policy)
-  if (params.ruleId === 'negate_tools' || params.reason === 'negate_tools') {
-    acc.lockToolsNone = true
-  }
   if (params.band) acc.bandOverride = params.band
   if (params.terminal) {
     acc.terminal = params.terminal
     if (params.confident !== false) acc.confident = true
   }
-  if (params.skipBm25) acc.skipBm25 = true
-  if (params.confident === false && !acc.terminal) {
-    acc.confident = false
-    acc.forceUnknown = true
-  } else if (params.confident === true) {
-    acc.confident = true
-  }
-  if (params.forbidTrivial) acc.forbidTrivial = true
+  if (params.confident === true) acc.confident = true
+  if (params.confident === false && !acc.terminal) acc.confident = false
 }
 
 function mergePolicyPatch(
@@ -235,15 +130,4 @@ function mergePolicyPatch(
     maxSteps: b.maxSteps ?? a.maxSteps,
     memoryRecall: b.memoryRecall ?? a.memoryRecall,
   }
-}
-
-function longTextDelta(charLen: number): number {
-  if (charLen > 2000) return 30
-  if (charLen > 800) return 20
-  if (charLen > 200) return 10
-  return 0
-}
-
-export function eventsWantSkipBm25(events: FiredRuleEvent[]): boolean {
-  return events.some((e) => e.params.skipBm25)
 }

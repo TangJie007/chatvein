@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { shouldEscalateToL2 } from '../../l2'
 import { createL1Router } from '../router'
 
 describe('L1HeuristicRouter', () => {
@@ -17,42 +18,37 @@ describe('L1HeuristicRouter', () => {
     expect(d.policy.tools).toBe('none')
     expect(d.confident).toBe(true)
     expect(d.ruleIds).toContain('greeting_trivial')
+    expect(shouldEscalateToL2(d)).toBe(false)
   })
 
-  it('寒暄开头夹真问题 → 不得 trivial / maxSteps=0', async () => {
+  it('寒暄开头夹真问题 → 不得 trivial，defer L2', async () => {
     const d = await router.route({ text: '你好，1+1等于多少' })
-    expect(d.band).not.toBe('trivial')
-    expect(d.policy.maxSteps).toBeGreaterThan(0)
+    expect(d.band).toBe('unknown')
+    expect(d.confident).toBe(false)
+    expect(d.reasons).toContain('defer_to_l2')
     expect(d.ruleIds).not.toContain('greeting_trivial')
-    expect(d.reasons.some((r) => r.startsWith('bm25_vote:trivial'))).toBe(false)
+    expect(shouldEscalateToL2(d)).toBe(true)
   })
 
-  it('自我介绍 → trivial + weak + 本地可短路', async () => {
+  it('自我介绍 → trivial', async () => {
     const d = await router.route({ text: '我叫唐杰' })
     expect(d.band).toBe('trivial')
-    expect(d.policy.modelTier).toBe('weak')
-    expect(d.policy.tools).toBe('none')
     expect(d.policy.maxSteps).toBe(0)
-    expect(d.confident).toBe(true)
     expect(d.ruleIds).toContain('self_intro_trivial')
+    expect(shouldEscalateToL2(d)).toBe(false)
   })
 
-  it('自我介绍夹任务 → 不走 trivial', async () => {
+  it('自我介绍夹任务 → defer L2', async () => {
     const d = await router.route({ text: '我叫唐杰，帮我写个登录' })
-    expect(d.band).not.toBe('trivial')
+    expect(d.band).toBe('unknown')
     expect(d.ruleIds).not.toContain('self_intro_trivial')
+    expect(shouldEscalateToL2(d)).toBe(true)
   })
 
-  it('无 task_verb 长请求 + 弱 BM25 → 灰区（不自信定 simple）', async () => {
+  it('任务请求 → defer L2', async () => {
     const d = await router.route({ text: '帮我整理vue3 的 响应式原理 整理成md文档' })
-    // 方案 A：弱投票不得落成自信 simple/none
-    if (d.reasons.includes('bm25_weak_vote')) {
-      expect(d.confident).toBe(false)
-      expect(d.band).toBe('unknown')
-    }
-    expect(d.band).not.toBe('trivial')
-    // 无论弱投票或 no_strong_signal，都应可 escalate
-    const { shouldEscalateToL2 } = await import('../../l2')
+    expect(d.band).toBe('unknown')
+    expect(d.reasons).toContain('defer_to_l2')
     expect(shouldEscalateToL2(d)).toBe(true)
   })
 
@@ -70,47 +66,24 @@ describe('L1HeuristicRouter', () => {
     expect(d.terminal?.kind).toBe('mention')
   })
 
-  it('代码+路径抬升复杂度', async () => {
+  it('普通任务 → defer L2（无 L1 意图 bump）', async () => {
     const d = await router.route({
       text: '请修复 ./src/main.ts 里的错误\n```ts\nfoo()\n```',
     })
-    expect(d.score).toBeGreaterThanOrEqual(40)
-    expect(['standard', 'complex', 'unknown']).toContain(d.band)
-    expect(d.policy.tools).not.toBe('none')
+    expect(d.band).toBe('unknown')
+    expect(d.confident).toBe(false)
+    expect(d.reasons).toContain('defer_to_l2')
+    expect(shouldEscalateToL2(d)).toBe(true)
   })
 
-  it('拉群意图只 hint UI，不 terminal 建群', async () => {
-    const d = await router.route({ text: '拉个群一起讨论架构' })
-    expect(d.policy.hintUserCreateGroup).toBe(true)
-    expect(d.terminal).toBeUndefined()
-  })
-
-  it('对比选型允许子 Agent', async () => {
-    const d = await router.route({ text: '帮我做 Redis 和 Memcached 的选型权衡哪个更好' })
-    expect(d.policy.allowSubAgents).toBe(true)
-  })
-
-  it('工具动词 → tools full', async () => {
-    const d = await router.route({ text: '查询一下今天北京的天气' })
-    expect(d.policy.tools).toBe('full')
-  })
-
-  it('天气口语问法 → tools full（先例）', async () => {
-    const d = await router.route({ text: '今天惠阳天气怎么样' })
-    expect(d.policy.tools).toBe('full')
-  })
-
-  it('否定工具 → tools none', async () => {
-    const d = await router.route({ text: '解释一下闭包，不要改文件' })
-    expect(d.policy.tools).toBe('none')
-  })
-
-  it('forceTier 覆盖', async () => {
+  it('forceTier 覆盖寒暄', async () => {
     const d = await router.route({
       text: '你好',
       session: { forceTier: 'strong' },
     })
+    expect(d.band).toBe('trivial')
     expect(d.policy.modelTier).toBe('strong')
+    expect(shouldEscalateToL2(d)).toBe(false)
   })
 
   it('disabled → 保守 unknown', async () => {

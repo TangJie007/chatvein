@@ -6,7 +6,7 @@
  */
 import type { RouteDecision, RoutePolicy } from '@chatvein/common'
 import { parseRouteDecision } from '@chatvein/common'
-import { mergePolicy, policyForBand } from '../l1/defaults'
+import { mergePolicy, policyForBand } from '../policy'
 import type { L2Judgement } from './schema'
 
 export function mergeL2Judgement(l1: RouteDecision, judgement: L2Judgement): RouteDecision {

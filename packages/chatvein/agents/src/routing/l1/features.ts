@@ -15,32 +15,20 @@ export interface HeuristicCtx extends HeuristicSession {
   textNorm: string
   charLen: number
   tokenEst: number
-  lang: 'zh' | 'en' | 'mix' | 'unknown'
-  dictCoverage: 'full' | 'partial' | 'none'
+  /** 产品仅支持中文；非中文为 unsupported */
+  lang: 'zh' | 'unsupported'
+  dictCoverage: 'full' | 'none'
 
   hasCodeFence: boolean
-  codeFenceCount: number
   hasUrl: boolean
   hasPathLike: boolean
   hasMention: boolean
   mentions: string[]
   hasSlashCmd: boolean
   slashCmd: string
-  questionMarkCount: number
-  listItemCount: number
 
   hitGreetingOnly: boolean
-  /** 短句自我介绍（句首前缀 + 短余下部分） */
   hitSelfIntro: boolean
-  hitTaskVerb: boolean
-  hitToolVerb: boolean
-  hitNegateTool: boolean
-  hitMultiStep: boolean
-  hitCompare: boolean
-  hitGroupIntent: boolean
-  hitMultiAgentNeed: boolean
-  hitForgeIntent: boolean
-  hitCorrection: boolean
 }
 
 const PATH_RE =
@@ -48,8 +36,10 @@ const PATH_RE =
 const URL_RE = /https?:\/\/[^\s]+/i
 const MENTION_RE = /@([\w\u4e00-\u9fff.-]+)/g
 const SLASH_RE = /^\/([a-zA-Z][\w-]*)\b/
-const LIST_RE = /(?:^|\n)\s*(?:\d+[.)]\s+|[-*•]\s+)/g
 const CODE_FENCE_RE = /```/g
+/** 自我介绍余下部分：像名字，不像任务句 */
+const NAME_REST_RE = /^[\u4e00-\u9fffA-Za-z·]{1,8}$/
+const NOT_NAME_RE = /[的了着过来去要帮写改做查看搜修跑]|代码|文件|登录|问题/
 
 export function extractFacts(text: string, session: HeuristicSession): HeuristicCtx {
   const trimmed = text.trim()
@@ -58,13 +48,9 @@ export function extractFacts(text: string, session: HeuristicSession): Heuristic
   const lang = detectLang(trimmed)
   const { dict, coverage } = resolveDict(lang)
 
-  const codeFenceCount = countMatches(trimmed, CODE_FENCE_RE)
   const mentions = [...trimmed.matchAll(MENTION_RE)].map((m) => m[1]!)
   const slash = trimmed.match(SLASH_RE)
-
-  const hitTaskVerb = includesAny(textNorm, dict.taskVerbs)
-  const hitToolVerb = includesAny(textNorm, dict.toolVerbs)
-  const hitNegateTool = includesAny(textNorm, dict.negateTools)
+  const codeFenceCount = countMatches(trimmed, CODE_FENCE_RE)
 
   return {
     ...session,
@@ -75,60 +61,37 @@ export function extractFacts(text: string, session: HeuristicSession): Heuristic
     lang,
     dictCoverage: coverage,
     hasCodeFence: codeFenceCount >= 2,
-    codeFenceCount,
     hasUrl: URL_RE.test(trimmed),
     hasPathLike: PATH_RE.test(trimmed),
     hasMention: mentions.length > 0,
     mentions,
     hasSlashCmd: Boolean(slash),
     slashCmd: slash?.[1] ?? '',
-    questionMarkCount: countChars(trimmed, '？?¿؟'),
-    listItemCount: countMatches(trimmed, LIST_RE),
     hitGreetingOnly: isGreetingOnly(textNorm, dict),
     hitSelfIntro: isSelfIntro(textNorm, dict),
-    hitTaskVerb,
-    hitToolVerb,
-    hitNegateTool,
-    hitMultiStep: includesAny(textNorm, dict.multiStep),
-    hitCompare: includesAny(textNorm, dict.compare),
-    hitGroupIntent: includesAny(textNorm, dict.groupIntent),
-    hitMultiAgentNeed: includesAny(textNorm, dict.multiAgentNeed),
-    hitForgeIntent: includesAny(textNorm, dict.forgeIntent),
-    hitCorrection: includesAny(textNorm, dict.correction),
   }
 }
 
-function detectLang(text: string): 'zh' | 'en' | 'mix' | 'unknown' {
+function detectLang(text: string): 'zh' | 'unsupported' {
   let zh = 0
   let en = 0
   for (const ch of text) {
     if (/[\u4e00-\u9fff]/.test(ch)) zh++
     else if (/[A-Za-z]/.test(ch)) en++
   }
-  if (zh === 0 && en === 0) return 'unknown'
-  if (zh > 0 && en > 0 && zh >= 2 && en >= 4) return 'mix'
-  if (zh >= en) return 'zh'
-  return 'en'
+  if (zh === 0) return 'unsupported'
+  if (en > 0 && en > zh * 2) return 'unsupported'
+  return 'zh'
 }
 
 function estimateTokens(text: string, lang: HeuristicCtx['lang']): number {
-  if (lang === 'zh' || lang === 'mix') return Math.max(1, [...text].length)
+  if (lang === 'zh') return Math.max(1, [...text].length)
   return Math.max(1, Math.ceil(text.length / 4))
 }
 
 function countMatches(text: string, re: RegExp): number {
   const flags = re.flags.includes('g') ? re.flags : `${re.flags}g`
   return [...text.matchAll(new RegExp(re.source, flags))].length
-}
-
-function countChars(text: string, chars: string): number {
-  let n = 0
-  for (const ch of text) if (chars.includes(ch)) n++
-  return n
-}
-
-function includesAny(haystack: string, needles: string[]): boolean {
-  return needles.some((n) => n && haystack.includes(n))
 }
 
 /** 整句几乎只有寒暄；禁止 includes('你好') 即真 */
@@ -148,8 +111,7 @@ export function isGreetingOnly(textNorm: string, dict: HeuristicDict): boolean {
 }
 
 /**
- * 短句自我介绍：去掉空白标点后以词典前缀开头，且余下为短名字段（1～12 字）。
- * 「我是来改代码的」等长句 / 任务句由规则侧 !task/!tool + charLen 再挡。
+ * 短句自我介绍：前缀 + 像名字的短余下（1～8 字，无任务痕迹）。
  */
 export function isSelfIntro(textNorm: string, dict: HeuristicDict): boolean {
   const s = textNorm.replace(/[\s\p{P}\p{S}]+/gu, '')
@@ -159,46 +121,25 @@ export function isSelfIntro(textNorm: string, dict: HeuristicDict): boolean {
     const p = raw.replace(/\s+/g, '')
     if (!p || !s.startsWith(p)) continue
     const rest = s.slice(p.length)
-    if (rest.length < 1 || rest.length > 12) continue
+    if (!NAME_REST_RE.test(rest)) continue
+    if (NOT_NAME_RE.test(rest)) continue
     return true
   }
   return false
 }
 
-/** 供 json-rules-engine 的 facts（全为可序列化标量） */
+/** 供 json-rules-engine 的 facts */
 export function factsFromCtx(ctx: HeuristicCtx): Record<string, string | number | boolean> {
   return {
     charLen: ctx.charLen,
-    tokenEst: ctx.tokenEst,
     lang: ctx.lang,
     dictCoverage: ctx.dictCoverage,
-    hasCodeFence: ctx.hasCodeFence,
-    codeFenceCount: ctx.codeFenceCount,
-    hasUrl: ctx.hasUrl,
-    hasPathLike: ctx.hasPathLike,
-    hasMention: ctx.hasMention,
     hasSlashCmd: ctx.hasSlashCmd,
-    slashCmd: ctx.slashCmd,
-    questionMarkCount: ctx.questionMarkCount,
-    listItemCount: ctx.listItemCount,
+    hasMention: ctx.hasMention,
     hitGreetingOnly: ctx.hitGreetingOnly,
     hitSelfIntro: ctx.hitSelfIntro,
-    hitTaskVerb: ctx.hitTaskVerb,
-    hitToolVerb: ctx.hitToolVerb,
-    hitNegateTool: ctx.hitNegateTool,
-    hitMultiStep: ctx.hitMultiStep,
-    hitCompare: ctx.hitCompare,
-    hitGroupIntent: ctx.hitGroupIntent,
-    hitMultiAgentNeed: ctx.hitMultiAgentNeed,
-    hitForgeIntent: ctx.hitForgeIntent,
-    hitCorrection: ctx.hitCorrection,
-    turnIndex: ctx.turnIndex,
-    lastBand: ctx.lastBand ?? '',
-    lastAssistantHadTools: ctx.lastAssistantHadTools,
-    recentFailure: ctx.recentFailure,
     activeMode: ctx.activeMode,
     forceTier: ctx.forceTier ?? '',
     hasForceTier: Boolean(ctx.forceTier),
-    hasLastBand: Boolean(ctx.lastBand),
   }
 }

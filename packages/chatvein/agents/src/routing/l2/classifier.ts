@@ -99,7 +99,11 @@ export function createL2Classifier(options?: L2ClassifierOptions): L2Classifier 
   return new PassthroughL2Classifier()
 }
 
-/** 是否应进入 L2：低置信、band unknown、或 tools 待判（unknown） */
+/**
+ * 是否应进入 L2。
+ * L1 仅寒暄/自我介绍高置信短路；其余为 unknown / 低置信 / tools:unknown → 必 escalate。
+ * terminal（empty/slash/mention）不进 L2。
+ */
 export function shouldEscalateToL2(decision: RouteDecision): boolean {
   if (decision.terminal) return false
   return (

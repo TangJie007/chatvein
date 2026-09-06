@@ -2,7 +2,7 @@
 
 Chat 产品轨的 **Agent 运行时**：
 
-1. **启发式路由**（L1 / L1.5 → **L2**）：L1 无 LLM；灰区由弱模 JSON 结构化决策（图外，不增加 ReAct 轮次）
+1. **启发式路由**（L1 → **L2**）：L1 无 LLM（词典寒暄短路 + 规则软信号）；灰区由弱模 JSON 结构化决策（图外，不增加 ReAct 轮次）
 2. **L3 执行**：LangChain `createAgent`（LangGraph）+ 工具绑定；**语义意图由主模型在此理解**（演进按 band 选预置 StateGraph）
 
 普通对话与群成员单次发言都由本包驱动。契约类型在 `@chatvein/common`（`chat/route`）。设计见 [`docs/design/09-启发式规则路由.md`](../../../docs/design/09-启发式规则路由.md)；**L2** [`docs/design/10-L2语义路由层.md`](../../../docs/design/10-L2语义路由层.md)；**L3 执行** [`docs/design/11-L3-ReAct自适应循环推理层.md`](../../../docs/design/11-L3-ReAct自适应循环推理层.md)。
@@ -15,9 +15,9 @@ src/
   define-tool.ts
   routing/
     pipeline.ts       # HeuristicRouter：L1 → 可选 L2
-    l1/               # 特征 / json-rules-engine / MiniSearch 先例 / materialize
+    l1/               # 特征 / json-rules-engine / materialize
     l2/               # schema / prompt / merge / StructuredL2Classifier
-    locales/          # zh 词典 + prototypes/zh.json
+    locales/          # zh.json 词典（仅中文）
 ```
 
 ## 启发式路由（已落地）
@@ -57,14 +57,13 @@ const decision = await router.route({
 
 | 层 | 作用 |
 |----|------|
-| **L1** | `extractFacts` + `json-rules-engine`（词典在 `locales/zh.json`） |
-| **L1.5** | MiniSearch 先例投票 band/tools |
-| **L2** | 灰区弱模 JSON；`mergeL2Judgement`；失败则保留 L1（`l2_failed`） |
+| **L1** | `extractFacts` + `json-rules-engine`（词典在 `locales/zh.json`）；仅寒暄/自我介绍高置信短路 |
+| **L2** | 非寒暄一律 escalate；弱模 JSON；`mergeL2Judgement`；失败则保留 L1（`l2_failed`） |
 
 要点：
 
 - 寒暄整句 → `trivial` + `maxSteps: 0`（不进 L2；app 可本地短路）
-- `tools: unknown` = L1 不确定，**交 L2 拍板** `none|full`
+- 其余 → `defer_to_l2`（`band=unknown`）；**交 L2 拍板** band / tools
 - L2 **不是**意图分类器：不做「用户想干什么」的开放域 NLU；只产出可执行 policy
 - 拉群仅 `hintUserCreateGroup`（UI）；Agent 多智能体用 `allowSubAgents`
 - app `chat.service` 注入 L2 模型（弱模名偏好，否则回退 Agent 模型）
@@ -110,7 +109,6 @@ const { content } = await invokeReactChatAgent(agent, { message: '你好' })
 ## 依赖（路由相关）
 
 - `json-rules-engine` — L1 规则
-- `minisearch` — L1.5 先例检索（CJK bigram 自研分词）
 - `es-toolkit` — 通用工具
 - `@langchain/core` — L2 `SystemMessage` / `HumanMessage` 调用
 - `zod` — L2 `L2Judgement` 校验

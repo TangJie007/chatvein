@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { extractFacts, isGreetingOnly } from '../features'
+import { extractFacts, isGreetingOnly, isSelfIntro } from '../features'
 import { resolveDict } from '../../locales'
 
 describe('extractFacts', () => {
@@ -20,15 +20,16 @@ describe('extractFacts', () => {
   it('自我介绍短句 → hitSelfIntro', () => {
     expect(extractFacts('我叫唐杰', session).hitSelfIntro).toBe(true)
     expect(extractFacts('我的名字是张三', session).hitSelfIntro).toBe(true)
-    const mixed = extractFacts('我叫唐杰，帮我写个登录', session)
-    expect(mixed.hitSelfIntro).toBe(true)
-    expect(mixed.hitTaskVerb).toBe(true)
+  })
+
+  it('自我介绍夹任务 → 不命中 selfIntro', () => {
+    expect(extractFacts('我叫唐杰，帮我写个登录', session).hitSelfIntro).toBe(false)
+    expect(extractFacts('我是来改代码的', session).hitSelfIntro).toBe(false)
   })
 
   it('你好 + 长任务 → 不得 greeting only', () => {
     const ctx = extractFacts('你好，帮我设计一个分布式缓存', session)
     expect(ctx.hitGreetingOnly).toBe(false)
-    expect(ctx.hitTaskVerb).toBe(true)
   })
 
   it('检测代码围栏与路径', () => {
@@ -43,35 +44,17 @@ describe('extractFacts', () => {
     expect(ctx.slashCmd).toBe('help')
   })
 
-  it('拉群意图与否定工具', () => {
-    const g = extractFacts('拉个群一起评审', session)
-    expect(g.hitGroupIntent).toBe(true)
-    const n = extractFacts('只解释，不要改文件', session)
-    expect(n.hitNegateTool).toBe(true)
-  })
-
-  it('英文无词典包 → coverage none', () => {
+  it('非中文 → unsupported + coverage none', () => {
     const ctx = extractFacts('hello there', session)
-    expect(ctx.lang).toBe('en')
+    expect(ctx.lang).toBe('unsupported')
     expect(ctx.dictCoverage).toBe('none')
   })
 
-  it('isGreetingOnly 不因 includes 误伤', () => {
+  it('isGreetingOnly / isSelfIntro', () => {
     const { dict } = resolveDict('zh')
     expect(isGreetingOnly('你好呀', dict)).toBe(true)
     expect(isGreetingOnly('你好世界怎么实现', dict)).toBe(false)
-  })
-
-  it('查询天气命中 tool 词典', () => {
-    const ctx = extractFacts('查询一下今天北京的天气', session)
-    expect(ctx.hitToolVerb).toBe(true)
-    expect(ctx.hitGreetingOnly).toBe(false)
-  })
-
-  it('口语扩展：看下 / 只看不改 / 派 forge', () => {
-    expect(extractFacts('看下日志里最近的报错', session).hitToolVerb).toBe(true)
-    expect(extractFacts('只看不改，说说原因', session).hitNegateTool).toBe(true)
-    expect(extractFacts('交给 forge 无人值守实现', session).hitForgeIntent).toBe(true)
-    expect(extractFacts('你理解错了，我说的是缓存', session).hitCorrection).toBe(true)
+    expect(isSelfIntro('我叫小明', dict)).toBe(true)
+    expect(isSelfIntro('我是来改代码的', dict)).toBe(false)
   })
 })
