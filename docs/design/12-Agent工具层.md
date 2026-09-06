@@ -166,7 +166,7 @@ RouteDecision.policy.tools = full
 
 1. **向量路**：LanceDB cosine（工具描述嵌入，`scope=tool` / `kind=tool_desc`）
 2. **BM25 路**：进程内 MiniSearch（工具名 / humanize / 目录 keywords 别名 / title），CJK bigram 分词
-3. **融合**：RRF（`vectorWeight=1`，`lexicalWeight=1.25`）；最终截断为固定 `topK`（**不再**用候选数抬高）
+3. **融合**：RRF（`vectorWeight=1`，`lexicalWeight=1.25`）；召回上限 `max(prescreenTopK, 候选数)`（用候选数抬高）
 
 召回不足 / 未就绪 / 空 query 一律返回 `[]`，上层回退关键词或全候选（full），因此索引是**纯增益、无正确性依赖**。
 

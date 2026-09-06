@@ -97,7 +97,7 @@ describe('ToolVectorIndex', () => {
     expect(await idx.select('   ', ['filesystem__read'])).toEqual([])
   })
 
-  it('select 固定 Top-K，不再用候选数抬高召回量', async () => {
+  it('select 用候选数抬高 topK（max(prescreenTopK, 候选数)）', async () => {
     const tools = Array.from({ length: 20 }, (_, i) => ({
       name: `tool_${i}`,
       description: `desc ${i} shared topic file write`,
@@ -106,7 +106,9 @@ describe('ToolVectorIndex', () => {
     await idx.build(tools)
     const names = tools.map((t) => t.name)
     const res = await idx.select('file write', names, 5)
-    expect(res.length).toBeLessThanOrEqual(5)
+    // topK=5 但候选 20 → limit=20，可返回多于 5
+    expect(res.length).toBeGreaterThan(5)
+    expect(res.length).toBeLessThanOrEqual(20)
   })
 
   it('别名 BM25 能在向量弱相关时抬升工具名命中', async () => {

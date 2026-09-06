@@ -6,7 +6,7 @@
  *
  * 建索引：候选工具 → `toolEmbedText` 成文 → embedder 嵌入 → store.upsert（scope=tool）
  *         同时进程内重建 MiniSearch（name / human / aliases / title）
- * 检索：  向量路 + BM25 路 → RRF 融合 → 候选内固定 Top-K。
+ * 检索：  向量路 + BM25 路 → RRF 融合 → 候选内 Top-K（`max(prescreenTopK, 候选数)`）。
  * 未就绪 / 无命中 → `select` 返回 []，由上层回退关键词或全候选（full）。
  */
 import { toolEmbedText, type ToolEmbedInput } from './tool-embed'
@@ -191,10 +191,10 @@ export class ToolVectorIndex {
   }
 
   /**
-   * 混合预筛：向量相似度 + 工具名/别名 BM25 → RRF → 候选内固定 Top-K。
+   * 混合预筛：向量相似度 + 工具名/别名 BM25 → RRF → 候选内 Top-K。
    * 未就绪 / 空 query / 无候选 → 返回 []（上层回退）。
    *
-   * 注意：最终截断为传入的 `topK`（默认 prescreenTopK），**不再**用候选数抬高 topK。
+   * 召回上限：`Math.max(topK, candidateNames.length)`（与改混合前一致，用候选数抬高）。
    */
   async select(
     query: string,
@@ -202,14 +202,13 @@ export class ToolVectorIndex {
     topK: number = this.opts.prescreenTopK ?? 24,
   ): Promise<string[]> {
     if (!this.built || !query.trim() || candidateNames.length === 0) return []
-    const limit = Math.max(1, Math.min(topK, candidateNames.length))
-    const fetchK = Math.min(Math.max(limit * 2, limit), candidateNames.length)
+    const limit = Math.max(topK, candidateNames.length)
     const candidates = new Set(candidateNames)
     const min = this.opts.minScore ?? 0
 
-    const vectorRanked = await this.vectorRank(query, candidates, fetchK, min)
+    const vectorRanked = await this.vectorRank(query, candidates, limit, min)
     const lexicalRanked = this.lexical
-      .search(query, { topK: fetchK, candidates })
+      .search(query, { topK: limit, candidates })
       .map((h) => h.id)
 
     if (vectorRanked.length === 0 && lexicalRanked.length === 0) return []

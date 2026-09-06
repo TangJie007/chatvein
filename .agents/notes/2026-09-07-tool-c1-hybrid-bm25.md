@@ -9,7 +9,7 @@
 ## 决策
 
 - `@chatvein/tools` 引入 **`minisearch`**：`ToolBm25Index` 索引 `name` / `human` / `aliases`（catalog keywords）/ `title`，分词 `tokenizeForBm25`（空白 + CJK bigram）。
-- `ToolVectorIndex.select` 改为 **向量路 + BM25 路 → RRF**（默认 `lexicalWeight=1.25`），最终截断为固定 `prescreenTopK`，不再 `Math.max(topK, candidateCount)`。
+- `ToolVectorIndex.select` 改为 **向量路 + BM25 路 → RRF**（默认 `lexicalWeight=1.25`）；召回上限仍为 `Math.max(prescreenTopK, candidateCount)`（用候选数抬高）。
 - 启动 warmup 签名命中：`markReady(tools)` 必须 hydrate 内存 BM25；埋点 `c1=hybrid`。
 - 向量仍空时上层才回退 `keywordSelect` / full。
 
@@ -25,7 +25,7 @@
 
 ## 影响
 
-- 收益：名/别名命中可抬升排序；固定 Top-K 真正收窄 C2 输入；与「工具 BM25 挂 tools」旧笔记一致。
+- 收益：名/别名命中可抬升排序；与「工具 BM25 挂 tools」旧笔记一致。收窄主要靠 RRF 排序 + 后续 C2，而非压死 Top-K。
 - 代价：tools 多一个 `minisearch` 依赖；warmup 跳过写库路径必须传 tools。
 - 后续注意：别名质量仍靠 catalog `keywords`；可按埋点再调 `lexicalWeight` / `rrfK`。
 - 相关：[`2026-09-06-remove-l1-bm25-prototypes.md`](./2026-09-06-remove-l1-bm25-prototypes.md)、[`../docs/design/12-Agent工具层.md`](../docs/design/12-Agent工具层.md)。
