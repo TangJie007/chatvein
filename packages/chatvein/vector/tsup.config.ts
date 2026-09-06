@@ -8,4 +8,12 @@ export default defineConfig({
   splitting: false,
   sourcemap: true,
   clean: true,
+  // 原生/重型依赖不打进包
+  external: [
+    '@huggingface/transformers',
+    '@lancedb/lancedb',
+    '@chatvein/common',
+    'onnxruntime-node',
+    'sharp',
+  ],
 })

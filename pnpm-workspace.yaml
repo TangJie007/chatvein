@@ -12,6 +12,10 @@ allowBuilds:
   esbuild: true
   better-sqlite3: true
   '@modelcontextprotocol/inspector': true
+  # @huggingface/transformers（本地 BGE 嵌入）依赖
+  onnxruntime-node: true
+  protobufjs: true
+  sharp: true
 
 # 供应链安全：允许当天发布的包（开发便利）
 minimumReleaseAge: 0

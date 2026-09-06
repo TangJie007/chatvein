@@ -1,7 +1,7 @@
 {
   "name": "@chatvein/vector",
   "version": "0.1.0",
-  "description": "Embeddings + PGlite/pgvector storage and hybrid retrieval (CP2)",
+  "description": "Embeddings + LanceDB vector storage and retrieval (CP2)",
   "main": "./dist/index.js",
   "module": "./dist/index.mjs",
   "types": "./dist/index.d.ts",
@@ -18,7 +18,9 @@
       "default": "./dist/index.js"
     }
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch",
@@ -26,7 +28,8 @@
   },
   "dependencies": {
     "@chatvein/common": "workspace:*",
-    "@electric-sql/pglite": "^0.5.8"
+    "@huggingface/transformers": "^4.2.0",
+    "@lancedb/lancedb": "^0.38.0"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
