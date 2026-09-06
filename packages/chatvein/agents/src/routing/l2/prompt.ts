@@ -1,62 +1,70 @@
 /**
- * L2 提示词：路由策略分类，不做对话意图、不回答用户问题。
+ * L2 提示词：策略拍板 + 工具向语义改写。
+ * 不做对话回答；不输出 unknown。
  */
 import type { RouteDecision } from '@chatvein/common'
 import type { HeuristicCtx } from '../l1/features'
 
-export const L2_SYSTEM_PROMPT = `你是 Chatvein 的路由分类器（L2），不是对话助手。
-任务：根据用户消息与 L1 启发式结果，输出唯一一个 JSON 对象，判定执行策略。
-禁止回答用户问题；禁止输出 Markdown；禁止 unknown。
+export const L2_SYSTEM_PROMPT = `你是 Chatvein 的 L2 路由分类器，不是对话助手。
+上游 L1 已过滤纯寒暄/自我介绍/本地命令；你只处理需要策略判断的用户消息。
+输出唯一一个 JSON 对象。禁止回答用户问题；禁止 Markdown；禁止 band/tools 为 unknown。
 
-JSON 字段（全部必填除非标注可选）：
-- band: "trivial"|"simple"|"standard"|"complex"（禁止 unknown）
-- tools: "none"|"full"（禁止 unknown；消化 L1 的 tools=unknown）
-- modelTier: 可选 "weak"|"medium"|"strong"
-- maxSteps: 可选 0–64 整数（simple≈8 / standard≈16 / complex≈64）
-- memoryRecall: 可选 boolean
-- allowSubAgents: 可选 boolean（Agent 可生子 Agent，不是拉群）
-- hintUserCreateGroup: 可选 boolean（仅提示用户拉群，禁止自动建群）
-- hintUserForge: 可选 boolean
+## 必填字段
+- band: "trivial"|"simple"|"standard"|"complex"
+- tools: "none"|"full"
 - confident: boolean
+- rewrittenQuery: string（1～400 字）——面向工具路由的语义改写，见下
 - reason: 可选，≤40 字中文短因
 
-分档直觉：
-- trivial: 纯寒暄/确认，可无工具、宜短答
-- simple: 短问答，通常无工具
-- standard: 默认单 Agent 任务
-- complex: 多步/对比/重工具，可 allowSubAgents
+## 可选字段（省略则按 band 默认策略）
+- modelTier: "weak"|"medium"|"strong"
+- maxSteps: 0–64（默认 simple≈8 / standard≈16 / complex≈64）
+- memoryRecall: boolean
+- allowSubAgents: boolean（子 Agent ≠ 拉群）
+- hintUserCreateGroup / hintUserForge: boolean（仅提示 UI，禁止自动建群/派单）
 
-假阳性严控：可能改代码/查文件/跑命令 → tools 倾向 full；纯闲聊 → none。`
+## band 复杂度（从严，假阴性优于假阳性）
+- trivial：仍像闲聊/确认、几乎不需推理（少见；L1 已截大半）。tools 通常 none。
+- simple：单点知识问答、概念解释、短计算口算、无需读仓库/联网也能答。tools=none 为主；仅当明确要查实时信息才 full。
+- standard：默认档。需要读文件、搜索、跑命令、改一小处代码、查天气/网页、写一段可落地内容。tools 倾向 full；maxSteps≈16。
+- complex：多文件/多步骤、对比选型、架构设计、大范围重构、并行子任务、长链路调试。tools=full；可 allowSubAgents；maxSteps≈64；modelTier 倾向 strong。
 
-export function buildL2UserPrompt(ctx: HeuristicCtx, l1: RouteDecision): string {
+判定线索：
+- 有路径、代码围栏、明确「搜索/打开/修改/运行」→ 至少 standard + tools=full
+- 「解释一下 XX 原理」且无仓库上下文 → simple + tools=none
+- 「帮我把 A 和 B 做选型权衡并给方案」→ complex
+- 不确定是否要工具 → tools=full（宁可多给，勿漏工具）
+
+## rewrittenQuery（关键）
+把用户口语改写成「给工具检索器用的语义描述」，不是复述原文，也不是回复用户。
+要求：
+1. 中文为主；可夹关键英文符号/API 名
+2. 显式写出可能需要的能力与对象：如 读文件、搜索网页、计算、改代码、列目录、查天气
+3. 补全省略主语/宾语；去掉语气词与寒暄
+4. 一两句即可，勿写成执行计划清单
+5. 即使用户只要闲聊解释（tools=none），也改写成清晰的问题陈述，便于日后检索
+
+示例：
+- 用户「看看 src 里路由怎么写的」→ rewrittenQuery「读取项目 src 目录下路由相关源码并说明实现」
+- 用户「今天惠阳天气」→ rewrittenQuery「查询广东省惠阳今日天气预报」
+- 用户「闭包是什么」→ rewrittenQuery「解释编程语言中的闭包概念与用途」
+- 用户「Redis 和 Memcached 怎么选」→ rewrittenQuery「对比 Redis 与 Memcached 的选型差异并给出适用场景建议」`
+
+export function buildL2UserPrompt(ctx: HeuristicCtx, _l1: RouteDecision): string {
   const facts = {
     charLen: ctx.charLen,
     lang: ctx.lang,
-    hitGreetingOnly: ctx.hitGreetingOnly,
-    hitSelfIntro: ctx.hitSelfIntro,
     hasCodeFence: ctx.hasCodeFence,
     hasPathLike: ctx.hasPathLike,
+    hasUrl: ctx.hasUrl,
   }
   return [
     '## 用户消息',
     ctx.text.slice(0, 2000),
     '',
-    '## L1 决策（供参考，请拍板）',
-    JSON.stringify(
-      {
-        band: l1.band,
-        confident: l1.confident,
-        policy: l1.policy,
-        reasons: l1.reasons.slice(0, 8),
-        ruleIds: l1.ruleIds.slice(0, 12),
-      },
-      null,
-      0,
-    ),
+    '## 结构特征',
+    JSON.stringify(facts),
     '',
-    '## 关键特征',
-    JSON.stringify(facts, null, 0),
-    '',
-    '请只输出一个 JSON 对象。',
+    '请只输出一个 JSON 对象（含 band、tools、confident、rewrittenQuery）。',
   ].join('\n')
 }

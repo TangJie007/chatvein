@@ -41,6 +41,11 @@ export interface RouteDecision {
   score: number
   reasons: string[]
   ruleIds: string[]
+  /**
+   * L2 产出：面向工具路由 / 向量检索的语义改写（非对用户回复）。
+   * L1 短路时通常缺省。
+   */
+  rewrittenQuery?: string
   terminal?: RouteTerminal
 }
 
@@ -71,6 +76,7 @@ export const RouteDecisionSchema = z.object({
   score: z.number(),
   reasons: z.array(z.string()),
   ruleIds: z.array(z.string()),
+  rewrittenQuery: z.string().min(1).max(400).optional(),
   terminal: z
     .object({
       kind: z.enum(['slash', 'mention', 'empty', 'local_command']),

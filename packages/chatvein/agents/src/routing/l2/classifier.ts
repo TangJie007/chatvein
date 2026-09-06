@@ -1,9 +1,9 @@
 /**
- * L2：弱模型结构化路由分类（灰区 / unknown）。
+ * L2：弱模型结构化路由（策略拍板 + 工具向改写）。
  *
- * - 在 ReAct 图外单独调用，不增加 ReAct 多轮
- * - 不做对话意图（语义理解仍归主模型）；只产出可执行 RoutePolicy 补丁
- * - 无模型配置时退回 Passthrough（透传 L1）
+ * - ReAct 图外单次调用
+ * - 不做对话回答；输出 band/tools + rewrittenQuery
+ * - 无模型时 Passthrough（透传 L1）
  */
 import { HumanMessage, SystemMessage } from '@langchain/core/messages'
 import type { BaseChatModel } from '@langchain/core/language_models/chat_models'

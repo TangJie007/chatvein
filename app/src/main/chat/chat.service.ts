@@ -1065,13 +1065,16 @@ function formatRouteThinking(route: RouteDecision): string {
   if (route.policy.hintUserCreateGroup) hints.push('可提示用户拉群')
   if (route.policy.hintUserForge) hints.push('可提示派 Forge')
   if (route.policy.allowSubAgents) hints.push('允许子 Agent')
+  const hintStr = hints.length ? `；${hints.join('、')}` : ''
   const l2 = route.reasons.includes('l2_classifier')
     ? '；已过 L2'
     : route.reasons.includes('l2_failed') || route.reasons.includes('l2_timeout')
       ? '；L2 失败保留 L1'
       : ''
-  const hintStr = hints.length ? `；${hints.join('、')}` : ''
-  return `路由 L1/L2：band=${route.band} score=${route.score} tier=${route.policy.modelTier} tools=${route.policy.tools} maxSteps=${route.policy.maxSteps}（${route.reasons.slice(0, 6).join(', ') || '—'}）${hintStr}${l2}\n`
+  const rewrite = route.rewrittenQuery
+    ? `；改写=${route.rewrittenQuery.slice(0, 80)}${route.rewrittenQuery.length > 80 ? '…' : ''}`
+    : ''
+  return `路由 L1/L2：band=${route.band} score=${route.score} tier=${route.policy.modelTier} tools=${route.policy.tools} maxSteps=${route.policy.maxSteps}（${route.reasons.slice(0, 6).join(', ') || '—'}）${hintStr}${l2}${rewrite}\n`
 }
 
 function formatPolicyApply(route: RouteDecision): string {
