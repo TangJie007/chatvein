@@ -154,7 +154,108 @@ RouteDecision.policy.tools = full
 
 ---
 
-## 8 相关链接
+## 8 工具向量索引（C1 语义预筛）
+
+> 实现：`packages/chatvein/tools`（原语）+ `app/src/main/chat`（装配 / 同步策略）  
+> 数据：LanceDB `tool_index`（`@chatvein/vector`），落 `tmpdir()/chatvein-tool-index`；元信息 `index-meta.json` 同目录
+> 检索文档：[`tool-selection-design.md`](../tool-selection-design.md) 层 C1
+
+### 8.1 定位与查询路径
+
+在 L2 弱模型精筛之前，对已解析候选做语义粗召回 Top-K（`prescreenTopK=24`），减少 L2 上下文里的无关工具；召回不足 / 未就绪 / 空 query 一律返回 `[]`，上层回退全候选（full），因此索引是**纯增益、无正确性依赖**。
+
+```
+一轮消息 → L1/L2 → resolveBoundTools(候选全集)
+              └→ ToolVectorIndex.select(query, 候选) ──Top-K──▶ L2 弱模型精筛
+                     （scope=tool / kind=tool_desc，本地 bge-small-zh 嵌入）
+```
+
+### 8.2 同步策略：版本化全量基准 + 运行期差量
+
+避免「等第一轮对话才懒建」导致的空库 / 索引快照过期，改为：
+
+| 场景 | 动作 | 触发 |
+|------|------|------|
+| **启动（内置基准）** | 解析**系统工具全集**（`resolveChatTools` full + all，与对话同链路）→ 对入库记录求**内容签名** `sha256(id+content)`；与 `index-meta.json#builtinSignature` 一致且无下线 → 零成本跳过；否则 `replace()`（mergeInsert 按 id 覆盖）+ `purge()` 下线 + 写回签名 | `ChatService.onAppReady()`，后台异步，失败仅告警 |
+| **对话期（差量）** | 每轮候选相对 `syncedNames` 的**新增**工具 `sync()` 增量 upsert（MCP server 热增工具 / warmup 后新挂载）；**不做删除**——agent 白名单收窄会误删，下线统一收敛到下次启动 warmup | `resolveBoundTools` 每轮后 `syncToolIndex(候选)` |
+| **保底** | warmup 未就绪 / 失败时，当轮退化为按候选 `build()` 一次（等价旧懒建路径），随后启动 warmup 接管全量 | 同上 |
+
+要点：
+
+- 签名为**纯内容层**（不涉及向量 / 模型），目录描述、关键词、schema 参数名任何变化都会改签名 → 下次启动自动重建；嵌入语义未变则不误重建。
+- 启动预建避免首轮对话被「下载本地嵌入模型 + 全量嵌入」拖慢（模型下载 `tmpdir()/chatvein-hf-cache`，首次约数十 MB，后台进行）。
+- `VectorDbView`（向量数据库页）只读浏览 `tool_index`，数据就绪后刷新即可见，无需先发消息。
+
+### 8.3 时序图
+
+启动 warmup（版本化全量基准）：
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant App as App ready
+  participant CS as ChatService
+  participant R as resolveChatTools
+  participant IX as ToolVectorIndex
+  participant M as index-meta.json
+  participant DB as LanceDB tool_index
+  App->>CS: onAppReady()（后台，不阻塞）
+  CS->>IX: ensureToolIndex() 懒载 @chatvein/vector + bge
+  CS->>R: 解析系统工具全集（policy=full, allowIds=all, 当前 env MCP）
+  R-->>CS: 工具全集
+  CS->>IX: recordsFor(全集) → 内容签名 sig
+  CS->>M: 读上次 builtinSignature / syncedNames
+  alt sig 一致 且 无下线
+    CS->>CS: 跳过（零写入）
+  else sig 变化 或 有下线
+    CS->>IX: replace(全集)
+    IX->>DB: mergeInsert(id) 覆盖 upsert
+    CS->>IX: purge(下线 ids)
+    IX->>DB: delete(下线)
+    CS->>M: 写回签名 + syncedNames
+  end
+```
+
+对话期 sync（运行期差量）：
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant T as 对话回合
+  participant CS as ChatService
+  participant R as resolveChatTools
+  participant IX as ToolVectorIndex
+  participant M as index-meta.json
+  participant DB as LanceDB tool_index
+  T->>CS: resolveBoundTools
+  CS->>R: 解析候选（policy / 白名单 / MCP 快照）
+  R-->>CS: candidateTools
+  CS->>M: 读 syncedNames（缓存，仅一次磁盘 IO）
+  alt 索引未就绪（warmup 未完成 / 失败）
+    CS->>IX: build(候选) 保底建一次
+  else 候选含新工具（MCP 热增等）
+    CS->>IX: recordsFor(新工具) → sync()
+    IX->>DB: mergeInsert(id) 增量 upsert
+    CS->>M: 并入 syncedNames
+  else 无新增
+    CS->>CS: 无写入（每轮零开销）
+  end
+```
+
+### 8.4 代码落点
+
+| 层 | 文件 | 职责 |
+|----|------|------|
+| 原语 | `packages/chatvein/tools/src/tool-vector-index.ts` | `recordsFor` / `build` / `replace` / `sync` / `purge` / `select`；`ToolVectorStore` 含 `remove` |
+| 嵌入文本 | `packages/chatvein/tools/src/tool-embed.ts` | `toolEmbedText`：name + 目录描述 + schema 参数名 |
+| 元信息 | `app/src/main/chat/tool-index-meta.ts` | `index-meta.json` 读写、`toolIndexSignature` 签名 |
+| 装配 | `app/src/main/chat/chat.service.ts` | `onAppReady` warmup、`syncToolIndex`、串行队列、`ensureToolIndex`（store + embedder 装配） |
+| 存储 | `packages/chatvein/vector/src/store.ts` | `LocalVectorStore.remove(ids)` 批量删除（幂等） |
+| 浏览 | `app/src/renderer/views/VectorDbView.vue` | 只读浏览 `tool_index` |
+
+---
+
+## 9 相关链接
 
 - **挂载地图**：[13-Prompt-MCP-Tool挂载](./13-Prompt-MCP-Tool挂载.md)  
 - L3：[11-L3-ReAct自适应循环推理层](./11-L3-ReAct自适应循环推理层.md)  

@@ -213,6 +213,20 @@ export class LocalVectorStore {
     return true
   }
 
+  /**
+   * 批量删除（幂等）：逐条走已有 delete 语义，避免依赖 SQL `IN` 子句的方言差异。
+   * 返回实际删除条数。空列表 / 表不存在 → 0。
+   */
+  async remove(ids: readonly string[]): Promise<number> {
+    const uniq = [...new Set(ids.filter(Boolean))]
+    if (uniq.length === 0) return 0
+    let removed = 0
+    for (const id of uniq) {
+      if (await this.delete(id)) removed++
+    }
+    return removed
+  }
+
   async count(filter?: VectorSearchFilter): Promise<number> {
     await this.init()
     if (!this.table) return 0

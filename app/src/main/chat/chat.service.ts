@@ -1,4 +1,10 @@
-import { Injectable, Inject, NotFoundException, ValidationException } from '@electrum/common'
+import {
+  Injectable,
+  Inject,
+  NotFoundException,
+  ValidationException,
+  type OnAppReady,
+} from '@electrum/common'
 import {
   createL2Classifier,
   createReactChatAgent,
@@ -48,6 +54,12 @@ import type { ModelConfig } from '../model/model.types'
 import { SettingsService } from '../settings/settings.service'
 import { ChatStore } from './chat.store'
 import { makeConversationSlug } from './session-paths'
+import {
+  toolIndexMetaFile,
+  toolIndexSignature,
+  ToolIndexMetaStore,
+  type ToolIndexMeta,
+} from './tool-index-meta'
 import type {
   ChatMessage,
   ChatSendInput,
@@ -68,7 +80,7 @@ import { readShortTermState, resetShortTermState, writeShortTermState } from './
 import type { BaseMessage } from '@langchain/core/messages'
 
 @Injectable()
-export class ChatService {
+export class ChatService implements OnAppReady {
   @Inject(ChatStore)
   private store!: ChatStore
 
@@ -92,6 +104,15 @@ export class ChatService {
   // —— 工具向量索引（层 C1 语义预筛）；原生模块 @chatvein/vector 懒加载，不进主 bundle 静态图 ——
   private toolIndex: ToolVectorIndex | null = null
   private toolIndexInit: Promise<ToolVectorIndex | null> | null = null
+  /** 索引维护串行队列（warmup 全量 + 每轮 sync 差量共用，避免并发写库/写 meta） */
+  private toolIndexOps: Promise<unknown> = Promise.resolve()
+  /** 启动 warmup 一次性标记（幂等） */
+  private toolIndexWarmup: Promise<void> | null = null
+  /** 索引元信息内存缓存（index-meta.json 读一次，避免每轮磁盘 IO） */
+  private toolIndexMetaCache: ToolIndexMeta | null = null
+  private readonly toolIndexMetaStore = new ToolIndexMetaStore(
+    toolIndexMetaFile(join(tmpdir(), 'chatvein-tool-index')),
+  )
   /** 语义预筛召回上限（粗召回给 L2 精筛） */
   private readonly toolPrescreenTopK = 24
   /** L2 弱模型精筛上限 */
@@ -857,9 +878,9 @@ export class ChatService {
     const byName = new Map(candidateTools.map((t) => [t.name, t]))
     const candidateNames = [...byName.keys()]
 
-    // 后台异步建索引（不阻塞本轮）；冷启动未就绪 → 本轮回退全候选
-    void this.ensureToolIndexAndBuild(candidateTools).catch((e) =>
-      console.warn('[ChatService] tool index build skipped', e),
+    // 后台差量同步索引（不阻塞本轮）：新增候选增量入索引；冷启动未就绪 → 本轮回退全候选
+    void this.syncToolIndex(candidateTools).catch((e) =>
+      console.warn('[ChatService] tool index sync skipped', e),
     )
 
     // 层 C1 语义预筛
@@ -908,6 +929,7 @@ export class ChatService {
                 filter: { scope: TOOL_INDEX_SCOPE, kind: TOOL_INDEX_KIND },
               })
               .then((hits) => hits.map((h) => ({ id: h.id, score: h.score, meta: h.meta }))),
+          remove: (ids) => localStore.remove(ids),
         }
         this.toolIndex = new ToolVectorIndex({
           embedder,
@@ -924,17 +946,128 @@ export class ChatService {
     return this.toolIndexInit
   }
 
-  /** 索引未就绪则异步建一次（不阻塞调用方） */
-  private async ensureToolIndexAndBuild(candidates: StructuredToolInterface[]): Promise<void> {
-    const idx = await this.ensureToolIndex()
-    if (!idx || idx.ready) return
-    await idx.build(
-      candidates.map((t) => ({
-        name: t.name,
-        description: t.description,
-        schema: (t as { schema?: unknown }).schema,
-      })),
+  /** App ready 后后台预建工具索引：版本化全量基准（幂等、失败仅告警，不阻塞窗口） */
+  onAppReady(): void {
+    void this.warmupToolIndex().catch((e) =>
+      console.warn('[ChatService] tool index warmup failed', e),
     )
+  }
+
+  /** 索引维护串行化：warmup 全量与每轮 sync 共享，避免并发写库 / 写 meta */
+  private enqueueToolIndexOp<T>(op: () => Promise<T>): Promise<T> {
+    const run = this.toolIndexOps.then(op, op)
+    this.toolIndexOps = run.then(
+      () => undefined,
+      () => undefined,
+    )
+    return run
+  }
+
+  private async readToolIndexMeta(): Promise<ToolIndexMeta> {
+    if (!this.toolIndexMetaCache) {
+      this.toolIndexMetaCache = await this.toolIndexMetaStore.read()
+    }
+    return this.toolIndexMetaCache
+  }
+
+  private async writeToolIndexMeta(meta: ToolIndexMeta): Promise<void> {
+    this.toolIndexMetaCache = meta
+    await this.toolIndexMetaStore.write(meta)
+  }
+
+  /**
+   * 启动 warmup（版本化基准）：
+   * 解析系统工具全集 → 对入库记录求内容签名；与上次一致且无下线 → 零成本跳过；
+   * 否则全量覆盖 upsert + 清理下线记录 + 写回 meta。
+   */
+  private warmupToolIndex(): Promise<void> {
+    if (!this.toolIndexWarmup) {
+      this.toolIndexWarmup = this.enqueueToolIndexOp(async () => {
+        const idx = await this.ensureToolIndex()
+        if (!idx) return
+        const tools = await this.resolveSystemTools()
+        if (tools.length === 0) return
+        const records = idx.recordsFor(this.toolIndexInputsOf(tools))
+        const signature = toolIndexSignature(records)
+        const meta = await this.readToolIndexMeta()
+        const stale = (meta.syncedNames ?? []).filter((n) => !records.some((r) => r.id === n))
+        if (meta.builtinSignature === signature && stale.length === 0) return
+        console.debug(
+          `[tool-index] warmup rebuild sig=${signature.slice(0, 8)} records=${records.length} stale=${stale.length}`,
+        )
+        await idx.replace(this.toolIndexInputsOf(tools))
+        if (stale.length > 0) await idx.purge(stale)
+        await this.writeToolIndexMeta({
+          builtinSignature: signature,
+          syncedNames: records.map((r) => r.id),
+          updatedAt: Date.now(),
+        })
+      })
+    }
+    return this.toolIndexWarmup
+  }
+
+  /**
+   * 每轮候选差量同步：相对 meta.syncedNames 仅补录新增工具（upsert），
+   * 不做删除（agent 白名单 / MCP 临时不可达可能使候选收窄，运行期误删有风险）；
+   * 下线统一收敛到下次启动的 warmup。
+   * warmup 未就绪时退化为按当轮候选 build 一次（保底，等同旧 ensureToolIndexAndBuild）。
+   */
+  private syncToolIndex(candidates: StructuredToolInterface[]): Promise<void> {
+    return this.enqueueToolIndexOp(async () => {
+      const idx = await this.ensureToolIndex()
+      if (!idx || candidates.length === 0) return
+      const meta = await this.readToolIndexMeta()
+      const known = new Set(meta.syncedNames ?? [])
+
+      if (!idx.ready) {
+        await idx.build(this.toolIndexInputsOf(candidates))
+        const names = new Set<string>(meta.syncedNames ?? [])
+        candidates.forEach((t) => names.add(t.name))
+        await this.writeToolIndexMeta({
+          ...meta,
+          syncedNames: [...names],
+          updatedAt: Date.now(),
+        })
+        return
+      }
+
+      const fresh = candidates.filter((t) => !known.has(t.name))
+      if (fresh.length === 0) return
+      const records = idx.recordsFor(this.toolIndexInputsOf(fresh))
+      if (records.length === 0) return
+      await idx.sync(records)
+      const names = new Set<string>(known)
+      records.forEach((r) => names.add(r.id))
+      await this.writeToolIndexMeta({ ...meta, syncedNames: [...names], updatedAt: Date.now() })
+    })
+  }
+
+  /** warmup 用的系统工具全集：policy full + 无白名单，等同默认对话路由的解析结果 */
+  private async resolveSystemTools(): Promise<StructuredToolInterface[]> {
+    const settings = await this.settings.get()
+    return resolveChatTools({
+      policy: 'full',
+      allowIds: 'all',
+      workspaceRoot: settings.effectiveWorkspaceRoot?.trim() || undefined,
+      secrets: {
+        serpApiKey: process.env.SERPAPI_API_KEY,
+        braveApiKey: process.env.BRAVE_SEARCH_API_KEY,
+        tavilyApiKey: process.env.TAVILY_API_KEY,
+        wolframAppId: process.env.WOLFRAM_ALPHA_APPID,
+      },
+      mcpServers: parseMcpServersJson(process.env.CHATVEIN_MCP_SERVERS),
+    })
+  }
+
+  private toolIndexInputsOf(
+    tools: StructuredToolInterface[],
+  ): Array<{ name: string; description?: string; schema?: unknown }> {
+    return tools.map((t) => ({
+      name: t.name,
+      description: t.description,
+      schema: (t as { schema?: unknown }).schema,
+    }))
   }
 
   /** 层 C1：向量语义预筛；未就绪/失败 → 回退全候选 */

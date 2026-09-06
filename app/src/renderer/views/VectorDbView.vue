@@ -21,7 +21,7 @@ const keyword = ref('')
 const loadingTables = ref(false)
 const loadingRows = ref(false)
 const error = ref('')
-const foot = ref('向量数据集（LanceDB）· 位于系统临时目录 chatvein-tool-index；首次对话触发工具选用后懒建')
+const foot = ref('向量数据集（LanceDB）· 位于系统临时目录 chatvein-tool-index；启动后自动预建内置工具索引，MCP / 动态工具随对话增量收录')
 
 interface VectorCell {
   __vector: true
@@ -158,8 +158,9 @@ onMounted(async () => {
       v-else-if="tables.length === 0 && !loadingTables"
       class="rounded-[10px] bg-[var(--color-canvas)] px-3 py-10 text-center text-xs text-[var(--color-ink-3)]"
     >
-      尚未建立向量数据集。先在对话中触发一次工具选用（L1 路由 → 候选工具 → 向量预筛），
-      LanceDB 数据集会在后台懒建；之后回到此页即可像数据库客户端一样浏览表、结构与记录。
+      索引尚未就绪。应用启动后会在后台自动预建内置工具索引（首次需下载本地嵌入模型，
+      约数十 MB）；MCP 等动态工具随对话增量收录。完成后回到此页点击「刷新」即可像
+      数据库客户端一样浏览表、结构与记录。若长时间为空，请查看主进程日志确认 warmup 是否成功。
     </div>
 
     <div v-else class="grid min-h-0 gap-4" style="grid-template-columns: 260px 1fr">

@@ -26,6 +26,11 @@ export interface ToolEmbedder {
 export interface ToolVectorStore {
   upsert(records: readonly ToolIndexRecord[]): Promise<string[]>
   search(query: string, options?: ToolIndexSearchOptions): Promise<ToolIndexHit[]>
+  /**
+   * 按 id 批量删除（幂等），返回实际删除条数。
+   * 用于目录下线清理 / 全量重建时的陈旧行。
+   */
+  remove(ids: readonly string[]): Promise<number>
 }
 
 export interface ToolIndexRecord {
@@ -66,7 +71,11 @@ export interface ToolVectorIndexOptions {
 }
 
 /**
- * 工具向量索引：建一次，per-turn 语义召回 Top-K 候选。
+ * 工具向量索引：一次版本化全量基准 + 运行期差量同步，per-turn 语义召回 Top-K 候选。
+ *
+ * - `build()`：首次全量建索引（幂等，`ready` 后短路）。
+ * - `replace()`：版本化全量重建（目录 / 嵌入内容变化时覆盖写并标记 ready）。
+ * - `sync()` / `purge()`：差量原语，绕过 built 闸门，不改变 ready 状态。
  *
  * 线程安全：build 幂等、可并发重入；select 在未 ready 时返回 []（调用方回退）。
  */
@@ -87,6 +96,27 @@ export class ToolVectorIndex {
     return this.opts.embedder.modelId
   }
 
+  /**
+   * 把工具实例（name/description/schema）翻译成入库记录。
+   * 纯文本层、同步、不触发嵌入；用于调用方计算版本签名或喂给 `sync()`。
+   */
+  recordsFor(tools: readonly ToolVectorIndexInput[]): ToolIndexRecord[] {
+    const records: ToolIndexRecord[] = []
+    for (const t of tools) {
+      if (!t.name) continue
+      const content = this.embedText({ name: t.name, description: t.description, schema: t.schema })
+      if (!content) continue
+      records.push({
+        id: t.name,
+        content,
+        scope: TOOL_INDEX_SCOPE,
+        kind: TOOL_INDEX_KIND,
+        meta: { name: t.name },
+      })
+    }
+    return records
+  }
+
   /** 异步建索引；幂等、可并发重入；失败清除 building 标记并抛出，由调用方决定回退 */
   async build(tools: readonly ToolVectorIndexInput[]): Promise<void> {
     if (this.built) return
@@ -104,21 +134,31 @@ export class ToolVectorIndex {
   }
 
   private async doBuild(tools: readonly ToolVectorIndexInput[]): Promise<void> {
-    const records: ToolIndexRecord[] = []
-    for (const t of tools) {
-      if (!t.name) continue
-      const content = this.embedText({ name: t.name, description: t.description, schema: t.schema })
-      if (!content) continue
-      records.push({
-        id: t.name,
-        content,
-        scope: TOOL_INDEX_SCOPE,
-        kind: TOOL_INDEX_KIND,
-        meta: { name: t.name },
-      })
-    }
-    if (records.length === 0) return
-    await this.opts.store.upsert(records)
+    await this.sync(this.recordsFor(tools))
+  }
+
+  /**
+   * 差量补录：新增 / 变更工具直接 upsert（同 id 幂等覆盖）。
+   * 不修改 ready 状态，可独立于 `build()`/`replace()` 使用。
+   */
+  async sync(records: readonly ToolIndexRecord[]): Promise<string[]> {
+    if (records.length === 0) return []
+    return this.opts.store.upsert(records)
+  }
+
+  /** 差量下线：按 id 批量删除；不修改 ready 状态 */
+  async purge(ids: readonly string[]): Promise<number> {
+    if (ids.length === 0) return 0
+    return this.opts.store.remove(ids)
+  }
+
+  /**
+   * 版本化全量重建：无条件覆盖写并标记 ready。
+   * 目录 / 嵌入文本内容变化（版本签名不符）时调用；同 id 覆盖、其余由调用方 purge。
+   */
+  async replace(tools: readonly ToolVectorIndexInput[]): Promise<void> {
+    await this.doBuild(tools)
+    this.built = true
   }
 
   /**

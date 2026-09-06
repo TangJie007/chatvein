@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest'
 import {
   ToolVectorIndex,
+  TOOL_INDEX_SCOPE,
+  TOOL_INDEX_KIND,
   type ToolEmbedder,
   type ToolVectorStore,
   type ToolIndexRecord,
@@ -31,11 +33,15 @@ function dot(a: Float32Array, b: Float32Array): number {
   return s
 }
 
-/** 内存假向量库：按与 query 向量的点积排序返回 */
+/** 内存假向量库：按与 query 向量的点积排序返回；同 id 覆盖（对齐 mergeInsert 语义） */
 class FakeStore implements ToolVectorStore {
   private recs: ToolIndexRecord[] = []
   async upsert(records: readonly ToolIndexRecord[]): Promise<string[]> {
-    this.recs.push(...records)
+    for (const r of records) {
+      const i = this.recs.findIndex((x) => x.id === r.id)
+      if (i >= 0) this.recs[i] = r
+      else this.recs.push(r)
+    }
     return records.map((r) => r.id)
   }
   async search(query: string, options?: { topK?: number }): Promise<ToolIndexHit[]> {
@@ -47,6 +53,18 @@ class FakeStore implements ToolVectorStore {
     }))
     scored.sort((a, b) => b.score - a.score)
     return scored.slice(0, options?.topK ?? 8)
+  }
+  async remove(ids: readonly string[]): Promise<number> {
+    const gone = new Set(ids)
+    const before = this.recs.length
+    this.recs = this.recs.filter((r) => !gone.has(r.id))
+    return before - this.recs.length
+  }
+  size(): number {
+    return this.recs.length
+  }
+  has(id: string): boolean {
+    return this.recs.some((r) => r.id === id)
   }
 }
 
@@ -76,5 +94,48 @@ describe('ToolVectorIndex', () => {
     const idx = new ToolVectorIndex({ embedder: new FakeEmbedder(), store: new FakeStore() })
     await idx.build([{ name: 'filesystem__read' }])
     expect(await idx.select('   ', ['filesystem__read'])).toEqual([])
+  })
+
+  it('recordsFor 产出 scope/kind 对齐 TOOL_INDEX 的记录（不触发嵌入）', () => {
+    const store = new FakeStore()
+    const idx = new ToolVectorIndex({ embedder: new FakeEmbedder(), store })
+    const recs = idx.recordsFor([{ name: 'calculator', description: '数学计算' }])
+    expect(recs).toHaveLength(1)
+    expect(recs[0]!.id).toBe('calculator')
+    expect(recs[0]!.scope).toBe(TOOL_INDEX_SCOPE)
+    expect(recs[0]!.kind).toBe(TOOL_INDEX_KIND)
+    expect(recs[0]!.content).toContain('数学计算')
+    expect(store.size()).toBe(0) // 纯文本层，不写库
+  })
+
+  it('sync 差量补录不改变 ready；select 仍走回退', async () => {
+    const store = new FakeStore()
+    const idx = new ToolVectorIndex({ embedder: new FakeEmbedder(), store })
+    const recs = idx.recordsFor([{ name: 'calculator', description: '数学计算' }])
+    await idx.sync(recs)
+    expect(idx.ready).toBe(false)
+    expect(store.has('calculator')).toBe(true)
+    expect(await idx.select('算一下', ['calculator'])).toEqual([])
+  })
+
+  it('purge 删除指定 id，不影响其余记录', async () => {
+    const store = new FakeStore()
+    const idx = new ToolVectorIndex({ embedder: new FakeEmbedder(), store })
+    await idx.build([{ name: 'a' }, { name: 'b' }, { name: 'c' }])
+    await idx.purge(['a', 'b'])
+    expect(store.size()).toBe(1)
+    expect(store.has('c')).toBe(true)
+    expect(store.has('a')).toBe(false)
+  })
+
+  it('replace 覆盖旧内容并标记 ready；重复 replace 不产生重复记录', async () => {
+    const store = new FakeStore()
+    const idx = new ToolVectorIndex({ embedder: new FakeEmbedder(), store })
+    await idx.replace([{ name: 'calculator', description: '旧描述' }])
+    expect(idx.ready).toBe(true)
+    await idx.replace([{ name: 'calculator', description: '新描述' }])
+    expect(store.size()).toBe(1)
+    const res = await idx.select('新描述', ['calculator'])
+    expect(res).toContain('calculator')
   })
 })
