@@ -10,14 +10,15 @@ export {
 export {
   L1HeuristicRouter,
   createL1Router,
+  decideL1,
   extractFacts,
   isGreetingOnly,
   isSelfIntro,
-  factsFromCtx,
-  createDefaultRules,
-  materialize,
+  resolveDict,
+  ZH_DICT,
   type HeuristicCtx,
   type HeuristicSession,
+  type HeuristicDict,
   type L1RouterOptions,
 } from './l1'
 
@@ -33,15 +34,6 @@ export {
   type L2ModelCall,
   type L2Judgement,
 } from './l2'
-
-export {
-  resolveDict,
-  ZH_DICT,
-  DEFAULT_DICTS,
-  SUPPORTED_LANGS,
-  type HeuristicDict,
-  type SupportedLocale,
-} from './locales'
 
 export {
   policyForBand,

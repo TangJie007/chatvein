@@ -29,13 +29,6 @@ export interface RoutePolicy {
   hintUserForge?: boolean
 }
 
-export interface Bm25Hit {
-  id: string
-  score: number
-  band: Exclude<ComplexityBand, 'unknown'>
-  tools?: ToolPolicy
-}
-
 export interface RouteTerminal {
   kind: 'slash' | 'mention' | 'empty' | 'local_command'
   payload?: Record<string, unknown>
@@ -48,17 +41,7 @@ export interface RouteDecision {
   score: number
   reasons: string[]
   ruleIds: string[]
-  bm25Hits?: Bm25Hit[]
   terminal?: RouteTerminal
-}
-
-export interface RoutePrototype {
-  id: string
-  text: string
-  band: Exclude<ComplexityBand, 'unknown'>
-  tools: ToolPolicy
-  lang?: 'zh'
-  tags?: string[]
 }
 
 export const ComplexityBandSchema = z.enum([
@@ -88,16 +71,6 @@ export const RouteDecisionSchema = z.object({
   score: z.number(),
   reasons: z.array(z.string()),
   ruleIds: z.array(z.string()),
-  bm25Hits: z
-    .array(
-      z.object({
-        id: z.string(),
-        score: z.number(),
-        band: z.enum(['trivial', 'simple', 'standard', 'complex']),
-        tools: ToolPolicySchema.optional(),
-      }),
-    )
-    .optional(),
   terminal: z
     .object({
       kind: z.enum(['slash', 'mention', 'empty', 'local_command']),

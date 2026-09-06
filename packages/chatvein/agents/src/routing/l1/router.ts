@@ -1,13 +1,8 @@
-import type { RouteDecision, RoutePrototype } from '@chatvein/common'
+import type { RouteDecision } from '@chatvein/common'
+import { decideL1 } from './decide'
 import { extractFacts, type HeuristicSession } from './features'
-import { materialize } from './materialize'
-import { createDefaultRules } from './rules'
-import { runRulesEngine } from './rules-engine'
 
 export interface L1RouterOptions {
-  rules?: object[]
-  /** @deprecated 已移除 */
-  prototypes?: RoutePrototype[]
   enabled?: boolean
 }
 
@@ -32,20 +27,11 @@ const CONSERVATIVE: RouteDecision = {
 
 /** L1：词典寒暄/自我介绍短路；其余 defer_to_l2 */
 export class L1HeuristicRouter {
-  private rules: object[]
   private enabled: boolean
 
   constructor(options: L1RouterOptions = {}) {
-    this.rules = options.rules ?? createDefaultRules()
     this.enabled = options.enabled !== false
   }
-
-  reloadRules(rules: object[]): void {
-    this.rules = rules
-  }
-
-  /** @deprecated */
-  reloadPrototypes(_prototypes: RoutePrototype[]): void {}
 
   setEnabled(enabled: boolean): void {
     this.enabled = enabled
@@ -63,20 +49,10 @@ export class L1HeuristicRouter {
       forceTier: input.session?.forceTier,
     }
 
-    const ctx = extractFacts(input.text, session)
-    const events = await runRulesEngine(ctx, this.rules)
-    return materialize({ ctx, events })
+    return decideL1(extractFacts(input.text, session))
   }
 }
 
-/** @deprecated 使用 L1HeuristicRouter */
-export class HeuristicRouter extends L1HeuristicRouter {}
-
 export function createL1Router(options?: L1RouterOptions): L1HeuristicRouter {
   return new L1HeuristicRouter(options)
-}
-
-/** @deprecated */
-export function createHeuristicRouter(options?: L1RouterOptions): L1HeuristicRouter {
-  return createL1Router(options)
 }

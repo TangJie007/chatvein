@@ -1,5 +1,5 @@
 import type { ComplexityBand, ModelTier } from '@chatvein/common'
-import { resolveDict, type HeuristicDict } from '../locales'
+import { resolveDict, type HeuristicDict } from './dict'
 
 export interface HeuristicSession {
   turnIndex: number
@@ -126,20 +126,4 @@ export function isSelfIntro(textNorm: string, dict: HeuristicDict): boolean {
     return true
   }
   return false
-}
-
-/** 供 json-rules-engine 的 facts */
-export function factsFromCtx(ctx: HeuristicCtx): Record<string, string | number | boolean> {
-  return {
-    charLen: ctx.charLen,
-    lang: ctx.lang,
-    dictCoverage: ctx.dictCoverage,
-    hasSlashCmd: ctx.hasSlashCmd,
-    hasMention: ctx.hasMention,
-    hitGreetingOnly: ctx.hitGreetingOnly,
-    hitSelfIntro: ctx.hitSelfIntro,
-    activeMode: ctx.activeMode,
-    forceTier: ctx.forceTier ?? '',
-    hasForceTier: Boolean(ctx.forceTier),
-  }
 }

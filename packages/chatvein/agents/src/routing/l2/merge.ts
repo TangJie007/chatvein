@@ -45,7 +45,6 @@ export function mergeL2Judgement(l1: RouteDecision, judgement: L2Judgement): Rou
     score: l1.score,
     reasons,
     ruleIds: [...l1.ruleIds, 'l2'],
-    bm25Hits: l1.bm25Hits,
     terminal: l1.terminal,
   })
 }

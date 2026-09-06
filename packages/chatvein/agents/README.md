@@ -15,9 +15,9 @@ src/
   define-tool.ts
   routing/
     pipeline.ts       # HeuristicRouter：L1 → 可选 L2
-    l1/               # 特征 / json-rules-engine / materialize
+    l1/               # extractFacts + decideL1 + zh.json 词典
     l2/               # schema / prompt / merge / StructuredL2Classifier
-    locales/          # zh.json 词典（仅中文）
+    policy.ts         # band→policy（供 L2）；L1 只用 SHORT/DEFER 两档
 ```
 
 ## 启发式路由（已落地）
@@ -57,8 +57,8 @@ const decision = await router.route({
 
 | 层 | 作用 |
 |----|------|
-| **L1** | `extractFacts` + `json-rules-engine`（词典在 `locales/zh.json`）；仅寒暄/自我介绍高置信短路 |
-| **L2** | 非寒暄一律 escalate；弱模 JSON；`mergeL2Judgement`；失败则保留 L1（`l2_failed`） |
+| **L1** | `extractFacts` + `decideL1`（词典寒暄/自我介绍/terminal）；其余 defer_to_l2 |
+| **L2** | 非寒暄 escalate；弱模 JSON；`mergeL2Judgement`；失败则保留 L1（`l2_failed`） |
 
 要点：
 
@@ -108,7 +108,5 @@ const { content } = await invokeReactChatAgent(agent, { message: '你好' })
 
 ## 依赖（路由相关）
 
-- `json-rules-engine` — L1 规则
-- `es-toolkit` — 通用工具
 - `@langchain/core` — L2 `SystemMessage` / `HumanMessage` 调用
 - `zod` — L2 `L2Judgement` 校验

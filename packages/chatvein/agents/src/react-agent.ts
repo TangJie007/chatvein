@@ -32,9 +32,7 @@ export interface CreateReactChatAgentOptions {
    * 须支持 OpenAI 风格 tool calling（ChatOpenAI / 测试用 ScriptedChatModel 等）。
    * 映射为 LangChain `createAgent` 的 `model`。
    */
-  model?: LanguageModelLike
-  /** @deprecated 使用 `model` */
-  llm?: LanguageModelLike
+  model: LanguageModelLike
   /** 工具列表；空数组 = 纯问答（仍走 ReAct 图，模型不调工具即结束） */
   tools?: StructuredToolInterface[]
   /** 系统提示（persona）；映射为 createAgent 的 systemPrompt */
@@ -55,12 +53,8 @@ export interface CreateReactChatAgentOptions {
  * 替代已弃用的 `@langchain/langgraph/prebuilt` `createReactAgent`。
  */
 export function createReactChatAgent(options: CreateReactChatAgentOptions) {
-  const model = options.model ?? options.llm
-  if (!model) {
-    throw new Error('createReactChatAgent: model（或 llm）必填')
-  }
   return createAgent({
-    model,
+    model: options.model,
     tools: options.tools ?? [],
     systemPrompt: options.systemPrompt,
     name: options.name,

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { extractFacts, isGreetingOnly, isSelfIntro } from '../features'
-import { resolveDict } from '../../locales'
+import { resolveDict } from '../dict'
 
 describe('extractFacts', () => {
   const session = {

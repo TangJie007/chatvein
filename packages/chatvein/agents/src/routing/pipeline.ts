@@ -1,10 +1,7 @@
 /**
- * 路由管线：L1（词典寒暄短路 + 规则软信号）→ 可选 L2（弱模结构化）→ 预留 L3。
- *
- * L1 仅对 greeting / self_intro 高置信短路；其余 defer_to_l2。
- * L2 在 ReAct 之外；语义意图仍由主模型在 ReAct 内理解。
+ * 路由管线：L1（词典寒暄短路）→ 可选 L2（弱模结构化）→ 预留 L3。
  */
-import type { RouteDecision, RoutePrototype } from '@chatvein/common'
+import type { RouteDecision } from '@chatvein/common'
 import {
   createL1Router,
   extractFacts,
@@ -15,16 +12,11 @@ import {
 import { createL2Classifier, shouldEscalateToL2, type L2Classifier } from './l2'
 
 export interface HeuristicRouterOptions extends L1RouterOptions {
-  /** 注入 L2；默认无模型 → Passthrough */
   l2?: L2Classifier
-  /** 是否在灰区调用 L2（默认 true） */
   enableL2?: boolean
 }
 
-/**
- * 对外主入口（兼容原 HeuristicRouter 名）。
- * 先跑 L1；低置信 / unknown 且非 terminal 时再走 L2。
- */
+/** 对外主入口：L1 → 可选 L2 */
 export class HeuristicRouter {
   private readonly l1: L1HeuristicRouter
   private l2: L2Classifier
@@ -36,19 +28,9 @@ export class HeuristicRouter {
     this.enableL2 = options.enableL2 !== false
   }
 
-  /** 热更新 L2（例如 app 绑定弱模后注入 StructuredL2Classifier） */
   setL2(l2: L2Classifier, enableL2 = true): void {
     this.l2 = l2
     this.enableL2 = enableL2
-  }
-
-  reloadRules(rules: object[]): void {
-    this.l1.reloadRules(rules)
-  }
-
-  /** @deprecated BM25 先例已移除 */
-  reloadPrototypes(prototypes: RoutePrototype[]): void {
-    this.l1.reloadPrototypes(prototypes)
   }
 
   setEnabled(enabled: boolean): void {
@@ -81,7 +63,6 @@ export function getDefaultHeuristicRouter(): HeuristicRouter {
   return shared
 }
 
-/** 重建默认单例（测试或注入 L2 模型时） */
 export function configureDefaultHeuristicRouter(
   options?: HeuristicRouterOptions,
 ): HeuristicRouter {

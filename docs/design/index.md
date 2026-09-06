@@ -15,7 +15,7 @@
 | [06-插件运行时 Cordis](./06-插件运行时-Cordis) | **`@deepseek-ai/cordis` 为本软件插件化标准**；与 LangGraph / Electrum 边界 | core M1-8；agents CP0-6 |
 | [07-沙箱方案](./07-沙箱方案) | **已锁定**：独立工作区 + 受限 `child_process`（P0 默认）；Docker 仅 P1 | M1-5 |
 | [08-流式对话与 Markdown 渲染](./08-流式对话与Markdown渲染) | LangGraph `astream` → IPC `ChatEvent`；markdown-it + Shiki + DOMPurify | CP1 |
-| [09-启发式规则路由](./09-启发式规则路由) | L1 `json-rules-engine` + L1.5 MiniSearch；`RouteDecision`；**拉群仅 UI 提示、Agent 用子 Agent** | CP1 末 / CP2（R0–R2） |
+| [09-启发式规则路由](./09-启发式规则路由) | L1 `decideL1`（寒暄短路）→ L2；`RouteDecision`；**拉群仅 UI 提示、Agent 用子 Agent** | CP1 末 / CP2（R0–R2） |
 | [10-L2 语义路由层](./10-L2语义路由层) | 灰区弱模 JSON 结构化决策（Cascade L2）；与主 ReAct 意图解耦 | CP1 R3（已落地） |
 | [11-L3 ReAct 自适应循环](./11-L3-ReAct自适应循环推理层) | 核心执行层：policy→ReAct/StateGraph；trivial 谁答、子图预置、人机/子 Agent 演进 | CP0 基线 ✅；L3-1+ 演进 |
 | [12-Agent 工具层](./12-Agent工具层) | 七大品类；MCP filesystem 唯一本地文件源；`resolveChatTools` × policy | L3-1 T0 ✅ |
