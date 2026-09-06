@@ -35,6 +35,9 @@ importers:
       '@chatvein/tools':
         specifier: workspace:*
         version: link:../packages/chatvein/tools
+      '@chatvein/vector':
+        specifier: workspace:*
+        version: link:../packages/chatvein/vector
       '@electrum/client':
         specifier: workspace:*
         version: link:../packages/electrum/client

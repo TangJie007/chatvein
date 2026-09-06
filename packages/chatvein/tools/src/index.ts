@@ -33,6 +33,23 @@ export { resolveInWorkspace, truncateOutput, withTimeout } from './guards'
 export { wrapToolGuards, defineBuiltinTool, wrapToolOutput } from './wrap'
 export { summarizeToolsForDebug } from './debug'
 export {
+  ToolVectorIndex,
+  TOOL_INDEX_SCOPE,
+  TOOL_INDEX_KIND,
+  type ToolEmbedder,
+  type ToolVectorStore,
+  type ToolIndexRecord,
+  type ToolIndexHit,
+  type ToolVectorIndexInput,
+  type ToolVectorIndexOptions,
+} from './tool-vector-index'
+export {
+  keywordSelect,
+  llmSelectTools,
+  fitToolsWithinBudget,
+  type ToolCandidate,
+} from './select'
+export {
   loadMcpTools,
   parseMcpServersJson,
   createMcpFilesystemServer,

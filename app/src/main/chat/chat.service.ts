@@ -14,7 +14,18 @@ import {
   safeJsonStringify,
   setLlmDebugSink,
 } from '@chatvein/models'
-import { resolveChatTools, summarizeToolsForDebug, parseMcpServersJson } from '@chatvein/tools'
+import {
+  resolveChatTools,
+  summarizeToolsForDebug,
+  parseMcpServersJson,
+  ToolVectorIndex,
+  llmSelectTools,
+  fitToolsWithinBudget,
+  TOOL_INDEX_SCOPE,
+  TOOL_INDEX_KIND,
+  type ToolEmbedder,
+  type ToolVectorStore,
+} from '@chatvein/tools'
 import type { StructuredToolInterface } from '@chatvein/tools'
 import {
   buildSummarizePrompt,
@@ -26,6 +37,7 @@ import {
 } from '@chatvein/memory'
 import { createEndpointModel } from '@chatvein/models'
 import { randomUUID } from 'node:crypto'
+import { tmpdir } from 'node:os'
 import { promises as fs } from 'node:fs'
 import { isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { AgentService } from '../agent/agent.service'
@@ -76,6 +88,18 @@ export class ChatService {
   private shortTermQueue = new Map<string, Promise<void>>()
   /** 按工作区缓存 LangGraph checkpointer（跨进程持久化 agent 工作记忆） */
   private checkpointers = new Map<string, WorkspaceCheckpointer>()
+
+  // —— 工具向量索引（层 C1 语义预筛）；原生模块 @chatvein/vector 懒加载，不进主 bundle 静态图 ——
+  private toolIndex: ToolVectorIndex | null = null
+  private toolIndexInit: Promise<ToolVectorIndex | null> | null = null
+  /** 语义预筛召回上限（粗召回给 L2 精筛） */
+  private readonly toolPrescreenTopK = 24
+  /** L2 弱模型精筛上限 */
+  private readonly toolSelectTopK = 10
+  /** 候选 ≤ 此数跳过弱模型（省延迟） */
+  private readonly toolSelectSkipBelow = 10
+  /** 工具描述预算（token），超出裁剪低相关项 */
+  private readonly toolBudgetTokens = 4000
 
   async list(): Promise<Conversation[]> {
     return this.store.list()
@@ -366,7 +390,7 @@ export class ChatService {
       maxTokens: model.maxTokens > 0 ? model.maxTokens : undefined,
     })
 
-    const boundTools = await this.resolveBoundTools(agent, toolPolicy, conv.workspacePath)
+    const boundTools = await this.resolveBoundTools(agent, toolPolicy, conv.workspacePath, content, model)
     if (boundTools.length > 0) {
       emit({
         type: 'thinking_delta',
@@ -611,7 +635,7 @@ export class ChatService {
       temperature: temperatureForTier(route.policy.modelTier, model.temperature),
       maxTokens: model.maxTokens > 0 ? model.maxTokens : undefined,
     })
-    const boundTools = await this.resolveBoundTools(agent, route.policy.tools, conv.workspacePath)
+    const boundTools = await this.resolveBoundTools(agent, route.policy.tools, conv.workspacePath, content, model)
     const checkpointer = this.getCheckpointer(conv.workspacePath)
     await checkpointer.deleteThread(conv.id)
     const reactAgent = createReactChatAgent({
@@ -806,13 +830,20 @@ export class ChatService {
    * policy.tools ∩ 角色白名单 → LangChain 工具实例。
    * `agent.tools` 为空 = 尚未配置白名单，视为允许目录默认集。
    */
+  /**
+   * policy.tools ∩ 角色白名单 → LangChain 工具实例。
+   * 链路：resolveChatTools（L1 候选）→ 向量语义预筛（C1）→ 弱模型精筛（C2）→ 预算裁剪（C3）。
+   * 向量未就绪 / L2 失败 / 候选已很少 → 依次回退，保底不丢能力。
+   */
   private async resolveBoundTools(
     agent: AgentConfig,
     toolPolicy: RouteDecision['policy']['tools'],
     workspaceRoot?: string,
+    query?: string,
+    model?: ModelConfig,
   ): Promise<StructuredToolInterface[]> {
     const settings = await this.settings.get()
-    return resolveChatTools({
+    const candidateTools = await resolveChatTools({
       policy: toolPolicy,
       allowIds: agent.tools.length > 0 ? agent.tools : 'all',
       workspaceRoot: workspaceRoot?.trim() || settings.effectiveWorkspaceRoot,
@@ -824,6 +855,146 @@ export class ChatService {
       },
       mcpServers: parseMcpServersJson(process.env.CHATVEIN_MCP_SERVERS),
     })
+    if (candidateTools.length === 0) return []
+
+    const byName = new Map(candidateTools.map((t) => [t.name, t]))
+    const candidateNames = [...byName.keys()]
+
+    // 后台异步建索引（不阻塞本轮）；冷启动未就绪 → 本轮回退全候选
+    void this.ensureToolIndexAndBuild(candidateTools).catch((e) =>
+      console.warn('[ChatService] tool index build skipped', e),
+    )
+
+    // 层 C1 语义预筛
+    let narrowed = query ? await this.prescreenWithVector(query, candidateNames) : []
+    if (narrowed.length === 0) narrowed = candidateNames
+
+    // 层 C2 弱模型精筛（候选已很少则跳过，省一次弱模型调用）
+    let finalNames = narrowed
+    if (model && narrowed.length > this.toolSelectSkipBelow) {
+      finalNames = await this.llmSelectToolsForTurn(query ?? '', narrowed, candidateTools, model)
+    }
+
+    // 层 C3 预算裁剪（已按相关度排序）
+    const ordered = finalNames
+      .map((n) => byName.get(n))
+      .filter((t): t is StructuredToolInterface => Boolean(t))
+    const bound = fitToolsWithinBudget(ordered, this.toolBudgetTokens)
+
+    this.emitToolSelectionTelemetry(bound, {
+      selector: this.toolIndex?.ready && query ? 'vector+l2' : model ? 'l2' : 'full',
+      candidateCount: candidateNames.length,
+    })
+    return bound
+  }
+
+  /** 懒加载 @chatvein/vector（原生模块不进主 bundle 静态图），建好 ToolVectorIndex 单例 */
+  private async ensureToolIndex(): Promise<ToolVectorIndex | null> {
+    if (this.toolIndex) return this.toolIndex
+    if (this.toolIndexInit) return this.toolIndexInit
+    this.toolIndexInit = (async () => {
+      try {
+        const vector = await import('@chatvein/vector')
+        const embedder: ToolEmbedder = vector.createBgeZhEmbedder({ cacheDir: this.hfCacheDir() })
+        const localStore = vector.createLocalVectorStore({
+          dataDir: this.toolIndexDataDir(),
+          embedder,
+          tableName: 'tool_index',
+        })
+        const store: ToolVectorStore = {
+          upsert: (records) => localStore.upsert(records as never),
+          search: (q, options) =>
+            localStore
+              .search(q, {
+                topK: options?.topK,
+                queryEmbedding: options?.queryEmbedding,
+                filter: { scope: TOOL_INDEX_SCOPE, kind: TOOL_INDEX_KIND },
+              })
+              .then((hits) => hits.map((h) => ({ id: h.id, score: h.score, meta: h.meta }))),
+        }
+        this.toolIndex = new ToolVectorIndex({
+          embedder,
+          store,
+          prescreenTopK: this.toolPrescreenTopK,
+        })
+        return this.toolIndex
+      } catch (e) {
+        console.warn('[ChatService] vector index unavailable, tools fallback to full', e)
+        this.toolIndexInit = null
+        return null
+      }
+    })()
+    return this.toolIndexInit
+  }
+
+  /** 索引未就绪则异步建一次（不阻塞调用方） */
+  private async ensureToolIndexAndBuild(candidates: StructuredToolInterface[]): Promise<void> {
+    const idx = await this.ensureToolIndex()
+    if (!idx || idx.ready) return
+    await idx.build(
+      candidates.map((t) => ({
+        name: t.name,
+        description: t.description,
+        schema: (t as { schema?: unknown }).schema,
+      })),
+    )
+  }
+
+  /** 层 C1：向量语义预筛；未就绪/失败 → 回退全候选 */
+  private async prescreenWithVector(query: string, candidateNames: string[]): Promise<string[]> {
+    const idx = this.toolIndex
+    if (!idx?.ready) return []
+    try {
+      return await idx.select(query, candidateNames, this.toolPrescreenTopK)
+    } catch (e) {
+      console.warn('[ChatService] tool vector prescreen failed', e)
+      return []
+    }
+  }
+
+  /** 层 C2：复用 L2 弱模型通道精筛；失败 → 回退 narrowed 全集 */
+  private async llmSelectToolsForTurn(
+    query: string,
+    narrowedNames: string[],
+    candidates: StructuredToolInterface[],
+    model: ModelConfig,
+  ): Promise<string[]> {
+    const byName = new Map(candidates.map((t) => [t.name, t]))
+    const cand = narrowedNames
+      .map((n) => byName.get(n))
+      .filter((t): t is StructuredToolInterface => Boolean(t))
+      .map((t) => ({ name: t.name, description: t.description }))
+    try {
+      const l2Model = await this.resolveL2Model(model)
+      const llmWeak = this.createDebugAwareLlm(l2Model, { temperature: 0, maxTokens: 256 })
+      const picked = await llmSelectTools(query, cand, llmWeak, {
+        maxK: this.toolSelectTopK,
+        timeoutMs: 10_000,
+      })
+      return picked.length > 0 ? picked : narrowedNames
+    } catch (e) {
+      console.warn('[ChatService] llmSelectTools failed, fallback narrowed', e)
+      return narrowedNames
+    }
+  }
+
+  /** 工具选用埋点：selector / 候选数 / 绑定数 / 工具名（设计文档要求先埋点） */
+  private emitToolSelectionTelemetry(
+    bound: StructuredToolInterface[],
+    info: { selector: string; candidateCount: number },
+  ): void {
+    console.debug(
+      `[tool-select] selector=${info.selector} candidates=${info.candidateCount} ` +
+        `bound=${bound.length} tools=${bound.map((t) => t.name).join(',')}`,
+    )
+  }
+
+  private toolIndexDataDir(): string {
+    return join(tmpdir(), 'chatvein-tool-index')
+  }
+
+  private hfCacheDir(): string {
+    return join(tmpdir(), 'chatvein-hf-cache')
   }
 
   /**
