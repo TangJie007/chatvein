@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import VectorDbPane from './panes/VectorDbPane.vue'
 import ViewShell from '../components/layout/ViewShell.vue'
 import Card from '../components/ui/Card.vue'
@@ -8,7 +8,7 @@ import AppButton from '../components/ui/AppButton.vue'
 import AppIcon from '../components/AppIcon.vue'
 import { setCrumbItem } from '../composables/useUi'
 import { createClient } from '@electrum/client'
-import type { IpcApi, VectorBrowseResult, VectorSearchHit, VectorTableInfo } from '../ipc-api'
+import type { IpcApi, VectorBrowseResult, VectorTableInfo } from '../ipc-api'
 
 const api = createClient<IpcApi>()
 
@@ -125,16 +125,38 @@ const visibleRows = computed(() => {
 const modeOptions = [
   { value: 'browse', label: '浏览' },
   { value: 'vector', label: '向量匹配' },
+  { value: 'hybrid', label: '向量+BM25加权' },
 ] as const
 
-/** 记录卡查看方式：browse = 分页浏览 + 子串过滤；vector = 语义匹配（相似度阈值） */
-const mode = ref<'browse' | 'vector'>('browse')
+/** 记录卡查看方式：browse = 分页浏览；vector = 纯向量匹配；hybrid = 向量+BM25 加权（对齐对话工具预筛 C1） */
+const mode = ref<'browse' | 'vector' | 'hybrid'>('browse')
+/** 语义查询输入（向量匹配 / 混合加权共用） */
 const vecQuery = ref('')
+/**
+ * 相似度阈值：
+ * - vector：过滤全部命中；
+ * - hybrid：只作用于向量路（与 C1 一致），工具名/别名 BM25 命中不受阈值截断。
+ */
 const vecMin = ref('0.2')
 const searching = ref(false)
 const vecRan = ref(false)
-const vecHits = ref<VectorSearchHit[]>([])
 const vecError = ref('')
+
+/** 语义命中统一展示行：向量模式走 vectorScore；混合模式走两路分 + 融合分 */
+interface HitRow {
+  id: string
+  content: string
+  summary: string | null
+  scope: string
+  ownerId: string
+  kind: string
+  meta: Record<string, unknown>
+  vectorScore: number | null
+  bm25Score: number | null
+  fusedScore: number | null
+  sources: Array<'vector' | 'bm25'>
+}
+const hits = ref<HitRow[]>([])
 
 /** 当前库中仅 tool_index 含向量列，可语义匹配 */
 const canVector = computed(() => selected.value === 'tool_index')
@@ -142,11 +164,17 @@ const vecMinNum = computed(() => {
   const n = Number.parseFloat(vecMin.value)
   return Number.isFinite(n) ? n : 0.2
 })
-const vectorSummaryText = computed(() => {
+const bm25HitCount = computed(() => hits.value.filter((h) => h.bm25Score != null).length)
+const semanticSummaryText = computed(() => {
   const threshold = vecMinNum.value.toFixed(2)
-  if (!vecRan.value) return `向量匹配 · 阈值 ≥ ${threshold}`
   const totalRows = selectedInfo.value?.count ?? 0
-  return `符合 ≥ ${threshold}：${vecHits.value.length} / ${totalRows}`
+  if (mode.value === 'hybrid') {
+    if (!vecRan.value) return '向量+BM25加权 · 名/别名 BM25 与向量 RRF 融合'
+    const bm25 = bm25HitCount.value
+    return `加权融合：${hits.value.length} / ${totalRows}（BM25 ${bm25} · 纯向量 ${hits.value.length - bm25}）`
+  }
+  if (!vecRan.value) return `向量匹配 · 阈值 ≥ ${threshold}`
+  return `符合 ≥ ${threshold}：${hits.value.length} / ${totalRows}`
 })
 
 function scoreTone(s: number): { cls: string; label: string } {
@@ -156,24 +184,66 @@ function scoreTone(s: number): { cls: string; label: string } {
   return { cls: 'bg-transparent text-[var(--color-ink-3)]', label: '极低' }
 }
 
-async function runVectorSearch() {
+/** 按当前模式执行语义检索：vector → 纯向量；hybrid → 向量 + BM25 加权（RRF） */
+async function runSearch() {
   const q = vecQuery.value.trim()
-  if (!q || !selected.value || !canVector.value) return
+  if (!q || !selected.value || !canVector.value || mode.value === 'browse') return
   searching.value = true
   vecRan.value = true
   vecError.value = ''
   try {
-    vecHits.value = await api.vector.searchTable(selected.value, {
-      query: q,
-      minScore: vecMinNum.value,
-    })
+    if (mode.value === 'hybrid') {
+      const hs = await api.vector.hybridSearchTable(selected.value, {
+        query: q,
+        minScore: vecMinNum.value,
+      })
+      hits.value = hs.map((h) => ({
+        id: h.id,
+        content: h.content,
+        summary: h.summary,
+        scope: h.scope,
+        ownerId: h.ownerId,
+        kind: h.kind,
+        meta: h.meta,
+        vectorScore: h.vectorScore,
+        bm25Score: h.bm25Score,
+        fusedScore: h.fusedScore,
+        sources: h.sources,
+      }))
+    } else {
+      const vs = await api.vector.searchTable(selected.value, {
+        query: q,
+        minScore: vecMinNum.value,
+      })
+      hits.value = vs.map((h) => ({
+        id: h.id,
+        content: h.content,
+        summary: h.summary,
+        scope: h.scope,
+        ownerId: h.ownerId,
+        kind: h.kind,
+        meta: h.meta,
+        vectorScore: h.score,
+        bm25Score: null,
+        fusedScore: null,
+        sources: ['vector'],
+      }))
+    }
   } catch (e) {
-    vecHits.value = []
+    hits.value = []
     vecError.value = `查询失败：${(e as Error)?.message ?? String(e)}。首次查询需加载本地嵌入模型 bge-small-zh，请联网后重试（权重缓存于 userData/forge/hf-cache）。`
   } finally {
     searching.value = false
   }
 }
+
+/** 在「向量匹配 / 向量+BM25加权」间切换时清掉上一模式结果，避免跨模式残留展示 */
+watch(mode, () => {
+  if (mode.value === 'browse') return
+  hits.value = []
+  vecRan.value = false
+  vecError.value = ''
+})
 
 async function loadTables() {
   loadingTables.value = true
@@ -325,7 +395,7 @@ onMounted(async () => {
         <div v-else class="text-xs text-[var(--color-ink-3)]">请选择左侧数据表</div>
       </Card>
 
-      <Card title="记录" :side="mode === 'vector' ? vectorSummaryText : rangeText">
+      <Card title="记录" :side="mode === 'browse' ? rangeText : semanticSummaryText">
         <div class="mb-3 flex flex-wrap items-center gap-2">
           <!-- 查看方式切换 -->
           <div class="inline-flex gap-0.5 rounded-[10px] bg-[var(--color-input)] p-[3px]">
@@ -357,13 +427,13 @@ onMounted(async () => {
           </div>
 
           <!-- 向量匹配模式：自然语言查询 + 分数阈值 + Top-K -->
-          <div v-else class="flex min-w-[320px] flex-1 flex-wrap items-center gap-2">
+          <div v-else-if="mode === 'vector'" class="flex min-w-[320px] flex-1 flex-wrap items-center gap-2">
             <div class="min-w-[180px] flex-1">
               <TextInput
                 v-model="vecQuery"
                 mono
                 placeholder="自然语言查询：如 把结果保存为 md 文件"
-                @keydown.enter="runVectorSearch"
+                @keydown.enter="runSearch"
               />
             </div>
             <label class="flex shrink-0 items-center gap-1 text-[11px] text-[var(--color-ink-3)]">
@@ -382,7 +452,39 @@ onMounted(async () => {
               size="sm"
               variant="primary"
               :disabled="searching || !canVector || !vecQuery.trim()"
-              @click="runVectorSearch"
+              @click="runSearch"
+            >
+              {{ searching ? '检索中…' : '查询' }}
+            </AppButton>
+          </div>
+
+          <!-- 向量+BM25 加权：工具名/别名 BM25 与向量 RRF 融合（对齐对话工具预筛 C1） -->
+          <div v-else class="flex min-w-[360px] flex-1 flex-wrap items-center gap-2">
+            <div class="min-w-[200px] flex-1">
+              <TextInput
+                v-model="vecQuery"
+                mono
+                placeholder="自然语言或工具名/别名：如 保存为 md / read_text_file"
+                @keydown.enter="runSearch"
+              />
+            </div>
+            <label class="flex shrink-0 items-center gap-1 text-[11px] text-[var(--color-ink-3)]">
+              向量分 ≥
+              <input
+                v-model="vecMin"
+                type="number"
+                min="0"
+                max="1"
+                step="0.05"
+                title="只过滤向量路相似度下限；工具名/别名 BM25 命中即使向量分低仍会进入融合"
+                class="w-14 rounded-[8px] border-0 bg-[var(--color-input)] px-1.5 py-[7px] font-mono text-xs text-[var(--color-ink-1)] focus:outline-none"
+              />
+            </label>
+            <AppButton
+              size="sm"
+              variant="primary"
+              :disabled="searching || !canVector || !vecQuery.trim()"
+              @click="runSearch"
             >
               {{ searching ? '检索中…' : '查询' }}
             </AppButton>
@@ -442,22 +544,23 @@ onMounted(async () => {
           <div v-else class="text-xs text-[var(--color-ink-3)]">请选择左侧数据表</div>
         </div>
 
-        <!-- ============ 向量匹配模式内容 ============ -->
+        <!-- ============ 语义匹配（向量 / 向量+BM25加权）内容 ============ -->
         <div v-else>
           <div class="scroll-thin overflow-auto" style="max-height: calc(100vh - 380px)">
             <div
               v-if="!canVector"
               class="mb-2 rounded-[10px] bg-[var(--color-canvas)] px-3 py-2 text-xs leading-[1.6] text-[var(--color-ink-3)]"
             >
-              语义匹配需该表含向量列。当前库中仅
+              {{ mode === 'hybrid' ? '向量+BM25 加权' : '语义匹配' }}需该表含向量列。当前库中仅
               <code class="font-mono">tool_index</code> 可语义检索，其余表请切回「浏览」。
             </div>
 
             <div
-              v-else-if="searching && vecHits.length === 0"
+              v-else-if="searching && hits.length === 0"
               class="py-10 text-center text-xs text-[var(--color-ink-3)]"
             >
-              正在向量检索（首次需加载本地嵌入模型 bge-small-zh）…
+              正在{{ mode === 'hybrid' ? '重建 BM25 词法索引并' : '' }}向量检索（首次需加载本地嵌入模型
+              bge-small-zh）…
             </div>
             <div
               v-else-if="vecError"
@@ -467,92 +570,167 @@ onMounted(async () => {
             </div>
 
             <template v-else-if="vecRan">
-              <!-- 汇总：符合阈值 N 条 / 共 M 条 -->
+              <!-- 汇总：纯向量 = 符合阈值 N/M；混合 = 加权融合命中 N/M（含两路分） -->
               <div
                 class="mb-2 flex flex-wrap items-baseline gap-x-2 gap-y-1 rounded-[10px] bg-[var(--color-canvas)] px-3 py-2 text-xs leading-[1.7] text-[var(--color-ink-3)]"
               >
-                <span>得分 ≥</span>
-                <span class="font-mono font-semibold text-[var(--color-brand-deep)]">{{ vecMinNum.toFixed(2) }}</span>
-                <span>的有</span>
-                <span class="font-mono font-semibold text-[var(--color-ink-1)]">{{ vecHits.length }}</span>
-                <span>条</span>
+                <template v-if="mode === 'vector'">
+                  <span>得分 ≥</span>
+                  <span class="font-mono font-semibold text-[var(--color-brand-deep)]">{{ vecMinNum.toFixed(2) }}</span>
+                  <span>的有</span>
+                  <span class="font-mono font-semibold text-[var(--color-ink-1)]">{{ hits.length }}</span>
+                  <span>条</span>
+                </template>
+                <template v-else>
+                  <span class="font-mono font-semibold text-[var(--color-brand-deep)]">{{ hits.length }}</span>
+                  <span>条加权融合命中，其中 BM25</span>
+                  <span class="font-mono font-semibold text-[var(--color-ink-1)]">{{ bm25HitCount }}</span>
+                  <span>条、纯向量 {{ hits.length - bm25HitCount }} 条</span>
+                </template>
                 <span class="text-[var(--color-ink-3)]">·</span>
-                <span>共 {{ selectedInfo?.count ?? 0 }} 条记录（按相似度从高到低）</span>
+                <span>
+                  共 {{ selectedInfo?.count ?? 0 }} 条记录（{{
+                    mode === 'hybrid' ? '按 RRF 融合权重降序' : '按相似度从高到低'
+                  }}）
+                </span>
               </div>
 
-              <table v-if="vecHits.length" class="w-full min-w-[720px] border-collapse text-left text-[12px]">
-              <thead>
-                <tr class="sticky top-0 bg-[var(--color-elevated)] text-[var(--color-ink-3)]">
-                  <th class="w-[110px] px-2 py-2 font-medium">得分</th>
-                  <th class="w-[170px] px-2 py-2 font-medium">id</th>
-                  <th class="px-2 py-2 font-medium">命中内容 / 摘要</th>
-                  <th class="w-[150px] px-2 py-2 font-medium">范围 / kind</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr
-                  v-for="h in vecHits"
-                  :key="h.id"
-                  class="border-t border-[rgba(165,177,193,0.18)] align-top hover:bg-[var(--color-canvas)]"
-                >
-                  <td class="px-2 py-2">
-                    <span class="inline-flex items-center gap-1.5">
-                      <span
-                        class="rounded-full px-1.5 py-0.5 text-[10.5px] font-semibold"
-                        :class="scoreTone(h.score).cls"
-                        :title="`${scoreTone(h.score).label}相关`"
-                        >{{ scoreTone(h.score).label }}</span
+              <table v-if="hits.length" class="w-full min-w-[760px] border-collapse text-left text-[12px]">
+                <thead>
+                  <tr class="sticky top-0 bg-[var(--color-elevated)] text-[var(--color-ink-3)]">
+                    <th class="w-[130px] px-2 py-2 font-medium">
+                      {{ mode === 'hybrid' ? '融合 / 两路分' : '得分' }}
+                    </th>
+                    <th class="w-[180px] px-2 py-2 font-medium">id</th>
+                    <th class="px-2 py-2 font-medium">命中内容 / 摘要</th>
+                    <th class="w-[170px] px-2 py-2 font-medium">来源 / 范围 / kind</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr
+                    v-for="(h, idx) in hits"
+                    :key="h.id"
+                    class="border-t border-[rgba(165,177,193,0.18)] align-top hover:bg-[var(--color-canvas)]"
+                  >
+                    <td class="px-2 py-2">
+                      <!-- 纯向量：余弦相似度色阶 -->
+                      <template v-if="mode === 'vector'">
+                        <span class="inline-flex items-center gap-1.5">
+                          <span
+                            class="rounded-full px-1.5 py-0.5 text-[10.5px] font-semibold"
+                            :class="scoreTone(h.vectorScore ?? 0).cls"
+                            :title="`${scoreTone(h.vectorScore ?? 0).label}相关`"
+                            >{{ scoreTone(h.vectorScore ?? 0).label }}</span
+                          >
+                          <span class="font-mono text-[var(--color-ink-2)]">{{
+                            (h.vectorScore ?? 0).toFixed(3)
+                          }}</span>
+                        </span>
+                      </template>
+                      <!-- 混合：RRF 融合权重 + 向量/BM25 两路分 -->
+                      <template v-else>
+                        <div class="flex items-baseline gap-1.5">
+                          <span class="font-mono text-[13px] font-semibold text-[var(--color-ink-1)]">{{
+                            (h.fusedScore ?? 0).toFixed(4)
+                          }}</span>
+                          <span class="text-[10px] text-[var(--color-ink-3)]">#{{ idx + 1 }}</span>
+                        </div>
+                        <div class="mt-1 flex flex-wrap gap-1">
+                          <span
+                            class="rounded px-1.5 py-0.5 font-mono text-[10.5px] leading-[1.3]"
+                            :class="
+                              h.vectorScore != null
+                                ? 'bg-[var(--color-brand-soft)] text-[var(--color-brand-deep)]'
+                                : 'bg-[var(--color-canvas)] text-[var(--color-ink-3)]'
+                            "
+                            title="向量路余弦相似度（BM25 命中不受阈值截断）"
+                            >向量 {{ h.vectorScore != null ? h.vectorScore.toFixed(2) : '—' }}</span
+                          >
+                          <span
+                            class="rounded px-1.5 py-0.5 font-mono text-[10.5px] leading-[1.3]"
+                            :class="
+                              h.bm25Score != null
+                                ? 'bg-[rgba(180,83,9,0.12)] text-[#b45309]'
+                                : 'bg-[var(--color-canvas)] text-[var(--color-ink-3)]'
+                            "
+                            title="工具名 / 人类名 / 目录别名 / title 的 BM25 词法得分"
+                            >BM25 {{ h.bm25Score != null ? h.bm25Score.toFixed(2) : '—' }}</span
+                          >
+                        </div>
+                      </template>
+                    </td>
+                    <td class="px-2 py-2">
+                      <span class="break-all font-mono text-[11px] text-[var(--color-brand-deep)]">{{ h.id }}</span>
+                    </td>
+                    <td class="px-2 py-2">
+                      <div
+                        class="line-clamp-3 max-w-[540px] leading-[1.55] text-[var(--color-ink-1)]"
+                        :title="h.content"
                       >
-                      <span class="font-mono text-[var(--color-ink-2)]">{{ h.score.toFixed(3) }}</span>
-                    </span>
-                  </td>
-                  <td class="px-2 py-2">
-                    <span class="break-all font-mono text-[11px] text-[var(--color-brand-deep)]">{{ h.id }}</span>
-                  </td>
-                  <td class="px-2 py-2">
-                    <div
-                      class="line-clamp-3 max-w-[540px] leading-[1.55] text-[var(--color-ink-1)]"
-                      :title="h.content"
-                    >
-                      {{ h.content }}
-                    </div>
-                    <div v-if="h.summary" class="mt-0.5 text-[11px] text-[var(--color-ink-3)]">{{ h.summary }}</div>
-                    <details v-if="Object.keys(h.meta ?? {}).length" class="mt-1">
-                      <summary class="cursor-pointer select-none text-[11px] text-[var(--color-brand-deep)]">meta</summary>
-                      <pre class="mt-1 whitespace-pre-wrap break-all text-[11px] text-[var(--color-ink-2)]">{{
-                        JSON.stringify(h.meta, null, 1)
-                      }}</pre>
-                    </details>
-                  </td>
-                  <td class="px-2 py-2">
-                    <div class="flex flex-wrap gap-1">
-                      <span class="rounded bg-[var(--color-canvas)] px-1.5 py-0.5 text-[11px] text-[var(--color-ink-3)]">{{
-                        h.scope
-                      }}</span>
-                      <span class="rounded bg-[var(--color-canvas)] px-1.5 py-0.5 text-[11px] text-[var(--color-ink-3)]">{{
-                        h.kind
-                      }}</span>
-                      <span
-                        v-if="h.ownerId"
-                        class="rounded bg-[var(--color-canvas)] px-1.5 py-0.5 text-[11px] text-[var(--color-ink-3)]"
-                        >{{ h.ownerId }}</span
-                      >
-                    </div>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
+                        {{ h.content }}
+                      </div>
+                      <div v-if="h.summary" class="mt-0.5 text-[11px] text-[var(--color-ink-3)]">{{ h.summary }}</div>
+                      <details v-if="Object.keys(h.meta ?? {}).length" class="mt-1">
+                        <summary class="cursor-pointer select-none text-[11px] text-[var(--color-brand-deep)]">meta</summary>
+                        <pre class="mt-1 whitespace-pre-wrap break-all text-[11px] text-[var(--color-ink-2)]">{{
+                          JSON.stringify(h.meta, null, 1)
+                        }}</pre>
+                      </details>
+                    </td>
+                    <td class="px-2 py-2">
+                      <div class="flex flex-wrap gap-1">
+                        <template v-if="mode === 'hybrid'">
+                          <span
+                            v-for="src in h.sources"
+                            :key="src"
+                            class="rounded px-1.5 py-0.5 text-[11px]"
+                            :class="
+                              src === 'bm25'
+                                ? 'bg-[rgba(180,83,9,0.12)] text-[#b45309]'
+                                : 'bg-[var(--color-brand-soft)] text-[var(--color-brand-deep)]'
+                            "
+                            >{{ src === 'bm25' ? 'BM25' : '向量' }}</span
+                          >
+                        </template>
+                        <span class="rounded bg-[var(--color-canvas)] px-1.5 py-0.5 text-[11px] text-[var(--color-ink-3)]">{{
+                          h.scope
+                        }}</span>
+                        <span class="rounded bg-[var(--color-canvas)] px-1.5 py-0.5 text-[11px] text-[var(--color-ink-3)]">{{
+                          h.kind
+                        }}</span>
+                        <span
+                          v-if="h.ownerId"
+                          class="rounded bg-[var(--color-canvas)] px-1.5 py-0.5 text-[11px] text-[var(--color-ink-3)]"
+                          >{{ h.ownerId }}</span
+                        >
+                      </div>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
               <div
                 v-else
                 class="rounded-[10px] bg-[var(--color-canvas)] px-3 py-10 text-center text-xs leading-[1.8] text-[var(--color-ink-3)]"
               >
-                0 条达到阈值。向量分数是连续值，极少“零命中”：可把意图写完整
-                （如「把结果保存为 md 文件」），或调低阈值至 0.1 观察分数分布。
+                <template v-if="mode === 'vector'">
+                  0 条达到阈值。向量分数是连续值，极少“零命中”：可把意图写完整
+                  （如「把结果保存为 md 文件」），或调低阈值至 0.1 观察分数分布。
+                </template>
+                <template v-else>
+                  0 条命中：既无 ≥ 阈值的向量命中，也无工具名/别名 BM25 命中（RRF 融合需任一路有召回）。
+                  可尝试更贴近工具名/别名的词（如 read_text_file、保存、下载）。
+                </template>
               </div>
             </template>
 
             <div v-else class="py-10 text-center text-xs leading-[1.8] text-[var(--color-ink-3)]">
-              输入一句自然语言描述后点「查询」或直接回车，返回该表全部得分 ≥ 阈值（默认 0.2）的记录。
+              <template v-if="mode === 'vector'">
+                输入一句自然语言描述后点「查询」或直接回车，返回该表全部得分 ≥ 阈值（默认 0.2）的记录。
+              </template>
+              <template v-else>
+                输入自然语言或工具名/别名后点「查询」：向量余弦与工具名/别名 BM25 经 RRF 加权融合后排序；
+                「向量分 ≥」只过滤向量路，名称/别名精确命中的工具会显著上浮（与对话工具预筛 C1 一致）。
+              </template>
             </div>
           </div>
         </div>

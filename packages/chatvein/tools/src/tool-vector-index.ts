@@ -16,6 +16,15 @@ import { ToolBm25Index, reciprocalRankFusion } from './tool-bm25-index'
 export const TOOL_INDEX_SCOPE = 'tool'
 export const TOOL_INDEX_KIND = 'tool_desc'
 
+/** C1 混合预筛默认召回上限（select 未传 topK / 未配 opts 时） */
+export const TOOL_PRESCREEN_TOP_K = 16
+
+/**
+ * 向量路默认相似度阈值（score≈1−cosineDistance）。
+ * 默认 `0.45` 丢掉明显不相关命中后再进 RRF。
+ */
+export const TOOL_VECTOR_MIN_SCORE = 0.45
+
 /** 嵌入器最小接口（@chatvein/vector 的 `EmbeddingProvider` 子集） */
 export interface ToolEmbedder {
   readonly modelId: string
@@ -64,9 +73,12 @@ export interface ToolVectorIndexInput {
 export interface ToolVectorIndexOptions {
   embedder: ToolEmbedder
   store: ToolVectorStore
-  /** 混合预筛召回上限（粗召回给弱模精筛），默认 24 */
+  /** 混合预筛召回上限（粗召回给弱模精筛），默认 `TOOL_PRESCREEN_TOP_K` */
   prescreenTopK?: number
-  /** 向量路相似度阈值（score≈1-cosineDistance）；低于不进融合，默认 0（不过滤） */
+  /**
+   * 向量路相似度阈值（score≈1−cosineDistance）；低于不进融合。
+   * 默认 `TOOL_VECTOR_MIN_SCORE`；显式传 `0` 表示不过滤。
+   */
   minScore?: number
   /** RRF 常数，默认 60 */
   rrfK?: number
@@ -199,12 +211,12 @@ export class ToolVectorIndex {
   async select(
     query: string,
     candidateNames: readonly string[],
-    topK: number = this.opts.prescreenTopK ?? 24,
+    topK: number = this.opts.prescreenTopK ?? TOOL_PRESCREEN_TOP_K,
   ): Promise<string[]> {
     if (!this.built || !query.trim() || candidateNames.length === 0) return []
     const limit = Math.max(topK, candidateNames.length)
     const candidates = new Set(candidateNames)
-    const min = this.opts.minScore ?? 0
+    const min = this.opts.minScore ?? TOOL_VECTOR_MIN_SCORE
 
     const vectorRanked = await this.vectorRank(query, candidates, limit, min)
     const lexicalRanked = this.lexical

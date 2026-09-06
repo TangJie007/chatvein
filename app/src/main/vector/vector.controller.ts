@@ -1,6 +1,6 @@
 import { Controller, IpcHandle, Inject } from '@electrum/common'
 import { VectorService } from './vector.service'
-import type { VectorBrowseResult, VectorTableInfo } from './vector.service'
+import type { VectorBrowseResult, VectorHybridSearchHit, VectorTableInfo } from './vector.service'
 
 @Controller('vector')
 export class VectorController {
@@ -26,5 +26,14 @@ export class VectorController {
     data: { query: string; topK?: number; minScore?: number },
   ): Promise<import('@chatvein/vector').VectorSearchHit[]> {
     return this.svc.searchTable(name, data?.query ?? '', data?.topK, data?.minScore)
+  }
+
+  /** 向量 + BM25 加权检索 tool_index：工具名/别名 BM25 与向量余弦 RRF 融合（对话工具预筛 C1 同款） */
+  @IpcHandle('hybridSearchTable')
+  hybridSearchTable(
+    name: string,
+    data: { query: string; topK?: number; minScore?: number },
+  ): Promise<VectorHybridSearchHit[]> {
+    return this.svc.hybridSearchTable(name, data?.query ?? '', data?.topK, data?.minScore)
   }
 }

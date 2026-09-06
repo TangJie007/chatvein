@@ -77,6 +77,8 @@ export interface IpcApi {
   'vector:inspectTables': () => Promise<VectorTableInfo[]>
   'vector:browseTable': (name: string, limit?: number, offset?: number) => Promise<VectorBrowseResult>
   'vector:searchTable': (name: string, data: VectorSearchInput) => Promise<VectorSearchHit[]>
+  /** 向量 + BM25 加权检索（与对话工具预筛 C1 相同的 RRF 融合，minScore 只过滤向量路） */
+  'vector:hybridSearchTable': (name: string, data: VectorSearchInput) => Promise<VectorHybridSearchHit[]>
 }
 
 export type UserRow = { id: number; name: string; email: string }
@@ -218,6 +220,24 @@ export interface VectorSearchInput {
   topK?: number
   /** 相似度下限：score < minScore 的命中直接丢弃（默认建议 0.2） */
   minScore?: number
+}
+/** 向量 + BM25 加权命中：两路分 + RRF 融合分（对齐工具预筛 C1） */
+export interface VectorHybridSearchHit {
+  id: string
+  content: string
+  summary: string | null
+  scope: string
+  ownerId: string
+  kind: string
+  meta: Record<string, unknown>
+  /** 余弦相似度；该行未达向量路阈值时为 null */
+  vectorScore: number | null
+  /** BM25 词法得分（工具名/别名/title）；词法路未命中时为 null */
+  bm25Score: number | null
+  /** RRF 融合权重分（返回已按降序） */
+  fusedScore: number
+  /** 命中来源 */
+  sources: Array<'vector' | 'bm25'>
 }
 
 // ---- 普通对话 ----------------------------------------------------------

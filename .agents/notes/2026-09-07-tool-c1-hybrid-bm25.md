@@ -9,7 +9,7 @@
 ## 决策
 
 - `@chatvein/tools` 引入 **`minisearch`**：`ToolBm25Index` 索引 `name` / `human` / `aliases`（catalog keywords）/ `title`，分词 `tokenizeForBm25`（空白 + CJK bigram）。
-- `ToolVectorIndex.select` 改为 **向量路 + BM25 路 → RRF**（默认 `lexicalWeight=1.25`）；召回上限仍为 `Math.max(prescreenTopK, candidateCount)`（用候选数抬高）。
+- `ToolVectorIndex.select` 改为 **向量路 + BM25 路 → RRF**（默认 `lexicalWeight=1.25`）；召回上限仍为 `Math.max(prescreenTopK, candidateCount)`（用候选数抬高）。默认 `TOOL_PRESCREEN_TOP_K=16`、`TOOL_VECTOR_MIN_SCORE=0.45`（`minScore: 0` 显式关闭阈值）。
 - 启动 warmup 签名命中：`markReady(tools)` 必须 hydrate 内存 BM25；埋点 `c1=hybrid`。
 - 向量仍空时上层才回退 `keywordSelect` / full。
 

@@ -162,9 +162,9 @@ RouteDecision.policy.tools = full
 
 ### 8.1 定位与查询路径
 
-在 L2 弱模型精筛之前，对已解析候选做**混合粗召回** Top-K（`prescreenTopK=24`），减少弱模上下文里的无关工具：
+在 L2 弱模型精筛之前，对已解析候选做**混合粗召回** Top-K（`TOOL_PRESCREEN_TOP_K=16`），减少弱模上下文里的无关工具：
 
-1. **向量路**：LanceDB cosine（工具描述嵌入，`scope=tool` / `kind=tool_desc`）
+1. **向量路**：LanceDB cosine（工具描述嵌入，`scope=tool` / `kind=tool_desc`）；`minScore` 默认 `0.45`（`0`=不过滤）
 2. **BM25 路**：进程内 MiniSearch（工具名 / humanize / 目录 keywords 别名 / title），CJK bigram 分词
 3. **融合**：RRF（`vectorWeight=1`，`lexicalWeight=1.25`）；召回上限 `max(prescreenTopK, 候选数)`（用候选数抬高）
 

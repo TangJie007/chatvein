@@ -75,7 +75,7 @@ describe('ToolVectorIndex', () => {
     await idx.build([{ name: 'filesystem__read' }, { name: 'calculator' }])
     expect(idx.ready).toBe(true)
     expect(idx.lexicalSize).toBe(2)
-    const res = await idx.select('read a file', ['filesystem__read', 'calculator'], 24)
+    const res = await idx.select('read a file', ['filesystem__read', 'calculator'], 16)
     expect(res).toContain('filesystem__read')
   })
 

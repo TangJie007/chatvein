@@ -33,6 +33,7 @@ import {
   humanizeToolName,
   TOOL_INDEX_SCOPE,
   TOOL_INDEX_KIND,
+  TOOL_PRESCREEN_TOP_K,
   type ToolEmbedder,
   type ToolVectorStore,
   type LlmSelectToolsStatus,
@@ -118,8 +119,8 @@ export class ChatService implements OnAppReady {
   private readonly toolIndexMetaStore = new ToolIndexMetaStore(
     toolIndexMetaFile(join(app.getPath('userData'), 'forge', 'vector')),
   )
-  /** 语义预筛召回上限（粗召回给 L2 精筛） */
-  private readonly toolPrescreenTopK = 24
+  /** 语义预筛召回上限（粗召回给 L2 精筛）；与 `@chatvein/tools` 常量对齐 */
+  private readonly toolPrescreenTopK = TOOL_PRESCREEN_TOP_K
   /** L2 弱模型精筛上限 */
   private readonly toolSelectTopK = 10
   /** 候选 ≤ 此数跳过弱模型（省延迟） */

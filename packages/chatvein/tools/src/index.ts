@@ -36,6 +36,8 @@ export {
   ToolVectorIndex,
   TOOL_INDEX_SCOPE,
   TOOL_INDEX_KIND,
+  TOOL_PRESCREEN_TOP_K,
+  TOOL_VECTOR_MIN_SCORE,
   type ToolEmbedder,
   type ToolVectorStore,
   type ToolIndexRecord,
