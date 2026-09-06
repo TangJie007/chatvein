@@ -377,6 +377,7 @@ export class ChatService {
     }
     const checkpointer = this.getCheckpointer(conv.workspacePath)
     await checkpointer.deleteThread(conv.id)
+    // 主循环
     const reactAgent = createReactChatAgent({
       model: llm,
       tools: boundTools,
@@ -879,6 +880,10 @@ export class ChatService {
     )
   }
 
+  /**
+   * 为 L2 语义路由挑选弱模：优先名称含 flash/mini/turbo/haiku/lite/small 的已启用模型；
+   * 否则回退到当前对话模型（与主 ReAct 解耦，仅作路由分类/改写，不回答用户）。
+   */
   private async resolveL2Model(agentModel: ModelConfig): Promise<ModelConfig> {
     const list = await this.models.list()
     const weakish = list.find(
