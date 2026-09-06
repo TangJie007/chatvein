@@ -14,15 +14,44 @@ export type ToolCategory =
 export type ToolSecretKind = 'serp' | 'brave' | 'tavily' | 'wolfram'
 
 export interface ToolCatalogEntry {
+  /** MCP 子工具 = 运行时工具名（filesystem__read_text_file）；非 MCP = 工具名（calculator） */
   id: string
   category: ToolCategory
   title: string
+  /** 模型 prompt 与向量共用（中英混排短描述，< 280 字符） */
   description: string
-  /** community | builtin | dedicated:<pkg> */
+  /** 'mcp:<pkg>' | 'builtin' | 'community:<pkg>' */
   source: string
   /** 无密钥时是否进入 Chat 默认集 */
   defaultEnabled: boolean
   requiresSecret?: ToolSecretKind
+  /**
+   * 检索关键词（中英混排）：同时服务关键词预筛与工具向量化。
+   * MCP 子工具未显式给出时，回退到所属分组的 keywords。
+   */
+  keywords?: string[]
+  /** 来源：哪个 MCP server 的哪个子工具（非 MCP 省略） */
+  mcp?: { server: string; tool: string }
+  /** 所属分组 id（server 级）：UI 折叠、整组白名单、workspace 依赖判定 */
+  groupId?: string
+  /** 需要 workspaceRoot 才可用（替代 resolve.ts 里硬编码的 needsWorkspace） */
+  requiresWorkspace?: boolean
+  /** 已弃用：不进向量索引、不进默认集 */
+  deprecated?: boolean
+}
+
+/** server / 独立工具分组：承载连接信息与 UI 展示 */
+export interface ToolCatalogGroup {
+  id: string // 'mcp_filesystem'
+  category: ToolCategory
+  title: string
+  description: string
+  source: string // 'mcp:@modelcontextprotocol/server-filesystem'
+  /** MCP server 名（未设置表示非 MCP 分组） */
+  mcpServer?: string
+  requiresWorkspace?: boolean
+  defaultEnabled: boolean
+  keywords?: string[]
 }
 
 export interface ToolSecrets {

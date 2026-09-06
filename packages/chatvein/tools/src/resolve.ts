@@ -26,16 +26,6 @@ function hasSecret(entry: ToolCatalogEntry, secrets?: ToolSecrets): boolean {
   }
 }
 
-function needsWorkspace(id: string): boolean {
-  return (
-    id === 'sqlite_query' ||
-    id === 'mcp_filesystem' ||
-    id === 'mcp_openfile' ||
-    id === 'mcp_vmsandbox' ||
-    id === 'mcp_pyodide'
-  )
-}
-
 /** 根据 policy / 白名单 / 密钥 / MCP 解析可绑定工具列表 */
 export async function resolveChatTools(
   options: ResolveChatToolsOptions,
@@ -50,10 +40,15 @@ export async function resolveChatTools(
       : new Set(options.allowIds)
 
   const selected = TOOL_CATALOG.filter((e) => {
-    if (allow && !allow.has(e.id)) return false
-    if (!e.defaultEnabled && !hasSecret(e, options.secrets)) return false
-    if (e.requiresSecret && !hasSecret(e, options.secrets)) return false
-    if (needsWorkspace(e.id) && !options.workspaceRoot) return false
+    const explicitlyAllowed =
+      !!allow && (allow.has(e.id) || (e.groupId !== undefined && allow.has(e.groupId)))
+    if (allow && !explicitlyAllowed) return false
+    // 仅在未被白名单显式选中时，才受 defaultEnabled / secret 约束
+    if (!explicitlyAllowed) {
+      if (!e.defaultEnabled && !e.requiresSecret) return false
+      if (e.requiresSecret && !hasSecret(e, options.secrets)) return false
+    }
+    if (e.requiresWorkspace && !options.workspaceRoot) return false
     return true
   })
 
@@ -67,17 +62,17 @@ export async function resolveChatTools(
 
   // 本地文件只走 MCP filesystem / openfile（无 builtin 读/列/grep）
   const wantFs =
-    options.mcpFilesystem !== false && selected.some((e) => e.id === 'mcp_filesystem')
+    options.mcpFilesystem !== false && selected.some((e) => e.groupId === 'mcp_filesystem')
   const wantOpen =
-    options.mcpOpenfile !== false && selected.some((e) => e.id === 'mcp_openfile')
+    options.mcpOpenfile !== false && selected.some((e) => e.groupId === 'mcp_openfile')
   const wantModsearch =
-    options.mcpModsearch !== false && selected.some((e) => e.id === 'mcp_modsearch')
+    options.mcpModsearch !== false && selected.some((e) => e.groupId === 'mcp_modsearch')
   const wantVmsandbox =
-    options.mcpVmsandbox !== false && selected.some((e) => e.id === 'mcp_vmsandbox')
+    options.mcpVmsandbox !== false && selected.some((e) => e.groupId === 'mcp_vmsandbox')
   const wantPyodide =
-    options.mcpPyodide !== false && selected.some((e) => e.id === 'mcp_pyodide')
+    options.mcpPyodide !== false && selected.some((e) => e.groupId === 'mcp_pyodide')
   const wantPlaywright =
-    options.mcpPlaywright !== false && selected.some((e) => e.id === 'mcp_playwright')
+    options.mcpPlaywright !== false && selected.some((e) => e.groupId === 'mcp_playwright')
 
   let mcpServers = withDefaultMcpFilesystem(
     wantFs ? options.workspaceRoot : undefined,
@@ -102,15 +97,19 @@ export async function resolveChatTools(
   )
   mcpServers = withDefaultMcpPlaywright(mcpServers, wantPlaywright)
 
-  const mcpTools = mcpServers
-    ? (
-        await loadMcpTools({
-          servers: mcpServers,
-          onConnectionError: 'ignore',
-          prefixToolNameWithServerName: true,
-        })
-      ).map((t) => wrapToolOutput(t, common.maxOutputChars))
+  // MCP 协议只能整 server 拉工具；按目录条目过滤，只挂白名单 / 默认集中的子工具，
+  // 解决「只读文件却加载整套 filesystem」的膨胀问题。未声明的子工具天然不挂。
+  const wanted = new Set(selected.map((e) => e.id))
+  const rawMcpTools = mcpServers
+    ? await loadMcpTools({
+        servers: mcpServers,
+        onConnectionError: 'ignore',
+        prefixToolNameWithServerName: true,
+      })
     : []
+  const mcpTools = rawMcpTools
+    .filter((t) => wanted.has(t.name))
+    .map((t) => wrapToolOutput(t, common.maxOutputChars))
 
   const catalogParts =
     ids.size === 0

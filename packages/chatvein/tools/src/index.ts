@@ -7,7 +7,27 @@
 
 export const CHATVEIN_TOOLS_VERSION = '0.1.0'
 
-export { TOOL_CATALOG, catalogById, catalogByCategory } from './catalog'
+export {
+  TOOL_CATALOG,
+  TOOL_CATALOG_GROUPS,
+  catalogById,
+  catalogByCategory,
+  catalogByGroup,
+  catalogGroupById,
+} from './catalog'
+export {
+  TOOL_EMBED_DESC_MAX_CHARS,
+  TOOL_EMBED_TEXT_MAX_CHARS,
+  catalogEmbedText,
+  catalogEntryForTool,
+  humanizeToolName,
+  mcpServerOf,
+  schemaParamNames,
+  toolEmbedText,
+  toolEmbedTexts,
+  type ToolEmbedInput,
+  type ToolEmbedTextOptions,
+} from './tool-embed'
 export { resolveChatTools, defaultChatToolIds } from './resolve'
 export { resolveInWorkspace, truncateOutput, withTimeout } from './guards'
 export { wrapToolGuards, defineBuiltinTool, wrapToolOutput } from './wrap'
@@ -47,24 +67,12 @@ export {
   MCP_PYODIDE_SERVER_NAME,
   MCP_PLAYWRIGHT_SERVER_NAME,
 } from './mcp'
-export {
-  MCP_FILESYSTEM_DESCRIPTION_OVERRIDES,
-  MCP_OPENFILE_DESCRIPTION_OVERRIDES,
-  MCP_MODSEARCH_DESCRIPTION_OVERRIDES,
-  MCP_VMSANDBOX_DESCRIPTION_OVERRIDES,
-  MCP_PYODIDE_DESCRIPTION_OVERRIDES,
-  MCP_PLAYWRIGHT_DESCRIPTION_OVERRIDES,
-  MCP_TOOL_DESCRIPTION_OVERRIDES,
-  applyMcpDescriptionOverrides,
-  resolveMcpDescriptionOverride,
-  mcpToolEmbedText,
-  filesystemToolEmbedText,
-  setToolDescription,
-} from './mcp-description-overrides'
+export { applyCatalogDescriptions, resolveCatalogDescription, setToolDescription } from './catalog-descriptions'
 
 export type {
   ToolCategory,
   ToolCatalogEntry,
+  ToolCatalogGroup,
   ToolSecretKind,
   ToolSecrets,
   ResolveChatToolsOptions,

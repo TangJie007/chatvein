@@ -2,7 +2,7 @@ import { createRequire } from 'node:module'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { StructuredToolInterface } from '@langchain/core/tools'
-import { applyMcpDescriptionOverrides } from './mcp-description-overrides'
+import { applyCatalogDescriptions } from './catalog-descriptions'
 
 /**
  * MCP 连接配置（对齐 `@langchain/mcp-adapters` MultiServerMCPClient）。
@@ -399,7 +399,7 @@ export async function loadMcpTools(
     })
     const tools = await client.getTools()
     // 覆盖官方长描述：利于向量检索区分度，并压缩进模型的 token
-    return applyMcpDescriptionOverrides(tools as StructuredToolInterface[])
+    return applyCatalogDescriptions(tools as StructuredToolInterface[])
   } catch (err) {
     console.warn('[chatvein/tools] loadMcpTools failed:', err)
     return []

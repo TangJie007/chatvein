@@ -1,168 +1,26 @@
-import type { ToolCatalogEntry } from './types'
+import type { ToolCatalogEntry, ToolCatalogGroup } from './types'
+import { TOOL_CATALOG_GROUPS, catalogGroupById } from './catalog/groups'
+import { CORE_TOOLS } from './catalog/tools-core'
+import { FILESYSTEM_TOOLS } from './catalog/tools-filesystem'
+import { OPENFILE_TOOLS } from './catalog/tools-openfile'
+import { MODSEARCH_TOOLS } from './catalog/tools-modsearch'
+import { VMSANDBOX_TOOLS } from './catalog/tools-vmsandbox'
+import { PYODIDE_TOOLS } from './catalog/tools-pyodide'
+import { PLAYWRIGHT_TOOLS } from './catalog/tools-playwright'
 
-/** 稳定工具目录（id 供角色白名单 / UI；实现可换源） */
+/** 扁平工具目录：非 MCP 工具 + 各 MCP server 的子工具（id = 运行时工具名） */
 export const TOOL_CATALOG: readonly ToolCatalogEntry[] = [
-  // —— 1 搜索 / 联网 ——
-  {
-    id: 'mcp_modsearch',
-    category: 'search',
-    title: '联网搜索（ModSearch MCP）',
-    description:
-      '经 @chatvein/mcp-modsearch-sdk：优先 ModSearch 引擎链，搜索失败兜底 DuckDuckGo；工具前缀 modsearch__*（web_search / read_page）。',
-    source: 'mcp:@chatvein/mcp-modsearch-sdk',
-    defaultEnabled: true,
-  },
-  {
-    id: 'duckduckgo_search',
-    category: 'search',
-    title: 'DuckDuckGo 搜索',
-    description:
-      '轻量联网检索（community）；默认关闭——优先用 mcp_modsearch（内置 DDG 兜底）。',
-    source: '@langchain/community/tools/duckduckgo_search',
-    defaultEnabled: false,
-  },
-  {
-    id: 'brave_search',
-    category: 'search',
-    title: 'Brave Search',
-    description: 'Brave 联网搜索（需 BRAVE_SEARCH_API_KEY）。',
-    source: '@langchain/community/tools/brave_search',
-    defaultEnabled: false,
-    requiresSecret: 'brave',
-  },
-  {
-    id: 'serp_search',
-    category: 'search',
-    title: 'SerpAPI',
-    description: 'Google 等结果聚合（需 SERPAPI_API_KEY）。',
-    source: '@langchain/community/tools/serpapi',
-    defaultEnabled: false,
-    requiresSecret: 'serp',
-  },
+  ...CORE_TOOLS,
+  ...FILESYSTEM_TOOLS,
+  ...OPENFILE_TOOLS,
+  ...MODSEARCH_TOOLS,
+  ...VMSANDBOX_TOOLS,
+  ...PYODIDE_TOOLS,
+  ...PLAYWRIGHT_TOOLS,
+]
 
-  // —— 2 计算 & 代码 ——
-  {
-    id: 'calculator',
-    category: 'compute',
-    title: '计算器',
-    description: '求值数学表达式。',
-    source: '@langchain/community/tools/calculator',
-    defaultEnabled: true,
-  },
-  {
-    id: 'mcp_vmsandbox',
-    category: 'compute',
-    title: '工作区 JS 沙箱（vm2 MCP）',
-    description:
-      '经 @chatvein/mcp-vmsandbox-sdk：绑定 workspace，NodeVM 跑 `scripts/`（可 require 工作区 node_modules）；依赖须经信任校验安装（白名单/高下载量）。工具前缀 vmsandbox__*。',
-    source: 'mcp:@chatvein/mcp-vmsandbox-sdk',
-    defaultEnabled: true,
-  },
-  {
-    id: 'mcp_pyodide',
-    category: 'compute',
-    title: '工作区 Python 沙箱（Pyodide MCP）',
-    description:
-      '经 @chatvein/mcp-pyodide-sdk：绑定 workspace，Pyodide 跑 `scripts/**/*.py`；依赖须经信任校验（白名单/PyPI 高下载量）后 loadPackage/micropip。工具前缀 pyodide__*。',
-    source: 'mcp:@chatvein/mcp-pyodide-sdk',
-    defaultEnabled: true,
-  },
-  {
-    id: 'js_eval',
-    category: 'compute',
-    title: '受限 JS 求值（builtin）',
-    description: 'node:vm 短 JS（无 IO / 无 require）；默认关闭——优先 mcp_vmsandbox。',
-    source: 'builtin',
-    defaultEnabled: false,
-  },
-  {
-    id: 'wolfram_alpha',
-    category: 'compute',
-    title: 'Wolfram Alpha',
-    description: '符号计算与知识问答（需 WOLFRAM_ALPHA_APPID）。',
-    source: '@langchain/community/tools/wolframalpha',
-    defaultEnabled: false,
-    requiresSecret: 'wolfram',
-  },
-
-  // —— 3 本地文件（仅 MCP，无 builtin）——
-  {
-    id: 'mcp_filesystem',
-    category: 'local_fs',
-    title: '工作区文件系统（MCP）',
-    description:
-      '经 @modelcontextprotocol/server-filesystem 提供读/写/列/搜等（工具名前缀 filesystem__*）；仅允许 workspaceRoot。',
-    source: 'mcp:@modelcontextprotocol/server-filesystem',
-    defaultEnabled: true,
-  },
-  {
-    id: 'mcp_openfile',
-    category: 'local_fs',
-    title: '打开文件夹（MCP）',
-    description:
-      '经 @chatvein/mcp-openfile-sdk 在系统文件管理器中打开目录；若路径是文件则打开其所在目录（工具名前缀 openfile__*）。',
-    source: 'mcp:@chatvein/mcp-openfile-sdk',
-    defaultEnabled: true,
-  },
-
-  // —— 4 网页解析 ——
-  {
-    id: 'mcp_playwright',
-    category: 'web',
-    title: '浏览器自动化（Playwright MCP）',
-    description:
-      '经 @playwright/mcp：无障碍树快照驱动的浏览器导航/点击/填表等（工具前缀 playwright__*）。默认 headless；需已安装浏览器二进制。',
-    source: 'mcp:@playwright/mcp',
-    defaultEnabled: true,
-  },
-  {
-    id: 'fetch_url',
-    category: 'web',
-    title: '抓取网页文本',
-    description: 'HTTP GET 后去标签截断；复杂交互优先走 mcp_playwright / modsearch read_page。',
-    source: 'builtin',
-    defaultEnabled: true,
-  },
-
-  // —— 5 资讯 & 金融 ——
-  {
-    id: 'google_trends',
-    category: 'news_finance',
-    title: 'Google Trends',
-    description: '兴趣趋势（经 SerpAPI，需密钥）。',
-    source: '@langchain/community/tools/google_trends',
-    defaultEnabled: false,
-    requiresSecret: 'serp',
-  },
-
-  // —— 6 数据库 ——
-  {
-    id: 'sqlite_query',
-    category: 'database',
-    title: 'SQLite 只读查询',
-    description: '对工作区内 .db/.sqlite 执行 SELECT（node:sqlite）。',
-    source: 'builtin',
-    defaultEnabled: true,
-  },
-
-  // —— 7 知识库 ——
-  {
-    id: 'wikipedia',
-    category: 'knowledge',
-    title: 'Wikipedia',
-    description: '维基百科检索与摘要。',
-    source: '@langchain/community/tools/wikipedia_query_run',
-    defaultEnabled: true,
-  },
-  {
-    id: 'stackexchange',
-    category: 'knowledge',
-    title: 'Stack Exchange',
-    description: 'Stack Overflow 等站点问答检索。',
-    source: '@langchain/community/tools/stackexchange',
-    defaultEnabled: true,
-  },
-] as const
+export { TOOL_CATALOG_GROUPS, catalogGroupById }
+export type { ToolCatalogGroup }
 
 export function catalogById(id: string): ToolCatalogEntry | undefined {
   return TOOL_CATALOG.find((e) => e.id === id)
@@ -170,4 +28,9 @@ export function catalogById(id: string): ToolCatalogEntry | undefined {
 
 export function catalogByCategory(category: ToolCatalogEntry['category']): ToolCatalogEntry[] {
   return TOOL_CATALOG.filter((e) => e.category === category)
+}
+
+/** 分组下的全部子工具（含按需挂载的 defaultEnabled:false 工具） */
+export function catalogByGroup(groupId: string): ToolCatalogEntry[] {
+  return TOOL_CATALOG.filter((e) => e.groupId === groupId)
 }

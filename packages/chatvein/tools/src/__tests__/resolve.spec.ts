@@ -22,27 +22,33 @@ describe('TOOL_CATALOG', () => {
     )
   })
 
-  it('local_fs is MCP-only (filesystem + openfile)', () => {
+  it('local_fs tools belong to filesystem / openfile groups', () => {
     const local = TOOL_CATALOG.filter((e) => e.category === 'local_fs')
-    expect(local.map((e) => e.id)).toEqual(['mcp_filesystem', 'mcp_openfile'])
-    expect(local.every((e) => e.source.startsWith('mcp:'))).toBe(true)
+    expect(local.every((e) => e.groupId === 'mcp_filesystem' || e.groupId === 'mcp_openfile')).toBe(true)
+    expect(local.every((e) => e.mcp?.server === 'filesystem' || e.mcp?.server === 'openfile')).toBe(true)
   })
 
   it('search prefers mcp_modsearch by default', () => {
     const search = TOOL_CATALOG.filter((e) => e.category === 'search')
-    expect(search.some((e) => e.id === 'mcp_modsearch' && e.defaultEnabled)).toBe(true)
+    expect(search.some((e) => e.id === 'modsearch__web_search' && e.defaultEnabled)).toBe(true)
     expect(search.find((e) => e.id === 'duckduckgo_search')?.defaultEnabled).toBe(false)
   })
 
   it('compute prefers mcp_vmsandbox / mcp_pyodide over js_eval', () => {
-    expect(TOOL_CATALOG.find((e) => e.id === 'mcp_vmsandbox')?.defaultEnabled).toBe(true)
-    expect(TOOL_CATALOG.find((e) => e.id === 'mcp_pyodide')?.defaultEnabled).toBe(true)
+    expect(TOOL_CATALOG.find((e) => e.id === 'vmsandbox__run_workspace_script')?.defaultEnabled).toBe(true)
+    expect(TOOL_CATALOG.find((e) => e.id === 'pyodide__run_workspace_script')?.defaultEnabled).toBe(true)
     expect(TOOL_CATALOG.find((e) => e.id === 'js_eval')?.defaultEnabled).toBe(false)
   })
 
-  it('web includes mcp_playwright by default', () => {
-    expect(TOOL_CATALOG.find((e) => e.id === 'mcp_playwright')?.defaultEnabled).toBe(true)
-    expect(TOOL_CATALOG.find((e) => e.id === 'mcp_playwright')?.category).toBe('web')
+  it('web includes mcp_playwright high-frequency tools by default', () => {
+    const pw = TOOL_CATALOG.filter((e) => e.groupId === 'mcp_playwright')
+    expect(pw.some((e) => e.id === 'playwright__browser_navigate' && e.defaultEnabled)).toBe(true)
+    expect(pw.some((e) => e.id === 'playwright__browser_run_code_unsafe' && e.defaultEnabled)).toBe(false)
+  })
+
+  it('deprecated filesystem read_file is excluded from default set', () => {
+    expect(TOOL_CATALOG.find((e) => e.id === 'filesystem__read_file')?.deprecated).toBe(true)
+    expect(TOOL_CATALOG.find((e) => e.id === 'filesystem__read_file')?.defaultEnabled).toBe(false)
   })
 })
 
@@ -58,7 +64,7 @@ describe('resolveChatTools', () => {
     expect(tools).toEqual([])
   })
 
-  it('binds calculator without builtin local_fs', async () => {
+  it('binds calculator + js_eval via explicit allowIds (bypass defaultEnabled)', async () => {
     const root = await mkdtemp(join(tmpdir(), 'chatvein-tools-'))
     await writeFile(join(root, 'hello.txt'), 'hello-tools', 'utf8')
     await mkdir(join(root, 'sub'))
@@ -71,7 +77,7 @@ describe('resolveChatTools', () => {
     })
     const names = tools.map((t) => t.name).sort()
     expect(names).toEqual(['calculator', 'js_eval'])
-    expect(names.some((n) => n === 'read_file' || n.startsWith('filesystem__'))).toBe(false)
+    expect(names.some((n) => n.startsWith('filesystem__'))).toBe(false)
 
     const calc = tools.find((t) => t.name === 'calculator')!
     const sum = await calc.invoke('2+3')
