@@ -1488,7 +1488,11 @@ function formatRouteThinking(route: RouteDecision): string {
   if (route.policy.allowSubAgents) hints.push('允许子 Agent')
   const hintStr = hints.length ? `；${hints.join('、')}` : ''
   const l2 = route.reasons.includes('l2_classifier')
-    ? '；已过 L2'
+    ? route.reasons.includes('l2_structured')
+      ? '；已过 L2(structured)'
+      : route.reasons.includes('l2_text')
+        ? '；已过 L2(text)'
+        : '；已过 L2'
     : route.reasons.includes('l2_failed') || route.reasons.includes('l2_timeout')
       ? '；L2 失败保留 L1'
       : ''

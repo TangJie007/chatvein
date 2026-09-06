@@ -2,7 +2,9 @@
  * L2：弱模型结构化路由（策略拍板 + 工具向改写）。
  *
  * - ReAct 图外单次调用
- * - Prompt：`formatL2PromptMessages` → messages → 弱模
+ * - Prompt：`formatL2PromptMessages`
+ * - 模型路径：优先 `withStructuredOutput`，response_format 不支持时纯文本 JSON 兜底
+ * - `callModel` 注入：始终走文本（单测 / 非 LangChain 后端）
  * - 无模型时 Passthrough（透传 L1）
  */
 import type { BaseMessage } from '@langchain/core/messages'
@@ -11,7 +13,12 @@ import type { RouteDecision } from '@chatvein/common'
 import type { HeuristicCtx } from '../l1/features'
 import { mergeL2Judgement } from './merge'
 import { formatL2PromptMessages } from './prompt'
-import { extractJsonObject, parseL2Judgement } from './schema'
+import {
+  extractJsonObject,
+  parseL2Judgement,
+  L2JudgementSchema,
+  type L2Judgement,
+} from './schema'
 
 export interface L2Classifier {
   classify(ctx: HeuristicCtx, l1: RouteDecision): Promise<RouteDecision>
@@ -26,7 +33,7 @@ export type L2ModelCall = (input: {
 export interface L2ClassifierOptions {
   /** LangChain Chat 模型（与 ReAct 同源桥接即可；宜弱模 + 低温） */
   model?: BaseChatModel
-  /** 自定义调用；优先于 model */
+  /** 自定义调用；优先于 model（始终文本路径） */
   callModel?: L2ModelCall
   /** 超时（ms），默认 12s；超时则保留 L1 */
   timeoutMs?: number
@@ -39,28 +46,23 @@ export class PassthroughL2Classifier implements L2Classifier {
   }
 }
 
+type JudgementVia = 'structured' | 'text'
+
 /**
- * 结构化 L2：formatL2PromptMessages → 弱模 → JSON → zod → mergeL2Judgement。
+ * 结构化 L2：messages → withStructuredOutput（优先）→ 文本 JSON 兜底 → merge。
  * 解析失败 / 超时 / 调用异常 → 保留 L1，并追加 reasons。
  */
 export class StructuredL2Classifier implements L2Classifier {
-  private readonly invokeRaw: (
-    messages: BaseMessage[],
-    signal: AbortSignal,
-  ) => Promise<string>
+  private readonly model?: BaseChatModel
+  private readonly callModel?: L2ModelCall
   private readonly timeoutMs: number
 
   constructor(options: L2ClassifierOptions) {
     this.timeoutMs = options.timeoutMs ?? 12_000
     if (options.callModel) {
-      const callModel = options.callModel
-      this.invokeRaw = async (messages, signal) => callModel({ messages, signal })
+      this.callModel = options.callModel
     } else if (options.model) {
-      const model = options.model
-      this.invokeRaw = async (messages, signal) => {
-        const res = await model.invoke(messages, { signal })
-        return messageContentToString(res.content)
-      }
+      this.model = options.model
     } else {
       throw new Error('StructuredL2Classifier: 需要 model 或 callModel')
     }
@@ -73,9 +75,12 @@ export class StructuredL2Classifier implements L2Classifier {
     const timer = setTimeout(() => ac.abort(), this.timeoutMs)
     try {
       const messages = await formatL2PromptMessages(ctx, l1)
-      const rawText = await this.invokeRaw(messages, ac.signal)
-      const judgement = parseL2Judgement(extractJsonObject(rawText))
-      return mergeL2Judgement(l1, judgement)
+      const { judgement, via } = await this.judge(messages, ac.signal)
+      const merged = mergeL2Judgement(l1, judgement)
+      return {
+        ...merged,
+        reasons: [...merged.reasons, via === 'structured' ? 'l2_structured' : 'l2_text'],
+      }
     } catch (err) {
       const tag = abortLike(err) ? 'l2_timeout' : 'l2_failed'
       return {
@@ -85,6 +90,61 @@ export class StructuredL2Classifier implements L2Classifier {
     } finally {
       clearTimeout(timer)
     }
+  }
+
+  private async judge(
+    messages: BaseMessage[],
+    signal: AbortSignal,
+  ): Promise<{ judgement: L2Judgement; via: JudgementVia }> {
+    // 注入 callModel：单测 / 自定义后端，只走文本
+    if (this.callModel) {
+      const rawText = await this.callModel({ messages, signal })
+      return {
+        judgement: parseL2Judgement(extractJsonObject(rawText)),
+        via: 'text',
+      }
+    }
+
+    const model = this.model!
+    const structured = await tryStructuredL2(model, messages, signal)
+    if (structured.kind === 'ok') {
+      return { judgement: structured.judgement, via: 'structured' }
+    }
+    if (structured.kind === 'fatal') {
+      throw structured.error
+    }
+
+    // response_format 不支持 / 无 withStructuredOutput → 纯文本 JSON
+    const res = await model.invoke(messages, { signal })
+    return {
+      judgement: parseL2Judgement(extractJsonObject(messageContentToString(res.content))),
+      via: 'text',
+    }
+  }
+}
+
+type StructuredL2Attempt =
+  | { kind: 'ok'; judgement: L2Judgement }
+  | { kind: 'unsupported' }
+  | { kind: 'fatal'; error: unknown }
+
+async function tryStructuredL2(
+  model: BaseChatModel,
+  messages: BaseMessage[],
+  signal: AbortSignal,
+): Promise<StructuredL2Attempt> {
+  if (typeof model.withStructuredOutput !== 'function') {
+    return { kind: 'unsupported' }
+  }
+  try {
+    const extractor = model.withStructuredOutput(L2JudgementSchema, { name: 'l2_route' })
+    const raw = await extractor.invoke(messages, { signal })
+    return { kind: 'ok', judgement: parseL2Judgement(raw) }
+  } catch (err) {
+    if (isResponseFormatUnsupported(err)) return { kind: 'unsupported' }
+    if (isFatalLlmError(err) || abortLike(err)) return { kind: 'fatal', error: err }
+    // 其它结构化失败：仍尝试文本兜底
+    return { kind: 'unsupported' }
   }
 }
 
@@ -107,6 +167,19 @@ export function shouldEscalateToL2(decision: RouteDecision): boolean {
     decision.band === 'unknown' ||
     decision.policy.tools === 'unknown'
   )
+}
+
+/** 端不支持 response_format / json_schema（与工具 C2 同判定） */
+export function isResponseFormatUnsupported(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err)
+  return /response_format|json_schema|structured.?output|unavailable now|not support.*json/i.test(
+    msg,
+  )
+}
+
+function isFatalLlmError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err)
+  return /timeout|401|unauthorized|invalid.*key|ENOTFOUND|ECONNREFUSED/i.test(msg)
 }
 
 function abortLike(err: unknown): boolean {

@@ -27,6 +27,7 @@ export {
   PassthroughL2Classifier,
   StructuredL2Classifier,
   shouldEscalateToL2,
+  isResponseFormatUnsupported,
   mergeL2Judgement,
   L2JudgementSchema,
   type L2Classifier,

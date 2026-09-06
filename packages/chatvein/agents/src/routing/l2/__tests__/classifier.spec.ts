@@ -46,7 +46,7 @@ describe('L2 merge + schema', () => {
 })
 
 describe('StructuredL2Classifier', () => {
-  it('callModel 成功则覆盖 L1 并带改写', async () => {
+  it('callModel 成功则覆盖 L1 并带改写（文本路径）', async () => {
     const callModel = vi.fn(async () =>
       JSON.stringify({
         band: 'standard',
@@ -66,7 +66,50 @@ describe('StructuredL2Classifier', () => {
     expect(d.band).toBe('standard')
     expect(d.rewrittenQuery).toContain('检索')
     expect(d.reasons).toContain('l2_classifier')
+    expect(d.reasons).toContain('l2_text')
     expect(callModel).toHaveBeenCalledOnce()
+  })
+
+  it('model.withStructuredOutput 成功 → l2_structured', async () => {
+    const model = {
+      withStructuredOutput: () => ({
+        invoke: vi.fn(async () => ({
+          band: 'standard',
+          tools: 'full',
+          confident: true,
+          rewrittenQuery: '查询上海天气',
+        })),
+      }),
+      invoke: vi.fn(async () => {
+        throw new Error('不应走文本')
+      }),
+    }
+    const l2 = createL2Classifier({ model: model as never })
+    const d = await createHeuristicRouter({ l2 }).route({ text: '今天上海天气怎么样' })
+    expect(d.band).toBe('standard')
+    expect(d.rewrittenQuery).toBe('查询上海天气')
+    expect(d.reasons).toContain('l2_structured')
+    expect(model.invoke).not.toHaveBeenCalled()
+  })
+
+  it('response_format 不支持 → 文本 JSON 兜底 l2_text', async () => {
+    const model = {
+      withStructuredOutput: () => ({
+        invoke: async () => {
+          throw new Error('400 This response_format type is unavailable now')
+        },
+      }),
+      invoke: vi.fn(async () => ({
+        content:
+          '好的\n{"band":"simple","tools":"full","confident":true,"rewrittenQuery":"查询上海市今日天气预报"}\n',
+      })),
+    }
+    const l2 = createL2Classifier({ model: model as never })
+    const d = await createHeuristicRouter({ l2 }).route({ text: '今天上海天气怎么样' })
+    expect(d.band).toBe('simple')
+    expect(d.rewrittenQuery).toBe('查询上海市今日天气预报')
+    expect(d.reasons).toContain('l2_text')
+    expect(model.invoke).toHaveBeenCalledOnce()
   })
 
   it('天气查询进 L2', async () => {

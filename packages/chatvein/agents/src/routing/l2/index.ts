@@ -3,6 +3,7 @@ export {
   PassthroughL2Classifier,
   StructuredL2Classifier,
   shouldEscalateToL2,
+  isResponseFormatUnsupported,
   type L2Classifier,
   type L2ClassifierOptions,
   type L2ModelCall,
