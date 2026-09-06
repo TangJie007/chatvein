@@ -2,25 +2,24 @@
  * L2：弱模型结构化路由（策略拍板 + 工具向改写）。
  *
  * - ReAct 图外单次调用
- * - 不做对话回答；输出 band/tools + rewrittenQuery
+ * - Prompt：`formatL2PromptMessages` → messages → 弱模
  * - 无模型时 Passthrough（透传 L1）
  */
-import { HumanMessage, SystemMessage } from '@langchain/core/messages'
+import type { BaseMessage } from '@langchain/core/messages'
 import type { BaseChatModel } from '@langchain/core/language_models/chat_models'
 import type { RouteDecision } from '@chatvein/common'
 import type { HeuristicCtx } from '../l1/features'
 import { mergeL2Judgement } from './merge'
-import { buildL2UserPrompt, L2_SYSTEM_PROMPT } from './prompt'
+import { formatL2PromptMessages } from './prompt'
 import { extractJsonObject, parseL2Judgement } from './schema'
 
 export interface L2Classifier {
   classify(ctx: HeuristicCtx, l1: RouteDecision): Promise<RouteDecision>
 }
 
-/** 可注入的纯文本调用（单测 / 非 LangChain 后端） */
+/** 可注入调用（单测）：入参已是 ChatPromptTemplate 格式化后的 messages */
 export type L2ModelCall = (input: {
-  system: string
-  user: string
+  messages: BaseMessage[]
   signal?: AbortSignal
 }) => Promise<string>
 
@@ -41,24 +40,25 @@ export class PassthroughL2Classifier implements L2Classifier {
 }
 
 /**
- * 结构化 L2：prompt → JSON → zod → mergeL2Judgement。
+ * 结构化 L2：formatL2PromptMessages → 弱模 → JSON → zod → mergeL2Judgement。
  * 解析失败 / 超时 / 调用异常 → 保留 L1，并追加 reasons。
  */
 export class StructuredL2Classifier implements L2Classifier {
-  private readonly callModel: L2ModelCall
+  private readonly invokeRaw: (
+    messages: BaseMessage[],
+    signal: AbortSignal,
+  ) => Promise<string>
   private readonly timeoutMs: number
 
   constructor(options: L2ClassifierOptions) {
     this.timeoutMs = options.timeoutMs ?? 12_000
     if (options.callModel) {
-      this.callModel = options.callModel
+      const callModel = options.callModel
+      this.invokeRaw = async (messages, signal) => callModel({ messages, signal })
     } else if (options.model) {
       const model = options.model
-      this.callModel = async ({ system, user, signal }) => {
-        const res = await model.invoke(
-          [new SystemMessage(system), new HumanMessage(user)],
-          signal ? { signal } : undefined,
-        )
+      this.invokeRaw = async (messages, signal) => {
+        const res = await model.invoke(messages, { signal })
         return messageContentToString(res.content)
       }
     } else {
@@ -72,12 +72,8 @@ export class StructuredL2Classifier implements L2Classifier {
     const ac = new AbortController()
     const timer = setTimeout(() => ac.abort(), this.timeoutMs)
     try {
-      // —— 重点：图外单次调用，与主对话 ReAct 隔离 ——
-      const rawText = await this.callModel({
-        system: L2_SYSTEM_PROMPT,
-        user: buildL2UserPrompt(ctx, l1),
-        signal: ac.signal,
-      })
+      const messages = await formatL2PromptMessages(ctx, l1)
+      const rawText = await this.invokeRaw(messages, ac.signal)
       const judgement = parseL2Judgement(extractJsonObject(rawText))
       return mergeL2Judgement(l1, judgement)
     } catch (err) {

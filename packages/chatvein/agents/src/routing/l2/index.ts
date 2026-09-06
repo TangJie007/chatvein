@@ -17,4 +17,10 @@ export {
 
 export { mergeL2Judgement } from './merge'
 
-export { L2_SYSTEM_PROMPT, buildL2UserPrompt } from './prompt'
+export {
+  L2_SYSTEM_PROMPT,
+  buildL2PromptVars,
+  formatL2PromptMessages,
+  l2ChatPromptTemplate,
+  type L2PromptVars,
+} from './prompt'

@@ -62,8 +62,8 @@
 
 | 项 | 内容 |
 |----|------|
-| System | 常量 `L2_SYSTEM_PROMPT`（分类器身份，禁止回答用户） |
-| User | `buildL2UserPrompt(ctx, l1)`：用户原文截断 + L1 决策 JSON + 关键特征 |
+| System | `L2_SYSTEM_PROMPT`（经 `l2ChatPromptTemplate`） |
+| User | `formatL2PromptMessages(ctx)`：`{text}` + `{facts}` |
 | 调用 | `StructuredL2Classifier`：`[SystemMessage, HumanMessage]` 或等价 structured 调用 |
 | 挂载时机 | `ChatService.routerWithL2` → `router.setL2(createL2Classifier({ model }))` |
 

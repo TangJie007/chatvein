@@ -1,10 +1,13 @@
 /**
  * L2 提示词：策略拍板 + 工具向语义改写。
- * 不做对话回答；不输出 unknown。
+ * 唯一入口：`l2ChatPromptTemplate` / `formatL2PromptMessages`。
  */
+import { ChatPromptTemplate } from '@langchain/core/prompts'
+import type { BaseMessage } from '@langchain/core/messages'
 import type { RouteDecision } from '@chatvein/common'
 import type { HeuristicCtx } from '../l1/features'
 
+/** System 正文（静态）；写入模板前转义 `{`/`}`，避免被当成 f-string 变量 */
 export const L2_SYSTEM_PROMPT = `你是 Chatvein 的 L2 路由分类器，不是对话助手。
 上游 L1 已过滤纯寒暄/自我介绍/本地命令；你只处理需要策略判断的用户消息。
 输出唯一一个 JSON 对象。禁止回答用户问题；禁止 Markdown；禁止 band/tools 为 unknown。
@@ -26,7 +29,7 @@ export const L2_SYSTEM_PROMPT = `你是 Chatvein 的 L2 路由分类器，不是
 ## band 复杂度（从严，假阴性优于假阳性）
 - trivial：仍像闲聊/确认、几乎不需推理（少见；L1 已截大半）。tools 通常 none。
 - simple：单点知识问答、概念解释、短计算口算、无需读仓库/联网也能答。tools=none 为主；仅当明确要查实时信息才 full。
-- standard：默认档。需要读文件、搜索、跑命令、改一小处代码、查天气/网页、写一段可落地内容。tools 倾向 full；maxSteps≈16。
+- standard：默认档。需要读文件、搜索、跑命令、改一小处代码、查天气/网页、写一段可落地内容。tools=full；maxSteps≈16。
 - complex：多文件/多步骤、对比选型、架构设计、大范围重构、并行子任务、长链路调试。tools=full；可 allowSubAgents；maxSteps≈64；modelTier 倾向 strong。
 
 判定线索：
@@ -38,7 +41,7 @@ export const L2_SYSTEM_PROMPT = `你是 Chatvein 的 L2 路由分类器，不是
 ## rewrittenQuery（关键）
 把用户口语改写成「给工具检索器用的语义描述」，不是复述原文，也不是回复用户。
 要求：
-1. 中文为主；可夹关键英文符号/API 名
+1. 中文为主；可夹必要英文符号/API 名
 2. 显式写出可能需要的能力与对象：如 读文件、搜索网页、计算、改代码、列目录、查天气
 3. 补全省略主语/宾语；去掉语气词与寒暄
 4. 一两句即可，勿写成执行计划清单
@@ -50,21 +53,47 @@ export const L2_SYSTEM_PROMPT = `你是 Chatvein 的 L2 路由分类器，不是
 - 用户「闭包是什么」→ rewrittenQuery「解释编程语言中的闭包概念与用途」
 - 用户「Redis 和 Memcached 怎么选」→ rewrittenQuery「对比 Redis 与 Memcached 的选型差异并给出适用场景建议」`
 
-export function buildL2UserPrompt(ctx: HeuristicCtx, _l1: RouteDecision): string {
-  const facts = {
-    charLen: ctx.charLen,
-    lang: ctx.lang,
-    hasCodeFence: ctx.hasCodeFence,
-    hasPathLike: ctx.hasPathLike,
-    hasUrl: ctx.hasUrl,
+const L2_USER_TEMPLATE = `## 用户消息
+{text}
+
+## 结构特征
+{facts}
+
+请只输出一个 JSON 对象（含 band、tools、confident、rewrittenQuery）。`
+
+function escapePromptTemplateLiterals(text: string): string {
+  return text.replace(/\{/g, '{{').replace(/\}/g, '}}')
+}
+
+/** L2 ChatPromptTemplate：system 固定 + human `{text}`/`{facts}` */
+export const l2ChatPromptTemplate = ChatPromptTemplate.fromMessages([
+  ['system', escapePromptTemplateLiterals(L2_SYSTEM_PROMPT)],
+  ['human', L2_USER_TEMPLATE],
+])
+
+export type L2PromptVars = {
+  text: string
+  facts: string
+}
+
+/** 从 HeuristicCtx 抽出模板变量 */
+export function buildL2PromptVars(ctx: HeuristicCtx, _l1?: RouteDecision): L2PromptVars {
+  return {
+    text: ctx.text.slice(0, 2000),
+    facts: JSON.stringify({
+      charLen: ctx.charLen,
+      lang: ctx.lang,
+      hasCodeFence: ctx.hasCodeFence,
+      hasPathLike: ctx.hasPathLike,
+      hasUrl: ctx.hasUrl,
+    }),
   }
-  return [
-    '## 用户消息',
-    ctx.text.slice(0, 2000),
-    '',
-    '## 结构特征',
-    JSON.stringify(facts),
-    '',
-    '请只输出一个 JSON 对象（含 band、tools、confident、rewrittenQuery）。',
-  ].join('\n')
+}
+
+/** 格式化为 LangChain messages（L2 唯一 prompt 出口） */
+export function formatL2PromptMessages(
+  ctx: HeuristicCtx,
+  l1?: RouteDecision,
+): Promise<BaseMessage[]> {
+  return l2ChatPromptTemplate.formatMessages(buildL2PromptVars(ctx, l1))
 }
