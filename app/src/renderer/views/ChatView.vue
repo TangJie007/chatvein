@@ -6,6 +6,7 @@ import ChatMessage from '../components/chat/ChatMessage.vue'
 import Composer from '../components/chat/Composer.vue'
 import ThinkingPanel from '../components/chat/ThinkingPanel.vue'
 import ChipButton from '../components/ui/ChipButton.vue'
+import ConfirmDialog from '../components/ui/ConfirmDialog.vue'
 import AppIcon from '../components/AppIcon.vue'
 import Avatar from '../components/ui/Avatar.vue'
 import { useChat } from '../composables/useChat'
@@ -24,6 +25,14 @@ const status = ref('')
 const draft = ref('')
 /** 右侧「Trace / 思考流」面板是否展开（Trace 按钮切换） */
 const tracePanelOpen = ref(true)
+
+/** 删除对话：应用内确认（避免 Electron 无边框窗口上 window.confirm 抢焦点） */
+const removeConfirmOpen = ref(false)
+const removeBusy = ref(false)
+const pendingRemoveId = ref('')
+const pendingRemoveTitle = ref('')
+/** 删除 IPC 超过此时长仍未返回：关弹窗释放 UI，后台继续，不阻塞后续操作 */
+const REMOVE_TIMEOUT_MS = 10_000
 
 const mainAgent = computed(() => agents.agents.find((a) => a.isMain) ?? agents.agents[0])
 const activeAgent = computed(() => {
@@ -141,14 +150,68 @@ async function onAdd() {
   await scrollBottom()
 }
 
-async function onRemove(id: string) {
+function onRemove(id: string) {
   const target = chat.conversations.find((c) => c.id === id)
   if (!target) return
-  const ok = window.confirm(`删除对话「${target.title}」？\n将同时移除该会话目录（含 runs/）与聊天历史。`)
-  if (!ok) return
-  await chat.remove(id)
-  status.value = '已删除对话'
-  setCrumbItem(chat.current?.title || '对话')
+  pendingRemoveId.value = id
+  pendingRemoveTitle.value = target.title
+  removeBusy.value = false
+  removeConfirmOpen.value = true
+}
+
+function onRemoveCancel() {
+  if (removeBusy.value) return
+  removeConfirmOpen.value = false
+  pendingRemoveId.value = ''
+  pendingRemoveTitle.value = ''
+}
+
+async function onRemoveConfirm() {
+  const id = pendingRemoveId.value
+  if (!id || removeBusy.value) return
+  removeBusy.value = true
+
+  const removePromise = chat.remove(id)
+  let timeoutId: ReturnType<typeof setTimeout> | undefined
+  const timeoutPromise = new Promise<'timeout'>((resolve) => {
+    timeoutId = setTimeout(() => resolve('timeout'), REMOVE_TIMEOUT_MS)
+  })
+
+  try {
+    const outcome = await Promise.race([
+      removePromise.then(() => 'ok' as const),
+      timeoutPromise,
+    ])
+    if (timeoutId != null) clearTimeout(timeoutId)
+
+    if (outcome === 'timeout') {
+      // 释放弹窗与 busy，后台删除继续；成功/失败只更新状态栏
+      removeConfirmOpen.value = false
+      pendingRemoveId.value = ''
+      pendingRemoveTitle.value = ''
+      removeBusy.value = false
+      status.value = '删除较慢，已关闭确认框；后台仍在处理'
+      void removePromise
+        .then(() => {
+          status.value = '已删除对话'
+          setCrumbItem(chat.current?.title || '对话')
+        })
+        .catch((e) => {
+          status.value = (e as Error).message || '删除失败'
+        })
+      return
+    }
+
+    status.value = '已删除对话'
+    setCrumbItem(chat.current?.title || '对话')
+    removeConfirmOpen.value = false
+    pendingRemoveId.value = ''
+    pendingRemoveTitle.value = ''
+  } catch (e) {
+    if (timeoutId != null) clearTimeout(timeoutId)
+    status.value = (e as Error).message || '删除失败'
+    removeBusy.value = false
+  }
 }
 
 async function onSend(text: string) {
@@ -410,4 +473,17 @@ onMounted(async () => {
       @removed="chat.dropArtifact"
     />
   </main>
+
+  <ConfirmDialog
+    :open="removeConfirmOpen"
+    :title="`删除对话「${pendingRemoveTitle}」？`"
+    description="将同时移除该会话目录（含 runs/）与聊天历史。"
+    confirm-label="删除"
+    busy-label="正在删除…"
+    cancel-label="取消"
+    danger
+    :busy="removeBusy"
+    @close="onRemoveCancel"
+    @confirm="onRemoveConfirm"
+  />
 </template>
