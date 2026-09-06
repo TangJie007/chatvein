@@ -109,4 +109,15 @@ describe('WorkspaceCheckpointer', () => {
       cp.close()
     }
   })
+
+  it('creates missing parent directories before opening the db', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'cp-test-'))
+    dirs.push(dir)
+    const cp = new WorkspaceCheckpointer({ dbPath: join(dir, 'memory', 'checkpoints.db') })
+    try {
+      expect(cp).toBeDefined()
+    } finally {
+      cp.close()
+    }
+  })
 })

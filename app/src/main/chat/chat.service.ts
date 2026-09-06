@@ -100,6 +100,7 @@ export class ChatService {
     await fs.mkdir(sandboxPath, { recursive: true })
     await fs.mkdir(join(workspacePath, 'scripts'), { recursive: true })
     await fs.mkdir(join(workspacePath, 'logs'), { recursive: true })
+    await fs.mkdir(join(workspacePath, 'memory'), { recursive: true })
 
     const conv: Conversation = {
       id: randomUUID(),

@@ -47,6 +47,20 @@ export {
   MCP_PYODIDE_SERVER_NAME,
   MCP_PLAYWRIGHT_SERVER_NAME,
 } from './mcp'
+export {
+  MCP_FILESYSTEM_DESCRIPTION_OVERRIDES,
+  MCP_OPENFILE_DESCRIPTION_OVERRIDES,
+  MCP_MODSEARCH_DESCRIPTION_OVERRIDES,
+  MCP_VMSANDBOX_DESCRIPTION_OVERRIDES,
+  MCP_PYODIDE_DESCRIPTION_OVERRIDES,
+  MCP_PLAYWRIGHT_DESCRIPTION_OVERRIDES,
+  MCP_TOOL_DESCRIPTION_OVERRIDES,
+  applyMcpDescriptionOverrides,
+  resolveMcpDescriptionOverride,
+  mcpToolEmbedText,
+  filesystemToolEmbedText,
+  setToolDescription,
+} from './mcp-description-overrides'
 
 export type {
   ToolCategory,

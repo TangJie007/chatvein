@@ -13,6 +13,8 @@
  * 本轮 agent 的完整消息轨迹落盘，支持跨进程持久化与崩溃恢复。
  */
 import { DatabaseSync } from 'node:sqlite'
+import { mkdirSync } from 'node:fs'
+import { dirname } from 'node:path'
 import {
   BaseCheckpointSaver,
   WRITES_IDX_MAP,
@@ -81,6 +83,8 @@ export class WorkspaceCheckpointer extends BaseCheckpointSaver {
 
   constructor(opts: WorkspaceCheckpointerOptions) {
     super()
+    // node:sqlite 不会自动建父目录；缺 memory/ 时会报 unable to open database file
+    mkdirSync(dirname(opts.dbPath), { recursive: true })
     this.db = new DatabaseSync(opts.dbPath)
     this.db.exec('PRAGMA foreign_keys = ON;')
     this.db.exec(`
