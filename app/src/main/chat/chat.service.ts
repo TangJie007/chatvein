@@ -1583,11 +1583,13 @@ function formatToolSelectorLabel(
   const c2Part =
     c2 === 'skipped'
       ? 'none'
-      : c2 === 'selected'
+      : c2 === 'selected_structured'
         ? 'c2'
-        : c2 === 'passthrough_small'
-          ? 'c2skip'
-          : `c2fallback:${c2}`
+        : c2 === 'selected_text'
+          ? 'c2text'
+          : c2 === 'passthrough_small'
+            ? 'c2skip'
+            : `c2fallback:${c2}`
   return `${c1}+${c2Part}`
 }
 

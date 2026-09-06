@@ -47,10 +47,20 @@ export {
   keywordSelect,
   llmSelectTools,
   fitToolsWithinBudget,
+  isResponseFormatUnsupported,
   type ToolCandidate,
   type LlmSelectToolsResult,
   type LlmSelectToolsStatus,
 } from './select'
+export {
+  TOOL_SELECT_SYSTEM_PROMPT,
+  toolSelectChatPromptTemplate,
+  formatToolSelectPromptMessages,
+  formatToolSelectList,
+  buildToolSelectPromptVars,
+  type ToolSelectPromptVars,
+  type ToolSelectListItem,
+} from './select-prompt'
 export {
   loadMcpTools,
   parseMcpServersJson,

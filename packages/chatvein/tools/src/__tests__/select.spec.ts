@@ -1,5 +1,17 @@
-import { describe, it, expect } from 'vitest'
-import { keywordSelect, llmSelectTools, fitToolsWithinBudget } from '../select'
+import { describe, it, expect, vi } from 'vitest'
+import {
+  keywordSelect,
+  llmSelectTools,
+  fitToolsWithinBudget,
+  isResponseFormatUnsupported,
+} from '../select'
+import {
+  TOOL_SELECT_SYSTEM_PROMPT,
+  buildToolSelectPromptVars,
+  formatToolSelectList,
+  formatToolSelectPromptMessages,
+  toolSelectChatPromptTemplate,
+} from '../select-prompt'
 import type { ToolCatalogEntry } from '../types'
 
 const candidates: ToolCatalogEntry[] = [
@@ -31,6 +43,45 @@ describe('keywordSelect', () => {
   })
 })
 
+describe('toolSelectChatPromptTemplate', () => {
+  it('formatMessages 含 query / 工具列表 / maxK', async () => {
+    const cand = [
+      { name: 'fs_read', description: '读文件' },
+      { name: 'calc', description: { weird: true } },
+    ]
+    const messages = await formatToolSelectPromptMessages('写一篇夏的文章', cand, 10)
+    expect(messages).toHaveLength(2)
+    expect(String(messages[0]!.content)).toContain('至多选出 10 个')
+    const human = String(messages[1]!.content)
+    expect(human).toContain('写一篇夏的文章')
+    expect(human).toContain('"weird":true')
+    expect(human).not.toContain('[object Object]')
+  })
+
+  it('formatToolSelectList 把非字符串 description 序列化', () => {
+    const list = formatToolSelectList([{ name: 'x', description: { a: 1 } }])
+    expect(list).toContain('{"a":1}')
+  })
+
+  it('template 与 helper 一致', async () => {
+    const cand = [{ name: 'a', description: 'b' }]
+    const vars = buildToolSelectPromptVars('q', cand, 3)
+    const viaT = await toolSelectChatPromptTemplate.formatMessages(vars)
+    const viaH = await formatToolSelectPromptMessages('q', cand, 3)
+    expect(String(viaT[1]!.content)).toBe(String(viaH[1]!.content))
+    expect(TOOL_SELECT_SYSTEM_PROMPT).toContain('{maxK}')
+  })
+})
+
+describe('isResponseFormatUnsupported', () => {
+  it('识别常见文案', () => {
+    expect(
+      isResponseFormatUnsupported(new Error('400 This response_format type is unavailable now')),
+    ).toBe(true)
+    expect(isResponseFormatUnsupported(new Error('timeout'))).toBe(false)
+  })
+})
+
 describe('llmSelectTools', () => {
   const cand = [
     { name: 'fs_read', description: '读文件' },
@@ -38,28 +89,97 @@ describe('llmSelectTools', () => {
     { name: 'web_search', description: '搜索网页' },
   ]
 
-  it('返回被候选集过滤后的 toolIds', async () => {
+  it('withStructuredOutput 成功 → selected_structured', async () => {
     const fake = {
-      withStructuredOutput: () => ({ invoke: async () => ({ toolIds: ['fs_read', 'calc'] }) }),
+      withStructuredOutput: () => ({
+        invoke: vi.fn(async () => ({ toolIds: ['fs_read', 'calc'] })),
+      }),
+      invoke: vi.fn(async () => {
+        throw new Error('不应走文本')
+      }),
     } as never
     const res = await llmSelectTools('读文件并计算', cand, fake, { maxK: 2 })
-    expect(res).toEqual({ toolIds: ['fs_read', 'calc'], status: 'selected' })
+    expect(res).toEqual({ toolIds: ['fs_read', 'calc'], status: 'selected_structured' })
   })
 
-  it('结果为空/失败 → 回退全部候选', async () => {
+  it('response_format 不支持 → 文本 JSON 兜底 selected_text', async () => {
     const fake = {
-      withStructuredOutput: () => ({ invoke: async () => ({ toolIds: [] }) }),
+      withStructuredOutput: () => ({
+        invoke: async () => {
+          throw new Error('400 This response_format type is unavailable now')
+        },
+      }),
+      invoke: vi.fn(async () => ({
+        content: '好的\n{"toolIds":["fs_read"]}\n',
+      })),
+    } as never
+    const res = await llmSelectTools('读文件', cand, fake, { maxK: 2 })
+    expect(res).toEqual({ toolIds: ['fs_read'], status: 'selected_text' })
+    expect(fake.invoke).toHaveBeenCalledOnce()
+  })
+
+  it('无 withStructuredOutput → 直接文本路径', async () => {
+    const fake = {
+      invoke: async () => ({ content: '{"toolIds":["calc"]}' }),
+    } as never
+    const res = await llmSelectTools('计算', cand, fake, { maxK: 2 })
+    expect(res).toEqual({ toolIds: ['calc'], status: 'selected_text' })
+  })
+
+  it('结构化返回空 → fallback_empty（不再打文本）', async () => {
+    const invoke = vi.fn()
+    const fake = {
+      withStructuredOutput: () => ({
+        invoke: async () => ({ toolIds: [] }),
+      }),
+      invoke,
     } as never
     const res = await llmSelectTools('q', cand, fake, { maxK: 2 })
-    expect(res).toEqual({
-      toolIds: ['fs_read', 'calc', 'web_search'],
-      status: 'fallback_empty',
-    })
+    expect(res.status).toBe('fallback_empty')
+    expect(invoke).not.toHaveBeenCalled()
+  })
+
+  it('结构化超时 → fallback_error（不再打文本）', async () => {
+    const invoke = vi.fn()
+    const fake = {
+      withStructuredOutput: () => ({
+        invoke: async () => {
+          throw new Error('llmSelectTools timeout')
+        },
+      }),
+      invoke,
+    } as never
+    const res = await llmSelectTools('q', cand, fake, { maxK: 2 })
+    expect(res.status).toBe('fallback_error')
+    expect(invoke).not.toHaveBeenCalled()
+  })
+
+  it('文本路径也失败 → fallback_error', async () => {
+    const fake = {
+      withStructuredOutput: () => ({
+        invoke: async () => {
+          throw new Error('response_format unavailable')
+        },
+      }),
+      invoke: async () => {
+        throw new Error('network boom')
+      },
+    } as never
+    const res = await llmSelectTools('q', cand, fake, { maxK: 2 })
+    expect(res.status).toBe('fallback_error')
+    expect(res.toolIds).toHaveLength(3)
   })
 
   it('候选数 ≤ maxK 时跳过弱模型调用', async () => {
     const fake = {
-      withStructuredOutput: () => ({ invoke: async () => { throw new Error('不应被调用') } }),
+      withStructuredOutput: () => ({
+        invoke: async () => {
+          throw new Error('不应被调用')
+        },
+      }),
+      invoke: async () => {
+        throw new Error('不应被调用')
+      },
     } as never
     const res = await llmSelectTools('q', cand.slice(0, 2), fake, { maxK: 10 })
     expect(res).toEqual({ toolIds: ['fs_read', 'calc'], status: 'passthrough_small' })

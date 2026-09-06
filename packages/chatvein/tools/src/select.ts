@@ -1,14 +1,17 @@
 /**
  * 工具动态选用（层 C）：关键词预筛 C1 + 弱模型精筛 C2 + 预算裁剪 C3。
  *
- * 复用 `@chatvein/context` 的 `estimateMessagesTokens` / `truncateFolded`。
+ * C2：优先 `withStructuredOutput`；遇 response_format 不支持等 → 纯文本 JSON 兜底
+ * （ChatPromptTemplate，与路由 L2 同套路）。
  * 见 docs/tool-selection-design.md 层 C。
  */
 import { z } from 'zod'
 import type { BaseChatModel } from '@langchain/core/language_models/chat_models'
+import type { BaseMessage } from '@langchain/core/messages'
 import type { StructuredToolInterface } from '@langchain/core/tools'
-import { estimateMessagesTokens, truncateFolded } from '@chatvein/context'
+import { estimateMessagesTokens } from '@chatvein/context'
 import { humanizeToolName } from './tool-embed'
+import { formatToolSelectPromptMessages } from './select-prompt'
 import type { ToolCatalogEntry } from './types'
 
 /**
@@ -38,9 +41,10 @@ export interface ToolCandidate {
   description?: string
 }
 
-/** C2 精筛结果状态（供埋点；避免「回退全量却标成 vector+l2」） */
+/** C2 精筛结果状态（供埋点） */
 export type LlmSelectToolsStatus =
-  | 'selected'
+  | 'selected_structured'
+  | 'selected_text'
   | 'passthrough_small'
   | 'fallback_empty'
   | 'fallback_error'
@@ -50,10 +54,17 @@ export interface LlmSelectToolsResult {
   status: LlmSelectToolsStatus
 }
 
+const ToolSelectJudgementSchema = z.object({
+  toolIds: z.array(z.string()),
+})
+
+type ToolSelectJudgement = z.infer<typeof ToolSelectJudgementSchema>
+
 /**
- * C2 弱模型工具精筛：从候选精筛到 Top-K 相关工具 id。
- * 候选数 ≤ maxK → 直接全返（省一次弱模型调用）。
- * 失败 / 解析空 → 返回全部候选（回退 full），并在 status 标明。
+ * C2 弱模型工具精筛：
+ * 1) `withStructuredOutput`（主路径）
+ * 2) 不支持 response_format / 结构化失败 → 普通 invoke + 抽 JSON（兜底）
+ * 候选数 ≤ maxK → 直接全返；仍失败 / 空列表 → 回退全部候选。
  */
 export async function llmSelectTools(
   query: string,
@@ -61,41 +72,97 @@ export async function llmSelectTools(
   llmWeak: BaseChatModel,
   options: { maxK?: number; timeoutMs?: number } = {},
 ): Promise<LlmSelectToolsResult> {
-  if (candidates.length === 0) return { toolIds: [], status: 'selected' }
+  if (candidates.length === 0) return { toolIds: [], status: 'selected_structured' }
   const maxK = options.maxK ?? 10
   if (candidates.length <= maxK) {
     return { toolIds: candidates.map((c) => c.name), status: 'passthrough_small' }
   }
 
-  const schema = z.object({ toolIds: z.array(z.string()) })
-  const list = candidates
-    .map((c, i) => `${i + 1}. ${c.name} — ${truncateFolded(c.description ?? '', 120)}`)
-    .join('\n')
-  const prompt =
-    `从下列工具中选出与用户请求最相关的至多 ${maxK} 个，用于本轮对话。\n` +
-    `只返回工具名列表，不要解释。\n\n用户请求：${query}\n\n工具列表：\n${list}`
+  const timeoutMs = options.timeoutMs ?? 10_000
+  const allIds = candidates.map((c) => c.name)
+  const allowed = new Set(allIds)
+  const messages = await formatToolSelectPromptMessages(query, candidates, maxK)
 
-  try {
-    const extractor = llmWeak.withStructuredOutput(schema, { name: 'select_tools' })
-    const res = await withTimeout(extractor.invoke(prompt), options.timeoutMs ?? 10_000)
-    const picked = Array.isArray((res as { toolIds?: unknown })?.toolIds)
-      ? ((res as { toolIds: string[] }).toolIds)
-      : []
-    const allowed = new Set(candidates.map((c) => c.name))
-    const filtered = picked.filter((id: string) => allowed.has(id))
-    if (filtered.length > 0) {
-      return { toolIds: filtered.slice(0, maxK), status: 'selected' }
-    }
-    return {
-      toolIds: candidates.map((c) => c.name),
-      status: 'fallback_empty',
-    }
-  } catch {
-    return {
-      toolIds: candidates.map((c) => c.name),
-      status: 'fallback_error',
-    }
+  // —— 主路径：结构化输出 ——
+  const structured = await tryStructuredSelect(llmWeak, messages, allowed, maxK, timeoutMs)
+  if (structured.kind === 'ok') {
+    return { toolIds: structured.toolIds, status: 'selected_structured' }
   }
+  if (structured.kind === 'empty') {
+    return { toolIds: allIds, status: 'fallback_empty' }
+  }
+  if (structured.kind === 'fatal') {
+    return { toolIds: allIds, status: 'fallback_error' }
+  }
+  // structured.kind === 'unsupported' → 文本兜底
+
+  // —— 兜底：纯文本 JSON ——
+  try {
+    const res = await withTimeout(llmWeak.invoke(messages), timeoutMs)
+    const raw = messageContentToString(res.content)
+    const judgement = ToolSelectJudgementSchema.parse(extractJsonObject(raw))
+    const filtered = filterToolIds(judgement.toolIds, allowed, maxK)
+    if (filtered.length > 0) {
+      return { toolIds: filtered, status: 'selected_text' }
+    }
+    return { toolIds: allIds, status: 'fallback_empty' }
+  } catch {
+    return { toolIds: allIds, status: 'fallback_error' }
+  }
+}
+
+type StructuredAttempt =
+  | { kind: 'ok'; toolIds: string[] }
+  | { kind: 'empty' }
+  | { kind: 'unsupported' }
+  | { kind: 'fatal' }
+
+async function tryStructuredSelect(
+  llmWeak: BaseChatModel,
+  messages: BaseMessage[],
+  allowed: Set<string>,
+  maxK: number,
+  timeoutMs: number,
+): Promise<StructuredAttempt> {
+  if (typeof llmWeak.withStructuredOutput !== 'function') {
+    return { kind: 'unsupported' }
+  }
+  try {
+    const extractor = llmWeak.withStructuredOutput(ToolSelectJudgementSchema, {
+      name: 'select_tools',
+    })
+    const res = (await withTimeout(
+      extractor.invoke(messages),
+      timeoutMs,
+    )) as ToolSelectJudgement
+    const picked = Array.isArray(res?.toolIds) ? res.toolIds : []
+    const filtered = filterToolIds(picked, allowed, maxK)
+    if (filtered.length > 0) return { kind: 'ok', toolIds: filtered }
+    return { kind: 'empty' }
+  } catch (err) {
+    if (isResponseFormatUnsupported(err)) return { kind: 'unsupported' }
+    // 超时 / 鉴权等：不再浪费一次文本调用
+    if (isFatalLlmError(err)) return { kind: 'fatal' }
+    // 其它结构化解析失败：仍尝试文本兜底
+    return { kind: 'unsupported' }
+  }
+}
+
+function filterToolIds(picked: string[], allowed: Set<string>, maxK: number): string[] {
+  return picked.filter((id) => allowed.has(id)).slice(0, maxK)
+}
+
+/** 端不支持 response_format / json_schema 等 */
+export function isResponseFormatUnsupported(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err)
+  return /response_format|json_schema|structured.?output|unavailable now|not support.*json/i.test(
+    msg,
+  )
+}
+
+function isFatalLlmError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err)
+  return /timeout|abort|401|unauthorized|invalid.*key|ENOTFOUND|ECONNREFUSED/i.test(msg)
 }
 
 /**
@@ -116,6 +183,36 @@ export function fitToolsWithinBudget(
     used += cost
   }
   return out
+}
+
+function extractJsonObject(text: string): unknown {
+  const trimmed = text.trim()
+  try {
+    return JSON.parse(trimmed) as unknown
+  } catch {
+    const start = trimmed.indexOf('{')
+    const end = trimmed.lastIndexOf('}')
+    if (start >= 0 && end > start) {
+      return JSON.parse(trimmed.slice(start, end + 1)) as unknown
+    }
+    throw new Error('tool_select_no_json_object')
+  }
+}
+
+function messageContentToString(content: unknown): string {
+  if (typeof content === 'string') return content
+  if (Array.isArray(content)) {
+    return content
+      .map((part) => {
+        if (typeof part === 'string') return part
+        if (part && typeof part === 'object' && 'text' in part) {
+          return String((part as { text: unknown }).text ?? '')
+        }
+        return ''
+      })
+      .join('')
+  }
+  return content == null ? '' : String(content)
 }
 
 async function withTimeout<T>(p: Promise<T>, ms?: number): Promise<T> {

@@ -247,7 +247,7 @@ sequenceDiagram
 |----|------|------|
 | 原语 | `packages/chatvein/tools/src/tool-vector-index.ts` | `recordsFor` / `build` / `replace` / `sync` / `purge` / `select` / `markReady` |
 | 嵌入文本 | `packages/chatvein/tools/src/tool-embed.ts` | `toolEmbedText`：name + 目录描述 + schema 参数名 |
-| 选用 | `packages/chatvein/tools/src/select.ts` | `keywordSelect` / `llmSelectTools`（含 status）/ `fitToolsWithinBudget` |
+| 选用 | `packages/chatvein/tools/src/select.ts` + `select-prompt.ts` | C1 `keywordSelect`；C2 `withStructuredOutput` 优先、纯文本 JSON 兜底；C3 `fitToolsWithinBudget` |
 | 元信息 | `app/src/main/chat/tool-index-meta.ts` | `index-meta.json` 读写、`toolIndexSignature` 签名 |
 | 装配 | `app/src/main/chat/chat.service.ts` | `onAppReady` warmup、`refreshToolIndex`、对话只读 C1→C2→C3、`rewrittenQuery` 接线 |
 | 存储 | `packages/chatvein/vector/src/store.ts` | `LocalVectorStore.remove(ids)` 批量删除（幂等） |
