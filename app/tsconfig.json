@@ -6,7 +6,13 @@
     "paths": {
       "@electrum/common": ["../packages/electrum/common/src"],
       "@electrum/core": ["../packages/electrum/core/src"],
-      "@electrum/preload": ["../packages/electrum/preload/src"]
+      "@electrum/preload": ["../packages/electrum/preload/src"],
+      "@chatvein/common": ["../packages/chatvein/common/src"],
+      "@chatvein/models": ["../packages/chatvein/models/src"],
+      "@chatvein/agents": ["../packages/chatvein/agents/src"],
+      "@chatvein/memory": ["../packages/chatvein/memory/src"],
+      "@chatvein/tools": ["../packages/chatvein/tools/src"],
+      "@chatvein/vector": ["../packages/chatvein/vector/src"]
     }
   },
   "include": ["src/main/**/*", "src/preload/**/*"]

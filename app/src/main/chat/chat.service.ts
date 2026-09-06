@@ -8,6 +8,7 @@ import {
 } from '@chatvein/agents'
 import type { ComplexityBand, RouteDecision } from '@chatvein/common'
 import {
+  createEndpointModel,
   createLangChainChatModel,
   forwardToActiveLlmDebugSink,
   isLlmDebugLogEnabled,
@@ -35,7 +36,6 @@ import {
   type ShortTermPlan,
   type ShortTermState,
 } from '@chatvein/memory'
-import { createEndpointModel } from '@chatvein/models'
 import { randomUUID } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { promises as fs } from 'node:fs'
@@ -189,7 +189,7 @@ export class ChatService {
     if (!conv) throw new NotFoundException(`conversation:${conversationId}`)
 
     const targetRaw = absPath?.trim()
-    if (!targetRaw) throw new ValidationException('产物路径不能为空')
+    if (!targetRaw) throw new ValidationException('产物路径不能为空', [])
 
     const root = resolve(conv.workspacePath)
     const target = resolve(isAbsolute(targetRaw) ? targetRaw : join(root, targetRaw))
@@ -202,16 +202,16 @@ export class ChatService {
       relToRoot.startsWith('../') ||
       relToRoot.startsWith('..\\')
     ) {
-      throw new ValidationException('只能删除当前会话工作区内的文件')
+      throw new ValidationException('只能删除当前会话工作区内的文件', [])
     }
 
     const relPosix = relToRoot.split(/[/\\]/).join('/')
     if (relPosix === 'memory' || relPosix.startsWith('memory/')) {
-      throw new ValidationException('不能删除 memory 内部文件')
+      throw new ValidationException('不能删除 memory 内部文件', [])
     }
     const top = relPosix.split('/')[0] ?? ''
     if (['node_modules', '.git', '.venv', '__pycache__', '.cache', 'logs'].includes(top)) {
-      throw new ValidationException(`不能删除受保护目录：${top}`)
+      throw new ValidationException(`不能删除受保护目录：${top}`, [])
     }
 
     let st
@@ -221,10 +221,10 @@ export class ChatService {
       throw new NotFoundException(target)
     }
     if (st.isDirectory()) {
-      throw new ValidationException('产物面板仅支持删除文件，不支持删除目录')
+      throw new ValidationException('产物面板仅支持删除文件，不支持删除目录', [])
     }
     if (st.isSymbolicLink()) {
-      throw new ValidationException('不能删除符号链接')
+      throw new ValidationException('不能删除符号链接', [])
     }
 
     await fs.unlink(target)
@@ -714,10 +714,7 @@ export class ChatService {
     conv: Conversation,
     state: ShortTermState | null,
     opts?: { dropLast?: boolean },
-  ): {
-    history: Array<{ role: 'user' | 'assistant' | 'system'; content: string }>
-    plan: ShortTermPlan
-  } {
+  ): Promise<{ history: Array<{ role: "user" | "assistant" | "system"; content: string }>; plan: ShortTermPlan }> {
     const source = opts?.dropLast ? conv.messages.slice(0, -1) : conv.messages
     const messages = toShortTermMessages(source)
     const plan = await planShortTerm({ messages, state, reserveTokens: SHORT_TERM_RESERVE_TOKENS })

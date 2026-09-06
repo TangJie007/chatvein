@@ -26,6 +26,9 @@ importers:
       '@chatvein/agents':
         specifier: workspace:*
         version: link:../packages/chatvein/agents
+      '@chatvein/common':
+        specifier: workspace:*
+        version: link:../packages/chatvein/common
       '@chatvein/memory':
         specifier: workspace:*
         version: link:../packages/chatvein/memory
