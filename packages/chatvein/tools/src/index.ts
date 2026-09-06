@@ -44,6 +44,16 @@ export {
   type ToolVectorIndexOptions,
 } from './tool-vector-index'
 export {
+  ToolBm25Index,
+  toolBm25Doc,
+  reciprocalRankFusion,
+  type ToolBm25Doc,
+  type ToolBm25Hit,
+  type ToolBm25IndexInput,
+  type ToolBm25IndexOptions,
+} from './tool-bm25-index'
+export { tokenizeForBm25 } from './tokenize-cjk'
+export {
   keywordSelect,
   llmSelectTools,
   fitToolsWithinBudget,

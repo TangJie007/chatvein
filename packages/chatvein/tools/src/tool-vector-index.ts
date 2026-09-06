@@ -1,14 +1,16 @@
 /**
- * ToolVectorIndex — 工具语义预筛（层 C1 升级版）。
+ * ToolVectorIndex — 工具语义预筛（层 C1）：向量 + 工具名/别名 BM25 混合召回。
  *
  * 依赖注入「嵌入器 + 向量库」最小接口，自身**零硬依赖** `@chatvein/vector`，
  * 原生模块（onnxruntime / lancedb）只在装配侧（app / sidecar）按需加载。
  *
  * 建索引：候选工具 → `toolEmbedText` 成文 → embedder 嵌入 → store.upsert（scope=tool）
- * 检索：  query → store.search（scope=tool）→ 候选内的 Top-K 工具名。
- * 未就绪 / 无命中 → `select` 返回 []，由上层回退全候选（full）。
+ *         同时进程内重建 MiniSearch（name / human / aliases / title）
+ * 检索：  向量路 + BM25 路 → RRF 融合 → 候选内固定 Top-K。
+ * 未就绪 / 无命中 → `select` 返回 []，由上层回退关键词或全候选（full）。
  */
 import { toolEmbedText, type ToolEmbedInput } from './tool-embed'
+import { ToolBm25Index, reciprocalRankFusion } from './tool-bm25-index'
 
 /** 索引域：与记忆隔离，专用工具描述 */
 export const TOOL_INDEX_SCOPE = 'tool'
@@ -62,20 +64,27 @@ export interface ToolVectorIndexInput {
 export interface ToolVectorIndexOptions {
   embedder: ToolEmbedder
   store: ToolVectorStore
-  /** 语义预筛召回上限（粗召回给 L2 精筛），默认 24 */
+  /** 混合预筛召回上限（粗召回给弱模精筛），默认 24 */
   prescreenTopK?: number
-  /** 相似度阈值（score≈1-cosineDistance）；低于视为不相关 → 走回退，默认 0（不过滤） */
+  /** 向量路相似度阈值（score≈1-cosineDistance）；低于不进融合，默认 0（不过滤） */
   minScore?: number
+  /** RRF 常数，默认 60 */
+  rrfK?: number
+  /** 向量路 RRF 权重，默认 1 */
+  vectorWeight?: number
+  /** BM25（工具名/别名）路 RRF 权重，默认 1.25（偏强信号） */
+  lexicalWeight?: number
   /** 工具名 → 嵌入文本（默认 toolEmbedText）；可注入便于测试 */
   embedText?: (input: ToolEmbedInput) => string
 }
 
 /**
- * 工具向量索引：一次版本化全量基准 + 运行期差量同步，per-turn 语义召回 Top-K 候选。
+ * 工具向量索引：一次版本化全量基准 + 运行期差量同步，per-turn 混合召回 Top-K 候选。
  *
  * - `build()`：首次全量建索引（幂等，`ready` 后短路）。
  * - `replace()`：版本化全量重建（目录 / 嵌入内容变化时覆盖写并标记 ready）。
  * - `sync()` / `purge()`：差量原语，绕过 built 闸门，不改变 ready 状态。
+ * - `markReady(tools?)`：磁盘签名命中跳过写库时标记 ready；须传入 tools 以 hydrate BM25。
  *
  * 线程安全：build 幂等、可并发重入；select 在未 ready 时返回 []（调用方回退）。
  */
@@ -83,6 +92,7 @@ export class ToolVectorIndex {
   private built = false
   private building: Promise<void> | null = null
   private readonly embedText: (input: ToolEmbedInput) => string
+  private readonly lexical = new ToolBm25Index()
 
   constructor(private readonly opts: ToolVectorIndexOptions) {
     this.embedText = opts.embedText ?? toolEmbedText
@@ -96,11 +106,18 @@ export class ToolVectorIndex {
     return this.opts.embedder.modelId
   }
 
+  /** 测试 / 诊断：进程内 BM25 文档数 */
+  get lexicalSize(): number {
+    return this.lexical.size
+  }
+
   /**
    * 磁盘索引已与内容签名一致、无需重写时：仅标记进程内 ready。
-   * 启动 warmup 零成本跳过路径必须调用，否则 `built` 一直为 false，C1 每轮空召回。
+   * 启动 warmup 零成本跳过路径必须调用，并传入当前工具全集以 hydrate 内存 BM25，
+   * 否则 `built` 为 true 但别名路为空，混合检索退化为纯向量。
    */
-  markReady(): void {
+  markReady(tools?: readonly ToolVectorIndexInput[]): void {
+    if (tools && tools.length > 0) this.lexical.replace(tools)
     this.built = true
     this.building = null
   }
@@ -143,6 +160,7 @@ export class ToolVectorIndex {
   }
 
   private async doBuild(tools: readonly ToolVectorIndexInput[]): Promise<void> {
+    this.lexical.replace(tools)
     await this.sync(this.recordsFor(tools))
   }
 
@@ -152,12 +170,14 @@ export class ToolVectorIndex {
    */
   async sync(records: readonly ToolIndexRecord[]): Promise<string[]> {
     if (records.length === 0) return []
+    this.lexical.upsert(records.map((r) => ({ name: r.id, description: r.content })))
     return this.opts.store.upsert(records)
   }
 
   /** 差量下线：按 id 批量删除；不修改 ready 状态 */
   async purge(ids: readonly string[]): Promise<number> {
     if (ids.length === 0) return 0
+    this.lexical.remove(ids)
     return this.opts.store.remove(ids)
   }
 
@@ -171,8 +191,10 @@ export class ToolVectorIndex {
   }
 
   /**
-   * 语义预筛：query → 候选内的 Top-K 工具名。
-   * 未就绪 / 空 query / 无候选 → 返回 []（上层回退全候选）。
+   * 混合预筛：向量相似度 + 工具名/别名 BM25 → RRF → 候选内固定 Top-K。
+   * 未就绪 / 空 query / 无候选 → 返回 []（上层回退）。
+   *
+   * 注意：最终截断为传入的 `topK`（默认 prescreenTopK），**不再**用候选数抬高 topK。
    */
   async select(
     query: string,
@@ -180,11 +202,40 @@ export class ToolVectorIndex {
     topK: number = this.opts.prescreenTopK ?? 24,
   ): Promise<string[]> {
     if (!this.built || !query.trim() || candidateNames.length === 0) return []
-    const min = this.opts.minScore ?? 0
+    const limit = Math.max(1, Math.min(topK, candidateNames.length))
+    const fetchK = Math.min(Math.max(limit * 2, limit), candidateNames.length)
     const candidates = new Set(candidateNames)
-    const hits = await this.opts.store.search(query, {
-      topK: Math.max(topK, candidateNames.length),
-    })
-    return hits.filter((h) => h.score >= min && candidates.has(h.id)).map((h) => h.id)
+    const min = this.opts.minScore ?? 0
+
+    const vectorRanked = await this.vectorRank(query, candidates, fetchK, min)
+    const lexicalRanked = this.lexical
+      .search(query, { topK: fetchK, candidates })
+      .map((h) => h.id)
+
+    if (vectorRanked.length === 0 && lexicalRanked.length === 0) return []
+
+    return reciprocalRankFusion(
+      [
+        { ids: vectorRanked, weight: this.opts.vectorWeight ?? 1 },
+        { ids: lexicalRanked, weight: this.opts.lexicalWeight ?? 1.25 },
+      ],
+      { rrfK: this.opts.rrfK ?? 60, topK: limit },
+    )
+  }
+
+  private async vectorRank(
+    query: string,
+    candidates: ReadonlySet<string>,
+    fetchK: number,
+    minScore: number,
+  ): Promise<string[]> {
+    try {
+      const hits = await this.opts.store.search(query, { topK: fetchK })
+      return hits
+        .filter((h) => h.score >= minScore && candidates.has(h.id))
+        .map((h) => h.id)
+    } catch {
+      return []
+    }
   }
 }

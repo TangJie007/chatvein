@@ -906,14 +906,14 @@ export class ChatService implements OnAppReady {
     // 等待启动 warmup（若仍在跑），避免签名命中跳过写库后内存未 ready 导致本轮空召回
     await this.awaitToolIndexWarmup()
 
-    // 层 C1：向量语义预筛；未就绪/空命中 → 关键词兜底；再空 → 全候选
-    let c1Source: 'vector' | 'keyword' | 'full' = 'full'
+    // 层 C1：向量+BM25 混合预筛；未就绪/空命中 → 关键词兜底；再空 → 全候选
+    let c1Source: 'hybrid' | 'keyword' | 'full' = 'full'
     let narrowed = candidateNames
     if (q) {
-      const vectorHits = await this.prescreenWithVector(q, candidateNames)
-      if (vectorHits.length > 0) {
-        narrowed = vectorHits
-        c1Source = 'vector'
+      const hybridHits = await this.prescreenWithVector(q, candidateNames)
+      if (hybridHits.length > 0) {
+        narrowed = hybridHits
+        c1Source = 'hybrid'
       } else {
         const kwHits = this.prescreenWithKeywords(q, candidateTools)
         if (kwHits.length > 0 && kwHits.length < candidateNames.length) {
@@ -1054,9 +1054,9 @@ export class ChatService implements OnAppReady {
         const stale = (meta.syncedNames ?? []).filter((n) => !records.some((r) => r.id === n))
         if (meta.builtinSignature === signature && stale.length === 0) {
           // 磁盘已有有效快照；必须标记进程内 ready，否则 C1 永远空召回
-          idx.markReady()
+          idx.markReady(this.toolIndexInputsOf(tools))
           console.debug(
-            `[tool-index] warmup skip (sig match) records=${records.length} ready=true`,
+            `[tool-index] warmup skip (sig match) records=${records.length} ready=true lexical=${idx.lexicalSize}`,
           )
           return
         }
@@ -1154,7 +1154,7 @@ export class ChatService implements OnAppReady {
     }))
   }
 
-  /** 层 C1：向量语义预筛；未就绪/失败 → []（由上层改走关键词或全量） */
+  /** 层 C1：向量+工具名/别名 BM25 混合预筛；未就绪/失败 → []（由上层改走关键词或全量） */
   private async prescreenWithVector(query: string, candidateNames: string[]): Promise<string[]> {
     const idx = this.toolIndex
     if (!idx?.ready) return []
@@ -1581,7 +1581,7 @@ function truncateTitle(text: string): string {
 
 /** 工具选用埋点 selector：反映真实 C1/C2 路径 */
 function formatToolSelectorLabel(
-  c1: 'vector' | 'keyword' | 'full',
+  c1: 'hybrid' | 'keyword' | 'full',
   c2: LlmSelectToolsStatus | 'skipped',
 ): string {
   const c2Part =

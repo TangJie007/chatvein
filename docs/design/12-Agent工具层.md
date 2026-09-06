@@ -162,13 +162,23 @@ RouteDecision.policy.tools = full
 
 ### 8.1 定位与查询路径
 
-在 L2 弱模型精筛之前，对已解析候选做语义粗召回 Top-K（`prescreenTopK=24`），减少 L2 上下文里的无关工具；召回不足 / 未就绪 / 空 query 一律返回 `[]`，上层回退全候选（full），因此索引是**纯增益、无正确性依赖**。
+在 L2 弱模型精筛之前，对已解析候选做**混合粗召回** Top-K（`prescreenTopK=24`），减少弱模上下文里的无关工具：
+
+1. **向量路**：LanceDB cosine（工具描述嵌入，`scope=tool` / `kind=tool_desc`）
+2. **BM25 路**：进程内 MiniSearch（工具名 / humanize / 目录 keywords 别名 / title），CJK bigram 分词
+3. **融合**：RRF（`vectorWeight=1`，`lexicalWeight=1.25`）；最终截断为固定 `topK`（**不再**用候选数抬高）
+
+召回不足 / 未就绪 / 空 query 一律返回 `[]`，上层回退关键词或全候选（full），因此索引是**纯增益、无正确性依赖**。
 
 ```
 一轮消息 → L1/L2 → resolveBoundTools(候选全集)
-              └→ ToolVectorIndex.select(query, 候选) ──Top-K──▶ L2 弱模型精筛
-                     （scope=tool / kind=tool_desc，本地 bge-small-zh 嵌入）
+              └→ ToolVectorIndex.select(query, 候选)
+                     ├─ store.search（向量）
+                     ├─ ToolBm25Index.search（名/别名）
+                     └─ RRF → Top-K ──▶ C2 弱模精筛
 ```
+
+要点：工具名与 catalog `keywords` 是强信号，不能纯靠向量；warmup 签名命中跳过写库时 `markReady(tools)` 必须 hydrate 内存 BM25。
 
 ### 8.2 同步策略：启动全量基准 + 配置变更差量
 
@@ -178,11 +188,11 @@ RouteDecision.policy.tools = full
 |------|------|------|
 | **启动（内置基准）** | 解析**系统工具全集**（`resolveChatTools` full + all）→ 内容签名；与 `index-meta.json#builtinSignature` 一致且无下线 → **`markReady()` 零写入**；否则 `replace()` + `purge()` + 写回签名 | `ChatService.onAppReady()`，后台异步，失败仅告警 |
 | **配置变更（差量）** | MCP 菜单 / `CHATVEIN_MCP_SERVERS` 变更后 `refreshToolIndex()`：相对 `syncedNames` 新增 `sync()`；**不做删除**（白名单收窄会误删），下线收敛到下次启动 warmup | 配置保存路径显式调用（**对话回合不 sync**） |
-| **对话期（只读）** | 等待 warmup 完成后：`rewrittenQuery ?? 原文` → C1 向量预筛 → 关键词兜底 → C2 弱模精筛 → C3 预算；埋点按真实 c1/c2 路径 | `resolveBoundTools` |
+| **对话期（只读）** | 等待 warmup 完成后：`rewrittenQuery ?? 原文` → C1 **混合**预筛 → 关键词兜底 → C2 弱模精筛 → C3 预算；埋点 `c1=hybrid|keyword|full` | `resolveBoundTools` |
 
 要点：
 
-- 签名命中跳过写库时**必须** `markReady()`，否则进程内 `built=false`，向量页能看到行但 C1 每轮空召回（全量回退）。
+- 签名命中跳过写库时**必须** `markReady(tools)`（hydrate 内存 BM25），否则进程内 `built=false` 或别名路为空：向量页能看到行但 C1 空召回 / 退化为纯向量。
 - 对话不维护索引：工具集在启动或 MCP 菜单变更时冻结进库。
 - 工具检索 query 优先用路由 L2 的 `rewrittenQuery`。
 - `VectorDbView` 只读浏览 `tool_index`，warmup 完成后刷新即可见。

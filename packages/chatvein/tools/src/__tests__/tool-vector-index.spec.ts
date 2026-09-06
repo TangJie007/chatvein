@@ -74,6 +74,7 @@ describe('ToolVectorIndex', () => {
     expect(idx.ready).toBe(false)
     await idx.build([{ name: 'filesystem__read' }, { name: 'calculator' }])
     expect(idx.ready).toBe(true)
+    expect(idx.lexicalSize).toBe(2)
     const res = await idx.select('read a file', ['filesystem__read', 'calculator'], 24)
     expect(res).toContain('filesystem__read')
   })
@@ -94,6 +95,33 @@ describe('ToolVectorIndex', () => {
     const idx = new ToolVectorIndex({ embedder: new FakeEmbedder(), store: new FakeStore() })
     await idx.build([{ name: 'filesystem__read' }])
     expect(await idx.select('   ', ['filesystem__read'])).toEqual([])
+  })
+
+  it('select 固定 Top-K，不再用候选数抬高召回量', async () => {
+    const tools = Array.from({ length: 20 }, (_, i) => ({
+      name: `tool_${i}`,
+      description: `desc ${i} shared topic file write`,
+    }))
+    const idx = new ToolVectorIndex({ embedder: new FakeEmbedder(), store: new FakeStore() })
+    await idx.build(tools)
+    const names = tools.map((t) => t.name)
+    const res = await idx.select('file write', names, 5)
+    expect(res.length).toBeLessThanOrEqual(5)
+  })
+
+  it('别名 BM25 能在向量弱相关时抬升工具名命中', async () => {
+    const idx = new ToolVectorIndex({
+      embedder: new FakeEmbedder(),
+      store: new FakeStore(),
+      lexicalWeight: 3,
+      vectorWeight: 0.1,
+    })
+    await idx.build([
+      { name: 'filesystem__write_file', description: 'zzz unrelated embed blob' },
+      { name: 'weather_lookup', description: 'file write shared topic noise' },
+    ])
+    const res = await idx.select('写文件', ['filesystem__write_file', 'weather_lookup'], 2)
+    expect(res[0]).toBe('filesystem__write_file')
   })
 
   it('recordsFor 产出 scope/kind 对齐 TOOL_INDEX 的记录（不触发嵌入）', () => {
@@ -119,14 +147,16 @@ describe('ToolVectorIndex', () => {
     expect(await idx.select('算一下', ['calculator'])).toEqual([])
   })
 
-  it('markReady 在不写库时允许 select', async () => {
+  it('markReady(tools) 在不写库时 hydrate BM25 并允许 select', async () => {
     const store = new FakeStore()
     const idx = new ToolVectorIndex({ embedder: new FakeEmbedder(), store })
-    await idx.sync(idx.recordsFor([{ name: 'calculator', description: '数学计算' }]))
+    const tools = [{ name: 'calculator', description: '数学计算' }]
+    await idx.sync(idx.recordsFor(tools))
     expect(idx.ready).toBe(false)
-    idx.markReady()
+    idx.markReady(tools)
     expect(idx.ready).toBe(true)
-    expect(await idx.select('数学', ['calculator'])).toContain('calculator')
+    expect(idx.lexicalSize).toBe(1)
+    expect(await idx.select('计算', ['calculator'])).toContain('calculator')
   })
 
   it('purge 删除指定 id，不影响其余记录', async () => {
@@ -137,6 +167,7 @@ describe('ToolVectorIndex', () => {
     expect(store.size()).toBe(1)
     expect(store.has('c')).toBe(true)
     expect(store.has('a')).toBe(false)
+    expect(idx.lexicalSize).toBe(1)
   })
 
   it('replace 覆盖旧内容并标记 ready；重复 replace 不产生重复记录', async () => {

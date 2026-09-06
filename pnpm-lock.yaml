@@ -507,6 +507,9 @@ importers:
       es-toolkit:
         specifier: ^1.52.0
         version: 1.52.0
+      minisearch:
+        specifier: ^7.2.0
+        version: 7.2.0
       zod:
         specifier: ^4.5.4
         version: 4.5.4
