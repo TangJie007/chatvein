@@ -28,6 +28,7 @@
   },
   "dependencies": {
     "@chatvein/common": "workspace:*",
+    "@chatvein/context": "workspace:*",
     "@chatvein/mcp-modsearch-sdk": "workspace:*",
     "@chatvein/mcp-openfile-sdk": "workspace:*",
     "@chatvein/mcp-pyodide-sdk": "workspace:*",

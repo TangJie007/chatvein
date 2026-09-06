@@ -1,4 +1,5 @@
 import type { StructuredToolInterface } from '@langchain/core/tools'
+import { wrapToolOutput } from './wrap'
 import { TOOL_CATALOG } from './catalog'
 import { createComputeTools } from './categories/compute'
 import { createDatabaseTools } from './categories/database'
@@ -60,8 +61,8 @@ export async function resolveChatTools(
   const common = {
     ids,
     secrets: options.secrets,
-    timeoutMs: options.timeoutMs,
-    maxOutputChars: options.maxOutputChars,
+    timeoutMs: options.timeoutMs ?? 30_000,
+    maxOutputChars: options.maxOutputChars ?? 8_000,
   }
 
   // 本地文件只走 MCP filesystem / openfile（无 builtin 读/列/grep）
@@ -102,11 +103,13 @@ export async function resolveChatTools(
   mcpServers = withDefaultMcpPlaywright(mcpServers, wantPlaywright)
 
   const mcpTools = mcpServers
-    ? await loadMcpTools({
-        servers: mcpServers,
-        onConnectionError: 'ignore',
-        prefixToolNameWithServerName: true,
-      })
+    ? (
+        await loadMcpTools({
+          servers: mcpServers,
+          onConnectionError: 'ignore',
+          prefixToolNameWithServerName: true,
+        })
+      ).map((t) => wrapToolOutput(t, common.maxOutputChars))
     : []
 
   const catalogParts =

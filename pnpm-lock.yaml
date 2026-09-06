@@ -474,6 +474,9 @@ importers:
       '@chatvein/common':
         specifier: workspace:*
         version: link:../common
+      '@chatvein/context':
+        specifier: workspace:*
+        version: link:../context
       '@chatvein/mcp-modsearch-sdk':
         specifier: workspace:*
         version: link:../../mcps/modsearch
