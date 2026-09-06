@@ -39,7 +39,7 @@ withDefaults(
 
 <template>
   <div
-    class="flex max-w-[88%] items-end gap-3"
+    class="flex w-full max-w-[88%] items-end gap-3"
     :class="role === 'user' ? 'ml-auto flex-row-reverse' : ''"
   >
     <div
@@ -49,11 +49,20 @@ withDefaults(
       {{ initial }}
     </div>
 
-    <div class="min-w-0" :class="role === 'user' ? 'flex flex-col items-end' : ''">
-      <div v-if="role === 'agent' && author" class="mb-[5px] flex items-center gap-1.5 text-[11.5px] font-semibold text-[var(--color-ink-2)]">
-        <span>{{ author }}</span>
-        <span v-if="roleMini" class="rounded-[5px] bg-[var(--color-track)] px-1.5 py-0.5 font-mono text-[10px] font-medium text-[var(--color-ink-3)]">{{ roleMini }}</span>
-        <span v-if="time" class="font-mono text-[10.5px] font-normal text-[var(--color-ink-3)]">{{ time }}</span>
+    <div
+      class="flex min-w-0 flex-1 flex-col"
+      :class="role === 'user' ? 'items-end' : 'items-start'"
+    >
+      <div
+        v-if="role === 'agent' && author"
+        class="mb-[5px] flex max-w-full flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[11.5px] font-semibold text-[var(--color-ink-2)]"
+      >
+        <span class="shrink-0">{{ author }}</span>
+        <span
+          v-if="roleMini"
+          class="shrink-0 rounded-[5px] bg-[var(--color-track)] px-1.5 py-0.5 font-mono text-[10px] font-medium text-[var(--color-ink-3)]"
+        >{{ roleMini }}</span>
+        <span v-if="time" class="shrink-0 font-mono text-[10.5px] font-normal text-[var(--color-ink-3)]">{{ time }}</span>
         <span
           v-if="tokenLabel"
           class="font-mono text-[10.5px] font-normal text-[var(--color-ink-3)]"
@@ -62,7 +71,7 @@ withDefaults(
       </div>
 
       <div
-        class="px-[15px] py-[11px] text-sm leading-[1.55] select-text transition-[box-shadow] duration-200"
+        class="w-fit max-w-full px-[15px] py-[11px] text-sm leading-[1.55] select-text transition-[box-shadow] duration-200"
         :class="[
           role === 'user'
             ? 'rounded-[var(--radius-bubble)] rounded-br-[6px] text-white bg-[linear-gradient(135deg,#6C81D2,#4A5FBB)]'

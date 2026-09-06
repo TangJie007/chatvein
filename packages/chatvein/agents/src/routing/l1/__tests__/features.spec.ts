@@ -22,6 +22,15 @@ describe('extractFacts', () => {
     expect(extractFacts('我的名字是张三', session).hitSelfIntro).toBe(true)
   })
 
+  it('询问名字 / 带问号 → 不命中 selfIntro', () => {
+    expect(extractFacts('我叫什么', session).hitSelfIntro).toBe(false)
+    expect(extractFacts('我是谁', session).hitSelfIntro).toBe(false)
+    expect(extractFacts('我叫啥', session).hitSelfIntro).toBe(false)
+    expect(extractFacts('叫我什么', session).hitSelfIntro).toBe(false)
+    expect(extractFacts('我叫唐杰？', session).hitSelfIntro).toBe(false)
+    expect(extractFacts('我叫唐杰?', session).hitSelfIntro).toBe(false)
+  })
+
   it('自我介绍夹任务 → 不命中 selfIntro', () => {
     expect(extractFacts('我叫唐杰，帮我写个登录', session).hitSelfIntro).toBe(false)
     expect(extractFacts('我是来改代码的', session).hitSelfIntro).toBe(false)
@@ -56,5 +65,7 @@ describe('extractFacts', () => {
     expect(isGreetingOnly('你好世界怎么实现', dict)).toBe(false)
     expect(isSelfIntro('我叫小明', dict)).toBe(true)
     expect(isSelfIntro('我是来改代码的', dict)).toBe(false)
+    expect(isSelfIntro('我叫什么', dict)).toBe(false)
+    expect(isSelfIntro('我叫小明？', dict)).toBe(false)
   })
 })

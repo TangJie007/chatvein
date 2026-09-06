@@ -37,9 +37,11 @@ const URL_RE = /https?:\/\/[^\s]+/i
 const MENTION_RE = /@([\w\u4e00-\u9fff.-]+)/g
 const SLASH_RE = /^\/([a-zA-Z][\w-]*)\b/
 const CODE_FENCE_RE = /```/g
-/** 自我介绍余下部分：像名字，不像任务句 */
+/** 自我介绍余下部分：像名字，不像任务句 / 疑问句 */
 const NAME_REST_RE = /^[\u4e00-\u9fffA-Za-z·]{1,8}$/
-const NOT_NAME_RE = /[的了着过来去要帮写改做查看搜修跑]|代码|文件|登录|问题/
+const NOT_NAME_RE =
+  /[的了着过来去要帮写改做查看搜修跑什么谁啥哪吗么呢]|代码|文件|登录|问题/
+const QUESTION_MARK_RE = /[？?]/
 
 export function extractFacts(text: string, session: HeuristicSession): HeuristicCtx {
   const trimmed = text.trim()
@@ -111,9 +113,11 @@ export function isGreetingOnly(textNorm: string, dict: HeuristicDict): boolean {
 }
 
 /**
- * 短句自我介绍：前缀 + 像名字的短余下（1～8 字，无任务痕迹）。
+ * 短句自我介绍：前缀 + 像名字的短余下（1～8 字）。
+ * 带问号或余下含疑问/任务痕迹 → 不算介绍，应交 L2。
  */
 export function isSelfIntro(textNorm: string, dict: HeuristicDict): boolean {
+  if (QUESTION_MARK_RE.test(textNorm)) return false
   const s = textNorm.replace(/[\s\p{P}\p{S}]+/gu, '')
   if (!s) return false
   const prefixes = [...(dict.selfIntroPrefixes ?? [])].sort((a, b) => b.length - a.length)

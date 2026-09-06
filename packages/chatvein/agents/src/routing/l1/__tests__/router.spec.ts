@@ -45,6 +45,13 @@ describe('L1HeuristicRouter', () => {
     expect(shouldEscalateToL2(d)).toBe(true)
   })
 
+  it('我叫什么 → 不得 self_intro 短路，defer L2', async () => {
+    const d = await router.route({ text: '我叫什么' })
+    expect(d.band).toBe('unknown')
+    expect(d.ruleIds).not.toContain('self_intro_trivial')
+    expect(shouldEscalateToL2(d)).toBe(true)
+  })
+
   it('任务请求 → defer L2', async () => {
     const d = await router.route({ text: '帮我整理vue3 的 响应式原理 整理成md文档' })
     expect(d.band).toBe('unknown')

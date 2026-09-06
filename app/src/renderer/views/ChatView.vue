@@ -326,7 +326,7 @@ onMounted(async () => {
           <button
             v-if="m.role === 'assistant'"
             type="button"
-            class="max-w-full rounded-[14px] border-0 bg-transparent p-0 text-left focus-visible:outline-2 focus-visible:outline-[var(--color-brand)] focus-visible:outline-offset-2"
+            class="w-full rounded-[14px] border-0 bg-transparent p-0 text-left focus-visible:outline-2 focus-visible:outline-[var(--color-brand)] focus-visible:outline-offset-2"
             :title="'点击查看该回复的思考流'"
             @click="onSelectThinking(m.id, m.role)"
           >
