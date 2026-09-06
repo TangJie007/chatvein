@@ -65,6 +65,17 @@ export {
   type LlmSelectToolsStatus,
 } from './select'
 export {
+  estimateToolTokens,
+  estimateToolSchemaTokens,
+  estimateToolsTokens,
+} from './tool-tokens'
+export {
+  inferContextWindow,
+  computeToolBudgetTokens,
+  DEFAULT_CONTEXT_WINDOW,
+  type ToolBudgetOptions,
+} from './model-context'
+export {
   TOOL_SELECT_SYSTEM_PROMPT,
   toolSelectChatPromptTemplate,
   formatToolSelectPromptMessages,

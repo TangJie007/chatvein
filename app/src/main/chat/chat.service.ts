@@ -29,6 +29,7 @@ import {
   ToolVectorIndex,
   llmSelectTools,
   fitToolsWithinBudget,
+  computeToolBudgetTokens,
   keywordSelect,
   catalogEntryForTool,
   humanizeToolName,
@@ -126,8 +127,6 @@ export class ChatService implements OnAppReady {
   private readonly toolSelectTopK = 10
   /** 候选 ≤ 此数跳过弱模型（省延迟） */
   private readonly toolSelectSkipBelow = 10
-  /** 工具描述预算（token），超出裁剪低相关项 */
-  private readonly toolBudgetTokens = 4000
 
   async list(): Promise<Conversation[]> {
     return this.store.list()
@@ -941,11 +940,13 @@ export class ChatService implements OnAppReady {
       c2Status = c2.status
     }
 
-    // 层 C3 预算裁剪（已按相关度排序）
+    // 层 C3 预算裁剪（已按相关度排序）。预算按主模型上下文窗口动态算：
+    // 成本含工具完整参数 JSON Schema（不止 name/description），避免大参数工具撑爆窗口。
     const ordered = finalNames
       .map((n) => byName.get(n))
       .filter((t): t is StructuredToolInterface => Boolean(t))
-    const bound = fitToolsWithinBudget(ordered, this.toolBudgetTokens)
+    const toolBudgetTokens = computeToolBudgetTokens({ modelId: model?.model })
+    const bound = fitToolsWithinBudget(ordered, toolBudgetTokens)
 
     this.emitToolSelectionTelemetry(bound, {
       selector: formatToolSelectorLabel(c1Source, c2Status),
@@ -955,6 +956,7 @@ export class ChatService implements OnAppReady {
       c2: c2Status,
       queryChars: q.length,
       indexReady: Boolean(this.toolIndex?.ready),
+      toolBudgetTokens,
     })
     return bound
   }
@@ -1237,6 +1239,7 @@ export class ChatService implements OnAppReady {
       c2: string
       queryChars: number
       indexReady: boolean
+      toolBudgetTokens?: number
     },
   ): void {
     emitTelemetry('trace:tool_select', {
@@ -1248,6 +1251,7 @@ export class ChatService implements OnAppReady {
       boundCount: bound.length,
       indexReady: info.indexReady,
       queryChars: info.queryChars,
+      toolBudgetTokens: info.toolBudgetTokens,
       tools: bound.map((t) => t.name),
     })
   }

@@ -8,11 +8,10 @@
 import { z } from 'zod'
 import type { BaseChatModel } from '@langchain/core/language_models/chat_models'
 import type { BaseMessage } from '@langchain/core/messages'
-import type { StructuredToolInterface } from '@langchain/core/tools'
-import { estimateMessagesTokens } from '@chatvein/context'
 import { humanizeToolName } from './tool-embed'
+import { estimateToolTokens } from './tool-tokens'
 import { formatToolSelectPromptMessages } from './select-prompt'
-import type { ToolCatalogEntry } from './types'
+import type { StructuredToolInterface, ToolCatalogEntry } from './types'
 
 /**
  * C1 关键词预筛：向量未就绪时的零成本兜底。
@@ -168,6 +167,9 @@ function isFatalLlmError(err: unknown): boolean {
 /**
  * C3 预算硬裁剪：按候选顺序（已按相关度排序）贪心加入，逼近 budgetTokens；
  * 超出则截断低相关项。始终至少保留第一个，避免空工具集。
+ *
+ * 成本口径：`estimateToolTokens` —— 名称 + 描述 + **完整参数 JSON Schema** +
+ * 结构开销。schema 往往比描述更占 token，必须计入，否则大参数工具会让实际请求超窗。
  */
 export function fitToolsWithinBudget(
   tools: readonly StructuredToolInterface[],
@@ -177,7 +179,7 @@ export function fitToolsWithinBudget(
   const out: StructuredToolInterface[] = []
   let used = 0
   for (const t of tools) {
-    const cost = estimateMessagesTokens([{ content: `${t.name}: ${t.description ?? ''}` }])
+    const cost = estimateToolTokens(t as { name: string; description?: string; schema?: unknown })
     if (out.length > 0 && used + cost > budgetTokens) break
     out.push(t)
     used += cost
