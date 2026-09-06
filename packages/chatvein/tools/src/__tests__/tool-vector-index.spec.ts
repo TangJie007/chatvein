@@ -99,9 +99,10 @@ describe('ToolVectorIndex', () => {
   it('recordsFor 产出 scope/kind 对齐 TOOL_INDEX 的记录（不触发嵌入）', () => {
     const store = new FakeStore()
     const idx = new ToolVectorIndex({ embedder: new FakeEmbedder(), store })
-    const recs = idx.recordsFor([{ name: 'calculator', description: '数学计算' }])
+    // 使用非目录 id，避免 catalog 覆盖 description
+    const recs = idx.recordsFor([{ name: 'custom_math_tool', description: '数学计算' }])
     expect(recs).toHaveLength(1)
-    expect(recs[0]!.id).toBe('calculator')
+    expect(recs[0]!.id).toBe('custom_math_tool')
     expect(recs[0]!.scope).toBe(TOOL_INDEX_SCOPE)
     expect(recs[0]!.kind).toBe(TOOL_INDEX_KIND)
     expect(recs[0]!.content).toContain('数学计算')
@@ -116,6 +117,16 @@ describe('ToolVectorIndex', () => {
     expect(idx.ready).toBe(false)
     expect(store.has('calculator')).toBe(true)
     expect(await idx.select('算一下', ['calculator'])).toEqual([])
+  })
+
+  it('markReady 在不写库时允许 select', async () => {
+    const store = new FakeStore()
+    const idx = new ToolVectorIndex({ embedder: new FakeEmbedder(), store })
+    await idx.sync(idx.recordsFor([{ name: 'calculator', description: '数学计算' }]))
+    expect(idx.ready).toBe(false)
+    idx.markReady()
+    expect(idx.ready).toBe(true)
+    expect(await idx.select('数学', ['calculator'])).toContain('calculator')
   })
 
   it('purge 删除指定 id，不影响其余记录', async () => {

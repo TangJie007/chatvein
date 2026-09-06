@@ -170,21 +170,22 @@ RouteDecision.policy.tools = full
                      （scope=tool / kind=tool_desc，本地 bge-small-zh 嵌入）
 ```
 
-### 8.2 同步策略：版本化全量基准 + 运行期差量
+### 8.2 同步策略：启动全量基准 + 配置变更差量
 
 避免「等第一轮对话才懒建」导致的空库 / 索引快照过期，改为：
 
 | 场景 | 动作 | 触发 |
 |------|------|------|
-| **启动（内置基准）** | 解析**系统工具全集**（`resolveChatTools` full + all，与对话同链路）→ 对入库记录求**内容签名** `sha256(id+content)`；与 `index-meta.json#builtinSignature` 一致且无下线 → 零成本跳过；否则 `replace()`（mergeInsert 按 id 覆盖）+ `purge()` 下线 + 写回签名 | `ChatService.onAppReady()`，后台异步，失败仅告警 |
-| **对话期（差量）** | 每轮候选相对 `syncedNames` 的**新增**工具 `sync()` 增量 upsert（MCP server 热增工具 / warmup 后新挂载）；**不做删除**——agent 白名单收窄会误删，下线统一收敛到下次启动 warmup | `resolveBoundTools` 每轮后 `syncToolIndex(候选)` |
-| **保底** | warmup 未就绪 / 失败时，当轮退化为按候选 `build()` 一次（等价旧懒建路径），随后启动 warmup 接管全量 | 同上 |
+| **启动（内置基准）** | 解析**系统工具全集**（`resolveChatTools` full + all）→ 内容签名；与 `index-meta.json#builtinSignature` 一致且无下线 → **`markReady()` 零写入**；否则 `replace()` + `purge()` + 写回签名 | `ChatService.onAppReady()`，后台异步，失败仅告警 |
+| **配置变更（差量）** | MCP 菜单 / `CHATVEIN_MCP_SERVERS` 变更后 `refreshToolIndex()`：相对 `syncedNames` 新增 `sync()`；**不做删除**（白名单收窄会误删），下线收敛到下次启动 warmup | 配置保存路径显式调用（**对话回合不 sync**） |
+| **对话期（只读）** | 等待 warmup 完成后：`rewrittenQuery ?? 原文` → C1 向量预筛 → 关键词兜底 → C2 弱模精筛 → C3 预算；埋点按真实 c1/c2 路径 | `resolveBoundTools` |
 
 要点：
 
-- 签名为**纯内容层**（不涉及向量 / 模型），目录描述、关键词、schema 参数名任何变化都会改签名 → 下次启动自动重建；嵌入语义未变则不误重建。
-- 启动预建避免首轮对话被「下载本地嵌入模型 + 全量嵌入」拖慢（模型下载 `tmpdir()/chatvein-hf-cache`，首次约数十 MB，后台进行）。
-- `VectorDbView`（向量数据库页）只读浏览 `tool_index`，数据就绪后刷新即可见，无需先发消息。
+- 签名命中跳过写库时**必须** `markReady()`，否则进程内 `built=false`，向量页能看到行但 C1 每轮空召回（全量回退）。
+- 对话不维护索引：工具集在启动或 MCP 菜单变更时冻结进库。
+- 工具检索 query 优先用路由 L2 的 `rewrittenQuery`。
+- `VectorDbView` 只读浏览 `tool_index`，warmup 完成后刷新即可见。
 
 ### 8.3 时序图
 
@@ -206,7 +207,7 @@ sequenceDiagram
   CS->>IX: recordsFor(全集) → 内容签名 sig
   CS->>M: 读上次 builtinSignature / syncedNames
   alt sig 一致 且 无下线
-    CS->>CS: 跳过（零写入）
+    CS->>IX: markReady()（零写入，进程内可检索）
   else sig 变化 或 有下线
     CS->>IX: replace(全集)
     IX->>DB: mergeInsert(id) 覆盖 upsert
@@ -216,7 +217,7 @@ sequenceDiagram
   end
 ```
 
-对话期 sync（运行期差量）：
+对话期只读检索（不再每轮 sync）：
 
 ```mermaid
 sequenceDiagram
@@ -225,31 +226,30 @@ sequenceDiagram
   participant CS as ChatService
   participant R as resolveChatTools
   participant IX as ToolVectorIndex
-  participant M as index-meta.json
   participant DB as LanceDB tool_index
-  T->>CS: resolveBoundTools
+  T->>CS: resolveBoundTools(rewrittenQuery ?? raw)
+  CS->>CS: awaitToolIndexWarmup()
   CS->>R: 解析候选（policy / 白名单 / MCP 快照）
   R-->>CS: candidateTools
-  CS->>M: 读 syncedNames（缓存，仅一次磁盘 IO）
-  alt 索引未就绪（warmup 未完成 / 失败）
-    CS->>IX: build(候选) 保底建一次
-  else 候选含新工具（MCP 热增等）
-    CS->>IX: recordsFor(新工具) → sync()
-    IX->>DB: mergeInsert(id) 增量 upsert
-    CS->>M: 并入 syncedNames
-  else 无新增
-    CS->>CS: 无写入（每轮零开销）
+  alt index ready
+    CS->>IX: select(query, 候选)
+    IX->>DB: vectorSearch
+    IX-->>CS: Top-K ids
+  else 未就绪或空命中
+    CS->>CS: keywordSelect 兜底 / 全候选
   end
+  CS->>CS: C2 弱模精筛 + C3 预算
 ```
 
 ### 8.4 代码落点
 
 | 层 | 文件 | 职责 |
 |----|------|------|
-| 原语 | `packages/chatvein/tools/src/tool-vector-index.ts` | `recordsFor` / `build` / `replace` / `sync` / `purge` / `select`；`ToolVectorStore` 含 `remove` |
+| 原语 | `packages/chatvein/tools/src/tool-vector-index.ts` | `recordsFor` / `build` / `replace` / `sync` / `purge` / `select` / `markReady` |
 | 嵌入文本 | `packages/chatvein/tools/src/tool-embed.ts` | `toolEmbedText`：name + 目录描述 + schema 参数名 |
+| 选用 | `packages/chatvein/tools/src/select.ts` | `keywordSelect` / `llmSelectTools`（含 status）/ `fitToolsWithinBudget` |
 | 元信息 | `app/src/main/chat/tool-index-meta.ts` | `index-meta.json` 读写、`toolIndexSignature` 签名 |
-| 装配 | `app/src/main/chat/chat.service.ts` | `onAppReady` warmup、`syncToolIndex`、串行队列、`ensureToolIndex`（store + embedder 装配） |
+| 装配 | `app/src/main/chat/chat.service.ts` | `onAppReady` warmup、`refreshToolIndex`、对话只读 C1→C2→C3、`rewrittenQuery` 接线 |
 | 存储 | `packages/chatvein/vector/src/store.ts` | `LocalVectorStore.remove(ids)` 批量删除（幂等） |
 | 浏览 | `app/src/renderer/views/VectorDbView.vue` | 只读浏览 `tool_index` |
 

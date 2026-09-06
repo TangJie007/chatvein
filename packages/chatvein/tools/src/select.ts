@@ -38,20 +38,34 @@ export interface ToolCandidate {
   description?: string
 }
 
+/** C2 精筛结果状态（供埋点；避免「回退全量却标成 vector+l2」） */
+export type LlmSelectToolsStatus =
+  | 'selected'
+  | 'passthrough_small'
+  | 'fallback_empty'
+  | 'fallback_error'
+
+export interface LlmSelectToolsResult {
+  toolIds: string[]
+  status: LlmSelectToolsStatus
+}
+
 /**
  * C2 弱模型工具精筛：从候选精筛到 Top-K 相关工具 id。
  * 候选数 ≤ maxK → 直接全返（省一次弱模型调用）。
- * 失败 / 解析空 → 返回全部候选（回退 full）。
+ * 失败 / 解析空 → 返回全部候选（回退 full），并在 status 标明。
  */
 export async function llmSelectTools(
   query: string,
   candidates: readonly ToolCandidate[],
   llmWeak: BaseChatModel,
   options: { maxK?: number; timeoutMs?: number } = {},
-): Promise<string[]> {
-  if (candidates.length === 0) return []
+): Promise<LlmSelectToolsResult> {
+  if (candidates.length === 0) return { toolIds: [], status: 'selected' }
   const maxK = options.maxK ?? 10
-  if (candidates.length <= maxK) return candidates.map((c) => c.name)
+  if (candidates.length <= maxK) {
+    return { toolIds: candidates.map((c) => c.name), status: 'passthrough_small' }
+  }
 
   const schema = z.object({ toolIds: z.array(z.string()) })
   const list = candidates
@@ -69,9 +83,18 @@ export async function llmSelectTools(
       : []
     const allowed = new Set(candidates.map((c) => c.name))
     const filtered = picked.filter((id: string) => allowed.has(id))
-    return filtered.length > 0 ? filtered.slice(0, maxK) : candidates.map((c) => c.name)
+    if (filtered.length > 0) {
+      return { toolIds: filtered.slice(0, maxK), status: 'selected' }
+    }
+    return {
+      toolIds: candidates.map((c) => c.name),
+      status: 'fallback_empty',
+    }
   } catch {
-    return candidates.map((c) => c.name)
+    return {
+      toolIds: candidates.map((c) => c.name),
+      status: 'fallback_error',
+    }
   }
 }
 

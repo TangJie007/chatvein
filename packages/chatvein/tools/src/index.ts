@@ -48,6 +48,8 @@ export {
   llmSelectTools,
   fitToolsWithinBudget,
   type ToolCandidate,
+  type LlmSelectToolsResult,
+  type LlmSelectToolsStatus,
 } from './select'
 export {
   loadMcpTools,

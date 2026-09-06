@@ -28,10 +28,15 @@ import {
   ToolVectorIndex,
   llmSelectTools,
   fitToolsWithinBudget,
+  keywordSelect,
+  catalogEntryForTool,
+  humanizeToolName,
   TOOL_INDEX_SCOPE,
   TOOL_INDEX_KIND,
   type ToolEmbedder,
   type ToolVectorStore,
+  type LlmSelectToolsStatus,
+  type ToolCatalogEntry,
 } from '@chatvein/tools'
 import type { StructuredToolInterface } from '@chatvein/tools'
 import {
@@ -104,7 +109,7 @@ export class ChatService implements OnAppReady {
   // —— 工具向量索引（层 C1 语义预筛）；原生模块 @chatvein/vector 懒加载，不进主 bundle 静态图 ——
   private toolIndex: ToolVectorIndex | null = null
   private toolIndexInit: Promise<ToolVectorIndex | null> | null = null
-  /** 索引维护串行队列（warmup 全量 + 每轮 sync 差量共用，避免并发写库/写 meta） */
+  /** 索引维护串行队列（warmup 全量 + MCP/配置变更 sync，避免并发写库/写 meta） */
   private toolIndexOps: Promise<unknown> = Promise.resolve()
   /** 启动 warmup 一次性标记（幂等） */
   private toolIndexWarmup: Promise<void> | null = null
@@ -319,7 +324,7 @@ export class ChatService implements OnAppReady {
     const clearLlmDebug = this.beginRequestLlmDebug(emit, runId, conv.id)
     try {
       // L1 →（灰区）L2 结构化分类 → ReAct；L2 用弱模偏好，无分档表时回退当前 Agent 模型
-      const router = await this.routerWithL2(model)
+    const router = await this.routerWithL2(model)
     const route = await router.route({
       text: content,
       session: {
@@ -411,7 +416,22 @@ export class ChatService implements OnAppReady {
       maxTokens: model.maxTokens > 0 ? model.maxTokens : undefined,
     })
 
-    const boundTools = await this.resolveBoundTools(agent, toolPolicy, conv.workspacePath, content, model)
+    const toolQuery = route.rewrittenQuery?.trim() || content
+    if (route.rewrittenQuery?.trim()) {
+      emit({
+        type: 'thinking_delta',
+        runId,
+        conversationId: conv.id,
+        delta: `工具检索 query：${toolQuery.slice(0, 120)}${toolQuery.length > 120 ? '…' : ''}\n`,
+      })
+    }
+    const boundTools = await this.resolveBoundTools(
+      agent,
+      toolPolicy,
+      conv.workspacePath,
+      toolQuery,
+      model,
+    )
     if (boundTools.length > 0) {
       emit({
         type: 'thinking_delta',
@@ -656,7 +676,14 @@ export class ChatService implements OnAppReady {
       temperature: temperatureForTier(route.policy.modelTier, model.temperature),
       maxTokens: model.maxTokens > 0 ? model.maxTokens : undefined,
     })
-    const boundTools = await this.resolveBoundTools(agent, route.policy.tools, conv.workspacePath, content, model)
+    const toolQuery = route.rewrittenQuery?.trim() || content
+    const boundTools = await this.resolveBoundTools(
+      agent,
+      route.policy.tools,
+      conv.workspacePath,
+      toolQuery,
+      model,
+    )
     const checkpointer = this.getCheckpointer(conv.workspacePath)
     await checkpointer.deleteThread(conv.id)
     const reactAgent = createReactChatAgent({
@@ -846,12 +873,9 @@ export class ChatService implements OnAppReady {
 
   /**
    * policy.tools ∩ 角色白名单 → LangChain 工具实例。
-   * `agent.tools` 为空 = 尚未配置白名单，视为允许目录默认集。
-   */
-  /**
-   * policy.tools ∩ 角色白名单 → LangChain 工具实例。
-   * 链路：resolveChatTools（L1 候选）→ 向量语义预筛（C1）→ 弱模型精筛（C2）→ 预算裁剪（C3）。
-   * 向量未就绪 / L2 失败 / 候选已很少 → 依次回退，保底不丢能力。
+   * 链路：resolveChatTools → C1 向量/关键词预筛 → C2 弱模型精筛 → C3 预算裁剪。
+   * 索引维护仅在启动 warmup / `refreshToolIndex`（MCP 菜单变更）；对话路径只读检索。
+   * query 应为 `route.rewrittenQuery ?? 原文`。
    */
   private async resolveBoundTools(
     agent: AgentConfig,
@@ -877,20 +901,35 @@ export class ChatService implements OnAppReady {
 
     const byName = new Map(candidateTools.map((t) => [t.name, t]))
     const candidateNames = [...byName.keys()]
+    const q = query?.trim() ?? ''
 
-    // 后台差量同步索引（不阻塞本轮）：新增候选增量入索引；冷启动未就绪 → 本轮回退全候选
-    void this.syncToolIndex(candidateTools).catch((e) =>
-      console.warn('[ChatService] tool index sync skipped', e),
-    )
+    // 等待启动 warmup（若仍在跑），避免签名命中跳过写库后内存未 ready 导致本轮空召回
+    await this.awaitToolIndexWarmup()
 
-    // 层 C1 语义预筛
-    let narrowed = query ? await this.prescreenWithVector(query, candidateNames) : []
-    if (narrowed.length === 0) narrowed = candidateNames
+    // 层 C1：向量语义预筛；未就绪/空命中 → 关键词兜底；再空 → 全候选
+    let c1Source: 'vector' | 'keyword' | 'full' = 'full'
+    let narrowed = candidateNames
+    if (q) {
+      const vectorHits = await this.prescreenWithVector(q, candidateNames)
+      if (vectorHits.length > 0) {
+        narrowed = vectorHits
+        c1Source = 'vector'
+      } else {
+        const kwHits = this.prescreenWithKeywords(q, candidateTools)
+        if (kwHits.length > 0 && kwHits.length < candidateNames.length) {
+          narrowed = kwHits
+          c1Source = 'keyword'
+        }
+      }
+    }
 
-    // 层 C2 弱模型精筛（候选已很少则跳过，省一次弱模型调用）
+    // 层 C2：弱模型精筛（候选已很少则跳过）
     let finalNames = narrowed
-    if (model && narrowed.length > this.toolSelectSkipBelow) {
-      finalNames = await this.llmSelectToolsForTurn(query ?? '', narrowed, candidateTools, model)
+    let c2Status: LlmSelectToolsStatus | 'skipped' = 'skipped'
+    if (model && q && narrowed.length > this.toolSelectSkipBelow) {
+      const c2 = await this.llmSelectToolsForTurn(q, narrowed, candidateTools, model)
+      finalNames = c2.toolIds
+      c2Status = c2.status
     }
 
     // 层 C3 预算裁剪（已按相关度排序）
@@ -900,8 +939,13 @@ export class ChatService implements OnAppReady {
     const bound = fitToolsWithinBudget(ordered, this.toolBudgetTokens)
 
     this.emitToolSelectionTelemetry(bound, {
-      selector: this.toolIndex?.ready && query ? 'vector+l2' : model ? 'l2' : 'full',
+      selector: formatToolSelectorLabel(c1Source, c2Status),
       candidateCount: candidateNames.length,
+      narrowedCount: narrowed.length,
+      c1: c1Source,
+      c2: c2Status,
+      queryChars: q.length,
+      indexReady: Boolean(this.toolIndex?.ready),
     })
     return bound
   }
@@ -945,7 +989,7 @@ export class ChatService implements OnAppReady {
         })
         return this.toolIndex
       } catch (e) {
-        console.warn('[ChatService] vector index unavailable, tools fallback to full', e)
+        console.warn('[ChatService] vector index unavailable, tools fallback to keyword/full', e)
         this.toolIndexInit = null
         return null
       }
@@ -961,7 +1005,16 @@ export class ChatService implements OnAppReady {
     )
   }
 
-  /** 索引维护串行化：warmup 全量与每轮 sync 共享，避免并发写库 / 写 meta */
+  /**
+   * MCP 菜单 / 环境变量变更后调用：相对已同步名差量 upsert。
+   * 对话路径不再每轮 sync；工具集只在启动与配置变更时维护。
+   */
+  async refreshToolIndex(): Promise<void> {
+    const tools = await this.resolveSystemTools()
+    await this.syncToolIndex(tools)
+  }
+
+  /** 索引维护串行化：warmup 全量与配置变更 sync 共享，避免并发写库 / 写 meta */
   private enqueueToolIndexOp<T>(op: () => Promise<T>): Promise<T> {
     const run = this.toolIndexOps.then(op, op)
     this.toolIndexOps = run.then(
@@ -985,7 +1038,7 @@ export class ChatService implements OnAppReady {
 
   /**
    * 启动 warmup（版本化基准）：
-   * 解析系统工具全集 → 对入库记录求内容签名；与上次一致且无下线 → 零成本跳过；
+   * 解析系统工具全集 → 对入库记录求内容签名；与上次一致且无下线 → 仅 markReady（零写入）；
    * 否则全量覆盖 upsert + 清理下线记录 + 写回 meta。
    */
   private warmupToolIndex(): Promise<void> {
@@ -999,7 +1052,14 @@ export class ChatService implements OnAppReady {
         const signature = toolIndexSignature(records)
         const meta = await this.readToolIndexMeta()
         const stale = (meta.syncedNames ?? []).filter((n) => !records.some((r) => r.id === n))
-        if (meta.builtinSignature === signature && stale.length === 0) return
+        if (meta.builtinSignature === signature && stale.length === 0) {
+          // 磁盘已有有效快照；必须标记进程内 ready，否则 C1 永远空召回
+          idx.markReady()
+          console.debug(
+            `[tool-index] warmup skip (sig match) records=${records.length} ready=true`,
+          )
+          return
+        }
         console.debug(
           `[tool-index] warmup rebuild sig=${signature.slice(0, 8)} records=${records.length} stale=${stale.length}`,
         )
@@ -1015,11 +1075,27 @@ export class ChatService implements OnAppReady {
     return this.toolIndexWarmup
   }
 
+  /** 对话预筛前等待 warmup（失败也继续，走关键词/全量回退） */
+  private async awaitToolIndexWarmup(): Promise<void> {
+    if (this.toolIndex?.ready) return
+    if (!this.toolIndexWarmup) {
+      // 极早消息：主动触发一次 warmup，避免永远不 ready
+      void this.warmupToolIndex().catch((e) =>
+        console.warn('[ChatService] tool index warmup failed', e),
+      )
+    }
+    if (this.toolIndexWarmup) {
+      try {
+        await this.toolIndexWarmup
+      } catch {
+        // 已在 onAppReady / 上方告警
+      }
+    }
+  }
+
   /**
-   * 每轮候选差量同步：相对 meta.syncedNames 仅补录新增工具（upsert），
-   * 不做删除（agent 白名单 / MCP 临时不可达可能使候选收窄，运行期误删有风险）；
-   * 下线统一收敛到下次启动的 warmup。
-   * warmup 未就绪时退化为按当轮候选 build 一次（保底，等同旧 ensureToolIndexAndBuild）。
+   * 配置变更差量同步：相对 meta.syncedNames 仅补录新增工具（upsert）。
+   * 不做删除（agent 白名单收窄误删有风险）；下线收敛到启动 warmup。
    */
   private syncToolIndex(candidates: StructuredToolInterface[]): Promise<void> {
     return this.enqueueToolIndexOp(async () => {
@@ -1051,7 +1127,7 @@ export class ChatService implements OnAppReady {
     })
   }
 
-  /** warmup 用的系统工具全集：policy full + 无白名单，等同默认对话路由的解析结果 */
+  /** warmup / refresh 用的系统工具全集：policy full + 无白名单 */
   private async resolveSystemTools(): Promise<StructuredToolInterface[]> {
     const settings = await this.settings.get()
     return resolveChatTools({
@@ -1078,7 +1154,7 @@ export class ChatService implements OnAppReady {
     }))
   }
 
-  /** 层 C1：向量语义预筛；未就绪/失败 → 回退全候选 */
+  /** 层 C1：向量语义预筛；未就绪/失败 → []（由上层改走关键词或全量） */
   private async prescreenWithVector(query: string, candidateNames: string[]): Promise<string[]> {
     const idx = this.toolIndex
     if (!idx?.ready) return []
@@ -1090,13 +1166,35 @@ export class ChatService implements OnAppReady {
     }
   }
 
-  /** 层 C2：复用 L2 弱模型通道精筛；失败 → 回退 narrowed 全集 */
+  /** 层 C1 兜底：关键词预筛；无命中（返回全集）视为无效，交给上层全量 */
+  private prescreenWithKeywords(
+    query: string,
+    tools: StructuredToolInterface[],
+  ): string[] {
+    const entries: ToolCatalogEntry[] = tools.map((t) => {
+      const cat = catalogEntryForTool(t.name)
+      if (cat) return cat
+      const human = humanizeToolName(t.name)
+      return {
+        id: t.name,
+        category: 'knowledge',
+        title: human || t.name,
+        description: t.description ?? '',
+        source: 'runtime',
+        defaultEnabled: true,
+        keywords: human.split(/\s+/).filter(Boolean),
+      }
+    })
+    return keywordSelect(query, entries)
+  }
+
+  /** 层 C2：复用 L2 弱模型通道精筛 */
   private async llmSelectToolsForTurn(
     query: string,
     narrowedNames: string[],
     candidates: StructuredToolInterface[],
     model: ModelConfig,
-  ): Promise<string[]> {
+  ): Promise<{ toolIds: string[]; status: LlmSelectToolsStatus }> {
     const byName = new Map(candidates.map((t) => [t.name, t]))
     const cand = narrowedNames
       .map((n) => byName.get(n))
@@ -1105,25 +1203,34 @@ export class ChatService implements OnAppReady {
     try {
       const l2Model = await this.resolveL2Model(model)
       const llmWeak = this.createDebugAwareLlm(l2Model, { temperature: 0, maxTokens: 256 })
-      const picked = await llmSelectTools(query, cand, llmWeak, {
+      return await llmSelectTools(query, cand, llmWeak, {
         maxK: this.toolSelectTopK,
         timeoutMs: 10_000,
       })
-      return picked.length > 0 ? picked : narrowedNames
     } catch (e) {
       console.warn('[ChatService] llmSelectTools failed, fallback narrowed', e)
-      return narrowedNames
+      return { toolIds: narrowedNames, status: 'fallback_error' }
     }
   }
 
-  /** 工具选用埋点：selector / 候选数 / 绑定数 / 工具名（设计文档要求先埋点） */
+  /** 工具选用埋点：真实 C1/C2 路径，而非「索引 ready 即 vector+l2」 */
   private emitToolSelectionTelemetry(
     bound: StructuredToolInterface[],
-    info: { selector: string; candidateCount: number },
+    info: {
+      selector: string
+      candidateCount: number
+      narrowedCount: number
+      c1: string
+      c2: string
+      queryChars: number
+      indexReady: boolean
+    },
   ): void {
     console.debug(
-      `[tool-select] selector=${info.selector} candidates=${info.candidateCount} ` +
-        `bound=${bound.length} tools=${bound.map((t) => t.name).join(',')}`,
+      `[tool-select] selector=${info.selector} c1=${info.c1} c2=${info.c2} ` +
+        `candidates=${info.candidateCount} narrowed=${info.narrowedCount} ` +
+        `bound=${bound.length} indexReady=${info.indexReady} queryChars=${info.queryChars} ` +
+        `tools=${bound.map((t) => t.name).join(',')}`,
     )
   }
 
@@ -1466,6 +1573,22 @@ function temperatureForTier(
 function truncateTitle(text: string): string {
   const one = text.replace(/\s+/g, ' ').trim()
   return one.length <= 28 ? one : `${one.slice(0, 28)}…`
+}
+
+/** 工具选用埋点 selector：反映真实 C1/C2 路径 */
+function formatToolSelectorLabel(
+  c1: 'vector' | 'keyword' | 'full',
+  c2: LlmSelectToolsStatus | 'skipped',
+): string {
+  const c2Part =
+    c2 === 'skipped'
+      ? 'none'
+      : c2 === 'selected'
+        ? 'c2'
+        : c2 === 'passthrough_small'
+          ? 'c2skip'
+          : `c2fallback:${c2}`
+  return `${c1}+${c2Part}`
 }
 
 function formatAgentError(err: unknown): string {

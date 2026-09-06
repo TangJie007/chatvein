@@ -24,7 +24,7 @@ User prompt 只保留原文 + 廉价结构特征（长度/语言/围栏/路径/U
 
 ### 为什么不把改写放进 L1 / 主 ReAct？
 
-L1 零 LLM 红线；主 ReAct 改写会污染对话轮次且拿不到干净的路由侧契约。改写留给 L2，下游工具 Top-K 可选用 `rewrittenQuery`（本期只产出字段，选型器接线另议）。
+L1 零 LLM 红线；主 ReAct 改写会污染对话轮次且拿不到干净的路由侧契约。改写留给 L2，下游工具 Top-K 使用 `rewrittenQuery`（接线见 [`2026-09-06-tool-select-rewrite-and-index-ready.md`](./2026-09-06-tool-select-rewrite-and-index-ready.md)）。
 
 ### 为什么 `rewrittenQuery` 在 L2Judgement 必填、在 RouteDecision 可选？
 
@@ -34,4 +34,4 @@ L1 零 LLM 红线；主 ReAct 改写会污染对话轮次且拿不到干净的�
 
 - 契约：`@chatvein/common` `RouteDecision`、`l2/schema`、`l2/prompt`、`l2/merge`；thinking 日志可展示改写摘要。
 - 成本：单次 L2 token 略增（多一个字段与更长 system）；换检索质量与更稳的 band。
-- 后续：工具向量 Top-K 应以 `rewrittenQuery ?? raw` 为查询，勿再用裸口语。
+- **已落地接线**：工具向量 Top-K 使用 `rewrittenQuery ?? raw`，见 [`2026-09-06-tool-select-rewrite-and-index-ready.md`](./2026-09-06-tool-select-rewrite-and-index-ready.md)。

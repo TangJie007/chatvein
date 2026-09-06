@@ -1,7 +1,13 @@
 <script setup lang="ts">
 import AppIcon from '../AppIcon.vue'
 
-defineProps<{ title: string; count: string | number; searchPlaceholder: string; modelValue?: string }>()
+defineProps<{
+  title: string
+  count: string | number
+  searchPlaceholder: string
+  modelValue?: string
+  hideAdd?: boolean
+}>()
 const emit = defineEmits<{ 'update:modelValue': [string]; add: [] }>()
 </script>
 
@@ -20,6 +26,7 @@ const emit = defineEmits<{ 'update:modelValue': [string]; add: [] }>()
         >
       </h3>
       <button
+        v-if="!hideAdd"
         class="grid h-7 w-7 place-items-center rounded-[9px] border-0 bg-[var(--color-input)] text-[var(--color-ink-2)] transition-all hover:-translate-y-px hover:bg-[var(--color-brand-soft)] hover:text-[var(--color-brand-deep)]"
         :aria-label="`新建${title}`"
         @click="emit('add')"

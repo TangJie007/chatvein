@@ -43,7 +43,7 @@ describe('llmSelectTools', () => {
       withStructuredOutput: () => ({ invoke: async () => ({ toolIds: ['fs_read', 'calc'] }) }),
     } as never
     const res = await llmSelectTools('读文件并计算', cand, fake, { maxK: 2 })
-    expect(res).toEqual(['fs_read', 'calc'])
+    expect(res).toEqual({ toolIds: ['fs_read', 'calc'], status: 'selected' })
   })
 
   it('结果为空/失败 → 回退全部候选', async () => {
@@ -51,7 +51,10 @@ describe('llmSelectTools', () => {
       withStructuredOutput: () => ({ invoke: async () => ({ toolIds: [] }) }),
     } as never
     const res = await llmSelectTools('q', cand, fake, { maxK: 2 })
-    expect(res).toEqual(['fs_read', 'calc', 'web_search'])
+    expect(res).toEqual({
+      toolIds: ['fs_read', 'calc', 'web_search'],
+      status: 'fallback_empty',
+    })
   })
 
   it('候选数 ≤ maxK 时跳过弱模型调用', async () => {
@@ -59,7 +62,7 @@ describe('llmSelectTools', () => {
       withStructuredOutput: () => ({ invoke: async () => { throw new Error('不应被调用') } }),
     } as never
     const res = await llmSelectTools('q', cand.slice(0, 2), fake, { maxK: 10 })
-    expect(res).toEqual(['fs_read', 'calc'])
+    expect(res).toEqual({ toolIds: ['fs_read', 'calc'], status: 'passthrough_small' })
   })
 })
 

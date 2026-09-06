@@ -97,6 +97,15 @@ export class ToolVectorIndex {
   }
 
   /**
+   * 磁盘索引已与内容签名一致、无需重写时：仅标记进程内 ready。
+   * 启动 warmup 零成本跳过路径必须调用，否则 `built` 一直为 false，C1 每轮空召回。
+   */
+  markReady(): void {
+    this.built = true
+    this.building = null
+  }
+
+  /**
    * 把工具实例（name/description/schema）翻译成入库记录。
    * 纯文本层、同步、不触发嵌入；用于调用方计算版本签名或喂给 `sync()`。
    */
