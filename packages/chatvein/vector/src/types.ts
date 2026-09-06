@@ -9,8 +9,25 @@ export interface EmbeddingProvider {
   embedBatch(texts: string[]): Promise<Float32Array[]>
 }
 
+/**
+ * 向量归属域（谁能看见 / 与哪类主体绑定；检索可按 scope 过滤）。
+ * - personal：个人记忆/偏好等，owner ≈ 用户或角色
+ * - group：群组共享，owner ≈ groupId
+ * - global：全局共享（默认）
+ * - code：代码库/工作区索引，owner ≈ repo/workspace
+ * - tool：工具目录索引域（与记忆隔离；条目 kind 多为 tool_desc）
+ */
 export type VectorScope = 'personal' | 'group' | 'global' | 'code' | 'tool'
 
+/**
+ * 向量内容种类（一条记了什么；与 scope 正交）。
+ * - memory：长期语义记忆（事实/偏好）
+ * - message：对话消息片段
+ * - code：源码/符号块
+ * - doc：文档/通用文本（store 缺省 kind）
+ * - decision：决策/结论类提炼
+ * - tool_desc：工具描述（供 Top-K 选型；嵌入文案如 mcpToolEmbedText）
+ */
 export type VectorKind = 'memory' | 'message' | 'code' | 'doc' | 'decision' | 'tool_desc'
 
 export interface VectorRecord {
