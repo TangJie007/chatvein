@@ -72,6 +72,10 @@ export interface IpcApi {
   'settings:update': (patch: AppSettingsPatch) => Promise<AppSettingsView>
   'settings:reset': () => Promise<AppSettingsView>
   'settings:pickFolder': (data?: { title?: string; defaultPath?: string }) => Promise<string | null>
+
+  // ---- 向量数据库（数据集浏览器）----
+  'vector:inspectTables': () => Promise<VectorTableInfo[]>
+  'vector:browseTable': (name: string, limit?: number, offset?: number) => Promise<VectorBrowseResult>
 }
 
 export type UserRow = { id: number; name: string; email: string }
@@ -179,6 +183,22 @@ export interface AppSettingsView {
 export type AppSettingsPatch = Partial<
   Pick<AppSettingsView, 'workspaceRoot' | 'cmdAllowlist' | 'confirmWrites' | 'reduceMotion'>
 >
+
+// ---- 向量数据库（数据集浏览器）--------------------------------------------
+
+export interface VectorTableColumn {
+  name: string
+  type: string
+}
+export interface VectorTableInfo {
+  name: string
+  count: number
+  columns: VectorTableColumn[]
+}
+export interface VectorBrowseResult {
+  total: number
+  rows: Record<string, unknown>[]
+}
 
 // ---- 普通对话 ----------------------------------------------------------
 

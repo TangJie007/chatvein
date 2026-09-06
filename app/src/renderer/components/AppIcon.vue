@@ -66,6 +66,8 @@ const paths: Record<string, string> = {
   trash:
     '<path d="M3 6h18"/><path d="M8 6V4.5A1.5 1.5 0 0 1 9.5 3h5A1.5 1.5 0 0 1 16 4.5V6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M10 11v6M14 11v6"/>',
   cpu: '<rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M9 1v3M15 1v3M9 20v3M15 20v3M1 9h3M1 15h3M20 9h3M20 15h3"/>',
+  vector:
+    '<circle cx="5" cy="6" r="1.7"/><circle cx="19" cy="6" r="1.7"/><circle cx="12" cy="18" r="1.7"/><path d="M6.5 7.2 10.8 16.4M17.5 7.2 13.2 16.4M6.7 6h10.6"/>',
 }
 
 const inner = computed(() => paths[props.name] ?? paths.chat)

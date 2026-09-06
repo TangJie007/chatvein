@@ -10,11 +10,15 @@ export const CHATVEIN_VECTOR_VERSION = '0.1.0'
 export type {
   EmbeddingProvider,
   StoredVector,
+  VectorBrowseResult,
   VectorKind,
+  VectorListOptions,
+  VectorListRow,
   VectorRecord,
   VectorScope,
   VectorSearchFilter,
   VectorSearchHit,
+  VectorTableInfo,
   VectorSearchOptions,
 } from './types'
 

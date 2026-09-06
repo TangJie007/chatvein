@@ -45,6 +45,12 @@ const routes: RouteRecordRaw[] = [
     meta: { module: 'Skills' },
   },
   {
+    path: '/vectors',
+    name: 'vectors',
+    component: () => import('../views/VectorDbView.vue'),
+    meta: { module: '向量数据库' },
+  },
+  {
     path: '/settings',
     name: 'settings',
     component: () => import('../views/SettingsView.vue'),

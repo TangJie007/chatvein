@@ -76,3 +76,44 @@ export interface VectorSearchHit {
   kind: VectorKind
   meta: Record<string, unknown>
 }
+
+/**
+ * 列举选项（只读遍历，不走向量检索；用于「查看索引里存了什么」类场景）。
+ */
+export interface VectorListOptions {
+  filter?: VectorSearchFilter
+  /** 单页上限，默认 200，最大 2000 */
+  limit?: number
+  /** 游标偏移（lancedb 支持） */
+  offset?: number
+}
+
+/**
+ * 一条已存向量的明细（不含向量本体，避免大负载；维度以 `dimensions` 暴露）。
+ */
+export interface VectorListRow {
+  id: string
+  content: string
+  summary: string | null
+  scope: VectorScope
+  ownerId: string
+  kind: VectorKind
+  meta: Record<string, unknown>
+  embeddingModel: string
+  dimensions: number
+  createdAt: number
+  updatedAt: number
+}
+
+/** 数据集内一张表的概览：表名 + 行数 + 列结构（数据库浏览器用） */
+export interface VectorTableInfo {
+  name: string
+  count: number
+  columns: { name: string; type: string }[]
+}
+
+/** 浏览某表一页的返回：总行数 + 本页记录（向量列折叠为维度，meta_json 解析为对象） */
+export interface VectorBrowseResult {
+  total: number
+  rows: Record<string, unknown>[]
+}

@@ -10,6 +10,7 @@ const nav = [
   { to: '/knowledge', label: '知识库', icon: 'database' },
   { to: '/mcp', label: 'MCP', icon: 'server' },
   { to: '/skills', label: 'Skills', icon: 'sparkles' },
+  { to: '/vectors', label: '向量库', icon: 'vector' },
 ]
 </script>
 

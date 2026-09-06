@@ -9,11 +9,15 @@ import { join } from 'node:path'
 import type { EmbeddingProvider } from './types'
 import type {
   StoredVector,
+  VectorBrowseResult,
   VectorKind,
+  VectorListOptions,
+  VectorListRow,
   VectorRecord,
   VectorScope,
   VectorSearchFilter,
   VectorSearchHit,
+  VectorTableInfo,
   VectorSearchOptions,
 } from './types'
 
@@ -25,7 +29,10 @@ export interface LocalVectorStoreOptions {
    * 省略则使用系统临时目录（适合测试；进程结束后可清理）。
    */
   dataDir?: string
-  embedder: EmbeddingProvider
+  /**
+   * 嵌入器。只读列举（`list`）/计数（`count`）可不传；写入（`upsert`）与语义检索（`search`）必需。
+   */
+  embedder?: EmbeddingProvider
   /** 表名，默认 `vectors` */
   tableName?: string
 }
@@ -48,7 +55,7 @@ type LanceRow = {
 export class LocalVectorStore {
   private conn: Connection | null = null
   private table: Table | null = null
-  private readonly embedder: EmbeddingProvider
+  private readonly embedder?: EmbeddingProvider
   private readonly dataDir?: string
   private readonly tableName: string
   private resolvedUri: string | null = null
@@ -60,11 +67,11 @@ export class LocalVectorStore {
   }
 
   get modelId(): string {
-    return this.embedder.modelId
+    return this.embedder?.modelId ?? ''
   }
 
   get dimensions(): number {
-    return this.embedder.dimensions
+    return this.embedder?.dimensions ?? 0
   }
 
   /** 实际连接 URI（init 后可用） */
@@ -103,7 +110,7 @@ export class LocalVectorStore {
     const needEmbed = list.filter((r) => !r.embedding)
     const embedded =
       needEmbed.length > 0
-        ? await this.embedder.embedBatch(needEmbed.map((r) => r.content))
+        ? await this.embedder!.embedBatch(needEmbed.map((r) => r.content))
         : []
     let embedIdx = 0
 
@@ -124,7 +131,7 @@ export class LocalVectorStore {
         owner_id: ownerId,
         kind,
         meta_json: JSON.stringify(r.meta ?? {}),
-        embedding_model: this.embedder.modelId,
+        embedding_model: this.embedder!.modelId,
         created_at: now,
         updated_at: now,
       })
@@ -150,7 +157,7 @@ export class LocalVectorStore {
     const topK = options.topK ?? 8
     const qEmb = options.queryEmbedding
       ? toNumberArray(options.queryEmbedding)
-      : toNumberArray(await this.embedder.embed(query))
+      : toNumberArray(await this.embedder!.embed(query))
 
     let q = this.table.vectorSearch(qEmb).distanceType('cosine').limit(topK)
     const predicate = buildFilterPredicate(options.filter)
@@ -212,6 +219,92 @@ export class LocalVectorStore {
     const predicate = buildFilterPredicate(filter)
     return predicate ? this.table.countRows(predicate) : this.table.countRows()
   }
+
+  /**
+   * 只读遍历：列出已存向量明细（不含向量本体）。用于「查看索引里存了什么」。
+   * 不走语义检索、不需要 embedder；表不存在时返回空数组。
+   */
+  async list(options: VectorListOptions = {}): Promise<VectorListRow[]> {
+    await this.init()
+    if (!this.table) return []
+    const limit = Math.min(Math.max(options.limit ?? 200, 1), 2000)
+    let q = this.table.query().limit(limit)
+    const predicate = buildFilterPredicate(options.filter)
+    if (predicate) q = q.where(predicate)
+    if (options.offset && options.offset > 0) {
+      q = (q as unknown as { offset: (n: number) => typeof q }).offset(options.offset)
+    }
+    const rows = (await q.toArray()) as LanceRow[]
+    return rows.map((row) => ({
+      id: row.id,
+      content: row.content,
+      summary: row.summary || null,
+      scope: row.scope as VectorScope,
+      ownerId: row.owner_id,
+      kind: row.kind as VectorKind,
+      meta: parseMeta(row.meta_json),
+      embeddingModel: row.embedding_model,
+      dimensions: Array.isArray(row.vector) ? row.vector.length : (row.vector as Float32Array)?.length ?? 0,
+      createdAt: Number(row.created_at),
+      updatedAt: Number(row.updated_at),
+    }))
+  }
+
+  /**
+   * 数据集浏览器：列出全部表（表名 + 行数 + 列结构）。
+   * 数据集为空目录 / 不存在 → 返回 []（不抛错）。
+   */
+  async inspectTables(): Promise<VectorTableInfo[]> {
+    await this.init()
+    if (!this.conn) return []
+    try {
+      const names = await this.conn.tableNames()
+      const out: VectorTableInfo[] = []
+      for (const name of names) {
+        try {
+          const t = await this.conn.openTable(name)
+          const total = await t.countRows()
+          const schema = await t.schema()
+          const columns = (schema?.fields ?? []).map((f) => ({
+            name: f.name,
+            type: f.type != null ? String(f.type) : 'unknown',
+          }))
+          out.push({ name, count: total, columns })
+        } catch {
+          // 个别表不可读则跳过
+        }
+      }
+      return out
+    } catch {
+      return []
+    }
+  }
+
+  /**
+   * 浏览某张表的一页记录（向量列折叠为维度，meta_json 解析为对象）。
+   * 不走语义检索、不需要 embedder；表不存在 / 读取失败 → 返回空结果。
+   */
+  async browseTable(
+    table: string,
+    options: { limit?: number; offset?: number } = {},
+  ): Promise<VectorBrowseResult> {
+    await this.init()
+    if (!this.conn) return { total: 0, rows: [] }
+    try {
+      const t = await this.conn.openTable(table)
+      const limit = Math.min(Math.max(options.limit ?? 50, 1), 500)
+      const offset = Math.max(options.offset ?? 0, 0)
+      const total = await t.countRows()
+      let q = t.query().limit(limit)
+      if (offset > 0) {
+        q = (q as unknown as { offset: (n: number) => typeof q }).offset(offset)
+      }
+      const raw = (await q.toArray()) as Array<Record<string, unknown>>
+      return { total, rows: raw.map((row) => projectBrowseRow(row)) }
+    } catch {
+      return { total: 0, rows: [] }
+    }
+  }
 }
 
 export function createLocalVectorStore(options: LocalVectorStoreOptions): LocalVectorStore {
@@ -245,6 +338,28 @@ function parseMeta(raw: string | undefined): Record<string, unknown> {
   } catch {
     return {}
   }
+}
+
+/** 浏览投影：向量列折叠为维度对象，meta_json 解析为对象（其余列保持原值） */
+function projectBrowseRow(row: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {}
+  for (const [k, v] of Object.entries(row)) {
+    if (k === 'vector') {
+      const dim = Array.isArray(v) ? v.length : (v as Float32Array)?.length ?? 0
+      out[k] = { __vector: true, dimensions: dim }
+      continue
+    }
+    if (k === 'meta_json' && typeof v === 'string') {
+      try {
+        out[k] = JSON.parse(v)
+      } catch {
+        out[k] = v
+      }
+      continue
+    }
+    out[k] = v
+  }
+  return out
 }
 
 /** SQL 字符串字面量（单引号转义） */
