@@ -35,6 +35,9 @@ importers:
       '@chatvein/models':
         specifier: workspace:*
         version: link:../packages/chatvein/models
+      '@chatvein/observability':
+        specifier: workspace:*
+        version: link:../packages/chatvein/observability
       '@chatvein/tools':
         specifier: workspace:*
         version: link:../packages/chatvein/tools
@@ -334,6 +337,9 @@ importers:
       '@chatvein/common':
         specifier: workspace:*
         version: link:../common
+      '@chatvein/observability':
+        specifier: workspace:*
+        version: link:../observability
       '@langchain/core':
         specifier: ^1.2.9
         version: 1.2.9(@opentelemetry/api@1.9.1)(openai@7.9.0(undici@8.10.2)(ws@8.21.3)(zod@4.5.4))(ws@8.21.3)

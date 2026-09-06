@@ -59,3 +59,18 @@ export const CHATVEIN_OBSERVABILITY_VERSION = '0.1.0'
 export { EventBus, type TraceListener } from './event-bus'
 export { initRunDir, type RunDirLayout } from './run-dir'
 export { JsonlTraceWriter, type JsonlTraceWriterOptions } from './jsonl-writer'
+export {
+  Telemetry,
+  telemetry,
+  setTelemetrySink,
+  setTelemetryContext,
+  emitTelemetry,
+  isTelemetryEnabled,
+  safeJsonStringify,
+  toIpcSafePayload,
+  type TelemetryEvent,
+  type TelemetrySink,
+  type TelemetryStatus,
+  type TelemetryEmitOptions,
+  type TelemetryContext,
+} from './telemetry'

@@ -90,12 +90,21 @@ export type ChatStreamEvent =
       items: ChatArtifactItem[]
     }
   | {
-      /** 开发环境：单次 LLM 返回全量，渲染进程 console.log */
-      type: 'llm_debug'
-      runId: string
-      conversationId: string
-      source: string
-      payload: unknown
+      /** 统一遥测事件：llm:* 原始 IO / trace:* 编排度量，渲染进程 console.log */
+      type: 'telemetry'
+      event: {
+        id: string
+        name: string
+        ts: number
+        traceId?: string
+        spanId?: string
+        parentSpanId?: string
+        status?: 'ok' | 'error'
+        durationMs?: number
+        attrs?: Record<string, unknown>
+        payload?: Record<string, unknown>
+        error?: string
+      }
     }
 
 export interface ChatSendResult {

@@ -13,14 +13,15 @@ import {
   WorkspaceCheckpointer,
 } from '@chatvein/agents'
 import type { ComplexityBand, RouteDecision } from '@chatvein/common'
+import { createEndpointModel, createLangChainChatModel } from '@chatvein/models'
 import {
-  createEndpointModel,
-  createLangChainChatModel,
-  forwardToActiveLlmDebugSink,
-  isLlmDebugLogEnabled,
-  safeJsonStringify,
-  setLlmDebugSink,
-} from '@chatvein/models'
+  emitTelemetry,
+  isTelemetryEnabled,
+  setTelemetryContext,
+  setTelemetrySink,
+  toIpcSafePayload,
+  type TelemetryEvent,
+} from '@chatvein/observability'
 import {
   resolveChatTools,
   summarizeToolsForDebug,
@@ -322,7 +323,7 @@ export class ChatService implements OnAppReady {
       ts: Date.now(),
     })
 
-    const clearLlmDebug = this.beginRequestLlmDebug(emit, runId, conv.id)
+    const clearTelemetry = this.beginRequestTelemetry(emit, runId, conv.id)
     try {
       // L1 →（灰区）L2 结构化分类 → ReAct；L2 用弱模偏好，无分档表时回退当前 Agent 模型
     const router = await this.routerWithL2(model)
@@ -394,7 +395,7 @@ export class ChatService implements OnAppReady {
         conversationId: conv.id,
         delta: `执行：maxSteps=${maxSteps} → 本地短路，跳过 LLM\n`,
       })
-      this.emitLlmDebug(emit, runId, conv.id, 'react:skipped', {
+      emitTelemetry('trace:react:skipped', {
         reason: 'maxSteps<=0',
         route: {
           band: route.band,
@@ -458,7 +459,7 @@ export class ChatService implements OnAppReady {
     let usage: TokenUsage | undefined
     let reactMessages: BaseMessage[] = []
     try {
-      this.emitLlmDebug(emit, runId, conv.id, 'react:request', {
+      emitTelemetry('trace:react:request', {
         model: {
           id: model.id,
           name: model.name,
@@ -498,7 +499,7 @@ export class ChatService implements OnAppReady {
       usage = result.usage
       reactMessages = result.messages
 
-      this.emitLlmDebug(emit, runId, conv.id, 'react:response', {
+      emitTelemetry('trace:react:response', {
         content: result.content,
         messageCount: result.messages.length,
         messages: result.messages,
@@ -555,7 +556,7 @@ export class ChatService implements OnAppReady {
     this.scheduleShortTermConsolidation(result.conversation, emit, runId)
     return result
     } finally {
-      clearLlmDebug?.()
+      clearTelemetry?.()
     }
   }
 
@@ -631,7 +632,7 @@ export class ChatService implements OnAppReady {
       ts: Date.now(),
     })
 
-    const clearLlmDebug = this.beginRequestLlmDebug(emit, runId, conv.id)
+    const clearTelemetry = this.beginRequestTelemetry(emit, runId, conv.id)
     try {
     const router = await this.routerWithL2(model)
     const route = await router.route({
@@ -751,7 +752,7 @@ export class ChatService implements OnAppReady {
       )
     }
     } finally {
-      clearLlmDebug?.()
+      clearTelemetry?.()
     }
   }
 
@@ -808,18 +809,24 @@ export class ChatService implements OnAppReady {
     const model = await this.models.get(agent.modelId)
     if (!model?.enabled || !model.baseUrl?.trim() || !model.model?.trim()) return
 
-    const summarizer = await this.shortTermSummarizer(model)
-    const result = await consolidateShortTerm({ messages, state, summarizer })
-    if (result.consolidated === 0) return
+    // 异步压缩发生在请求 sink 已清理之后：为本任务单独挂遥测通道
+    const clear = this.beginRequestTelemetry(emit, runId, conv.id)
+    try {
+      const summarizer = await this.shortTermSummarizer(model)
+      const result = await consolidateShortTerm({ messages, state, summarizer })
+      if (result.consolidated === 0) return
 
-    await writeShortTermState(conv.workspacePath, result.state)
-    this.emitLlmDebug(emit, runId, conv.id, 'memory:short-term', {
-      consolidated: result.consolidated,
-      viaModel: result.viaModel,
-      summarizedCount: result.state.summarizedCount,
-      summaryChars: result.state.summary.length,
-      summary: result.state.summary,
-    })
+      await writeShortTermState(conv.workspacePath, result.state)
+      emitTelemetry('trace:memory:short-term', {
+        consolidated: result.consolidated,
+        viaModel: result.viaModel,
+        summarizedCount: result.state.summarizedCount,
+        summaryChars: result.state.summary.length,
+        summary: result.state.summary,
+      })
+    } finally {
+      clear?.()
+    }
   }
 
   /** 摘要器：weak 档模型 + 短输出；调用失败由 consolidate 内部降级 */
@@ -1215,7 +1222,11 @@ export class ChatService implements OnAppReady {
     }
   }
 
-  /** 工具选用埋点：真实 C1/C2 路径，而非「索引 ready 即 vector+l2」 */
+  /**
+   * 工具选用埋点：真实 C1/C2 路径，而非「索引 ready 即 vector+l2」。
+   * 走统一遥测通道（事件名 `trace:tool_select`），业务字段挂 payload，
+   * 可跨 run 聚合用于调参（lexicalWeight / rrfK / toolBudgetTokens）。
+   */
   private emitToolSelectionTelemetry(
     bound: StructuredToolInterface[],
     info: {
@@ -1228,12 +1239,17 @@ export class ChatService implements OnAppReady {
       indexReady: boolean
     },
   ): void {
-    console.debug(
-      `[tool-select] selector=${info.selector} c1=${info.c1} c2=${info.c2} ` +
-        `candidates=${info.candidateCount} narrowed=${info.narrowedCount} ` +
-        `bound=${bound.length} indexReady=${info.indexReady} queryChars=${info.queryChars} ` +
-        `tools=${bound.map((t) => t.name).join(',')}`,
-    )
+    emitTelemetry('trace:tool_select', {
+      selector: info.selector,
+      c1: info.c1,
+      c2: info.c2,
+      candidateCount: info.candidateCount,
+      narrowedCount: info.narrowedCount,
+      boundCount: bound.length,
+      indexReady: info.indexReady,
+      queryChars: info.queryChars,
+      tools: bound.map((t) => t.name),
+    })
   }
 
   private toolIndexDataDir(): string {
@@ -1263,39 +1279,62 @@ export class ChatService implements OnAppReady {
   }
 
   /**
-   * 本轮请求期内挂上 LLM debug sink；L2 / ReAct 共用。
+   * 本轮请求期内挂上遥测 sink + 上下文；L2 / ReAct / 工具选用共用同一通道。
+   * - sink：把事件经 IPC 推渲染进程 console.log（落在哪由业务决定，现阶段即此）。
+   * - 上下文：自动给每个事件补 traceId=runId 与 conversationId，业务字段仍在 payload。
    * 返回清理函数（finally 调用）。
    */
-  private beginRequestLlmDebug(
+  private beginRequestTelemetry(
     emit: ((evt: ChatStreamEvent) => void) | undefined,
     runId: string,
     conversationId: string,
   ): (() => void) | undefined {
-    if (!isLlmDebugLogEnabled() || !emit) return undefined
-    return setLlmDebugSink((source, payload) => {
-      this.emitLlmDebug(emit, runId, conversationId, source, payload)
+    if (!isTelemetryEnabled() || !emit) return undefined
+    const clearSink = setTelemetrySink((event) => {
+      this.forwardTelemetry(emit, event)
     })
+    const clearContext = setTelemetryContext({
+      traceId: runId,
+      attrs: { conversationId },
+    })
+    return () => {
+      clearContext()
+      clearSink()
+    }
+  }
+
+  /** 把遥测事件收成 IPC 安全数据并推给渲染进程 */
+  private forwardTelemetry(
+    emit: ((evt: ChatStreamEvent) => void) | undefined,
+    event: TelemetryEvent,
+  ): void {
+    if (!emit) return
+    try {
+      emit({
+        type: 'telemetry',
+        event: toIpcSafePayload(event) as TelemetryEvent,
+      })
+    } catch {
+      // ignore
+    }
   }
 
   /**
-   * 始终挂 forwardToActiveLlmDebugSink：无 activeSink 时为空操作。
-   * L2 模型会缓存，避免「首次未开 debug → 之后开了仍无逐步日志」。
+   * 构建 LangChain 模型。遥测探针（`llm:*`）在桥接层始终挂载、无状态且异步发送，
+   * 是否落地由遥测开关/sink 决定；L2 模型缓存后也能在开关打开时逐步输出。
    */
   private createDebugAwareLlm(
     model: ModelConfig,
     opts: { temperature?: number; maxTokens?: number },
   ) {
-    return createLangChainChatModel(
-      {
-        id: model.id,
-        baseUrl: model.baseUrl,
-        apiKey: model.apiKey,
-        model: model.model,
-        temperature: opts.temperature ?? model.temperature,
-        maxTokens: opts.maxTokens,
-      },
-      { onLlmDebug: forwardToActiveLlmDebugSink },
-    )
+    return createLangChainChatModel({
+      id: model.id,
+      baseUrl: model.baseUrl,
+      apiKey: model.apiKey,
+      model: model.model,
+      temperature: opts.temperature ?? model.temperature,
+      maxTokens: opts.maxTokens,
+    })
   }
 
   /**
@@ -1312,28 +1351,6 @@ export class ChatService implements OnAppReady {
         /flash|mini|turbo|haiku|lite|small/i.test(`${m.name} ${m.model}`),
     )
     return weakish ?? agentModel
-  }
-
-  /** 开发环境：经 IPC 推渲染进程 DevTools（`[chatvein:llm:…]`） */
-  private emitLlmDebug(
-    emit: ((evt: ChatStreamEvent) => void) | undefined,
-    runId: string,
-    conversationId: string,
-    source: string,
-    payload: unknown,
-  ): void {
-    if (!isLlmDebugLogEnabled() || !emit) return
-    try {
-      emit({
-        type: 'llm_debug',
-        runId,
-        conversationId,
-        source,
-        payload: safeJsonStringify(payload),
-      })
-    } catch {
-      // ignore
-    }
   }
 
   private async persistAssistant(
@@ -1466,7 +1483,7 @@ function formatShortTermThinking(plan: ShortTermPlan): string {
   return `短期记忆：${parts.join(' / ')}\n`
 }
 
-/** 短期记忆 → llm_debug 字段 */
+/** 短期记忆 → trace:react:request.shortTerm 字段 */
 function shortTermDebugInfo(plan: ShortTermPlan) {
   return {
     activeCount: plan.stats.activeCount,
@@ -1560,7 +1577,7 @@ function localReplyForRoute(route: RouteDecision, userText: string): string {
   } else {
     text = `好的，已收到。需要我继续帮你处理「${truncateTitle(userText)}」相关的事吗？`
   }
-  if (isLlmDebugLogEnabled()) {
+  if (isTelemetryEnabled()) {
     text = `${text} · 命中L1本地短路`
   }
   return text

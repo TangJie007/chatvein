@@ -14,6 +14,7 @@
     "@chatvein/common": "workspace:*",
     "@chatvein/memory": "workspace:*",
     "@chatvein/models": "workspace:*",
+    "@chatvein/observability": "workspace:*",
     "@chatvein/tools": "workspace:*",
     "@chatvein/vector": "workspace:*",
     "@electrum/client": "workspace:*",

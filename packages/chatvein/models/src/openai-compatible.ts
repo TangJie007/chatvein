@@ -8,7 +8,8 @@ import {
   type ModelResult,
   type TokenUsage,
 } from '@chatvein/common'
-import { logLlmResponse } from './llm-debug-log'
+import { emitTelemetry } from '@chatvein/observability'
+import { randomUUID } from 'node:crypto'
 
 export interface OpenAICompatibleConfig {
   id: string
@@ -54,7 +55,14 @@ export class OpenAICompatibleChatModel implements ChatModelLike {
     opts.signal?.addEventListener('abort', onAbort, { once: true })
     const timer = setTimeout(() => controller.abort(), timeoutMs)
 
+    const spanId = randomUUID()
     const started = Date.now()
+    const attrs: Record<string, unknown> = {
+      source: 'openai-compatible',
+      modelId: this.id,
+      model: this.config.model,
+    }
+    this.emitTelemetry('llm:request', spanId, { messages: body.messages }, { attrs })
     try {
       const res = await fetch(url, {
         method: 'POST',
@@ -94,24 +102,61 @@ export class OpenAICompatibleChatModel implements ChatModelLike {
         model: json.model || this.config.model,
         latencyMs,
       }
-      logLlmResponse('openai-compatible', {
-        modelId: this.id,
-        requestModel: this.config.model,
-        raw: json,
-        result,
-      })
+      this.emitTelemetry(
+        'llm:response',
+        spanId,
+        { raw: json, result },
+        {
+          status: 'ok',
+          durationMs: latencyMs,
+          attrs: { ...attrs, responseModel: result.model, tokens: result.usage },
+        },
+      )
       return result
     } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      this.emitTelemetry(
+        'llm:error',
+        spanId,
+        { name: (err as Error)?.name, message },
+        {
+          status: 'error',
+          error: message,
+          durationMs: Date.now() - started,
+          attrs,
+        },
+      )
       if (err instanceof ModelError || err instanceof ValidationError) throw err
       const aborted = err instanceof Error && err.name === 'AbortError'
       throw new ModelError(
-        aborted ? `模型调用超时（${timeoutMs}ms）` : `无法连接模型：${(err as Error).message}`,
+        aborted ? `模型调用超时（${timeoutMs}ms）` : `无法连接模型：${message}`,
         aborted ? 'MODEL_TIMEOUT' : 'MODEL_NETWORK',
       )
     } finally {
       clearTimeout(timer)
       opts.signal?.removeEventListener('abort', onAbort)
     }
+  }
+
+  /** 异步发遥测，绝不阻塞/影响模型调用 */
+  private emitTelemetry(
+    name: string,
+    spanId: string,
+    payload: Record<string, unknown>,
+    opts?: {
+      status?: 'ok' | 'error'
+      durationMs?: number
+      attrs?: Record<string, unknown>
+      error?: string
+    },
+  ): void {
+    setImmediate(() => {
+      try {
+        emitTelemetry(name, payload, { spanId, ...opts })
+      } catch {
+        // 遥测不得影响对话
+      }
+    })
   }
 }
 

@@ -325,9 +325,18 @@ export type ChatStreamEvent =
       items: ChatArtifactItem[]
     }
   | {
-      type: 'llm_debug'
-      runId: string
-      conversationId: string
-      source: string
-      payload: unknown
+      type: 'telemetry'
+      event: {
+        id: string
+        name: string
+        ts: number
+        traceId?: string
+        spanId?: string
+        parentSpanId?: string
+        status?: 'ok' | 'error'
+        durationMs?: number
+        attrs?: Record<string, unknown>
+        payload?: Record<string, unknown>
+        error?: string
+      }
     }
