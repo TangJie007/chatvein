@@ -17,6 +17,10 @@ withDefaults(
     /** 助手回复的 token 用量文案，展示在时间旁 */
     tokenLabel?: string
     tokenTitle?: string
+    /** 气泡选中态（如回看思考流） */
+    selected?: boolean
+    /** 可点击选中时显示 hover 边框提示 */
+    selectable?: boolean
   }>(),
   {
     tint: 'indigo',
@@ -27,6 +31,8 @@ withDefaults(
     streaming: false,
     tokenLabel: '',
     tokenTitle: '',
+    selected: false,
+    selectable: false,
   },
 )
 </script>
@@ -56,11 +62,24 @@ withDefaults(
       </div>
 
       <div
-        class="px-[15px] py-[11px] text-sm leading-[1.55] shadow-[var(--shadow-1)] select-text"
-        :class="
+        class="px-[15px] py-[11px] text-sm leading-[1.55] select-text transition-[box-shadow] duration-200"
+        :class="[
           role === 'user'
-            ? 'rounded-[var(--radius-bubble)] rounded-br-[6px] text-white shadow-[var(--shadow-brand)] bg-[linear-gradient(135deg,#6C81D2,#4A5FBB)]'
-            : 'rounded-[var(--radius-bubble)] rounded-bl-[6px] bg-[var(--color-elevated)] text-[var(--color-ink-1)]'
+            ? 'rounded-[var(--radius-bubble)] rounded-br-[6px] text-white bg-[linear-gradient(135deg,#6C81D2,#4A5FBB)]'
+            : 'rounded-[var(--radius-bubble)] rounded-bl-[6px] bg-[var(--color-elevated)] text-[var(--color-ink-1)]',
+          !selected && role === 'user' ? 'shadow-[var(--shadow-brand)]' : '',
+          !selected && role === 'agent' && !selectable ? 'shadow-[var(--shadow-1)]' : '',
+          !selected && role === 'agent' && selectable
+            ? 'shadow-[var(--shadow-1)] hover:shadow-[var(--shadow-1),inset_0_0_0_1px_rgba(165,177,193,0.7)]'
+            : '',
+        ]"
+        :style="
+          selected
+            ? {
+                boxShadow:
+                  'var(--shadow-1), inset 0 0 0 2px rgb(97 120 208 / 0.55)',
+              }
+            : undefined
         "
       >
         <slot>

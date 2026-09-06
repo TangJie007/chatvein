@@ -326,12 +326,7 @@ onMounted(async () => {
           <button
             v-if="m.role === 'assistant'"
             type="button"
-            class="max-w-full rounded-[14px] border-0 bg-transparent p-0 text-left transition-[box-shadow] focus-visible:outline-2 focus-visible:outline-[var(--color-brand)] focus-visible:outline-offset-2"
-            :class="
-              chat.selectedThinkingMessageId === m.id
-                ? 'shadow-[0_0_0_2px_rgb(97_120_208/0.45)]'
-                : 'hover:shadow-[0_0_0_1px_rgba(223,227,232,0.9)]'
-            "
+            class="max-w-full rounded-[14px] border-0 bg-transparent p-0 text-left focus-visible:outline-2 focus-visible:outline-[var(--color-brand)] focus-visible:outline-offset-2"
             :title="'点击查看该回复的思考流'"
             @click="onSelectThinking(m.id, m.role)"
           >
@@ -345,6 +340,8 @@ onMounted(async () => {
               :content="m.content"
               :token-label="!m.failed ? formatTokenLabel(m) : ''"
               :token-title="!m.failed ? formatTokenTitle(m) : ''"
+              selectable
+              :selected="chat.selectedThinkingMessageId === m.id"
             />
           </button>
           <ChatMessage
