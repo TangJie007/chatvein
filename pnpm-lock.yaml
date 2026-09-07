@@ -29,6 +29,9 @@ importers:
       '@chatvein/common':
         specifier: workspace:*
         version: link:../packages/chatvein/common
+      '@chatvein/core':
+        specifier: workspace:*
+        version: link:../packages/chatvein/core
       '@chatvein/memory':
         specifier: workspace:*
         version: link:../packages/chatvein/memory

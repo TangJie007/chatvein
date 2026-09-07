@@ -31,8 +31,14 @@ export interface StartRunInput {
   testCommand?: string[]
   skipBuild?: boolean
   compileStrategy?: 'single' | 'sections'
-  /** 工作区模板路径 */
+  /** 工作区模板路径（仅当未指定 workspacePath 时，拷贝进 runs/<id>/workspace） */
   templatePath?: string
+  /**
+   * 沙箱工作区绝对路径覆盖。
+   * Chat「编程开发」档传入用户项目根，使 Forge 工具直接作用于真实仓库；
+   * 缺省仍为 `runs/<runId>/workspace`。
+   */
+  workspacePath?: string
 }
 
 export interface RunPlan {
@@ -92,12 +98,15 @@ export class Harness {
     const config = input.config ?? this.config
     const runId = input.runId ?? `run-${Date.now()}-${randomUUID().slice(0, 8)}`
     const runDir = join(this.runsRoot, runId)
-    const workspacePath = join(runDir, 'workspace')
+    const workspacePath = input.workspacePath
+      ? resolve(input.workspacePath)
+      : join(runDir, 'workspace')
     const requirementPath = resolve(input.requirementPath)
 
     const sandbox = new LocalSandboxProvider({
       workspacePath,
-      templatePath: input.templatePath,
+      // 已指定外部工作区时不再拷贝模板，避免污染用户项目
+      templatePath: input.workspacePath ? undefined : input.templatePath,
       allowCommands: config.tools.execAllowlist,
     })
     await sandbox.prepare()

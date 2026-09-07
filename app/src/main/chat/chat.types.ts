@@ -47,12 +47,18 @@ export interface ChatSendInput {
   content: string
   /** 不传则用会话已绑定 agentId */
   agentId?: string
+  /**
+   * 工作模式：office/custom → Chat ReAct；code → Forge orchestrator。
+   * 缺省 office。
+   */
+  workMode?: 'office' | 'code' | 'custom'
 }
 
 export interface ChatRetryInput {
   conversationId: string
   /** 失败的助手消息 id */
   failedMessageId: string
+  workMode?: 'office' | 'code' | 'custom'
 }
 
 /**

@@ -19,6 +19,8 @@ Forge 是一个自动写代码的 Agent。核心思想是 **Plan-Execute（规�
 
 调用链：`service/app → core(Harness 门面) → orchestrator(StateGraph) → {compiler, agents, verifier, sandbox, models, context, observability}`。
 
+Chat UI「编程开发」档同样经 Harness：`chat.service` 在 `workMode=code` 时把用户消息写成需求、`workspacePath` 指向 `devProjectRoot`，再 `start`；日常办公仍走 `@chatvein/agents` ReAct。
+
 所有能力包都是纯 Node（不 import electron），所以同一份代码既能被 Electron 主进程 in-process 调用，也能被独立 Node 进程（CLI/sidecar）调用。
 
 

@@ -19,10 +19,16 @@ const chatveinMainAliases = {
   '@chatvein/agents': chatveinPkg('agents'),
   '@chatvein/models': chatveinPkg('models'),
   '@chatvein/common': chatveinPkg('common'),
-  // agents/models 传递依赖：一并指到 src，防止仍解析到过期 dist
+  '@chatvein/core': chatveinPkg('core'),
+  '@chatvein/orchestrator': chatveinPkg('orchestrator'),
+  '@chatvein/sandbox': chatveinPkg('sandbox'),
+  '@chatvein/compiler': chatveinPkg('compiler'),
+  '@chatvein/verifier': chatveinPkg('verifier'),
+  // agents/models/core 传递依赖：一并指到 src，防止仍解析到过期 dist
   '@chatvein/context': chatveinPkg('context'),
   '@chatvein/observability': chatveinPkg('observability'),
   '@chatvein/tools': chatveinPkg('tools'),
+  '@chatvein/memory': chatveinPkg('memory'),
 } as const
 
 const chatveinMainExclude = Object.keys(chatveinMainAliases)

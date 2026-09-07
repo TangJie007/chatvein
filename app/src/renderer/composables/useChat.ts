@@ -220,7 +220,7 @@ function localFailureMessage(reason: string): ChatMessage {
   }
 }
 
-async function send(content: string): Promise<ChatSendResult> {
+async function send(content: string, workMode: 'office' | 'code' | 'custom' = 'office'): Promise<ChatSendResult> {
   const conv = await ensureActive()
   const text = content.trim()
   if (!text) throw new Error('消息不能为空')
@@ -244,7 +244,12 @@ async function send(content: string): Promise<ChatSendResult> {
 
   try {
     const result = await api.chat.send(
-      toIpcPayload({ conversationId: conv.id, content: text, agentId: conv.agentId }),
+      toIpcPayload({
+        conversationId: conv.id,
+        content: text,
+        agentId: workMode === 'code' ? 'coder' : conv.agentId,
+        workMode,
+      }),
     )
     applySendResult(result)
     return result
@@ -264,7 +269,10 @@ async function send(content: string): Promise<ChatSendResult> {
     void refreshArtifacts(conv.id)
   }
 }
-async function retry(failedMessageId: string): Promise<ChatSendResult> {
+async function retry(
+  failedMessageId: string,
+  workMode: 'office' | 'code' | 'custom' = 'office',
+): Promise<ChatSendResult> {
   const conv = current()
   if (!conv) throw new Error('没有当前会话')
 
@@ -292,14 +300,15 @@ async function retry(failedMessageId: string): Promise<ChatSendResult> {
         toIpcPayload({
           conversationId: conv.id,
           content: lastUser.content,
-          agentId: conv.agentId,
+          agentId: workMode === 'code' ? 'coder' : conv.agentId,
+          workMode,
         }),
       )
       // send 会再写一条用户消息；合并去重视图由服务端会话覆盖
       applySendResult(result)
     } else {
       result = await api.chat.retry(
-        toIpcPayload({ conversationId: conv.id, failedMessageId }),
+        toIpcPayload({ conversationId: conv.id, failedMessageId, workMode }),
       )
       applySendResult(result)
     }

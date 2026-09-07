@@ -283,11 +283,14 @@ export interface ChatSendInput {
   conversationId: string
   content: string
   agentId?: string
+  /** office/custom → Chat ReAct；code → Forge orchestrator */
+  workMode?: 'office' | 'code' | 'custom'
 }
 
 export interface ChatRetryInput {
   conversationId: string
   failedMessageId: string
+  workMode?: 'office' | 'code' | 'custom'
 }
 
 export interface ChatSendResult {

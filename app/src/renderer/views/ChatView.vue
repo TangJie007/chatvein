@@ -59,7 +59,7 @@ const workModes: Array<{
   hint: string
 }> = [
   { value: 'office', label: '日常办公', icon: 'briefcase', hint: '日常沟通、文档、表格与快速问答' },
-  { value: 'code', label: '编程开发', icon: 'code', hint: '代码编写、评审与工程任务' },
+  { value: 'code', label: '编程开发', icon: 'code', hint: 'Forge 编排：实现→验证→修复' },
   { value: 'custom', label: '个性化Agent', icon: 'robot', hint: '你在 Agents 中自定义的专属角色' },
 ]
 
@@ -91,7 +91,9 @@ function onModeChange(mode: WorkMode) {
   } catch {
     // localStorage 不可用时仅本次会话生效
   }
-  status.value = `已切换到「${workModes.find((m) => m.value === mode)?.label}」· 由主对话统一接待`
+  status.value = `已切换到「${workModes.find((m) => m.value === mode)?.label}」· ${
+    mode === 'code' ? 'Forge 编排（orchestrator）' : '主对话 ReAct'
+  }`
 }
 
 // 编程开发模式：项目根目录（工具 jail 根）。未设置时工具只能在会话沙箱内运行
@@ -306,11 +308,14 @@ async function onSend(text: string) {
   status.value = '生成中…'
   await scrollBottom()
   try {
-    const result = await chat.send(text)
+    const result = await chat.send(text, preferredMode.value)
     if (result.failed) {
       status.value = '回复失败 · 可点击「重试」'
     } else {
-      status.value = `完成 · ${result.latencyMs} ms · ${result.model}`
+      status.value =
+        preferredMode.value === 'code'
+          ? `Forge 完成 · ${result.latencyMs} ms · ${result.model}`
+          : `完成 · ${result.latencyMs} ms · ${result.model}`
     }
     setCrumbItem(result.conversation.title)
     await scrollBottom()
@@ -325,7 +330,7 @@ async function onRetry(failedMessageId: string) {
   status.value = '正在重试…'
   await scrollBottom()
   try {
-    const result = await chat.retry(failedMessageId)
+    const result = await chat.retry(failedMessageId, preferredMode.value)
     if (result.failed) {
       status.value = '回复仍失败 · 可再次重试'
     } else {
@@ -530,7 +535,12 @@ onMounted(async () => {
           <p class="max-w-sm text-xs leading-relaxed text-[var(--color-ink-3)]">
             <template v-if="!chat.current">点击左侧「+」新建会话；将在工作区根下创建「时间戳」目录（含 runs/）。</template>
             <template v-else>
-              消息将发送给「{{ activeAgent?.name || '主对话 Agent' }}」。
+              <template v-if="activeMode === 'code'">
+                编程开发走 Forge 编排（plan → implement → verify）。请先选择项目根目录，再描述要实现的需求。
+              </template>
+              <template v-else>
+                消息将发送给「{{ activeAgent?.name || '主对话 Agent' }}」。
+              </template>
               <template v-if="!activeModel">请先在 Agents 中为该角色绑定模型并填写 API Key。</template>
             </template>
           </p>

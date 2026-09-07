@@ -12,6 +12,7 @@
   "dependencies": {
     "@chatvein/agents": "workspace:*",
     "@chatvein/common": "workspace:*",
+    "@chatvein/core": "workspace:*",
     "@chatvein/memory": "workspace:*",
     "@chatvein/models": "workspace:*",
     "@chatvein/observability": "workspace:*",

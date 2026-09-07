@@ -12,7 +12,13 @@ import {
   invokeReactChatAgent,
   WorkspaceCheckpointer,
 } from '@chatvein/agents'
-import type { ComplexityBand, RouteDecision } from '@chatvein/common'
+import type { ComplexityBand, ForgeConfig, RouteDecision, TraceEvent } from '@chatvein/common'
+import {
+  DEFAULT_EXEC_ALLOWLIST,
+  DEFAULT_TRUNCATION,
+  DEFAULT_BUDGET,
+} from '@chatvein/common'
+import { createHarness } from '@chatvein/core'
 import { createEndpointModel, createLangChainChatModel } from '@chatvein/models'
 import {
   emitTelemetry,
@@ -292,7 +298,16 @@ export class ChatService implements OnAppReady {
     const conv = await this.store.get(input.conversationId)
     if (!conv) throw new NotFoundException(`conversation:${input.conversationId}`)
 
-    const agentId = input.agentId || conv.agentId || MAIN_AGENT_ID
+    const workMode = input.workMode ?? 'office'
+    let agentId = input.agentId || conv.agentId || MAIN_AGENT_ID
+    if (workMode === 'code') {
+      try {
+        await this.agents.get(CODER_AGENT_ID)
+        agentId = CODER_AGENT_ID
+      } catch {
+        // 无内置 coder 时沿用会话 Agent
+      }
+    }
     const agent = await this.agents.get(agentId)
     if (!agent.enabled) throw new ValidationException(`Agent「${agent.name}」已停用`, [])
     if (!agent.modelId) {
@@ -327,6 +342,21 @@ export class ChatService implements OnAppReady {
 
     const clearTelemetry = this.beginRequestTelemetry(emit, runId, conv.id)
     try {
+      // 编程开发档：走 Forge orchestrator（plan→implement→verify…），不进 Chat ReAct
+      if (workMode === 'code') {
+        return await this.sendForgeTurn({
+          conv,
+          agentId,
+          agent,
+          model,
+          userMessage,
+          content,
+          runId,
+          emit,
+          thinkingParts,
+        })
+      }
+
       // L1 →（灰区）L2 结构化分类 → ReAct；L2 用弱模偏好，无分档表时回退当前 Agent 模型
     const router = await this.routerWithL2(model)
     const route = await router.route({
@@ -576,7 +606,7 @@ export class ChatService implements OnAppReady {
    * 重试失败的助手回复：保留原用户消息，去掉失败气泡后重新生成。
    */
   async retry(
-    input: { conversationId: string; failedMessageId: string },
+    input: { conversationId: string; failedMessageId: string; workMode?: 'office' | 'code' | 'custom' },
     emit?: (evt: ChatStreamEvent) => void,
   ): Promise<ChatSendResult> {
     let conv = await this.store.get(input.conversationId)
@@ -602,7 +632,7 @@ export class ChatService implements OnAppReady {
     await this.store.updateMeta(conv.id, { updatedAt: conv.updatedAt })
     await this.store.replaceMessages(conv.id, conv.messages)
 
-    return this.regenerateAfterUser(conv, userMessage, emit)
+    return this.regenerateAfterUser(conv, userMessage, emit, input.workMode ?? 'office')
   }
 
   /** 会话末尾已是 userMessage 时，只生成助手回复并追加 */
@@ -610,6 +640,7 @@ export class ChatService implements OnAppReady {
     conv: Conversation,
     userMessage: ChatMessage,
     emitOuter?: (evt: ChatStreamEvent) => void,
+    workMode: 'office' | 'code' | 'custom' = 'office',
   ): Promise<ChatSendResult> {
     const thinkingParts: string[] = []
     const emit = (evt: ChatStreamEvent) => {
@@ -618,7 +649,15 @@ export class ChatService implements OnAppReady {
     }
     const thinkingLog = () => thinkingParts.join('')
 
-    const agentId = conv.agentId || MAIN_AGENT_ID
+    let agentId = conv.agentId || MAIN_AGENT_ID
+    if (workMode === 'code') {
+      try {
+        await this.agents.get(CODER_AGENT_ID)
+        agentId = CODER_AGENT_ID
+      } catch {
+        // 无内置 coder 时沿用会话 Agent
+      }
+    }
     const agent = await this.agents.get(agentId)
     if (!agent.enabled) throw new ValidationException(`Agent「${agent.name}」已停用`, [])
     if (!agent.modelId) {
@@ -646,6 +685,21 @@ export class ChatService implements OnAppReady {
 
     const clearTelemetry = this.beginRequestTelemetry(emit, runId, conv.id)
     try {
+      if (workMode === 'code') {
+        return await this.sendForgeTurn({
+          conv,
+          agentId,
+          agent,
+          model,
+          userMessage,
+          content,
+          runId,
+          emit,
+          thinkingParts,
+          appendOnly: true,
+        })
+      }
+
     const router = await this.routerWithL2(model)
     const route = await router.route({
       text: content,
@@ -866,6 +920,182 @@ export class ChatService implements OnAppReady {
         { timeoutMs: 20_000 },
       )
       return res.content
+    }
+  }
+
+  /**
+   * 编程开发档：经 `@chatvein/core` Harness → `@chatvein/orchestrator` StateGraph。
+   * 用户消息写成需求文档；沙箱工作区指向 `devProjectRoot`（真实项目）。
+   */
+  private async sendForgeTurn(args: {
+    conv: Conversation
+    agentId: string
+    agent: AgentConfig
+    model: ModelConfig
+    userMessage: ChatMessage
+    content: string
+    runId: string
+    emit: (evt: ChatStreamEvent) => void
+    thinkingParts: string[]
+    /** retry 场景：用户消息已在会话末尾，只追加助手 */
+    appendOnly?: boolean
+  }): Promise<ChatSendResult> {
+    const {
+      conv,
+      agentId,
+      agent,
+      model,
+      userMessage,
+      content,
+      runId,
+      emit,
+      thinkingParts,
+      appendOnly,
+    } = args
+    const started = Date.now()
+    const persist = (text: string, failed: boolean) =>
+      appendOnly
+        ? this.appendAssistant(
+            conv,
+            agentId,
+            userMessage,
+            text,
+            Date.now() - started,
+            model.model,
+            undefined,
+            failed,
+            undefined,
+            thinkingParts.join(''),
+          )
+        : this.persistAssistant(
+            conv,
+            agentId,
+            userMessage,
+            text,
+            Date.now() - started,
+            model.model,
+            undefined,
+            failed,
+            undefined,
+            thinkingParts.join(''),
+          )
+
+    const settings = await this.settings.get()
+    const projectRoot = settings.devProjectRoot?.trim() ?? ''
+    if (!projectRoot || !isAbsolute(projectRoot)) {
+      emit({ type: 'thinking_done', runId, conversationId: conv.id })
+      return persist(
+        friendlyReplyFailure(
+          '编程开发需要先选择项目根目录（页面上方「选择项目」），Forge 才会在真实仓库内编排实现与验证。',
+        ),
+        true,
+      )
+    }
+
+    emit({
+      type: 'thinking_delta',
+      runId,
+      conversationId: conv.id,
+      delta: `Forge 编排：项目根 ${projectRoot}\n`,
+    })
+
+    const runsRoot = join(conv.sandboxPath, 'forge')
+    await fs.mkdir(runsRoot, { recursive: true })
+    await fs.mkdir(join(conv.workspacePath, 'memory'), { recursive: true })
+    const requirementPath = join(conv.workspacePath, 'memory', `requirement-${runId}.md`)
+    const requirementBody = [
+      '# 用户需求',
+      '',
+      content,
+      '',
+      '---',
+      '',
+      `项目根目录：${projectRoot}`,
+      '请在该仓库内完成实现；改动应可构建/测试验证。',
+      '',
+    ].join('\n')
+    await fs.writeFile(requirementPath, requirementBody, 'utf8')
+
+    let skipBuild = false
+    try {
+      await fs.access(join(projectRoot, 'package.json'))
+    } catch {
+      skipBuild = true
+      emit({
+        type: 'thinking_delta',
+        runId,
+        conversationId: conv.id,
+        delta: '未找到 package.json → skipBuild（跳过 npm build/test）\n',
+      })
+    }
+
+    const forgeConfig = forgeConfigFromModel(model, runsRoot)
+    const harness = createHarness({ config: forgeConfig, runsRoot })
+    const forgeRunId = `chat-${runId.slice(0, 8)}`
+
+    emit({
+      type: 'thinking_delta',
+      runId,
+      conversationId: conv.id,
+      delta: `启动 orchestrator runId=${forgeRunId}\n`,
+    })
+
+    try {
+      const handle = await harness.start({
+        requirementPath,
+        runId: forgeRunId,
+        workspacePath: projectRoot,
+        skipBuild,
+        compileStrategy: 'sections',
+      })
+
+      const unsub = handle.onEvent((evt: TraceEvent) => {
+        if (evt.runId !== forgeRunId && evt.runId !== handle.runId) return
+        const line = formatForgeTraceDelta(evt)
+        if (!line) return
+        emit({
+          type: 'thinking_delta',
+          runId,
+          conversationId: conv.id,
+          delta: line,
+        })
+      })
+
+      let report: Awaited<typeof handle.done>
+      try {
+        report = await handle.done
+      } finally {
+        unsub()
+      }
+
+      emit({ type: 'thinking_done', runId, conversationId: conv.id })
+
+      const summary =
+        report.summary?.trim() ||
+        (report.status === 'done'
+          ? 'Forge 运行完成（无汇总文本）。'
+          : 'Forge 运行已中止。')
+      const failed = report.status === 'aborted' || report.failedTasks.length > 0
+      const body = [
+        summary,
+        report.failedTasks.length
+          ? `\n未完成任务：${report.failedTasks.join(', ')}`
+          : '',
+        `\n\n— Forge ${report.status} · run \`${report.runId}\``,
+      ].join('')
+
+      emitTelemetry('trace:forge:response', {
+        runId: report.runId,
+        status: report.status,
+        failedTasks: report.failedTasks,
+        latencyMs: Date.now() - started,
+        projectRoot,
+      })
+
+      return persist(body, failed)
+    } catch (err) {
+      emit({ type: 'thinking_done', runId, conversationId: conv.id })
+      return persist(friendlyReplyFailure(formatAgentError(err)), true)
     }
   }
 
@@ -1401,7 +1631,7 @@ export class ChatService implements OnAppReady {
     text: string,
     latencyMs: number,
     modelId: string,
-    route: RouteDecision,
+    route: RouteDecision | undefined,
     failed = false,
     usage?: TokenUsage,
     thinkingLog = '',
@@ -1457,7 +1687,7 @@ export class ChatService implements OnAppReady {
     text: string,
     latencyMs: number,
     modelId: string,
-    route: RouteDecision,
+    route: RouteDecision | undefined,
     failed = false,
     usage?: TokenUsage,
     thinkingLog = '',
@@ -1535,6 +1765,74 @@ function shortTermDebugInfo(plan: ShortTermPlan) {
     cursorValid: plan.stats.cursorValid,
     summaryChars: plan.summaryBlock?.content.length ?? 0,
   }
+}
+
+/** 用当前 Agent 绑定模型填满 strong/medium/weak（一期同端点） */
+function forgeConfigFromModel(model: ModelConfig, runsRoot: string): ForgeConfig {
+  const endpoint = {
+    id: model.id,
+    baseUrl: model.baseUrl.trim(),
+    apiKey: model.apiKey || undefined,
+    model: model.model.trim(),
+    temperature: model.temperature,
+    maxTokens: model.maxTokens > 0 ? model.maxTokens : undefined,
+  }
+  return {
+    models: {
+      strong: [endpoint],
+      medium: [endpoint],
+      weak: [endpoint],
+    },
+    budget: { ...DEFAULT_BUDGET },
+    parallelism: 1,
+    runsRoot,
+    sandbox: { provider: 'local' },
+    retry: { maxAttempts: 3 },
+    tools: {
+      execAllowlist: [...DEFAULT_EXEC_ALLOWLIST],
+      truncation: { ...DEFAULT_TRUNCATION },
+    },
+  }
+}
+
+function formatForgeTraceDelta(evt: TraceEvent): string {
+  const name = evt.name ? ` ${evt.name}` : ''
+  switch (evt.kind) {
+    case 'run_start':
+      return `▸ run_start${name}\n`
+    case 'run_end':
+      return `▸ run_end${name}${evt.payload?.status ? ` status=${evt.payload.status}` : ''}\n`
+    case 'node_enter':
+      return `→ ${evt.name ?? 'node'}\n`
+    case 'node_exit': {
+      const extra =
+        evt.payload && typeof evt.payload === 'object'
+          ? summarizeForgePayload(evt.payload)
+          : ''
+      return `← ${evt.name ?? 'node'}${extra}\n`
+    }
+    case 'tool_call':
+      return `  ⚙ tool${name}${evt.payload?.error ? ` 失败：${evt.payload.error}` : ''}\n`
+    case 'model_call':
+      return `  模型${name}\n`
+    case 'verify':
+      return `  ✓ verify${evt.error ? ` 失败：${evt.error}` : ''}\n`
+    case 'budget':
+      return `  ⚠ budget${name}${evt.error ? `：${evt.error}` : ''}\n`
+    case 'error':
+      return `  ✕ error${name}${evt.error ? `：${evt.error}` : ''}\n`
+    default:
+      return ''
+  }
+}
+
+function summarizeForgePayload(payload: Record<string, unknown>): string {
+  if (typeof payload.taskCount === 'number') return ` tasks=${payload.taskCount}`
+  if (typeof payload.title === 'string') return ` ${payload.title.slice(0, 60)}`
+  if (typeof payload.taskId === 'string') return ` task=${payload.taskId}`
+  if (payload.noMoreTasks) return '（无更多任务）'
+  if (typeof payload.summary === 'string') return ` ${String(payload.summary).slice(0, 80)}`
+  return ''
 }
 
 function friendlyReplyFailure(reason: string): string {

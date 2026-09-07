@@ -162,8 +162,9 @@ complex          → ComplexGraph
 
 | 场景 | 归属 |
 |------|------|
-| 普通对话执行 | **L3 · `@chatvein/agents`** |
-| Forge 编码任务图 | **`@chatvein/orchestrator` StateGraph**（并行轨，非 L3 替代） |
+| 普通对话执行 | **L3 · `@chatvein/agents` ReAct**（日常办公 / 个性化） |
+| Chat「编程开发」档 | **`@chatvein/core` Harness → `@chatvein/orchestrator`**（用户消息→需求；工作区=`devProjectRoot`） |
+| Forge 编码任务图（CLI） | **同 orchestrator**（`forge run` / requirement 文件） |
 | 用户已建群 · 发言路由 | **`@chatvein/groups`**（成员单次发言仍可调用 L3） |
 
 三套图 / 三套状态，禁止糊成一张万能图。见 [02 §8](./02-agent循环方案.md)、[01 §5.0](./01-核心骨架.md)。
@@ -178,7 +179,7 @@ complex          → ComplexGraph
 | L3 内再挂意图分类工具 | **否**：与 L2 / 主答纠缠 |
 | L3 自动建群 | **永久否决** |
 | 手写 while 替代 LangGraph | **否**（调试除外） |
-| Chat L3 直接复用 Forge orchestrator | **否**：语义与 checkpoint 不同 |
+| Chat L3 直接复用 Forge orchestrator | **办公档否**；**编程开发档是**（经 core Harness，工作区=项目根） |
 | L2 trivial → 本地模板 | **否**：仅 L1 硬寒暄；L2 trivial 走 L3 短答 |
 
 ---
