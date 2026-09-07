@@ -61,6 +61,13 @@ interface WriteFileInput {
   path: string
   content: string
 }
+interface ApplyPatchInput {
+  path: string
+  old_string: string
+  new_string: string
+  /** 为 true 时替换全部匹配；默认仅允许恰好 1 处 */
+  replace_all?: boolean
+}
 interface ListDirInput {
   path?: string
 }
@@ -95,6 +102,82 @@ export function assertNotSecretPath(relOrAbs: string): void {
       throw new Error(`出于安全考虑，禁止读写敏感文件：${base}`)
     }
   }
+}
+
+/**
+ * 精确字符串替换（search-replace）。
+ * - 默认要求 old_string 在文件中恰好出现 1 次；
+ * - replaceAll 时替换全部出现；
+ * - old === new 拒绝（无意义调用）。
+ */
+export function applyExactReplace(
+  content: string,
+  oldString: string,
+  newString: string,
+  replaceAll = false,
+): { next: string; count: number } {
+  if (!oldString) {
+    throw new Error('old_string 不能为空')
+  }
+  if (oldString === newString) {
+    throw new Error('old_string 与 new_string 相同，无需修改')
+  }
+  const count = countOccurrences(content, oldString)
+  if (count === 0) {
+    throw new Error(
+      'old_string 未在文件中找到。请先 read_file 核对原文（含缩进/换行），再缩小唯一匹配片段。',
+    )
+  }
+  if (!replaceAll && count > 1) {
+    throw new Error(
+      `old_string 匹配 ${count} 处；请扩大上下文使匹配唯一，或设 replace_all=true 全部替换。`,
+    )
+  }
+  const next = replaceAll
+    ? content.split(oldString).join(newString)
+    : content.replace(oldString, newString)
+  return { next, count: replaceAll ? count : 1 }
+}
+
+function countOccurrences(haystack: string, needle: string): number {
+  if (!needle) return 0
+  let n = 0
+  let from = 0
+  while (from <= haystack.length) {
+    const i = haystack.indexOf(needle, from)
+    if (i < 0) break
+    n++
+    from = i + needle.length
+  }
+  return n
+}
+
+/** 生成极简 unified hunk 摘要（前后各留少量上下文），便于模型确认 */
+export function summarizeReplaceDiff(
+  before: string,
+  after: string,
+  oldString: string,
+  newString: string,
+  maxContextLines = 2,
+): string {
+  const beforeLines = before.split(/\r?\n/)
+  const idx = before.indexOf(oldString)
+  if (idx < 0) return `(已替换 ${oldString.length}→${newString.length} 字符)`
+  const lineStart = before.slice(0, idx).split(/\r?\n/).length - 1
+  const oldLineCount = oldString.split(/\r?\n/).length
+  const newLines = newString.split(/\r?\n/)
+  const ctxBefore = beforeLines.slice(Math.max(0, lineStart - maxContextLines), lineStart)
+  const ctxAfter = beforeLines.slice(
+    lineStart + oldLineCount,
+    lineStart + oldLineCount + maxContextLines,
+  )
+  const hunk = [
+    ...ctxBefore.map((l) => ` ${l}`),
+    ...oldString.split(/\r?\n/).map((l) => `-${l}`),
+    ...newLines.map((l) => `+${l}`),
+    ...ctxAfter.map((l) => ` ${l}`),
+  ]
+  return `@@ ~L${lineStart + 1} @@\n${hunk.join('\n')}`
 }
 
 /** 构造全套 Forge 编码工具 */
@@ -171,10 +254,43 @@ export function createForgeTools(deps: ForgeToolsDeps): StructuredToolInterface[
     {
       name: 'write_file',
       description:
-        '全量写入/覆盖工作区内文件（自动创建父目录）。优先用于新建文件；禁止写入 .env / 密钥类文件。',
+        '全量写入/覆盖工作区内文件（自动创建父目录）。仅用于新建文件或必须整文件重写；修改已有文件请用 apply_patch。禁止写入 .env / 密钥类文件。',
       schema: z.object({
         path: z.string().describe('文件路径，相对工作区根'),
         content: z.string().describe('完整文件内容'),
+      }),
+    },
+  )
+
+  const apply_patch = tool(
+    withTrace<ApplyPatchInput, string>('apply_patch', async (input) => {
+      assertNotSecretPath(input.path)
+      const abs = resolvePath(sandbox, input.path)
+      assertNotSecretPath(abs)
+      const before = await readFile(abs, 'utf8')
+      const { next, count } = applyExactReplace(
+        before,
+        input.old_string,
+        input.new_string,
+        input.replace_all === true,
+      )
+      await fsWriteFile(abs, next, 'utf8')
+      const diff = summarizeReplaceDiff(before, next, input.old_string, input.new_string)
+      const r = truncateFolded(diff, budget)
+      return `已 patch ${rel(sandbox, abs)}（替换 ${count} 处）\n${r.text}`
+    }),
+    {
+      name: 'apply_patch',
+      description:
+        '对已有文件做精确 search-replace（最小改动）。old_string 须与文件原文完全一致（含缩进）；默认只允许匹配 1 处。优先于 write_file 修改已有代码。',
+      schema: z.object({
+        path: z.string().describe('文件路径，相对工作区根'),
+        old_string: z.string().describe('要替换的原文片段（须唯一，除非 replace_all）'),
+        new_string: z.string().describe('替换后的新文本（可为空字符串表示删除）'),
+        replace_all: z
+          .boolean()
+          .optional()
+          .describe('为 true 时替换全部匹配；默认 false（要求恰好 1 处）'),
       }),
     },
   )
@@ -238,7 +354,7 @@ export function createForgeTools(deps: ForgeToolsDeps): StructuredToolInterface[
     },
   )
 
-  return [read_file, write_file, list_dir, exec_shell, git_op]
+  return [read_file, apply_patch, write_file, list_dir, exec_shell, git_op]
 }
 
 /** 极简 argv 切分（支持双引号包裹）；沙箱内命令简单，不做完整 shell 解析 */
