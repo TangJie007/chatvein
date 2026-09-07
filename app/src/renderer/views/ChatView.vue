@@ -46,6 +46,74 @@ const activeModel = computed(() => {
 
 const messages = computed(() => chat.current?.messages ?? [])
 
+// ---- 三档工作模式：日常办公 / 编程开发 / 个性化 Agent ----
+type WorkMode = 'office' | 'code' | 'custom'
+const WORK_MODE_STORAGE_KEY = 'chatvein.workMode'
+
+const workModes: Array<{
+  value: WorkMode
+  label: string
+  icon: string
+  hint: string
+}> = [
+  { value: 'office', label: '日常办公', icon: 'briefcase', hint: '日常沟通、文档、表格与快速问答' },
+  { value: 'code', label: '编程开发', icon: 'code', hint: '代码编写、评审与工程任务' },
+  { value: 'custom', label: '个性化Agent', icon: 'robot', hint: '你在 Agents 中自定义的专属角色' },
+]
+
+function loadStoredMode(): WorkMode {
+  try {
+    const v = localStorage.getItem(WORK_MODE_STORAGE_KEY)
+    return v === 'code' || v === 'custom' ? v : 'office'
+  } catch {
+    return 'office'
+  }
+}
+
+/** 新建会话时的默认模式（跨会话保留用户偏好） */
+const preferredMode = ref<WorkMode>(loadStoredMode())
+
+const officeAgent = computed(() => mainAgent.value)
+const codeAgent = computed(() => agents.agents.find((a) => a.id === 'coder'))
+const customAgent = computed(() => agents.agents.find((a) => !a.isMain && a.id !== 'coder'))
+const modeAgents = computed<Record<WorkMode, typeof mainAgent.value>>(() => ({
+  office: officeAgent.value,
+  code: codeAgent.value,
+  custom: customAgent.value,
+}))
+
+/** 当前会话实际生效的模式：按会话绑定的 agent 反推，保证与历史会话一致 */
+const activeMode = computed<WorkMode>(() => {
+  const id = chat.current?.agentId
+  if (id && customAgent.value && id === customAgent.value.id) return 'custom'
+  if (id && codeAgent.value && id === codeAgent.value.id) return 'code'
+  return 'office'
+})
+
+function onModeChange(mode: WorkMode) {
+  if (chat.sending || mode === activeMode.value) return
+  const agent = modeAgents.value[mode]
+  if (!agent) {
+    if (mode === 'custom') {
+      status.value = '暂无个性化 Agent：请先到 Agents 页面创建一个自定义角色'
+    } else {
+      status.value = '该模式对应的 Agent 尚未配置，请先到 Agents 中设置'
+    }
+    return
+  }
+  preferredMode.value = mode
+  try {
+    localStorage.setItem(WORK_MODE_STORAGE_KEY, mode)
+  } catch {
+    // localStorage 不可用时仅本次会话生效
+  }
+  // 已存在会话：本地乐观切换绑定，下次发送经 agentId 持久化
+  if (chat.current) {
+    chat.setConversationAgent(chat.current.id, agent.id)
+  }
+  status.value = `已切换到「${workModes.find((m) => m.value === mode)?.label}」· ${agent.name}`
+}
+
 // 思考面板：运行中显示实时流；结束后 / 点击气泡显示对应日志
 const panelActive = computed(
   () => chat.thinking.active && chat.thinking.conversationId === chat.currentId,
@@ -144,7 +212,8 @@ function onSelect(c: Conversation) {
 }
 
 async function onAdd() {
-  const created = await chat.create({ agentId: mainAgent.value?.id })
+  const modeAgent = modeAgents.value[preferredMode.value]
+  const created = await chat.create({ agentId: modeAgent?.id ?? mainAgent.value?.id })
   setCrumbItem(created.title)
   status.value = `已新建 · ${created.slug}`
   await scrollBottom()
@@ -304,52 +373,81 @@ onMounted(async () => {
     "
   >
     <section class="grid h-full min-h-0" style="grid-template-rows: auto 1fr auto">
-      <header class="flex items-center justify-between gap-4 px-[26px] pb-3 pt-4">
-        <div class="flex min-w-0 items-center gap-3">
-          <Avatar
-            :initial="activeAgent?.initial || 'A'"
-            :tint="activeAgent?.tint || 'indigo'"
-            size="lg"
-            :dot="chat.sending ? 'thinking' : activeAgent?.enabled ? 'online' : 'idle'"
-          />
-          <div class="min-w-0">
-            <div class="truncate font-serif text-[22px] leading-[1.15] tracking-[0.2px] text-[var(--color-ink-1)]">
-              {{ activeAgent?.name || '未配置 Agent' }} ·
-              <em class="italic" style="color: var(--color-brand-deep)">{{ activeAgent?.role || '—' }}</em>
+      <header class="flex flex-col">
+        <div class="flex items-center justify-between gap-4 px-[26px] pb-3 pt-4">
+          <div class="flex min-w-0 items-center gap-3">
+            <Avatar
+              :initial="activeAgent?.initial || 'A'"
+              :tint="activeAgent?.tint || 'indigo'"
+              size="lg"
+              :dot="chat.sending ? 'thinking' : activeAgent?.enabled ? 'online' : 'idle'"
+            />
+            <div class="min-w-0">
+              <div class="truncate font-serif text-[22px] leading-[1.15] tracking-[0.2px] text-[var(--color-ink-1)]">
+                {{ activeAgent?.name || '未配置 Agent' }} ·
+                <em class="italic" style="color: var(--color-brand-deep)">{{ activeAgent?.role || '—' }}</em>
+              </div>
+              <div class="mt-[3px] flex flex-wrap items-center gap-2">
+                <span
+                  class="rounded-full bg-[var(--color-brand-soft)] px-2.5 py-[3px] font-mono text-[11px] font-medium text-[var(--color-brand-dark)]"
+                >
+                  {{ chat.current?.title || '新对话' }}
+                </span>
+                <span class="font-mono text-[11px] text-[var(--color-ink-3)]">
+                  {{ activeModel ? `${activeModel.name} · ${activeModel.model}` : '未绑定模型' }}
+                </span>
+              </div>
             </div>
-            <div class="mt-[3px] flex flex-wrap items-center gap-2">
-              <span
-                class="rounded-full bg-[var(--color-brand-soft)] px-2.5 py-[3px] font-mono text-[11px] font-medium text-[var(--color-brand-dark)]"
-              >
-                {{ chat.current?.title || '新对话' }}
+          </div>
+          <div class="flex shrink-0 items-center gap-3 text-xs font-medium text-[var(--color-ink-2)]">
+            <template v-if="chat.sending">
+              <span class="inline-flex items-center gap-1.5">
+                <span class="h-[7px] w-[7px] rounded-full bg-[var(--color-brand)] dot-thinking" />
+                正在生成…
               </span>
-              <span class="font-mono text-[11px] text-[var(--color-ink-3)]">
-                {{ activeModel ? `${activeModel.name} · ${activeModel.model}` : '未绑定模型' }}
-              </span>
+            </template>
+            <template v-else-if="status">
+              <span class="max-w-[260px] truncate font-mono text-[11px] text-[var(--color-ink-3)]">{{ status }}</span>
+            </template>
+            <div class="flex items-center gap-1">
+              <ChipButton :accent="tracePanelOpen" @click="toggleTrace">
+                <AppIcon name="chart" :size="13" /> Trace
+              </ChipButton>
+              <ChipButton @click="onMemory">
+                <AppIcon name="history" :size="13" /> 记忆
+              </ChipButton>
+              <ChipButton @click="openSettings">
+                <AppIcon name="gear" :size="13" /> 设置
+              </ChipButton>
             </div>
           </div>
         </div>
-        <div class="flex shrink-0 items-center gap-3 text-xs font-medium text-[var(--color-ink-2)]">
-          <template v-if="chat.sending">
-            <span class="inline-flex items-center gap-1.5">
-              <span class="h-[7px] w-[7px] rounded-full bg-[var(--color-brand)] dot-thinking" />
-              正在生成…
-            </span>
-          </template>
-          <template v-else-if="status">
-            <span class="max-w-[260px] truncate font-mono text-[11px] text-[var(--color-ink-3)]">{{ status }}</span>
-          </template>
-          <div class="flex items-center gap-1">
-            <ChipButton :accent="tracePanelOpen" @click="toggleTrace">
-              <AppIcon name="chart" :size="13" /> Trace
-            </ChipButton>
-            <ChipButton @click="onMemory">
-              <AppIcon name="history" :size="13" /> 记忆
-            </ChipButton>
-            <ChipButton @click="openSettings">
-              <AppIcon name="gear" :size="13" /> 设置
-            </ChipButton>
-          </div>
+
+        <!-- 工作模式三档切换：日常办公 / 编程开发 / 个性化 Agent（联动会话绑定的 Agent） -->
+        <div
+          class="mx-[26px] mt-1 inline-flex w-fit items-center gap-0.5 rounded-full border border-[var(--color-line)] bg-[var(--color-track)] p-[3px]"
+          role="tablist"
+          aria-label="工作模式切换"
+        >
+          <button
+            v-for="m in workModes"
+            :key="m.value"
+            type="button"
+            role="tab"
+            :aria-selected="activeMode === m.value"
+            :title="m.hint"
+            :disabled="chat.sending"
+            class="inline-flex items-center gap-1.5 rounded-full border-0 px-3.5 py-[5px] text-xs font-medium transition-all duration-200 ease-[var(--ease-soft)] focus-visible:outline-2 focus-visible:outline-[var(--color-brand)] focus-visible:outline-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
+            :class="
+              activeMode === m.value
+                ? 'bg-[var(--color-elevated)] text-[var(--color-brand-dark)] shadow-[var(--shadow-1)]'
+                : 'bg-transparent text-[var(--color-ink-3)] hover:text-[var(--color-ink-1)]'
+            "
+            @click="onModeChange(m.value)"
+          >
+            <AppIcon :name="m.icon" :size="13" :stroke-width="1.9" />
+            {{ m.label }}
+          </button>
         </div>
       </header>
 

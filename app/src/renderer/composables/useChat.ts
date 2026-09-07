@@ -191,6 +191,15 @@ function dropArtifact(artifactId: string): void {
   artifacts.value = artifacts.value.filter((a) => a.id !== artifactId)
 }
 
+/**
+ * 本地乐观切换会话绑定的 Agent（工作模式三档切换）。
+ * 仅更新内存中的 agentId；下一次 send 会带上该 agentId，
+ * 主进程 persistAssistant 会把新 agentId 落盘。
+ */
+function setConversationAgent(id: string, agentId: string): void {
+  patchConversation(id, (c) => ({ ...c, agentId, updatedAt: Date.now() }))
+}
+
 async function remove(id: string): Promise<void> {
   await api.chat.remove(id)
   conversations.value = conversations.value.filter((c) => c.id !== id)
@@ -337,6 +346,7 @@ export function useChat() {
     refresh,
     refreshArtifacts,
     dropArtifact,
+    setConversationAgent,
     selectThinking,
     ensureActive,
     create,
