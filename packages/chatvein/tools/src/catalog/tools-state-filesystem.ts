@@ -23,17 +23,17 @@ export const STATE_FILESYSTEM_TOOLS: readonly ToolCatalogEntry[] = [
   {
     tool: 'ls',
     description:
-      '列出虚路径目录下的文件与子目录（非递归）。浏览工作区结构、看有哪些文件。ls list directory folder contents.',
+      '列出虚路径目录下的文件与子目录（非递归）。浏览工作区请用 /workspace/。ls list directory folder contents.',
   },
   {
     tool: 'read_file',
     description:
-      '读取单个文本文件内容；可按行 offset/limit。查看源码、配置、日志。read file cat view source contents.',
+      '读取单个文本文件内容；可按行 offset/limit。工作区路径如 /workspace/src/a.ts。read file cat view source contents.',
   },
   {
     tool: 'write_file',
     description:
-      '新建或整文件覆盖写入文本。创建/保存/覆盖文件。write create overwrite save file.',
+      '新建或整文件覆盖写入文本。工作区写入 /workspace/... 即落盘。write create overwrite save file.',
   },
   {
     tool: 'edit_file',
@@ -43,7 +43,7 @@ export const STATE_FILESYSTEM_TOOLS: readonly ToolCatalogEntry[] = [
   {
     tool: 'glob',
     description:
-      '按 glob 模式匹配文件路径。找文件名、按扩展名列举。glob find files by pattern.',
+      '按 glob 模式匹配文件路径。找文件名、按扩展名列举；工作区从 /workspace/ 搜。glob find files by pattern.',
   },
   {
     tool: 'grep',
@@ -96,7 +96,7 @@ export function normalizeStateFilesystemAllowlist(
 }
 
 /**
- * 按 policy / 白名单筛出本轮可参与 C1/C2 的 StateBackend FS 目录条目。
+ * 按 policy / 白名单筛出本轮可参与 C1/C2 的 FS 目录条目（Composite middleware）。
  * 无 workspace 时返回空（与 requiresWorkspace 对齐）。
  */
 export function selectStateFilesystemCatalogEntries(options: {

@@ -1,16 +1,27 @@
 import { Controller, IpcHandle, Inject } from '@electrum/common'
 import { VectorService } from './vector.service'
-import type { VectorBrowseResult, VectorHybridSearchHit, VectorTableInfo } from './vector.service'
+import type {
+  VectorBrowseResult,
+  VectorHybridSearchHit,
+  VectorRebuildResult,
+  VectorTableInfo,
+} from './vector.service'
 
 @Controller('vector')
 export class VectorController {
   @Inject(VectorService)
   private svc!: VectorService
 
-  /** 列出向量数据集内的全部表及其结构（供设置页「向量数据库」浏览器） */
+  /** 列出向量数据集内的全部表及其结构（供「向量库」浏览器） */
   @IpcHandle('inspectTables')
   inspectTables(): Promise<VectorTableInfo[]> {
     return this.svc.inspectTables()
+  }
+
+  /** 完全重建某张向量表（当前仅 tool_index 受管；重算全部工具向量并清理陈旧行） */
+  @IpcHandle('rebuildTable')
+  rebuildTable(name: string): Promise<VectorRebuildResult> {
+    return this.svc.rebuildTable(name)
   }
 
   /** 分页浏览某张表的记录 */

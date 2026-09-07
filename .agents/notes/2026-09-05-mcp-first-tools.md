@@ -9,7 +9,7 @@
 ## 决策
 
 - **外部能力优先 MCP**：`@chatvein/tools` 用 `@langchain/mcp-adapters` 的 `MultiServerMCPClient` 拉工具；`resolveChatTools({ mcpServers })` 合并结果，**同名时 MCP 覆盖 catalog**。
-- Chat 主进程通过 `CHATVEIN_MCP_SERVERS` JSON 注入额外 server；**本地文件读写已改 deepagents StateBackend**（见 [2026-09-07-deepagents-filesystem-statebackend.md](./2026-09-07-deepagents-filesystem-statebackend.md)）。
+- Chat 主进程通过 `CHATVEIN_MCP_SERVERS` JSON 注入额外 server；**本地文件读写已改 deepagents Composite**（见 [2026-09-07-deepagents-filesystem-composite.md](./2026-09-07-deepagents-filesystem-composite.md)）。
 - **外部本地打开目录走 MCP openfile**；`js_eval` / `fetch_url` / `sqlite_query` 仍可 builtin。
 - **删除** `@tools/modsearch` 及一切引用；不再以专用 CLI 包装包作为默认联网方案。
 - community 计算器/百科/DDG 等保留为无 MCP 时的过渡默认集。
@@ -24,7 +24,7 @@
 
 ### 为什么早期否决「默认 MCP filesystem」、后又删除？
 
-当时担心任意路径越权；曾改为仅挂 `workspaceRoot`。现已整段删除 MCP filesystem，改 StateBackend（见上）。
+当时担心任意路径越权；曾改为仅挂 `workspaceRoot`。现已整段删除 MCP filesystem，改 Composite（见上）。
 
 ### 为什么不内嵌 Firecrawl/Tavily SDK？
 

@@ -20,6 +20,7 @@ export function withCodingContext(prompt: string | undefined, projectRoot: strin
   const block = [
     '【编程开发模式】',
     `当前项目根目录：${projectRoot}（文件读写、脚本执行工具均被限制在此目录内）。`,
+    '文件工具路径：工作区文件用虚路径 /workspace/...（如 /workspace/src/a.ts）；ls 可从 /workspace/ 开始。',
     '工作约定：',
     '1. 改代码前先用文件工具读取相关文件、确认现状，不要臆造路径或 API；',
     '2. 优先做最小必要修改，改动后说明涉及的文件与关键行；',

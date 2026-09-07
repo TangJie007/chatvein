@@ -11,9 +11,17 @@ const props = defineProps<{
   tables: VectorTableInfo[]
   selected?: string | null
   loading?: boolean
+  /** 有重建正在进行：禁用全部重建按钮 */
+  rebuilding?: boolean
 }>()
 
-const emit = defineEmits<{ select: [name: string] }>()
+const emit = defineEmits<{
+  select: [name: string]
+  rebuild: [name: string]
+}>()
+
+/** 受管表 = 有数据源可从工具目录完全重建；其余非受管表不提供重建入口 */
+const REBUILDABLE_TABLE = 'tool_index'
 
 const query = ref('')
 const q = computed(() => query.value.trim().toLowerCase())
@@ -23,6 +31,11 @@ const filtered = computed(() =>
 
 function pick(name: string) {
   emit('select', name)
+}
+
+function askRebuild(name: string) {
+  if (props.rebuilding) return
+  emit('rebuild', name)
 }
 </script>
 
@@ -63,9 +76,22 @@ function pick(name: string) {
           </div>
         </template>
         <template #meta>
-          <span class="whitespace-nowrap rounded-full bg-[var(--color-canvas)] px-2 py-0.5 font-mono text-[10.5px] text-[var(--color-ink-3)]">
-            {{ t.count }}
-          </span>
+          <div class="flex items-center gap-1.5">
+            <span class="whitespace-nowrap rounded-full bg-[var(--color-canvas)] px-2 py-0.5 font-mono text-[10.5px] text-[var(--color-ink-3)]">
+              {{ t.count }}
+            </span>
+            <button
+              v-if="t.name === REBUILDABLE_TABLE"
+              type="button"
+              class="grid h-[20px] w-[20px] shrink-0 place-items-center rounded-[7px] border-0 text-[var(--color-ink-3)] transition-colors duration-150 hover:bg-[var(--color-brand-soft)] hover:text-[var(--color-brand-deep)] disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:bg-transparent disabled:hover:text-[var(--color-ink-3)]"
+              :disabled="rebuilding"
+              :aria-label="`完全重建 ${t.name}`"
+              :title="rebuilding ? '正在重建…' : '从工具目录完全重建（重新向量化全部记录）'"
+              @click.stop="askRebuild(t.name)"
+            >
+              <AppIcon name="restart" :size="11" :class="rebuilding && t.name === REBUILDABLE_TABLE ? 'row-rebuild-spin' : ''" />
+            </button>
+          </div>
         </template>
       </ListRow>
 
@@ -87,3 +113,19 @@ function pick(name: string) {
     </template>
   </ListPane>
 </template>
+
+<style scoped>
+@keyframes row-rebuild-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.row-rebuild-spin {
+  animation: row-rebuild-spin 0.9s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .row-rebuild-spin {
+    animation: none;
+  }
+}
+</style>

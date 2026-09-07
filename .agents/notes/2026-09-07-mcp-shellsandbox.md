@@ -10,7 +10,7 @@
 
 1. **包更名为 `@chatvein/mcp-shellsandbox-sdk`**（`packages/mcps/shellsandbox`）；目录组 **`mcp_shellsandbox`**，server 名 / 前缀 `shellsandbox` / `shellsandbox__*`。
 2. **MCP 仅暴露 `exec_shell`、`git_op`**（`LocalSandboxProvider`）；不再注册 read/write/patch/list。
-3. **文件读写**：已改 deepagents StateBackend（见 [2026-09-07-deepagents-filesystem-statebackend.md](./2026-09-07-deepagents-filesystem-statebackend.md)）；本笔记落地时曾用 MCP filesystem，现已删除。
+3. **文件读写**：已改 deepagents Composite（见 [2026-09-07-deepagents-filesystem-composite.md](./2026-09-07-deepagents-filesystem-composite.md)）；本笔记落地时曾用 MCP filesystem，现已删除。
 4. 取代 [2026-09-07-mcp-sandbox-catalog.md](./2026-09-07-mcp-sandbox-catalog.md) 中「MCP 暴露全套编码工具 / 组名 mcp_sandbox」的部分。
 
 ## 备选方案
@@ -25,5 +25,5 @@
 
 ## 影响
 
-- **收益**：Chat 工具面清晰；Coder 默认开 `mcp_shellsandbox`（文件走 StateBackend）。
+- **收益**：Chat 工具面清晰；Coder 默认开 `mcp_shellsandbox`（文件走 Composite `/workspace/`）。
 - **注意**：旧 agent 白名单里的 `mcp_sandbox` / `mcp_filesystem` 失效。

@@ -10,21 +10,37 @@ import {
   fileDataToText,
   toVirtualPath,
   toRelativePath,
+  isWorkspaceVirtualPath,
+  WORKSPACE_ROUTE_PREFIX,
 } from '../filesystem'
 
 describe('createStateFilesystemMiddleware', () => {
-  it('builds middleware with StateBackend tools', () => {
-    const mw = createStateFilesystemMiddleware()
-    expect(mw).toBeTruthy()
-    expect(mw.name).toBeTruthy()
+  it('requires rootDir', () => {
+    expect(() => createStateFilesystemMiddleware({ rootDir: '  ' })).toThrow(/rootDir/)
+  })
+
+  it('builds middleware with CompositeBackend tools', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'fs-mw-'))
+    try {
+      const mw = createStateFilesystemMiddleware({ rootDir: dir })
+      expect(mw).toBeTruthy()
+      expect(mw.name).toBeTruthy()
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
   })
 })
 
 describe('path helpers', () => {
-  it('normalizes virtual / relative paths', () => {
-    expect(toVirtualPath('src/a.ts')).toBe('/src/a.ts')
-    expect(toVirtualPath('/src/a.ts')).toBe('/src/a.ts')
-    expect(toRelativePath('/src/a.ts')).toBe('src/a.ts')
+  it('normalizes workspace / scratch virtual paths', () => {
+    expect(toVirtualPath('src/a.ts')).toBe('/workspace/src/a.ts')
+    expect(toVirtualPath('/workspace/src/a.ts')).toBe('/workspace/src/a.ts')
+    expect(toVirtualPath('/draft.md')).toBe('/draft.md')
+    expect(toRelativePath('/workspace/src/a.ts')).toBe('src/a.ts')
+    expect(toRelativePath('/draft.md')).toBe('draft.md')
+    expect(isWorkspaceVirtualPath('/workspace/src/a.ts')).toBe(true)
+    expect(isWorkspaceVirtualPath('/draft.md')).toBe(false)
+    expect(WORKSPACE_ROUTE_PREFIX).toBe('/workspace/')
   })
 
   it('round-trips FileData text', () => {
@@ -34,7 +50,7 @@ describe('path helpers', () => {
 })
 
 describe('seedFilesFromDisk / flushFilesToDisk', () => {
-  it('seeds and flushes text files', async () => {
+  it('seeds State keys and flushes non-workspace paths', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'fs-seed-'))
     try {
       mkdirSync(join(dir, 'src'))
@@ -47,11 +63,14 @@ describe('seedFilesFromDisk / flushFilesToDisk', () => {
       expect(files['/src/a.ts']).toBeTruthy()
       expect(files['/readme.md']).toBeTruthy()
       expect(files['/node_modules/x/index.js']).toBeUndefined()
+      expect(files['/workspace/src/a.ts']).toBeUndefined()
 
-      files['/src/b.ts'] = textToFileData('export const b = 2\n')
+      files['/scratch/b.ts'] = textToFileData('export const b = 2\n')
+      files['/workspace/ignored.ts'] = textToFileData('skip\n')
       const written = await flushFilesToDisk(dir, files)
-      expect(written).toContain('src/b.ts')
-      expect(readFileSync(join(dir, 'src', 'b.ts'), 'utf8')).toBe('export const b = 2\n')
+      expect(written).toContain('scratch/b.ts')
+      expect(written).not.toContain('ignored.ts')
+      expect(readFileSync(join(dir, 'scratch', 'b.ts'), 'utf8')).toBe('export const b = 2\n')
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }

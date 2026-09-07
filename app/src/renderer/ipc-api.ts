@@ -85,6 +85,8 @@ export interface IpcApi {
   'vector:searchTable': (name: string, data: VectorSearchInput) => Promise<VectorSearchHit[]>
   /** 向量 + BM25 加权检索（与对话工具预筛 C1 相同的 RRF 融合，minScore 只过滤向量路） */
   'vector:hybridSearchTable': (name: string, data: VectorSearchInput) => Promise<VectorHybridSearchHit[]>
+  /** 完全重建向量表：清空并按当前数据源重新嵌入（当前仅内置工具索引 tool_index 有重建源） */
+  'vector:rebuildTable': (name: string) => Promise<VectorRebuildResult>
 }
 
 export type UserRow = { id: number; name: string; email: string }
@@ -220,6 +222,12 @@ export interface VectorTableInfo {
   name: string
   count: number
   columns: VectorTableColumn[]
+}
+/** 完全重建结果：重新向量化写入的记录条数 + 清理的陈旧 / 孤儿记录条数 */
+export interface VectorRebuildResult {
+  name: string
+  records: number
+  removed: number
 }
 export interface VectorBrowseResult {
   total: number

@@ -24,7 +24,7 @@ export interface ReactChatInput {
   signal?: AbortSignal
   /**
    * 可选：注入 StateBackend 初始 files（虚路径 → FileData）。
-   * 有 createFilesystemMiddleware 时生效；办公/编程 seed 用。
+   * 仅影响 Composite 的 default StateBackend；`/workspace/` 走磁盘，无需 seed。
    */
   files?: FilesRecord
 }
@@ -36,7 +36,7 @@ export interface ReactChatResult {
   messages: BaseMessage[]
   /** 轨迹内各次模型调用的 token 合计（供应商不回传时为 0） */
   usage: TokenUsage
-  /** 终态 StateBackend files（供 flush 到磁盘 / 产物扫描） */
+  /** 终态 StateBackend files（草稿等；工作区改动已在 `/workspace/` 直写盘） */
   files?: FilesRecord
 }
 
@@ -60,16 +60,20 @@ export interface CreateReactChatAgentOptions {
    */
   checkpointer?: unknown
   /**
-   * 挂载 deepagents createFilesystemMiddleware（StateBackend）。
+   * 挂载 deepagents createFilesystemMiddleware（Composite：State + `/workspace/` 盘）。
    * - `true`：全套 FS 工具 + 目录 customToolDescriptions
    * - `string[]`：C1/C2 筛出的 FS 工具名 allowlist（须含或会补上 read_file）
    * - 也可传入已构造的 middleware
    * - `false` / 省略：不挂
+   *
+   * `true` / `string[]` 时必须同时传 `workspaceRoot`。
    */
   filesystem?:
     | boolean
     | readonly string[]
     | ReturnType<typeof createStateFilesystemMiddleware>
+  /** Composite `/workspace/` → FilesystemBackend 的 rootDir */
+  workspaceRoot?: string
   /** 额外 middleware（排在 filesystem 之后） */
   middleware?: unknown[]
 }
@@ -80,12 +84,22 @@ export interface CreateReactChatAgentOptions {
  */
 export function createReactChatAgent(options: CreateReactChatAgentOptions) {
   const middleware: unknown[] = []
+  const requireWorkspaceRoot = (): string => {
+    const root = options.workspaceRoot?.trim()
+    if (!root) {
+      throw new Error(
+        'createReactChatAgent: workspaceRoot is required when filesystem is enabled',
+      )
+    }
+    return root
+  }
   if (options.filesystem === true) {
-    middleware.push(createStateFilesystemMiddleware())
+    middleware.push(createStateFilesystemMiddleware({ rootDir: requireWorkspaceRoot() }))
   } else if (Array.isArray(options.filesystem)) {
     if (options.filesystem.length > 0) {
       middleware.push(
         createStateFilesystemMiddleware({
+          rootDir: requireWorkspaceRoot(),
           tools: options.filesystem as never,
         }),
       )

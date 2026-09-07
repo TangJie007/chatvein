@@ -60,7 +60,7 @@ export async function resolveChatTools(
     maxOutputChars: options.maxOutputChars ?? 8_000,
   }
 
-  // 本地读写走 deepagents StateBackend；此处只挂 openfile / shell 等 MCP。
+  // 本地读写走 deepagents Composite；此处只挂 openfile / shell 等 MCP。
   const wantOpen =
     options.mcpOpenfile !== false && selected.some((e) => e.groupId === 'mcp_openfile')
   const wantModsearch =

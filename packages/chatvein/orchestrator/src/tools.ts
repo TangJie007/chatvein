@@ -2,7 +2,7 @@
  * Forge 执行工具层（implement/fix 节点绑定给内层 ReAct agent）。
  *
  * 文件读写已统一迁到 deepagents `createFilesystemMiddleware` + `StateBackend`
- *（见 `@chatvein/agents` createStateFilesystemMiddleware）；本模块只保留
+ *（见 `@chatvein/agents` createStateFilesystemMiddleware / Composite）；本模块只保留
  * 沙箱白名单 `exec_shell` / `git_op`。
  */
 import { z } from 'zod'

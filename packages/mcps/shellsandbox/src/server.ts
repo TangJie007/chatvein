@@ -11,7 +11,7 @@ export interface CreateShellsandboxServerOptions {
 }
 
 /**
- * 工作区 shell/git MCP：读写文件请用 deepagents StateBackend middleware（ls / read_file / write_file / edit_file）。
+ * 工作区 shell/git MCP：读写文件请用 deepagents Composite middleware（`/workspace/` → 盘；ls / read_file / write_file / edit_file）。
  * 本 server 只暴露 LocalSandboxProvider 白名单命令能力。
  */
 export function createShellsandboxMcpServer(options: CreateShellsandboxServerOptions): McpServer {

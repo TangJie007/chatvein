@@ -1,6 +1,7 @@
-import { Injectable } from '@electrum/common'
+import { Inject, Injectable } from '@electrum/common'
 import { app } from 'electron'
 import { join } from 'node:path'
+import { ToolIndexService } from '../chat/tools/tool-index.service'
 
 export interface VectorTableColumn {
   name: string
@@ -10,6 +11,12 @@ export interface VectorTableInfo {
   name: string
   count: number
   columns: VectorTableColumn[]
+}
+/** 完全重建结果：重新向量化的记录条数与清理掉的陈旧 / 孤儿记录条数 */
+export interface VectorRebuildResult {
+  name: string
+  records: number
+  removed: number
 }
 export interface VectorBrowseResult {
   total: number
@@ -54,6 +61,10 @@ export class VectorService {
   /** 进程级复用嵌入器（首次调用才真正加载 ONNX 权重） */
   private embedder: import('@chatvein/vector').EmbeddingProvider | null = null
 
+  /** 受管表的写库 / 重建方（tool_index 由工具目录重建，避免在本服务重复嵌入实现） */
+  @Inject(ToolIndexService)
+  private toolIndexSvc!: ToolIndexService
+
   private async openStore() {
     const vector = await import('@chatvein/vector')
     return vector.createLocalVectorStore({
@@ -74,6 +85,19 @@ export class VectorService {
       console.warn('[vector] inspectTables 读取失败（数据集可能尚未建立）：', (e as Error)?.message)
       return []
     }
+  }
+
+  /**
+   * 完全重建某张向量表：清空并按当前数据源重新分块、嵌入、入库。
+   * 当前受管表为内置工具索引 tool_index（源 = 系统工具目录 + MCP）；
+   * 其余表为只读浏览的非受管表，没有可重建的数据源，直接抛错交由 UI 提示。
+   */
+  async rebuildTable(name: string): Promise<VectorRebuildResult> {
+    if (name !== TOOL_INDEX_TABLE) {
+      throw new Error(`「${name}」没有可重建的数据源；当前仅 tool_index（内置工具索引）支持完全重建`)
+    }
+    const res = await this.toolIndexSvc.rebuildToolIndex()
+    return { name, records: res.records, removed: res.removed }
   }
 
   /** 分页浏览某张表的记录 */

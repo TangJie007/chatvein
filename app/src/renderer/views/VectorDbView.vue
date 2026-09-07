@@ -6,6 +6,7 @@ import Card from '../components/ui/Card.vue'
 import TextInput from '../components/ui/TextInput.vue'
 import AppButton from '../components/ui/AppButton.vue'
 import AppIcon from '../components/AppIcon.vue'
+import ConfirmDialog from '../components/ui/ConfirmDialog.vue'
 import { setCrumbItem } from '../composables/useUi'
 import { createClient } from '@electrum/client'
 import type { IpcApi, VectorBrowseResult, VectorTableInfo } from '../ipc-api'
@@ -298,6 +299,47 @@ async function refresh() {
   await loadTables()
 }
 
+// ---- 完全重建向量表（列表项行内「重建」→ 二次确认）----
+const rebuildOpen = ref(false)
+const rebuildBusy = ref(false)
+const rebuildName = ref('')
+
+function askRebuild(name: string) {
+  if (rebuildBusy.value) return
+  rebuildName.value = name
+  rebuildOpen.value = true
+}
+
+const rebuildDescription = computed(() => {
+  const name = rebuildName.value
+  if (!name) return ''
+  const count = tables.value.find((t) => t.name === name)?.count ?? 0
+  if (name === 'tool_index') {
+    return `将清空现有 ${count} 条索引记录，重新解析当前全部内置 / MCP 工具后逐条重新生成描述并向量化。\n建议在没有进行中的语义检索时执行；完成后对话工具预筛将直接使用新索引。`
+  }
+  return `将丢弃该表现有 ${count} 条记录并重新向量化。`
+})
+
+async function runRebuild() {
+  const name = rebuildName.value
+  if (!name || rebuildBusy.value) return
+  rebuildBusy.value = true
+  try {
+    const res = await api.vector.rebuildTable(name)
+    rebuildOpen.value = false
+    foot.value =
+      `已完全重建 ${res.name}：重新向量化 ${res.records} 条` +
+      (res.removed > 0 ? `，清理陈旧记录 ${res.removed} 条` : '')
+    await loadTables()
+    if (selected.value !== name) selectTable(name)
+  } catch (e) {
+    rebuildOpen.value = false
+    foot.value = `重建 ${name} 失败：${(e as Error)?.message ?? String(e)}`
+  } finally {
+    rebuildBusy.value = false
+  }
+}
+
 onMounted(async () => {
   setCrumbItem('向量数据库')
   await loadTables()
@@ -309,7 +351,9 @@ onMounted(async () => {
     :tables="tables"
     :selected="selected"
     :loading="loadingTables"
+    :rebuilding="rebuildBusy"
     @select="selectTable"
+    @rebuild="askRebuild"
   />
 
   <ViewShell :foot-note="foot">
@@ -329,7 +373,7 @@ onMounted(async () => {
     </template>
 
     <template #actions>
-      <AppButton size="sm" :disabled="loadingTables || loadingRows" @click="refresh">
+      <AppButton size="sm" :disabled="loadingTables || loadingRows || rebuildBusy" @click="refresh">
         <AppIcon name="restart" :size="13" /> 刷新
       </AppButton>
     </template>
@@ -737,4 +781,16 @@ onMounted(async () => {
       </Card>
     </template>
   </ViewShell>
+
+  <ConfirmDialog
+    :open="rebuildOpen"
+    :title="rebuildName ? `完全重建向量表「${rebuildName}」？` : ''"
+    :description="rebuildDescription"
+    confirm-label="开始重建"
+    cancel-label="取消"
+    busy-label="正在重建…"
+    :busy="rebuildBusy"
+    @close="rebuildOpen = false"
+    @confirm="runRebuild"
+  />
 </template>

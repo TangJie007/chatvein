@@ -5,10 +5,10 @@ export const TOOL_CATALOG_GROUPS: readonly ToolCatalogGroup[] = [
   {
     id: 'state_filesystem',
     category: 'local_fs',
-    title: '工作区文件系统（StateBackend）',
+    title: '工作区文件系统（Composite）',
     description:
-      '经 deepagents createFilesystemMiddleware + StateBackend：ls / read_file / write_file / edit_file / glob / grep。',
-    source: 'deepagents:StateBackend',
+      '经 deepagents createFilesystemMiddleware + CompositeBackend：/workspace/ 直写盘（FilesystemBackend），其余走 StateBackend 草稿。工具：ls / read_file / write_file / edit_file / glob / grep。',
+    source: 'deepagents:CompositeBackend',
     requiresWorkspace: true,
     defaultEnabled: true,
     keywords: [
@@ -32,7 +32,7 @@ export const TOOL_CATALOG_GROUPS: readonly ToolCatalogGroup[] = [
     category: 'compute',
     title: '工作区 Shell 沙箱（MCP）',
     description:
-      '经 @chatvein/mcp-shellsandbox-sdk：LocalSandboxProvider 白名单 exec_shell / git_op。读写文件用 StateBackend middleware。',
+      '经 @chatvein/mcp-shellsandbox-sdk：LocalSandboxProvider 白名单 exec_shell / git_op。读写文件用 Composite `/workspace/` middleware。',
     source: 'mcp:@chatvein/mcp-shellsandbox-sdk',
     mcpServer: 'shellsandbox',
     requiresWorkspace: true,

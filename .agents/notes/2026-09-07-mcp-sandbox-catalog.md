@@ -11,7 +11,7 @@ Chat 轨工具走 `@chatvein/tools` 目录 + MCP + 角色白名单；Forge（cod
 1. **共享原语落在 `@chatvein/sandbox`**：`coding-ops`（`assertNotSecretPath` / `applyExactReplace` / `readWorkspaceText` / `writeWorkspaceText` / `applyWorkspacePatch` / `splitArgv`）供 Forge 使用；包仍保持纯 Node、无 LangChain/MCP SDK。
 2. ~~新增 `@chatvein/mcp-sandbox-sdk` 暴露全套编码工具~~ → **已取代**：见 [mcp-shellsandbox](./2026-09-07-mcp-shellsandbox.md)（仅 exec/git；读写走 filesystem）。
 3. **Forge 仍进程内包装**：`createForgeTools` 调用 coding-ops，保留 LangChain StructuredTool + trace/截断/`AbortSignal`；不改为每轮拉起 MCP stdio。
-4. Coder 默认白名单：`mcp_shellsandbox` + openfile / modsearch 等（文件读写走 StateBackend，见 [2026-09-07-deepagents-filesystem-statebackend.md](./2026-09-07-deepagents-filesystem-statebackend.md)）。
+4. Coder 默认白名单：`mcp_shellsandbox` + openfile / modsearch 等（文件读写走 Composite，见 [2026-09-07-deepagents-filesystem-composite.md](./2026-09-07-deepagents-filesystem-composite.md)）。
 
 ## 备选方案
 

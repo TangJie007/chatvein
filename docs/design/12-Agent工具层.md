@@ -1,7 +1,7 @@
 # Agent 工具层（`@chatvein/tools`）
 
 > 版本：v0.6 ｜ 日期：2026-09-07  
-> **决策状态：一期落地；本地文件已迁 deepagents StateBackend（见 `.agents/notes/2026-09-07-deepagents-filesystem-statebackend.md`）**  
+> **决策状态：一期落地；本地文件为 deepagents Composite（见 `.agents/notes/2026-09-07-deepagents-filesystem-composite.md`；取代纯 StateBackend）**  
 > 上位：[`01-核心骨架.md`](./01-核心骨架.md)、[`02-agent循环方案.md`](./02-agent循环方案.md)、[`07-沙箱方案.md`](./07-沙箱方案.md)、[`11-L3-ReAct自适应循环推理层.md`](./11-L3-ReAct自适应循环推理层.md)  
 > 实现：`packages/chatvein/tools` + `@chatvein/agents` filesystem middleware
 
@@ -9,21 +9,21 @@
 
 ## 1 定位一句话
 
-**工具层 = L3 可调用能力的目录与治理壳**：按品类组织；**外部能力优先经 MCP**；**本地文件读写经 deepagents `createFilesystemMiddleware` + `StateBackend`**（主 Agent / 编程 Agent 同步）；执行前做 `policy.tools ∩ role.tools` 求交、超时与输出截断；危险执行仍经沙箱。
+**工具层 = L3 可调用能力的目录与治理壳**：按品类组织；**外部能力优先经 MCP**；**本地文件读写经 deepagents `createFilesystemMiddleware` + CompositeBackend**（`/workspace/` → 盘；主 Agent / 编程 Agent 同步）；执行前做 `policy.tools ∩ role.tools` 求交、超时与输出截断；危险执行仍经沙箱。
 
 | 做 | 不做 |
 |----|------|
 | 七大品类目录 + Chat 绑定 | 不替代 L1/L2 路由 |
 | **MCP → LangChain tools**（`@langchain/mcp-adapters`） | 不为每个第三方再写专用适配包 |
-| StateBackend 文件工具（middleware） | 默认不再挂 MCP filesystem 进程 |
+| Composite 文件工具（middleware） | 默认不再挂 MCP filesystem 进程 |
 
 ---
 
-## 2 接入优先级：MCP 优先（外部）+ StateBackend（本地文件）
+## 2 接入优先级：MCP 优先（外部）+ Composite（本地文件）
 
 ```
-createReactChatAgent({ filesystem: true, tools: resolveChatTools(...) })
-  ├─ createFilesystemMiddleware({ backend: StateBackend })  → ls/read_file/write_file/edit_file/glob/grep
+createReactChatAgent({ filesystem: true, workspaceRoot, tools: resolveChatTools(...) })
+  ├─ createFilesystemMiddleware({ backend: Composite(State, {/workspace/: Filesystem}) })
   └─ resolveChatTools({ workspaceRoot, mcpServers, … })
        ├─ withDefaultMcpOpenfile(workspaceRoot)    → server `openfile`
        ├─ withDefaultMcpModsearch()                → server `modsearch`
@@ -36,7 +36,7 @@ createReactChatAgent({ filesystem: true, tools: resolveChatTools(...) })
 
 | 来源 | 用途 |
 |------|------|
-| **StateBackend middleware** | 本地读写/列/搜；目录组 `state_filesystem`（描述进向量索引）；C1/C2 收窄 allowlist |
+| **Composite middleware** | `/workspace/` 直读写盘；草稿/内部 offload 走 State；目录组 `state_filesystem`；C1/C2 收窄 allowlist |
 | **MCP `openfile`** | 系统文件管理器打开目录：`@chatvein/mcp-openfile-sdk`（文件 → 父目录） |
 | **MCP `modsearch`** | 联网搜索 / 读页：`@chatvein/mcp-modsearch-sdk`（ModSearch → DuckDuckGo 兜底） |
 | **MCP `vmsandbox`** | 工作区 JS：`@chatvein/mcp-vmsandbox-sdk`（NodeVM + 可信 npm；需 workspaceRoot） |
@@ -55,10 +55,10 @@ createReactChatAgent({ filesystem: true, tools: resolveChatTools(...) })
 - playwright：`@playwright/mcp` → `playwright__*`；目录 id `mcp_playwright`；**不依赖** workspace；默认 `--headless`；需本机已装浏览器二进制
 - shellsandbox：`@chatvein/mcp-shellsandbox-sdk` → `shellsandbox__*`；目录 id `mcp_shellsandbox`；**需** workspace；仅 exec/git
 - 启动：`process.execPath` + 包内 CLI/entry（Electron 设 `ELECTRON_RUN_AS_NODE=1`）
-- 本地读写：**StateBackend middleware**（无 MCP filesystem、无 builtin `read_file` / `list_dir` / `grep_search`）
+- 本地读写：**Composite middleware**（无 MCP filesystem、无 builtin `read_file` / `list_dir` / `grep_search`）
 - 关闭：`mcpOpenfile` / `mcpModsearch` / `mcpVmsandbox` / `mcpPyodide` / `mcpPlaywright` / `mcpShellsandbox: false`，或 env 覆盖同名连接
 
-**否决**：专用 CLI 包装包作默认联网（改走 MCP modsearch）；MCP filesystem（已删除，改 StateBackend）；local_fs builtin 后备；Electron `shell.openPath` 直接绑工具。  
+**否决**：专用 CLI 包装包作默认联网（改走 MCP modsearch）；MCP filesystem（已删除，改 Composite）；local_fs builtin 后备；Electron `shell.openPath` 直接绑工具。  
 **注意**：vmsandbox / pyodide ≠ design/07 工作区沙箱；vm2 已停维；Pyodide 为 WASM 软隔离。
 
 其它 MCP 示例：
@@ -74,7 +74,7 @@ CHATVEIN_MCP_SERVERS='{"brave":{"command":"npx","args":["-y","@modelcontextproto
 | 事实 | 我们的做法 |
 |------|------------|
 | `@langchain/community` **已 sunset** | 仅作残余过渡；新外部能力走 MCP |
-| 本地文件 | **StateBackend middleware**；MCP 仅 openfile（打开资源管理器） |
+| 本地文件 | **Composite middleware**；MCP 仅 openfile（打开资源管理器） |
 
 ---
 
@@ -84,7 +84,7 @@ CHATVEIN_MCP_SERVERS='{"brave":{"command":"npx","args":["-y","@modelcontextproto
 |---------|------|--------------|---------------|
 | `search` | 搜索 / 联网检索 | **MCP `modsearch__*`**（`mcp_modsearch`） | Brave / SerpAPI；community DDG 默认关 |
 | `compute` | 计算 & 代码执行 | `calculator`、**MCP `vmsandbox__*` / `pyodide__*`** | Wolfram；builtin `js_eval` 默认关；真 shell → sandbox |
-| `local_fs` | 本地文件 & 系统 | **`state_filesystem`**（StateBackend）+ MCP `openfile__*` | shell → shellsandbox |
+| `local_fs` | 本地文件 & 系统 | **`state_filesystem`**（Composite）+ MCP `openfile__*` | shell → shellsandbox |
 | `web` | 网页解析 & 爬虫 | `fetch_url`、**MCP `playwright__*`** | **优先 MCP 读页 / 浏览器交互** |
 | `news_finance` | 资讯 & 金融 | — | `google_trends` |
 | `database` | 数据库 & 查询 | `sqlite_query` | 远程（二期） |
@@ -124,7 +124,7 @@ function withDefaultMcpOpenfile(...): ...
 function withDefaultMcpModsearch(...): ...
 function withDefaultMcpVmsandbox(workspaceRoot, ...): ...
 ```
-横切：`timeoutMs`、`maxOutputChars`；MCP 用上游目录白名单；本地读写走 StateBackend。
+横切：`timeoutMs`、`maxOutputChars`；MCP 用上游目录白名单；本地读写走 Composite。
 
 ---
 
@@ -145,7 +145,7 @@ RouteDecision.policy.tools = full
 
 | 阶段 | 内容 |
 |------|------|
-| **T0（今）** | 目录 + StateBackend 文件 + MCP openfile / shellsandbox + env 其它 MCP |
+| **T0（今）** | 目录 + Composite 文件 + MCP openfile / shellsandbox + env 其它 MCP |
 | **T1** | MCP 设置页落盘；写操作与 `confirmWrites` 对齐 |
 | **T2** | 危险执行走 `SandboxProvider`；MCP 与沙箱 cwd 统一 |
 | **T3** | community 残余迁出 |

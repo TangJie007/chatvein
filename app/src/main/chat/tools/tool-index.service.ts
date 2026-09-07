@@ -54,6 +54,8 @@ export class ToolIndexService {
 
   private toolIndex: ToolVectorIndex | null = null
   private toolIndexInit: Promise<ToolVectorIndex | null> | null = null
+  /** 底层 LanceDB store（ensureToolIndex 装配后保留；全表遍历 / 孤儿行清理用） */
+  private vectorStore: import('@chatvein/vector').LocalVectorStore | null = null
   /** 索引维护串行队列（warmup 全量 + MCP/配置变更 sync，避免并发写库/写 meta） */
   private toolIndexOps: Promise<unknown> = Promise.resolve()
   /** 启动 warmup 一次性标记（幂等） */
@@ -92,7 +94,7 @@ export class ToolIndexService {
   }
 
   /**
-   * policy.tools ∩ 角色白名单 → LangChain 工具 + StateBackend FS allowlist。
+   * policy.tools ∩ 角色白名单 → LangChain 工具 + Composite FS allowlist。
    * 链路：resolveChatTools + FS 目录 → C1 混合预筛 → C2 弱模型精筛 → C3 预算裁剪（仅 StructuredTool）。
    * query 应为 `route.rewrittenQuery ?? 原文`；**空 query → 不绑工具**（主模型纯聊）。
    * workspaceRoot 为工具 jail 根：编程模式下是用户项目目录，否则是会话沙箱。
@@ -207,6 +209,49 @@ export class ToolIndexService {
     await this.syncToolIndex(tools)
   }
 
+  /**
+   * 手动「完全重建」tool_index（向量库管理页触发）：
+   * 绕过启动 warmup 的版本签名短路，无条件按当前工具目录全量重算：
+   * 1) 清理磁盘上目录之外的陈旧 / 孤儿行（meta 丢失、下线残留等场景）；
+   * 2) 对当前全部工具重新生成描述文本并重新向量化覆盖写；
+   * 3) 写回 meta（签名 / 已同步名 / 时间），保证后续启动 warmup 可命中跳过。
+   */
+  async rebuildToolIndex(): Promise<{ records: number; removed: number }> {
+    return this.enqueueToolIndexOp(async () => {
+      const idx = await this.ensureToolIndex()
+      if (!idx) {
+        throw new Error('工具向量索引不可用（本地嵌入模型初始化失败，请检查网络与 hf-cache）')
+      }
+      const tools = await this.resolveSystemTools()
+      if (tools.length === 0) {
+        throw new Error('当前没有可索引的系统工具，无法重建')
+      }
+      const inputs = this.toolIndexInputsOf(tools)
+      const records = idx.recordsFor(inputs)
+      if (records.length === 0) {
+        throw new Error('工具目录未能生成可索引记录，无法重建')
+      }
+
+      const keep = new Set(records.map((r) => r.id))
+      const diskIds = await this.listToolIndexIds()
+      const orphan = diskIds.filter((id) => !keep.has(id))
+      if (orphan.length > 0) await idx.purge(orphan)
+
+      // 无条件全量覆盖：所有当前工具重新描述 + 重新向量化
+      await idx.replace(inputs)
+      const signature = toolIndexSignature(records)
+      await this.writeToolIndexMeta({
+        builtinSignature: signature,
+        syncedNames: records.map((r) => r.id),
+        updatedAt: Date.now(),
+      })
+      console.debug(
+        `[tool-index] manual rebuild sig=${signature.slice(0, 8)} records=${records.length} orphan=${orphan.length}`,
+      )
+      return { records: records.length, removed: orphan.length }
+    })
+  }
+
   /** 懒加载 @chatvein/vector（原生模块不进主 bundle 静态图），建好 ToolVectorIndex 单例 */
   private async ensureToolIndex(): Promise<ToolVectorIndex | null> {
     if (this.toolIndex) return this.toolIndex
@@ -227,6 +272,7 @@ export class ToolIndexService {
           embedder,
           tableName: 'tool_index',
         })
+        this.vectorStore = localStore
         const store: ToolVectorStore = {
           upsert: (records) => localStore.upsert(records as never),
           search: (q, options) =>
@@ -392,7 +438,7 @@ export class ToolIndexService {
       description: t.description,
       schema: (t as { schema?: unknown }).schema,
     }))
-    // StateBackend FS 目录条目一并进索引（无 StructuredTool 实例）
+    // Composite FS 目录条目一并进索引（无 StructuredTool 实例）
     const fromFs = stateFilesystemIndexInputs()
     const seen = new Set(fromTools.map((t) => t.name))
     return [...fromTools, ...fromFs.filter((f) => !seen.has(f.name))]
@@ -500,6 +546,20 @@ export class ToolIndexService {
       ...(info.filesystemTools ? { filesystemTools: info.filesystemTools } : {}),
       tools: bound.map((t) => t.name),
     })
+  }
+
+  /** 当前 tool_index 磁盘行 id 全集（孤儿行清理用；工具规模小，分页遍历即可） */
+  private async listToolIndexIds(): Promise<string[]> {
+    const store = this.vectorStore
+    if (!store) return []
+    const ids: string[] = []
+    let offset = 0
+    for (;;) {
+      const page = await store.list({ limit: 2000, offset })
+      ids.push(...page.map((r) => r.id))
+      if (page.length < 2000) return ids
+      offset += page.length
+    }
   }
 
   private toolIndexDataDir(): string {

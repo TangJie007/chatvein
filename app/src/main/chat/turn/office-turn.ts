@@ -1,8 +1,6 @@
 import {
   createReactChatAgent,
   streamReactChatAgent,
-  seedFilesFromDisk,
-  flushFilesToDisk,
   type WorkspaceCheckpointer,
 } from '@chatvein/agents'
 import type { ComplexityBand, RouteDecision } from '@chatvein/common'
@@ -244,7 +242,6 @@ export async function runOfficeReactTurn(
   const checkpointer = deps.getCheckpointer(conv.workspacePath)
   await checkpointer.deleteThread(conv.id)
   const enableFilesystem = Boolean(filesystemTools?.length)
-  const seedFiles = enableFilesystem ? await seedFilesFromDisk(toolRoot) : undefined
   const reactAgent = createReactChatAgent({
     model: llm,
     tools: boundTools,
@@ -252,6 +249,7 @@ export async function runOfficeReactTurn(
     name: agent.name,
     checkpointer,
     filesystem: filesystemTools ?? false,
+    ...(enableFilesystem ? { workspaceRoot: toolRoot } : {}),
   })
 
   const started = Date.now()
@@ -300,7 +298,6 @@ export async function runOfficeReactTurn(
         recursionLimit,
         threadId: conv.id,
         signal: args.signal,
-        ...(seedFiles ? { files: seedFiles } : {}),
       },
       {
         onReasoning: (delta) => {
@@ -325,7 +322,6 @@ export async function runOfficeReactTurn(
         },
       },
     )
-    if (enableFilesystem) await flushFilesToDisk(toolRoot, result.files)
     const text = result.content.trim()
 
     if (mode === 'send') {

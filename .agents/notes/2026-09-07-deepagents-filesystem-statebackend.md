@@ -1,6 +1,8 @@
 # 决策笔记：文件操作统一 deepagents StateBackend
 
-状态：已落地
+状态：已落地（**已被取代**）
+
+> **取代**：工作区已改为 Composite（State + `/workspace/` → Filesystem）。见 [2026-09-07-deepagents-filesystem-composite.md](./2026-09-07-deepagents-filesystem-composite.md)。下文保留当时「去掉 MCP filesystem、统一 middleware 工具面」的依据。
 
 ## 背景
 
@@ -21,10 +23,10 @@
 
 **把 createFilesystemMiddleware 搬进 tools**：会把 deepagents 运行时拖进目录包，边界混乱。
 
-**编程轨改用 FilesystemBackend**：与主 Agent StateBackend 不同步。
+**编程轨改用 FilesystemBackend**：与主 Agent StateBackend 不同步。（大仓痛点后改为两边一起上 Composite，见取代笔记。）
 
 ## 影响
 
 - 收益：主/编程共用工具面；描述可进向量库过滤；去掉 MCP FS 进程。
-- 代价：大仓库需 seed 上限；未种子化路径对 StateBackend 不可见。
-- 后续注意：超大项目可考虑 CompositeBackend / FilesystemBackend。
+- 代价：大仓库需 seed 上限；未种子化路径对 StateBackend 不可见。——已由 Composite 笔记解决。
+- 后续注意：~~超大项目可考虑 CompositeBackend / FilesystemBackend。~~ → 已落地 Composite。
