@@ -24,7 +24,7 @@ pnpm mcp:inspect:modsearch
 pnpm mcp:inspect:shellsandbox
 pnpm mcp:inspect:vmsandbox
 pnpm mcp:inspect:pyodide
-pnpm mcp:inspect:filesystem     # 官方 FS，默认 jail=.
+pnpm mcp:inspect:playwright
 
 # 或在子包内
 pnpm --filter @chatvein/mcp-openfile-sdk inspect

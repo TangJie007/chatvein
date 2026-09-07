@@ -7,7 +7,7 @@ import { createKnowledgeTools } from './categories/knowledge'
 import { createNewsFinanceTools } from './categories/news-finance'
 import { createSearchTools } from './categories/search'
 import { createWebTools } from './categories/web'
-import { loadMcpTools, withDefaultMcpFilesystem, withDefaultMcpModsearch, withDefaultMcpOpenfile, withDefaultMcpPlaywright, withDefaultMcpPyodide, withDefaultMcpShellsandbox, withDefaultMcpVmsandbox } from './mcp'
+import { loadMcpTools, withDefaultMcpModsearch, withDefaultMcpOpenfile, withDefaultMcpPlaywright, withDefaultMcpPyodide, withDefaultMcpShellsandbox, withDefaultMcpVmsandbox } from './mcp'
 import type { ResolveChatToolsOptions, ToolCatalogEntry, ToolSecrets } from './types'
 
 function hasSecret(entry: ToolCatalogEntry, secrets?: ToolSecrets): boolean {
@@ -60,10 +60,7 @@ export async function resolveChatTools(
     maxOutputChars: options.maxOutputChars ?? 8_000,
   }
 
-  // 本地文件默认不挂 MCP filesystem（改由 deepagents StateBackend middleware）；
-  // openfile / shellsandbox 等仍可按目录注入。
-  const wantFs =
-    options.mcpFilesystem === true && selected.some((e) => e.groupId === 'mcp_filesystem')
+  // 本地读写走 deepagents StateBackend；此处只挂 openfile / shell 等 MCP。
   const wantOpen =
     options.mcpOpenfile !== false && selected.some((e) => e.groupId === 'mcp_openfile')
   const wantModsearch =
@@ -77,14 +74,9 @@ export async function resolveChatTools(
   const wantPlaywright =
     options.mcpPlaywright !== false && selected.some((e) => e.groupId === 'mcp_playwright')
 
-  let mcpServers = withDefaultMcpFilesystem(
-    wantFs ? options.workspaceRoot : undefined,
-    options.mcpServers,
-    wantFs,
-  )
-  mcpServers = withDefaultMcpOpenfile(
+  let mcpServers = withDefaultMcpOpenfile(
     wantOpen ? options.workspaceRoot : undefined,
-    mcpServers,
+    options.mcpServers,
     wantOpen,
   )
   mcpServers = withDefaultMcpModsearch(mcpServers, wantModsearch)
@@ -105,8 +97,7 @@ export async function resolveChatTools(
   )
   mcpServers = withDefaultMcpPlaywright(mcpServers, wantPlaywright)
 
-  // MCP 协议只能整 server 拉工具；按目录条目过滤，只挂白名单 / 默认集中的子工具，
-  // 解决「只读文件却加载整套 filesystem」的膨胀问题。未声明的子工具天然不挂。
+  // MCP 协议只能整 server 拉工具；按目录条目过滤，只挂白名单 / 默认集中的子工具。
   const wanted = new Set(selected.map((e) => e.id))
   const rawMcpTools = mcpServers
     ? await loadMcpTools({

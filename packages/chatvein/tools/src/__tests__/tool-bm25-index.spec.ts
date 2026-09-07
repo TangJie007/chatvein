@@ -13,10 +13,10 @@ describe('tokenizeForBm25', () => {
   })
 
   it('splits punctuation and underscores', () => {
-    expect(tokenizeForBm25('filesystem__read_text')).toEqual([
-      'filesystem',
-      'read',
-      'text',
+    expect(tokenizeForBm25('openfile__open_folder')).toEqual([
+      'openfile',
+      'open',
+      'folder',
     ])
   })
 })
@@ -25,18 +25,18 @@ describe('ToolBm25Index', () => {
   it('ranks catalog alias hits above unrelated tools', () => {
     const idx = new ToolBm25Index()
     idx.replace([
-      { name: 'filesystem__write_file' },
+      { name: 'openfile__open_folder' },
       { name: 'calculator' },
       { name: 'duckduckgo_search' },
     ])
-    const hits = idx.search('写文件', { topK: 3 })
-    expect(hits[0]?.id).toBe('filesystem__write_file')
+    const hits = idx.search('打开文件夹', { topK: 3 })
+    expect(hits[0]?.id).toBe('openfile__open_folder')
   })
 
   it('filters to candidate set', () => {
     const idx = new ToolBm25Index()
-    idx.replace([{ name: 'filesystem__write_file' }, { name: 'calculator' }])
-    const hits = idx.search('写文件', {
+    idx.replace([{ name: 'openfile__open_folder' }, { name: 'calculator' }])
+    const hits = idx.search('打开文件夹', {
       topK: 5,
       candidates: new Set(['calculator']),
     })

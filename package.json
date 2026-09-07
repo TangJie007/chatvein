@@ -21,7 +21,6 @@
     "mcp:inspect": "mcp-inspector",
     "mcp:inspect:openfile": "pnpm --filter @chatvein/mcp-openfile-sdk build && mcp-inspector node packages/mcps/openfile/dist/cli.js",
     "mcp:inspect:modsearch": "pnpm --filter @chatvein/mcp-modsearch-sdk build && mcp-inspector node packages/mcps/modsearch/dist/cli.js",
-    "mcp:inspect:filesystem": "mcp-inspector node node_modules/@modelcontextprotocol/server-filesystem/dist/index.js .",
     "mcp:inspect:vmsandbox": "pnpm --filter @chatvein/mcp-vmsandbox-sdk build && mcp-inspector node packages/mcps/vmsandbox/dist/cli.js .",
     "mcp:inspect:shellsandbox": "pnpm --filter @chatvein/mcp-shellsandbox-sdk build && mcp-inspector node packages/mcps/shellsandbox/dist/cli.js .",
     "mcp:inspect:pyodide": "pnpm --filter @chatvein/mcp-pyodide-sdk build && mcp-inspector node packages/mcps/pyodide/dist/cli.js .",

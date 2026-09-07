@@ -14,7 +14,7 @@ export type ToolCategory =
 export type ToolSecretKind = 'serp' | 'brave' | 'tavily' | 'wolfram'
 
 export interface ToolCatalogEntry {
-  /** MCP 子工具 = 运行时工具名（filesystem__read_text_file）；非 MCP = 工具名（calculator） */
+  /** MCP 子工具 = 运行时工具名（openfile__open_folder）；非 MCP = 工具名（calculator） */
   id: string
   category: ToolCategory
   title: string
@@ -42,11 +42,11 @@ export interface ToolCatalogEntry {
 
 /** server / 独立工具分组：承载连接信息与 UI 展示 */
 export interface ToolCatalogGroup {
-  id: string // 'mcp_filesystem'
+  id: string // 'mcp_openfile'
   category: ToolCategory
   title: string
   description: string
-  source: string // 'mcp:@modelcontextprotocol/server-filesystem'
+  source: string // 'mcp:@chatvein/mcp-openfile-sdk'
   /** MCP server 名（未设置表示非 MCP 分组） */
   mcpServer?: string
   requiresWorkspace?: boolean
@@ -77,14 +77,9 @@ export interface ResolveChatToolsOptions {
    * MCP servers（优先源）。配置后与目录工具合并；同名时 MCP 覆盖 catalog。
    * 通常由 `CHATVEIN_MCP_SERVERS` 或设置页注入。
    * 有 `workspaceRoot` 且未关闭对应开关时，会自动注入
-   * filesystem / openfile（仅允许该根）；`mcp_modsearch` / `mcp_playwright` 选中时注入对应 server（不依赖 workspace）。
+   * openfile（仅允许该根）；`mcp_modsearch` / `mcp_playwright` 选中时注入对应 server（不依赖 workspace）。
    */
   mcpServers?: Record<string, import('./mcp').McpServerConnection>
-  /**
-   * 是否自动挂 MCP filesystem（**默认 false**）。
-   * 本地文件已迁到 deepagents StateBackend middleware；仅显式 true 时仍注入旧 MCP。
-   */
-  mcpFilesystem?: boolean
   /**
    * 是否在有 workspaceRoot 时自动挂 MCP openfile（默认 true）。
    */

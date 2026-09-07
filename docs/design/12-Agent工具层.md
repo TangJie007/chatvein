@@ -24,7 +24,7 @@
 ```
 createReactChatAgent({ filesystem: true, tools: resolveChatTools(...) })
   ├─ createFilesystemMiddleware({ backend: StateBackend })  → ls/read_file/write_file/edit_file/glob/grep
-  └─ resolveChatTools({ workspaceRoot, mcpServers, mcpFilesystem: false, … })
+  └─ resolveChatTools({ workspaceRoot, mcpServers, … })
        ├─ withDefaultMcpOpenfile(workspaceRoot)    → server `openfile`
        ├─ withDefaultMcpModsearch()                → server `modsearch`
        ├─ withDefaultMcpVmsandbox(workspaceRoot)   → server `vmsandbox`
@@ -36,9 +36,8 @@ createReactChatAgent({ filesystem: true, tools: resolveChatTools(...) })
 
 | 来源 | 用途 |
 |------|------|
-| **StateBackend middleware** | 本地读写/列/搜：deepagents 内置工具；seed/flush 与工作区同步 |
+| **StateBackend middleware** | 本地读写/列/搜；目录组 `state_filesystem`（描述进向量索引）；C1/C2 收窄 allowlist |
 | **MCP `openfile`** | 系统文件管理器打开目录：`@chatvein/mcp-openfile-sdk`（文件 → 父目录） |
-| **MCP `filesystem`（可选）** | 遗留；仅 `mcpFilesystem: true` 时注入 |
 | **MCP `modsearch`** | 联网搜索 / 读页：`@chatvein/mcp-modsearch-sdk`（ModSearch → DuckDuckGo 兜底） |
 | **MCP `vmsandbox`** | 工作区 JS：`@chatvein/mcp-vmsandbox-sdk`（NodeVM + 可信 npm；需 workspaceRoot） |
 | **MCP `pyodide`** | 工作区 Python：`@chatvein/mcp-pyodide-sdk`（Pyodide + 可信包；需 workspaceRoot） |
@@ -47,19 +46,19 @@ createReactChatAgent({ filesystem: true, tools: resolveChatTools(...) })
 | **builtin** | `fetch_url` / `sqlite_query`；`js_eval` 默认关 |
 | **community（过渡）** | calculator / wikipedia；`duckduckgo_search` 默认关 |
 
-### 2.1 默认 MCP filesystem / openfile / modsearch / vmsandbox / pyodide / playwright
+### 2.1 默认 MCP openfile / modsearch / vmsandbox / pyodide / playwright / shellsandbox
 
-- filesystem：`@modelcontextprotocol/server-filesystem` → `filesystem__*`；目录 id `mcp_filesystem`
 - openfile：`@chatvein/mcp-openfile-sdk`（`packages/mcps/openfile`）→ `openfile__*`；目录 id `mcp_openfile`
 - modsearch：`@chatvein/mcp-modsearch-sdk`（`packages/mcps/modsearch`）→ `modsearch__*`；目录 id `mcp_modsearch`；**不依赖** workspace
 - vmsandbox：`@chatvein/mcp-vmsandbox-sdk` → `vmsandbox__*`；目录 id `mcp_vmsandbox`；**需** workspace；默认仅 `scripts/`；require 仅工作区 node_modules，安装须过信任校验
 - pyodide：`@chatvein/mcp-pyodide-sdk` → `pyodide__*`；目录 id `mcp_pyodide`；**需** workspace；默认仅 `scripts/**/*.py`；安装须过信任校验（loadPackage/micropip）
 - playwright：`@playwright/mcp` → `playwright__*`；目录 id `mcp_playwright`；**不依赖** workspace；默认 `--headless`；需本机已装浏览器二进制
+- shellsandbox：`@chatvein/mcp-shellsandbox-sdk` → `shellsandbox__*`；目录 id `mcp_shellsandbox`；**需** workspace；仅 exec/git
 - 启动：`process.execPath` + 包内 CLI/entry（Electron 设 `ELECTRON_RUN_AS_NODE=1`）
-- **无** builtin `read_file` / `list_dir` / `grep_search` / `shell.openPath`
-- 关闭：`mcpFilesystem` / `mcpOpenfile` / `mcpModsearch` / `mcpVmsandbox` / `mcpPyodide` / `mcpPlaywright: false`，或 env 覆盖同名连接
+- 本地读写：**StateBackend middleware**（无 MCP filesystem、无 builtin `read_file` / `list_dir` / `grep_search`）
+- 关闭：`mcpOpenfile` / `mcpModsearch` / `mcpVmsandbox` / `mcpPyodide` / `mcpPlaywright` / `mcpShellsandbox: false`，或 env 覆盖同名连接
 
-**否决**：专用 CLI 包装包作默认联网（改走 MCP modsearch）；MCP filesystem **不带** workspace 根；local_fs builtin 后备；Electron `shell.openPath` 直接绑工具。  
+**否决**：专用 CLI 包装包作默认联网（改走 MCP modsearch）；MCP filesystem（已删除，改 StateBackend）；local_fs builtin 后备；Electron `shell.openPath` 直接绑工具。  
 **注意**：vmsandbox / pyodide ≠ design/07 工作区沙箱；vm2 已停维；Pyodide 为 WASM 软隔离。
 
 其它 MCP 示例：
@@ -75,7 +74,7 @@ CHATVEIN_MCP_SERVERS='{"brave":{"command":"npx","args":["-y","@modelcontextproto
 | 事实 | 我们的做法 |
 |------|------------|
 | `@langchain/community` **已 sunset** | 仅作残余过渡；新外部能力走 MCP |
-| 本地文件 | **仅 MCP filesystem（限 workspace）**；无 builtin 读/列/grep |
+| 本地文件 | **StateBackend middleware**；MCP 仅 openfile（打开资源管理器） |
 
 ---
 
@@ -85,7 +84,7 @@ CHATVEIN_MCP_SERVERS='{"brave":{"command":"npx","args":["-y","@modelcontextproto
 |---------|------|--------------|---------------|
 | `search` | 搜索 / 联网检索 | **MCP `modsearch__*`**（`mcp_modsearch`） | Brave / SerpAPI；community DDG 默认关 |
 | `compute` | 计算 & 代码执行 | `calculator`、**MCP `vmsandbox__*` / `pyodide__*`** | Wolfram；builtin `js_eval` 默认关；真 shell → sandbox |
-| `local_fs` | 本地文件 & 系统 | MCP `filesystem__*` + `openfile__*`（`mcp_filesystem` / `mcp_openfile`） | shell → 沙箱 |
+| `local_fs` | 本地文件 & 系统 | **`state_filesystem`**（StateBackend）+ MCP `openfile__*` | shell → shellsandbox |
 | `web` | 网页解析 & 爬虫 | `fetch_url`、**MCP `playwright__*`** | **优先 MCP 读页 / 浏览器交互** |
 | `news_finance` | 资讯 & 金融 | — | `google_trends` |
 | `database` | 数据库 & 查询 | `sqlite_query` | 远程（二期） |
@@ -102,8 +101,6 @@ function resolveChatTools(options: {
   workspaceRoot?: string
   secrets?: { … }
   mcpServers?: Record<string, McpServerConnection>
-  /** 默认 true：有 workspaceRoot 时自动挂 filesystem MCP */
-  mcpFilesystem?: boolean
   /** 默认 true：有 workspaceRoot 时自动挂 openfile MCP */
   mcpOpenfile?: boolean
   /** 默认 true：自动挂 modsearch MCP（不依赖 workspace） */
@@ -114,20 +111,20 @@ function resolveChatTools(options: {
   mcpPyodide?: boolean
   /** 默认 true：自动挂 playwright MCP（不依赖 workspace） */
   mcpPlaywright?: boolean
+  /** 默认 true：有 workspaceRoot 时自动挂 shellsandbox MCP */
+  mcpShellsandbox?: boolean
 }): Promise<StructuredToolInterface[]>
 
-function createMcpFilesystemServer(workspaceRoot: string): McpServerConnection
 function createMcpOpenfileServer(workspaceRoot: string): McpServerConnection
 function createMcpModsearchServer(opts?: { timeoutMs?: number; fallback?: boolean }): McpServerConnection
 function createMcpVmsandboxServer(workspaceRoot: string, opts?: { timeoutMs?: number; maxOutputChars?: number; allowAnyJs?: boolean }): McpServerConnection
 function createMcpPyodideServer(workspaceRoot: string, opts?: { timeoutMs?: number; maxOutputChars?: number; allowAnyPy?: boolean }): McpServerConnection
 function createMcpPlaywrightServer(opts?: { headless?: boolean; browser?: string; extraArgs?: string[] }): McpServerConnection
-function withDefaultMcpFilesystem(...): ...
 function withDefaultMcpOpenfile(...): ...
 function withDefaultMcpModsearch(...): ...
 function withDefaultMcpVmsandbox(workspaceRoot, ...): ...
 ```
-横切：`timeoutMs`、`maxOutputChars`；MCP 用上游目录白名单；builtin 路径 jail。
+横切：`timeoutMs`、`maxOutputChars`；MCP 用上游目录白名单；本地读写走 StateBackend。
 
 ---
 
@@ -139,7 +136,7 @@ RouteDecision.policy.tools = full
       allowIds, workspaceRoot: settings.effectiveWorkspaceRoot,
       mcpServers: parseMcpServersJson(process.env.CHATVEIN_MCP_SERVERS),
     })
-  → createReactChatAgent({ tools })
+  → createReactChatAgent({ tools, filesystem: true })
 ```
 
 ---
@@ -148,7 +145,7 @@ RouteDecision.policy.tools = full
 
 | 阶段 | 内容 |
 |------|------|
-| **T0（今）** | 目录 + MCP filesystem / openfile（workspace）+ env 其它 MCP |
+| **T0（今）** | 目录 + StateBackend 文件 + MCP openfile / shellsandbox + env 其它 MCP |
 | **T1** | MCP 设置页落盘；写操作与 `confirmWrites` 对齐 |
 | **T2** | 危险执行走 `SandboxProvider`；MCP 与沙箱 cwd 统一 |
 | **T3** | community 残余迁出 |
@@ -274,5 +271,5 @@ sequenceDiagram
 - 沙箱：[07-沙箱方案](./07-沙箱方案.md)  
 - 依赖：[../phase1/04-依赖选型.md](../phase1/04-依赖选型.md)  
 - 自研 MCP：`packages/mcps/`（[README](../../packages/mcps/README.md)）  
-- **调试**：根目录 `pnpm mcp:inspect` / `mcp:inspect:openfile|modsearch|filesystem`（`@modelcontextprotocol/inspector`）  
+- **调试**：根目录 `pnpm mcp:inspect` / `mcp:inspect:openfile|modsearch|shellsandbox|…`（`@modelcontextprotocol/inspector`）  
 - 代码：`packages/chatvein/tools`

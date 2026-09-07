@@ -220,25 +220,30 @@ export async function runOfficeReactTurn(
       delta: `工具检索 query：${toolQuery.slice(0, 120)}${toolQuery.length > 120 ? '…' : ''}\n`,
     })
   }
-  const boundTools = await deps.toolIndex.resolveBoundTools(
+  const bound = await deps.toolIndex.resolveBoundTools(
     agent,
     toolPolicy,
     toolRoot,
     toolQuery,
     model,
   )
-  if (mode === 'send' && boundTools.length > 0) {
+  const boundTools = bound.tools
+  const filesystemTools = bound.filesystemTools
+  if (mode === 'send' && (boundTools.length > 0 || filesystemTools?.length)) {
     emit({
       type: 'thinking_delta',
       runId,
       conversationId: conv.id,
-      delta: `绑定工具：${boundTools.map((t) => t.name).join(', ')}\n`,
+      delta: `绑定工具：${[
+        ...boundTools.map((t) => t.name),
+        ...(filesystemTools ?? []),
+      ].join(', ')}\n`,
     })
   }
 
   const checkpointer = deps.getCheckpointer(conv.workspacePath)
   await checkpointer.deleteThread(conv.id)
-  const enableFilesystem = toolPolicy !== 'none' && toolPolicy !== 'unknown'
+  const enableFilesystem = Boolean(filesystemTools?.length)
   const seedFiles = enableFilesystem ? await seedFilesFromDisk(toolRoot) : undefined
   const reactAgent = createReactChatAgent({
     model: llm,
@@ -246,7 +251,7 @@ export async function runOfficeReactTurn(
     systemPrompt,
     name: agent.name,
     checkpointer,
-    filesystem: enableFilesystem,
+    filesystem: filesystemTools ?? false,
   })
 
   const started = Date.now()
@@ -269,9 +274,7 @@ export async function runOfficeReactTurn(
         toolsPolicy: toolPolicy,
         toolsBound: [
           ...boundTools.map((t) => t.name),
-          ...(enableFilesystem
-            ? ['ls', 'read_file', 'write_file', 'edit_file', 'glob', 'grep']
-            : []),
+          ...(filesystemTools ?? []),
         ],
         tools: summarizeToolsForDebug(boundTools),
         route: {

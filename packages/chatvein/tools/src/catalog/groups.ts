@@ -3,16 +3,29 @@ import type { ToolCatalogGroup } from '../types'
 /** MCP server 级分组：UI 折叠、整组白名单、连接信息、workspace 依赖 */
 export const TOOL_CATALOG_GROUPS: readonly ToolCatalogGroup[] = [
   {
-    id: 'mcp_filesystem',
+    id: 'state_filesystem',
     category: 'local_fs',
-    title: '工作区文件系统（已弃用 · MCP）',
+    title: '工作区文件系统（StateBackend）',
     description:
-      '已弃用：本地文件改由 deepagents createFilesystemMiddleware + StateBackend。保留目录项仅兼容旧白名单 id。',
-    source: 'mcp:@modelcontextprotocol/server-filesystem',
-    mcpServer: 'filesystem',
+      '经 deepagents createFilesystemMiddleware + StateBackend：ls / read_file / write_file / edit_file / glob / grep。',
+    source: 'deepagents:StateBackend',
     requiresWorkspace: true,
-    defaultEnabled: false,
-    keywords: ['文件', '读取文件', '写文件', '目录', '列目录', '搜索文件', 'file', 'read', 'write', 'ls', 'folder'],
+    defaultEnabled: true,
+    keywords: [
+      '文件',
+      '读取文件',
+      '写文件',
+      '目录',
+      '列目录',
+      '搜索文件',
+      '编辑',
+      'file',
+      'read',
+      'write',
+      'ls',
+      'grep',
+      'glob',
+    ],
   },
   {
     id: 'mcp_shellsandbox',

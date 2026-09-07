@@ -1,7 +1,7 @@
 import type { ToolCatalogEntry, ToolCatalogGroup } from './types'
 import { TOOL_CATALOG_GROUPS, catalogGroupById } from './catalog/groups'
 import { CORE_TOOLS } from './catalog/tools-core'
-import { FILESYSTEM_TOOLS } from './catalog/tools-filesystem'
+import { STATE_FILESYSTEM_TOOLS } from './catalog/tools-state-filesystem'
 import { OPENFILE_TOOLS } from './catalog/tools-openfile'
 import { MODSEARCH_TOOLS } from './catalog/tools-modsearch'
 import { SHELLSANDBOX_TOOLS } from './catalog/tools-shellsandbox'
@@ -9,10 +9,10 @@ import { VMSANDBOX_TOOLS } from './catalog/tools-vmsandbox'
 import { PYODIDE_TOOLS } from './catalog/tools-pyodide'
 import { PLAYWRIGHT_TOOLS } from './catalog/tools-playwright'
 
-/** 扁平工具目录：非 MCP 工具 + 各 MCP server 的子工具（id = 运行时工具名） */
+/** 扁平工具目录：非 MCP 工具 + StateBackend FS + 各 MCP server 的子工具（id = 运行时工具名） */
 export const TOOL_CATALOG: readonly ToolCatalogEntry[] = [
   ...CORE_TOOLS,
-  ...FILESYSTEM_TOOLS,
+  ...STATE_FILESYSTEM_TOOLS,
   ...SHELLSANDBOX_TOOLS,
   ...OPENFILE_TOOLS,
   ...MODSEARCH_TOOLS,

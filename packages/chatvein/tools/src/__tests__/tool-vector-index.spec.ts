@@ -72,11 +72,11 @@ describe('ToolVectorIndex', () => {
   it('build 后 ready；select 在候选内按相关度返回 id', async () => {
     const idx = new ToolVectorIndex({ embedder: new FakeEmbedder(), store: new FakeStore() })
     expect(idx.ready).toBe(false)
-    await idx.build([{ name: 'filesystem__read' }, { name: 'calculator' }])
+    await idx.build([{ name: 'openfile__open_folder' }, { name: 'calculator' }])
     expect(idx.ready).toBe(true)
     expect(idx.lexicalSize).toBe(2)
-    const res = await idx.select('read a file', ['filesystem__read', 'calculator'], 16)
-    expect(res).toContain('filesystem__read')
+    const res = await idx.select('read a file', ['openfile__open_folder', 'calculator'], 16)
+    expect(res).toContain('openfile__open_folder')
   })
 
   it('未就绪时 select 返回 []（上层回退全候选）', async () => {
@@ -86,15 +86,15 @@ describe('ToolVectorIndex', () => {
 
   it('select 仅返回候选内的 id，排除无关但已索引的工具', async () => {
     const idx = new ToolVectorIndex({ embedder: new FakeEmbedder(), store: new FakeStore() })
-    await idx.build([{ name: 'filesystem__read' }, { name: 'calculator' }])
+    await idx.build([{ name: 'openfile__open_folder' }, { name: 'calculator' }])
     const res = await idx.select('read', ['calculator'])
-    expect(res).not.toContain('filesystem__read')
+    expect(res).not.toContain('openfile__open_folder')
   })
 
   it('空 query 返回 []', async () => {
     const idx = new ToolVectorIndex({ embedder: new FakeEmbedder(), store: new FakeStore() })
-    await idx.build([{ name: 'filesystem__read' }])
-    expect(await idx.select('   ', ['filesystem__read'])).toEqual([])
+    await idx.build([{ name: 'openfile__open_folder' }])
+    expect(await idx.select('   ', ['openfile__open_folder'])).toEqual([])
   })
 
   it('select 用候选数抬高 topK（max(prescreenTopK, 候选数)）', async () => {
@@ -119,11 +119,11 @@ describe('ToolVectorIndex', () => {
       vectorWeight: 0.1,
     })
     await idx.build([
-      { name: 'filesystem__write_file', description: 'zzz unrelated embed blob' },
+      { name: 'openfile__open_folder', description: 'zzz unrelated embed blob' },
       { name: 'weather_lookup', description: 'file write shared topic noise' },
     ])
-    const res = await idx.select('写文件', ['filesystem__write_file', 'weather_lookup'], 2)
-    expect(res[0]).toBe('filesystem__write_file')
+    const res = await idx.select('打开文件夹', ['openfile__open_folder', 'weather_lookup'], 2)
+    expect(res[0]).toBe('openfile__open_folder')
   })
 
   it('recordsFor 产出 scope/kind 对齐 TOOL_INDEX 的记录（不触发嵌入）', () => {

@@ -279,13 +279,13 @@ export const knowledgeBases: KbRow[] = [
 
 export const mcps: McpRow[] = [
   {
-    id: 'filesystem',
-    name: 'filesystem',
-    initial: 'F',
+    id: 'openfile',
+    name: 'openfile',
+    initial: 'O',
     tint: 'indigo',
     transport: 'stdio',
-    tools: 6,
-    cmd: 'npx -y @modelcontextprotocol/server-filesystem ~/Workspace',
+    tools: 2,
+    cmd: 'node packages/mcps/openfile/dist/cli.js ~/Workspace',
     status: 'on',
     statusLabel: '已连接',
     latency: '12 ms',

@@ -14,12 +14,17 @@ import {
   TOOL_INDEX_SCOPE,
   TOOL_INDEX_KIND,
   TOOL_PRESCREEN_TOP_K,
+  selectStateFilesystemCatalogEntries,
+  normalizeStateFilesystemAllowlist,
+  isStateFilesystemToolId,
+  stateFilesystemIndexInputs,
   type ToolEmbedder,
   type ToolVectorStore,
   type LlmSelectToolsStatus,
   type ToolCatalogEntry,
+  type StateFilesystemToolName,
+  type StructuredToolInterface,
 } from '@chatvein/tools'
-import type { StructuredToolInterface } from '@chatvein/tools'
 import { app } from 'electron'
 import { isAbsolute, join } from 'node:path'
 import type { AgentConfig } from '../../agent/agent.types'
@@ -87,8 +92,8 @@ export class ToolIndexService {
   }
 
   /**
-   * policy.tools ∩ 角色白名单 → LangChain 工具实例。
-   * 链路：resolveChatTools → C1 混合预筛 → C2 弱模型精筛 → C3 预算裁剪。
+   * policy.tools ∩ 角色白名单 → LangChain 工具 + StateBackend FS allowlist。
+   * 链路：resolveChatTools + FS 目录 → C1 混合预筛 → C2 弱模型精筛 → C3 预算裁剪（仅 StructuredTool）。
    * query 应为 `route.rewrittenQuery ?? 原文`；**空 query → 不绑工具**（主模型纯聊）。
    * workspaceRoot 为工具 jail 根：编程模式下是用户项目目录，否则是会话沙箱。
    */
@@ -98,16 +103,22 @@ export class ToolIndexService {
     workspaceRoot?: string,
     query?: string,
     model?: ModelConfig,
-  ): Promise<StructuredToolInterface[]> {
+  ): Promise<{
+    tools: StructuredToolInterface[]
+    /** null = 本轮不挂 filesystem middleware */
+    filesystemTools: StateFilesystemToolName[] | null
+  }> {
     const q = query?.trim() ?? ''
     // 无检索句无法做 C1/C2；不强行全量绑工具，避免空白输入拖进整库工具
-    if (!q) return []
+    if (!q) return { tools: [], filesystemTools: null }
 
     const settings = await this.settings.get()
+    const wsRoot = workspaceRoot?.trim() || settings.effectiveWorkspaceRoot
+    const allowIds = agent.tools.length > 0 ? agent.tools : 'all'
     const candidateTools = await resolveChatTools({
       policy: toolPolicy,
-      allowIds: agent.tools.length > 0 ? agent.tools : 'all',
-      workspaceRoot: workspaceRoot?.trim() || settings.effectiveWorkspaceRoot,
+      allowIds,
+      workspaceRoot: wsRoot,
       secrets: {
         serpApiKey: process.env.SERPAPI_API_KEY,
         braveApiKey: process.env.BRAVE_SEARCH_API_KEY,
@@ -115,16 +126,19 @@ export class ToolIndexService {
         wolframAppId: process.env.WOLFRAM_ALPHA_APPID,
       },
       mcpServers: parseMcpServersJson(process.env.CHATVEIN_MCP_SERVERS),
-      // 本地文件统一走 deepagents StateBackend middleware，不再挂 MCP filesystem
-      mcpFilesystem: false,
     })
-    if (candidateTools.length === 0) return []
 
-    // 防御：目录里若仍残留 filesystem__*，不进入 C1/C2
-    const withoutMcpFs = candidateTools.filter((t) => !t.name.startsWith('filesystem__'))
-    const byName = new Map(withoutMcpFs.map((t) => [t.name, t]))
-    const candidateNames = [...byName.keys()]
-    if (candidateNames.length === 0) return []
+    const fsCatalog = selectStateFilesystemCatalogEntries({
+      policy: toolPolicy,
+      allowIds,
+      workspaceRoot: wsRoot,
+    })
+
+    const byName = new Map(candidateTools.map((t) => [t.name, t]))
+    const structuredNames = [...byName.keys()]
+    const fsNames = fsCatalog.map((e) => e.id)
+    const candidateNames = [...new Set([...structuredNames, ...fsNames])]
+    if (candidateNames.length === 0) return { tools: [], filesystemTools: null }
 
     // 等待启动 warmup（若仍在跑），避免签名命中跳过写库后内存未 ready 导致本轮空召回
     await this.awaitToolIndexWarmup()
@@ -137,7 +151,7 @@ export class ToolIndexService {
       narrowed = hybridHits
       c1Source = 'hybrid'
     } else {
-      const kwHits = this.prescreenWithKeywords(q, candidateTools)
+      const kwHits = this.prescreenWithKeywords(q, candidateTools, fsCatalog)
       if (kwHits.length > 0 && kwHits.length < candidateNames.length) {
         narrowed = kwHits
         c1Source = 'keyword'
@@ -148,14 +162,16 @@ export class ToolIndexService {
     let finalNames = narrowed
     let c2Status: LlmSelectToolsStatus | 'skipped' = 'skipped'
     if (model && narrowed.length > this.toolSelectSkipBelow) {
-      const c2 = await this.llmSelectToolsForTurn(q, narrowed, candidateTools, model)
+      const c2 = await this.llmSelectToolsForTurn(q, narrowed, candidateTools, fsCatalog, model)
       finalNames = c2.toolIds
       c2Status = c2.status
     }
 
-    // 层 C3 预算裁剪（已按相关度排序）。预算按主模型上下文窗口动态算：
-    // 成本含工具完整参数 JSON Schema（不止 name/description），避免大参数工具撑爆窗口。
-    const ordered = finalNames
+    const filesystemTools = normalizeStateFilesystemAllowlist(finalNames)
+    const structuredFinal = finalNames.filter((n) => !isStateFilesystemToolId(n))
+
+    // 层 C3 预算裁剪（仅 StructuredTool；FS 走 middleware，不占此预算）
+    const ordered = structuredFinal
       .map((n) => byName.get(n))
       .filter((t): t is StructuredToolInterface => Boolean(t))
     const toolBudgetTokens = computeToolBudgetTokens({ modelId: model?.model })
@@ -170,8 +186,9 @@ export class ToolIndexService {
       queryChars: q.length,
       indexReady: Boolean(this.toolIndex?.ready),
       toolBudgetTokens,
+      filesystemTools: filesystemTools ?? [],
     })
-    return bound
+    return { tools: bound, filesystemTools }
   }
 
   /** App ready 后后台预建工具索引：版本化全量基准（幂等、失败仅告警，不阻塞窗口） */
@@ -370,11 +387,15 @@ export class ToolIndexService {
   private toolIndexInputsOf(
     tools: StructuredToolInterface[],
   ): Array<{ name: string; description?: string; schema?: unknown }> {
-    return tools.map((t) => ({
+    const fromTools = tools.map((t) => ({
       name: t.name,
       description: t.description,
       schema: (t as { schema?: unknown }).schema,
     }))
+    // StateBackend FS 目录条目一并进索引（无 StructuredTool 实例）
+    const fromFs = stateFilesystemIndexInputs()
+    const seen = new Set(fromTools.map((t) => t.name))
+    return [...fromTools, ...fromFs.filter((f) => !seen.has(f.name))]
   }
 
   /** 层 C1：向量+工具名/别名 BM25 混合预筛；未就绪/失败 → []（由上层改走关键词或全量） */
@@ -390,21 +411,28 @@ export class ToolIndexService {
   }
 
   /** 层 C1 兜底：关键词预筛；无命中（返回全集）视为无效，交给上层全量 */
-  private prescreenWithKeywords(query: string, tools: StructuredToolInterface[]): string[] {
-    const entries: ToolCatalogEntry[] = tools.map((t) => {
-      const cat = catalogEntryForTool(t.name)
-      if (cat) return cat
-      const human = humanizeToolName(t.name)
-      return {
-        id: t.name,
-        category: 'knowledge',
-        title: human || t.name,
-        description: t.description ?? '',
-        source: 'runtime',
-        defaultEnabled: true,
-        keywords: human.split(/\s+/).filter(Boolean),
-      }
-    })
+  private prescreenWithKeywords(
+    query: string,
+    tools: StructuredToolInterface[],
+    fsCatalog: ToolCatalogEntry[],
+  ): string[] {
+    const entries: ToolCatalogEntry[] = [
+      ...tools.map((t) => {
+        const cat = catalogEntryForTool(t.name)
+        if (cat) return cat
+        const human = humanizeToolName(t.name)
+        return {
+          id: t.name,
+          category: 'knowledge' as const,
+          title: human || t.name,
+          description: t.description ?? '',
+          source: 'runtime',
+          defaultEnabled: true,
+          keywords: human.split(/\s+/).filter(Boolean),
+        }
+      }),
+      ...fsCatalog,
+    ]
     return keywordSelect(query, entries)
   }
 
@@ -413,13 +441,20 @@ export class ToolIndexService {
     query: string,
     narrowedNames: string[],
     candidates: StructuredToolInterface[],
+    fsCatalog: ToolCatalogEntry[],
     model: ModelConfig,
   ): Promise<{ toolIds: string[]; status: LlmSelectToolsStatus }> {
     const byName = new Map(candidates.map((t) => [t.name, t]))
+    const byFs = new Map(fsCatalog.map((e) => [e.id, e]))
     const cand = narrowedNames
-      .map((n) => byName.get(n))
-      .filter((t): t is StructuredToolInterface => Boolean(t))
-      .map((t) => ({ name: t.name, description: t.description }))
+      .map((n) => {
+        const t = byName.get(n)
+        if (t) return { name: t.name, description: t.description }
+        const fs = byFs.get(n)
+        if (fs) return { name: fs.id, description: fs.description }
+        return null
+      })
+      .filter((x): x is { name: string; description: string } => Boolean(x))
     try {
       const l2Model = await this.llm.resolveL2Model(model)
       const llmWeak = this.llm.createDebugAwareLlm(l2Model, { temperature: 0, maxTokens: 256 })
@@ -449,6 +484,7 @@ export class ToolIndexService {
       queryChars: number
       indexReady: boolean
       toolBudgetTokens?: number
+      filesystemTools?: string[]
     },
   ): void {
     emitTelemetry('trace:tool_select', {
@@ -460,7 +496,8 @@ export class ToolIndexService {
       boundCount: bound.length,
       indexReady: info.indexReady,
       queryChars: info.queryChars,
-      toolBudgetTokens: info.toolBudgetTokens,
+      ...(info.toolBudgetTokens != null ? { toolBudgetTokens: info.toolBudgetTokens } : {}),
+      ...(info.filesystemTools ? { filesystemTools: info.filesystemTools } : {}),
       tools: bound.map((t) => t.name),
     })
   }

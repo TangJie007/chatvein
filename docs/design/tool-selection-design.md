@@ -30,7 +30,7 @@ LangChain createReactChatAgent({ tools: boundTools, ... })
 
 - **目录条目 16 个**：其中 `defaultEnabled` 约 11 个（搜索 / 计算 / 本地文件 / 网页 / 数据库 / 知识库）。
 - **MCP 子工具膨胀**（关键）：每个 MCP server 展开成**多个子工具实例**，且每个都带独立 JSON Schema：
-  - `modsearch__*`（2）、`vmsandbox__*`（~4）、`pyodide__*`（~4）、`filesystem__*`（~6）、`openfile__*`（~2）、`playwright__*`（~12）。
+  - `modsearch__*`（2）、`vmsandbox__*`（~4）、`pyodide__*`（~4）、`openfile__*`（~2）、`shellsandbox__*`（2）、`playwright__*`（~12）。
   - 实际绑定实例常达 **35–55 个**。
 - 每个工具描述 + schema 约 50–200 token，合计 **每轮 2k–6k token 仅用于工具**，且**每轮重复**。
 
@@ -166,7 +166,7 @@ export function fitToolsWithinBudget(tools: StructuredToolInterface[], budgetTok
 ### 层 D — 工具描述压缩（cheap win，先做）
 
 1. catalog 增 `shortDescription?`：给模型用**一句精简描述**，长描述留作调试/UI。
-2. **MCP 子工具前缀合并**：`filesystem__read`/`filesystem__write`/... 目前各自长描述，改为「一个前缀说明 + 子命令名」即可，避免重复。
+2. **MCP 子工具前缀合并**：`openfile__*` / `modsearch__*` 等各自长描述，改为「一个前缀说明 + 子命令名」即可，避免重复。
 3. 过长 description 用 `truncateFolded`（已具备）折叠。
 
 > 预计单独降 15–25%。

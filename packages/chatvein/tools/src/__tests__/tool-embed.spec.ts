@@ -15,13 +15,13 @@ import type { ToolEmbedInput } from '../tool-embed'
 
 describe('tool-embed helpers', () => {
   it('mcpServerOf splits server prefix', () => {
-    expect(mcpServerOf('filesystem__read_text_file')).toBe('filesystem')
+    expect(mcpServerOf('openfile__open_folder')).toBe('openfile')
     expect(mcpServerOf('browser_navigate')).toBeUndefined()
     expect(mcpServerOf('calculator')).toBeUndefined()
   })
 
   it('humanizeToolName expands underscores and camelCase', () => {
-    expect(humanizeToolName('filesystem__read_text_file')).toBe('filesystem read text file')
+    expect(humanizeToolName('openfile__open_folder')).toBe('openfile open folder')
     expect(humanizeToolName('readPage')).toBe('read page')
     expect(humanizeToolName('calculator')).toBe('calculator')
   })
@@ -35,18 +35,18 @@ describe('tool-embed helpers', () => {
 
 describe('toolEmbedText', () => {
   it('prefers catalog description and keeps server tag', () => {
-    const text = toolEmbedText({ name: 'filesystem__read_text_file', description: 'official long description' })
-    expect(text).toContain('filesystem__read_text_file')
-    expect(text).toContain('filesystem read text file')
-    expect(text).toContain('读取单个文本文件内容')
+    const text = toolEmbedText({ name: 'openfile__open_folder', description: 'official long description' })
+    expect(text).toContain('openfile__open_folder')
+    expect(text).toContain('openfile open folder')
+    expect(text).toContain('在系统文件管理器中打开文件夹')
     expect(text).not.toContain('official long')
-    expect(text).toContain('｜server: filesystem')
+    expect(text).toContain('｜server: openfile')
   })
 
   it('inherits catalog keywords for MCP sub tools via group', () => {
-    const entry = catalogEntryForTool('filesystem__search_files')!
-    expect(entry.groupId).toBe('mcp_filesystem')
-    const text = toolEmbedText({ name: 'filesystem__search_files', description: 'x' })
+    const entry = catalogEntryForTool('openfile__open_folder')!
+    expect(entry.groupId).toBe('mcp_openfile')
+    const text = toolEmbedText({ name: 'openfile__open_folder', description: 'x' })
     expect(text).toContain('关键词：')
   })
 
@@ -88,20 +88,20 @@ describe('toolEmbedText', () => {
   })
 
   it('disambiguates same bare name across servers', () => {
-    const fs = toolEmbedText({ name: 'filesystem__list_allowed_directories', description: 'a' })
+    const a = toolEmbedText({ name: 'modsearch__web_search', description: 'a' })
     const of = toolEmbedText({ name: 'openfile__list_allowed_directories', description: 'b' })
-    expect(fs).toContain('filesystem')
+    expect(a).toContain('modsearch')
     expect(of).toContain('openfile')
-    expect(fs).not.toBe(of)
+    expect(a).not.toBe(of)
   })
 
   it('toolEmbedTexts maps a resolved tool list', () => {
     const out = toolEmbedTexts([
-      { name: 'filesystem__read_text_file', description: 'a' },
+      { name: 'openfile__open_folder', description: 'a' },
       { name: 'playwright__browser_click', description: 'b' },
       { name: 'fetch_url', description: 'c', schema: z.object({ url: z.string() }) },
     ])
-    expect(out.map((o) => o.name)).toEqual(['filesystem__read_text_file', 'playwright__browser_click', 'fetch_url'])
+    expect(out.map((o) => o.name)).toEqual(['openfile__open_folder', 'playwright__browser_click', 'fetch_url'])
     expect(out.every((o) => o.text.length > 0)).toBe(true)
   })
 
@@ -114,9 +114,9 @@ describe('toolEmbedText', () => {
 
 describe('catalogEmbedText', () => {
   it('renders id, title, keywords and category', () => {
-    const text = catalogEmbedText(catalogEntryForTool('filesystem__read_text_file')!)
-    expect(text).toContain('filesystem__read_text_file（filesystem read text file）')
-    expect(text).toContain('读取单个文本文件内容')
+    const text = catalogEmbedText(catalogEntryForTool('openfile__open_folder')!)
+    expect(text).toContain('openfile__open_folder（openfile open folder）')
+    expect(text).toContain('在系统文件管理器中打开文件夹')
     expect(text).toContain('关键词：')
     expect(text).toContain('｜category: local_fs')
   })
@@ -133,7 +133,7 @@ describe('catalogEmbedText', () => {
 })
 
 const SAMPLE_TOOLS: ToolEmbedInput[] = [
-  { name: 'filesystem__read_text_file', description: 'official long description' },
+  { name: 'openfile__open_folder', description: 'official long description' },
   { name: 'playwright__browser_click', description: 'b' },
   {
     name: 'fetch_url',

@@ -23,7 +23,7 @@
   ├─③ resolveBoundTools              【工具 + MCP】
   │     policy ∩ 角色白名单 → resolveChatTools
   │       ├─ catalog 工厂（community / builtin）
-  │       └─ MCP servers → loadMcpTools（含默认 filesystem）
+  │       └─ MCP servers → loadMcpTools（含默认 openfile 等）
   │
   └─④ createReactChatAgent({ model, tools, systemPrompt })
         → invokeReactChatAgent({ message, history, recursionLimit })
@@ -33,7 +33,7 @@
 |--------|--------|--------|
 | L2 system/user prompt | `@chatvein/agents` `routing/l2/prompt.ts` | L2 分类器 LLM |
 | 主对话 system prompt | `ChatService.systemPromptForRoute` | `createAgent({ systemPrompt })` |
-| MCP servers | `withDefaultMcpFilesystem` + `CHATVEIN_MCP_SERVERS` | `MultiServerMCPClient.getTools()` |
+| MCP servers | `withDefaultMcpOpenfile` 等 + `CHATVEIN_MCP_SERVERS` | `MultiServerMCPClient.getTools()` |
 | StructuredTool 列表 | `resolveChatTools` | `createAgent({ tools })` |
 
 ---
@@ -81,14 +81,13 @@
 ### 2.1 配置来源（合并顺序）
 
 ```
-withDefaultMcpFilesystem(...) → withDefaultMcpOpenfile(...) → withDefaultMcpModsearch(...)
-  = { filesystem?, openfile?, modsearch? }  ∪  envServers
+withDefaultMcpOpenfile(...) → withDefaultMcpModsearch(...)
+  = { openfile?, modsearch?, … }  ∪  envServers
     （后者同名覆盖前者）
 ```
 
 | 来源 | 键 | 说明 |
 |------|-----|------|
-| 自动 | `filesystem` | 有 `workspaceRoot` 且目录选中 `mcp_filesystem` 且未 `mcpFilesystem:false` |
 | 自动 | `openfile` | 有 `workspaceRoot` 且目录选中 `mcp_openfile` 且未 `mcpOpenfile:false` |
 | 自动 | `modsearch` | 目录选中 `mcp_modsearch` 且未 `mcpModsearch:false`（**不依赖** workspace） |
 | 自动 | `vmsandbox` | 有 `workspaceRoot` 且目录选中 `mcp_vmsandbox` 且未 `mcpVmsandbox:false`（NodeVM 跑 `scripts/`） |
@@ -99,10 +98,9 @@ withDefaultMcpFilesystem(...) → withDefaultMcpOpenfile(...) → withDefaultMcp
 
 ### 2.2 默认如何起进程
 
-`createMcpFilesystemServer(root)` / `createMcpOpenfileServer(root)` / `createMcpModsearchServer()`：
+`createMcpOpenfileServer(root)` / `createMcpModsearchServer()` / …：
 
 - `command` = `process.execPath`
-- filesystem `args` = `[server-filesystem dist/index.js, workspaceRoot]`
 - openfile `args` = `[@chatvein/mcp-openfile-sdk dist/cli.js, workspaceRoot]`
 - modsearch `args` = `[@chatvein/mcp-modsearch-sdk dist/cli.js]`（可选 `--timeout=` / `--no-fallback`）
 - vmsandbox `args` = `[@chatvein/mcp-vmsandbox-sdk dist/cli.js, workspaceRoot]`（可选 `--timeout=` / `--max-output=` / `--allow-any-js`）
@@ -113,7 +111,7 @@ withDefaultMcpFilesystem(...) → withDefaultMcpOpenfile(...) → withDefaultMcp
 ### 2.3 拉工具
 
 `loadMcpTools({ servers })` → `@langchain/mcp-adapters` `MultiServerMCPClient` → `getTools()`  
-工具名默认带前缀：`{server}__{tool}`（如 `filesystem__read_text_file`、`openfile__open_folder`、`modsearch__web_search`、`vmsandbox__run_workspace_script`、`pyodide__run_workspace_script`）。
+工具名默认带前缀：`{server}__{tool}`（如 `openfile__open_folder`、`modsearch__web_search`、`vmsandbox__run_workspace_script`、`pyodide__run_workspace_script`）。
 
 连接失败默认 `onConnectionError: 'ignore'`，不拖垮整轮 Chat；**无 builtin FS 后备**。
 
@@ -143,7 +141,6 @@ selected = TOOL_CATALOG ∩ allowIds ∩ defaultEnabled/密钥/workspace 条件
 
 | catalog id | 实现来源 |
 |------------|----------|
-| `mcp_filesystem` | **不**经工厂造同名工具；只作开关，触发 MCP `filesystem` |
 | `mcp_openfile` | 同上，触发 MCP `openfile`（`open_folder`） |
 | `duckduckgo_search` / `calculator` / … | community 动态 import |
 | `vmsandbox__run_workspace_script` / `ensure_trusted_packages` 等 | MCP `vmsandbox`（NodeVM + 可信包安装） |
@@ -180,7 +177,6 @@ ChatService:
 | `pnpm mcp:inspect` | 空 UI，手动选 server |
 | `pnpm mcp:inspect:openfile` | `packages/mcps/openfile/dist/cli.js` |
 | `pnpm mcp:inspect:modsearch` | `packages/mcps/modsearch/dist/cli.js` |
-| `pnpm mcp:inspect:filesystem` | 官方 `server-filesystem`，jail=`.` |
 | `pnpm mcp:inspect:vmsandbox` | `packages/mcps/vmsandbox/dist/cli.js` |
 | `pnpm mcp:inspect:pyodide` | `packages/mcps/pyodide/dist/cli.js` |
 | `pnpm mcp:inspect:playwright` | `node_modules/@playwright/mcp/cli.js --headless` |
@@ -212,4 +208,4 @@ ChatService:
 - L3 执行：[11-L3-ReAct自适应循环推理层](./11-L3-ReAct自适应循环推理层.md)  
 - L2 路由：[10-L2语义路由层](./10-L2语义路由层.md)  
 - 自研 MCP 包：[packages/mcps/README.md](../../packages/mcps/README.md)  
-- 笔记：[mcp-first](../../.agents/notes/2026-09-05-mcp-first-tools.md)、[mcp-filesystem](../../.agents/notes/2026-09-05-mcp-filesystem-workspace.md)、[mcp-modsearch](../../.agents/notes/2026-09-05-mcp-modsearch.md)、[mcp-inspector](../../.agents/notes/2026-09-05-mcp-inspector.md)
+- 笔记：[mcp-first](../../.agents/notes/2026-09-05-mcp-first-tools.md)、[deepagents-fs](../../.agents/notes/2026-09-07-deepagents-filesystem-statebackend.md)、[mcp-modsearch](../../.agents/notes/2026-09-05-mcp-modsearch.md)、[mcp-inspector](../../.agents/notes/2026-09-05-mcp-inspector.md)

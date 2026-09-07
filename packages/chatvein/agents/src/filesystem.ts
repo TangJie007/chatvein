@@ -1,12 +1,17 @@
 /**
  * 统一文件工具：deepagents `createFilesystemMiddleware` + `StateBackend`。
- * 主 Agent（办公 ReAct）与编程 Agent（Forge implement/fix）共用同一套中间件。
+ * 工具名 / 描述目录在 `@chatvein/tools`（state_filesystem）；本模块只装配 middleware。
  *
  * StateBackend 把文件存在 LangGraph state.files（随 checkpoint）；需要落盘产物 /
  * verify 时用 seed/flush 与真实工作区同步。
  */
 import { readdir, readFile, mkdir, writeFile, stat } from 'node:fs/promises'
 import { dirname, join, relative, sep } from 'node:path'
+import {
+  STATE_FILESYSTEM_TOOL_NAMES,
+  stateFilesystemCustomDescriptions,
+  type StateFilesystemToolName,
+} from '@chatvein/tools'
 import {
   createFilesystemMiddleware,
   StateBackend,
@@ -15,17 +20,10 @@ import {
   type FsToolName,
 } from 'deepagents'
 
-/** 暴露给模型的文件系统工具（不含 execute；shell/git 仍走沙箱工具） */
-export const CHATVEIN_FS_TOOL_NAMES = [
-  'ls',
-  'read_file',
-  'write_file',
-  'edit_file',
-  'glob',
-  'grep',
-] as const satisfies readonly FsToolName[]
+/** 与 `@chatvein/tools` STATE_FILESYSTEM_TOOL_NAMES 同值 */
+export const CHATVEIN_FS_TOOL_NAMES = STATE_FILESYSTEM_TOOL_NAMES
 
-export type ChatveinFsToolName = (typeof CHATVEIN_FS_TOOL_NAMES)[number]
+export type ChatveinFsToolName = StateFilesystemToolName
 
 /** deepagents state.files 记录（路径 → FileData） */
 export type FilesRecord = Record<string, FileData>
@@ -56,20 +54,26 @@ export const CHATVEIN_FS_DENY_PERMISSIONS: NonNullable<FilesystemMiddlewareOptio
 
 /**
  * 创建挂在 createAgent.middleware 上的文件系统中间件。
- * 默认 `new StateBackend()`；禁止 execute（执行仍用 LocalSandbox / mcp_shellsandbox）。
+ * 默认 `new StateBackend()` + 目录 `customToolDescriptions`；禁止 execute。
  */
 export function createStateFilesystemMiddleware(
   options: Omit<FilesystemMiddlewareOptions, 'backend'> & {
-    /** 覆盖工具白名单；默认 CHATVEIN_FS_TOOL_NAMES */
+    /** 覆盖工具白名单；默认 STATE_FILESYSTEM_TOOL_NAMES（全套） */
     tools?: readonly FsToolName[] | 'all' | null
   } = {},
 ) {
-  const { tools = CHATVEIN_FS_TOOL_NAMES, permissions, ...rest } = options
+  const {
+    tools = STATE_FILESYSTEM_TOOL_NAMES,
+    permissions,
+    customToolDescriptions,
+    ...rest
+  } = options
   return createFilesystemMiddleware({
     ...rest,
     backend: new StateBackend(),
     tools,
     permissions: permissions ?? CHATVEIN_FS_DENY_PERMISSIONS,
+    customToolDescriptions: customToolDescriptions ?? stateFilesystemCustomDescriptions(),
   })
 }
 

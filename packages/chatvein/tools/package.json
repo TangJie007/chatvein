@@ -37,7 +37,6 @@
     "@langchain/community": "^1.1.29",
     "@langchain/core": "^1.2.9",
     "@langchain/mcp-adapters": "^1.1.4",
-    "@modelcontextprotocol/server-filesystem": "2026.8.31",
     "@playwright/mcp": "^0.0.80",
     "duck-duck-scrape": "^2.2.7",
     "es-toolkit": "^1.52.0",

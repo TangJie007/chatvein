@@ -38,13 +38,13 @@ export interface ToolEmbedTextOptions {
   includeKeywords?: boolean
 }
 
-/** `filesystem__read_text_file` → `filesystem`；无前缀返回 undefined */
+/** `openfile__open_folder` → `openfile`；无前缀返回 undefined */
 export function mcpServerOf(toolName: string): string | undefined {
   const i = toolName.indexOf('__')
   return i > 0 ? toolName.slice(0, i) : undefined
 }
 
-/** 工具名拆词：`filesystem__read_text_file` → `filesystem read text file` */
+/** 工具名拆词：`openfile__open_folder` → `openfile open folder` */
 export function humanizeToolName(toolName: string): string {
   return toolName
     .replace(/[_.]+/g, ' ')

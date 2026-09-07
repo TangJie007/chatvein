@@ -331,7 +331,7 @@ export async function listWorkspaceScripts(
       return { root, scripts: [], error: `${subdir} 不是目录` }
     }
   } catch {
-    return { root, scripts: [], error: `目录不存在：${subdir}（可先用 filesystem 创建）` }
+    return { root, scripts: [], error: `目录不存在：${subdir}（可先用文件工具创建）` }
   }
 
   await walk(dirAbs)

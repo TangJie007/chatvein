@@ -16,12 +16,8 @@ const enabled = ref(true)
 const mcp = mcps[0]
 
 const toolRows = [
-  { name: 'read_file', desc: '读取单个文件，支持按行区间', agents: '3 个 Agent', on: true },
-  { name: 'write_file', desc: '写入文件，触发写入护栏', agents: '2 个 Agent', on: true },
-  { name: 'list_directory', desc: '列目录，默认限制深度 3', agents: '4 个 Agent', on: true },
-  { name: 'search_files', desc: 'glob 模式匹配文件名', agents: '3 个 Agent', on: true },
-  { name: 'move_file', desc: '移动 / 重命名，跨目录需确认', agents: '1 个 Agent', on: true },
-  { name: 'delete_file', desc: '删除文件，始终二次确认', agents: '0 个 Agent', on: false },
+  { name: 'open_folder', desc: '在系统文件管理器中打开文件夹', agents: '3 个 Agent', on: true },
+  { name: 'list_allowed_directories', desc: '列出允许打开的根目录', agents: '2 个 Agent', on: false },
 ]
 const toolSwitch = ref<Record<string, boolean>>(
   Object.fromEntries(toolRows.map((t) => [t.name, t.on])),
@@ -29,18 +25,16 @@ const toolSwitch = ref<Record<string, boolean>>(
 
 const logLines = [
   { t: '14:02:11', k: 'connect', v: 'stdio transport established', dim: false },
-  { t: '14:02:11', k: 'handshake', v: 'protocol 2025-06-18 · server filesystem v0.9.2', dim: false },
-  { t: '14:02:11', k: 'tools', v: '6 tools discovered', dim: false },
-  { t: '14:32:04', k: 'call', v: 'search_files("~/notes/2026-09-02-*rag*.md") → 180ms', dim: false },
-  { t: '14:32:05', k: 'call', v: 'read_file("~/notes/2026-09-02-rag-notes.md") → 240ms', dim: false },
-  { t: '14:33:41', k: 'call', v: 'move_file("rag-overview.md → Archive/2026-09/") → 90ms', dim: false },
+  { t: '14:02:11', k: 'handshake', v: 'protocol 2025-06-18 · server openfile', dim: false },
+  { t: '14:02:11', k: 'tools', v: '2 tools discovered', dim: false },
+  { t: '14:32:04', k: 'call', v: 'open_folder("~/notes") → 40ms', dim: false },
   { t: '—', k: '', v: '监听中', dim: true },
 ]
 
 function onSelect(m: McpRow) {
   setCrumbItem(m.name)
 }
-onMounted(() => setCrumbItem('filesystem'))
+onMounted(() => setCrumbItem('openfile'))
 </script>
 
 <template>
@@ -68,8 +62,8 @@ onMounted(() => setCrumbItem('filesystem'))
     <Card title="连接" side="stdio · 子进程常驻">
       <div class="rounded-xl bg-[var(--color-track)] px-3.5 py-3 font-mono text-[11.5px] leading-[1.75] text-[var(--color-ink-2)]">
         <span class="text-[var(--color-ink-3)]">$</span>
-        <span class="ml-2 text-[var(--color-brand-deep)]">npx</span>
-        <span class="ml-1.5">-y @modelcontextprotocol/server-filesystem</span>
+        <span class="ml-1.5 text-[var(--color-brand-deep)]">node</span>
+        <span class="ml-1.5">packages/mcps/openfile/dist/cli.js</span>
         <span class="ml-1.5 text-[var(--color-ok-ink)]">~/Workspace</span>
       </div>
       <div class="mt-3">
@@ -79,7 +73,7 @@ onMounted(() => setCrumbItem('filesystem'))
       </div>
     </Card>
 
-    <Card title="工具" side="6 个 · 勾选后对 Agent 可见">
+    <Card title="工具" side="2 个 · 勾选后对 Agent 可见">
       <div class="overflow-hidden rounded-[13px] bg-[var(--color-track)]">
         <table class="w-full border-collapse">
           <thead>

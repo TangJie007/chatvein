@@ -61,10 +61,15 @@ export interface CreateReactChatAgentOptions {
   checkpointer?: unknown
   /**
    * 挂载 deepagents createFilesystemMiddleware（StateBackend）。
-   * - `true`：默认工具集（ls/read_file/write_file/edit_file/glob/grep）
-   * - 也可传入已构造的 middleware（测试或自定义 permissions）
+   * - `true`：全套 FS 工具 + 目录 customToolDescriptions
+   * - `string[]`：C1/C2 筛出的 FS 工具名 allowlist（须含或会补上 read_file）
+   * - 也可传入已构造的 middleware
+   * - `false` / 省略：不挂
    */
-  filesystem?: boolean | ReturnType<typeof createStateFilesystemMiddleware>
+  filesystem?:
+    | boolean
+    | readonly string[]
+    | ReturnType<typeof createStateFilesystemMiddleware>
   /** 额外 middleware（排在 filesystem 之后） */
   middleware?: unknown[]
 }
@@ -77,6 +82,14 @@ export function createReactChatAgent(options: CreateReactChatAgentOptions) {
   const middleware: unknown[] = []
   if (options.filesystem === true) {
     middleware.push(createStateFilesystemMiddleware())
+  } else if (Array.isArray(options.filesystem)) {
+    if (options.filesystem.length > 0) {
+      middleware.push(
+        createStateFilesystemMiddleware({
+          tools: options.filesystem as never,
+        }),
+      )
+    }
   } else if (options.filesystem) {
     middleware.push(options.filesystem)
   }

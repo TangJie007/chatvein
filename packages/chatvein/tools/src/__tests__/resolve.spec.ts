@@ -22,10 +22,24 @@ describe('TOOL_CATALOG', () => {
     )
   })
 
-  it('local_fs tools belong to filesystem / openfile groups', () => {
+  it('local_fs tools belong to state_filesystem / openfile groups', () => {
     const local = TOOL_CATALOG.filter((e) => e.category === 'local_fs')
-    expect(local.every((e) => e.groupId === 'mcp_filesystem' || e.groupId === 'mcp_openfile')).toBe(true)
-    expect(local.every((e) => e.mcp?.server === 'filesystem' || e.mcp?.server === 'openfile')).toBe(true)
+    expect(
+      local.every((e) => e.groupId === 'state_filesystem' || e.groupId === 'mcp_openfile'),
+    ).toBe(true)
+  })
+
+  it('state_filesystem catalog has bare runtime tool ids', () => {
+    const fs = TOOL_CATALOG.filter((e) => e.groupId === 'state_filesystem')
+    expect(fs.map((e) => e.id).sort()).toEqual([
+      'edit_file',
+      'glob',
+      'grep',
+      'ls',
+      'read_file',
+      'write_file',
+    ])
+    expect(fs.every((e) => e.defaultEnabled)).toBe(true)
   })
 
   it('search prefers mcp_modsearch by default', () => {
@@ -46,11 +60,9 @@ describe('TOOL_CATALOG', () => {
     expect(pw.some((e) => e.id === 'playwright__browser_run_code_unsafe' && e.defaultEnabled)).toBe(false)
   })
 
-  it('deprecated mcp_filesystem tools are excluded from default set', () => {
-    const fsTools = TOOL_CATALOG.filter((e) => e.groupId === 'mcp_filesystem')
-    expect(fsTools.length).toBeGreaterThan(0)
-    expect(fsTools.every((e) => e.defaultEnabled === false)).toBe(true)
-    expect(TOOL_CATALOG.find((e) => e.id === 'filesystem__read_file')?.deprecated).toBe(true)
+  it('has no mcp_filesystem catalog entries', () => {
+    expect(TOOL_CATALOG.some((e) => e.groupId === 'mcp_filesystem')).toBe(false)
+    expect(TOOL_CATALOG.some((e) => e.id.startsWith('filesystem__'))).toBe(false)
   })
 })
 
@@ -66,7 +78,7 @@ describe('resolveChatTools', () => {
     expect(tools).toEqual([])
   })
 
-  it('does not inject MCP filesystem by default', async () => {
+  it('does not inject MCP filesystem tools', async () => {
     const root = await mkdtemp(join(tmpdir(), 'chatvein-tools-nofs-'))
     const tools = await resolveChatTools({
       policy: 'full',
@@ -85,7 +97,6 @@ describe('resolveChatTools', () => {
       policy: 'full',
       workspaceRoot: root,
       allowIds: ['calculator', 'js_eval'],
-      mcpFilesystem: false,
     })
     const names = tools.map((t) => t.name).sort()
     expect(names).toEqual(['calculator', 'js_eval'])
