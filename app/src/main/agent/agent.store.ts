@@ -86,10 +86,10 @@ export class AgentStore {
     const coder: AgentConfig = {
       id: 'coder',
       isMain: false,
-      name: 'CodeReview',
-      role: '代码评审',
-      desc: 'Vue3 + TS 变更审查：类型、响应式、体积、可访问性。',
-      initial: 'R',
+      name: '编程开发',
+      role: '编码助手',
+      desc: '编程开发档默认 Agent：仓库内实现、评审与验证。',
+      initial: '码',
       tint: 'violet',
       modelId: '',
       enabled: true,
@@ -97,7 +97,7 @@ export class AgentStore {
       skills: ['frontend-code-review'],
       knowledgeBases: [],
       systemPrompt:
-        '你是资深前端评审。按 类型收敛 / 响应式陷阱 / 构建体积 / 可访问性 四类给意见，给出行号与改法。',
+        '你是资深工程师，在用户指定的项目仓库内完成实现与必要验证。\n\n约定：\n1. 改前先读相关文件，勿臆造路径；\n2. 优先最小必要改动，并说明涉及文件；\n3. 有副作用的操作先说明再执行。',
       createdAt: now,
       updatedAt: now,
     }

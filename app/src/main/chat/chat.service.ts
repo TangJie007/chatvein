@@ -464,7 +464,7 @@ export class ChatService implements OnAppReady {
   }
 
   private async resolveAgentModel(preferredAgentId: string, workMode: 'office' | 'code' | 'custom') {
-    let agentId = preferredAgentId
+    let agentId = preferredAgentId || MAIN_AGENT_ID
     if (workMode === 'code') {
       try {
         await this.agents.get(CODER_AGENT_ID)
@@ -473,12 +473,39 @@ export class ChatService implements OnAppReady {
         // 无内置 coder 时沿用会话 Agent
       }
     }
-    const agent = await this.agents.get(agentId)
+
+    let agent = await this.agents.get(agentId)
     if (!agent.enabled) throw new ValidationException(`Agent「${agent.name}」已停用`, [])
-    if (!agent.modelId) {
-      throw new ValidationException(`Agent「${agent.name}」未绑定模型，请先在 Agents 中选用模型`, [])
+
+    // 编程档常强制切到 coder；用户往往只给主对话绑了模型 → 回退继承
+    let modelId = agent.modelId?.trim() ?? ''
+    if (!modelId) {
+      const fallbackIds = [preferredAgentId, MAIN_AGENT_ID].filter(
+        (id, i, arr) => Boolean(id) && id !== agentId && arr.indexOf(id) === i,
+      )
+      for (const fid of fallbackIds) {
+        try {
+          const fb = await this.agents.get(fid)
+          if (fb.modelId?.trim()) {
+            modelId = fb.modelId.trim()
+            agent = { ...agent, modelId }
+            break
+          }
+        } catch {
+          // 忽略缺失的回退 Agent
+        }
+      }
     }
-    const model = await this.models.get(agent.modelId)
+    if (!modelId) {
+      throw new ValidationException(
+        workMode === 'code'
+          ? `Agent「${agent.name}」未绑定模型。请在 Agents 里给「${agent.name}」或主对话选用模型`
+          : `Agent「${agent.name}」未绑定模型，请先在 Agents 中选用模型`,
+        [],
+      )
+    }
+
+    const model = await this.models.get(modelId)
     if (!model.enabled) throw new ValidationException(`模型「${model.name}」已停用`, [])
     if (!model.baseUrl?.trim()) throw new ValidationException('模型 Base URL 为空', [])
     if (!model.model?.trim()) throw new ValidationException('模型 ID 为空', [])

@@ -247,7 +247,7 @@ async function send(content: string, workMode: 'office' | 'code' | 'custom' = 'o
       toIpcPayload({
         conversationId: conv.id,
         content: text,
-        agentId: workMode === 'code' ? 'coder' : conv.agentId,
+        agentId: conv.agentId,
         workMode,
       }),
     )
@@ -300,7 +300,7 @@ async function retry(
         toIpcPayload({
           conversationId: conv.id,
           content: lastUser.content,
-          agentId: workMode === 'code' ? 'coder' : conv.agentId,
+          agentId: conv.agentId,
           workMode,
         }),
       )
