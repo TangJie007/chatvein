@@ -46,7 +46,10 @@ const emit = defineEmits<{
 }>()
 
 const api = createClient<IpcApi>()
-const thoughtBodyRef = ref<HTMLElement | null>(null)
+/** 思考流正文滚动容器（真正可滚动的元素；自动跟随 / 回底都作用于它） */
+const thoughtScrollRef = ref<HTMLElement | null>(null)
+/** 用户是否停留在底部（上滚回看时不强制拉回到底部） */
+const atBottom = ref(true)
 /** remount Disclosure 以在新一轮强制 defaultOpen */
 const thoughtKey = ref(0)
 const artifactsKey = ref(0)
@@ -61,6 +64,21 @@ const thoughtBadge = computed(() =>
 )
 
 const artifactBadge = computed(() => String(props.artifacts.length))
+
+function isNearBottom(el: HTMLElement): boolean {
+  return el.scrollHeight - el.scrollTop - el.clientHeight < 48
+}
+function onThoughtScroll() {
+  const el = thoughtScrollRef.value
+  if (el) atBottom.value = isNearBottom(el)
+}
+function scrollThoughtToBottom() {
+  const el = thoughtScrollRef.value
+  if (el) {
+    el.scrollTop = el.scrollHeight
+    atBottom.value = true
+  }
+}
 
 async function openArtifactFolder(a: ThinkingArtifact): Promise<void> {
   const target = a.absPath?.trim()
@@ -96,7 +114,11 @@ async function deleteArtifact(a: ThinkingArtifact): Promise<void> {
 watch(
   () => props.active,
   (on, was) => {
-    if (on && !was) thoughtKey.value += 1
+    if (on && !was) {
+      thoughtKey.value += 1
+      atBottom.value = true
+      void nextTick(scrollThoughtToBottom)
+    }
   },
 )
 
@@ -111,8 +133,7 @@ watch(
   () => props.thought,
   async () => {
     await nextTick()
-    const el = thoughtBodyRef.value
-    if (el) el.scrollTop = el.scrollHeight
+    if (atBottom.value) scrollThoughtToBottom()
   },
 )
 </script>
@@ -148,9 +169,23 @@ watch(
         title="思考流"
         :badge="thoughtBadge"
         :default-open="true"
-        panel-class="max-h-[min(52vh,420px)]"
       >
-        <div ref="thoughtBodyRef" class="flex flex-col gap-2">
+        <div class="relative">
+          <button
+            v-if="thought && !atBottom"
+            type="button"
+            class="absolute right-0 top-0 z-10 inline-flex items-center gap-1 rounded-full border-0 bg-[var(--color-elevated)] px-2 py-1 text-[10.5px] font-medium text-[var(--color-brand-dark)] shadow-[var(--shadow-1)] transition-colors hover:bg-[var(--color-hover)] focus-visible:outline-2 focus-visible:outline-[var(--color-brand)] focus-visible:outline-offset-1"
+            title="回到最新"
+            @click="scrollThoughtToBottom"
+          >
+            <AppIcon name="chevron" :size="10" :stroke-width="2.6" class="rotate-[-90deg]" />
+            最新
+          </button>
+          <div
+            ref="thoughtScrollRef"
+            class="scroll-thin flex max-h-[min(68vh,560px)] flex-col gap-2 overflow-y-auto pb-0.5 pr-1"
+            @scroll.passive="onThoughtScroll"
+          >
           <p
             class="m-0 whitespace-pre-wrap rounded-[10px] bg-[var(--color-elevated)] px-2.5 py-2 text-[12px] leading-[1.65] shadow-[inset_0_0_0_1px_rgba(223,227,232,0.55)]"
             :class="phase === 'answering' ? 'text-[var(--color-ink-3)]' : 'text-[var(--color-ink-2)]'"
@@ -199,6 +234,7 @@ watch(
               </div>
             </div>
           </template>
+          </div>
         </div>
       </DisclosureSection>
 
