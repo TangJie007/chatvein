@@ -72,48 +72,26 @@ function loadStoredMode(): WorkMode {
   }
 }
 
-/** 新建会话时的默认模式（跨会话保留用户偏好） */
+/**
+ * 当前所选工作模式。
+ * 注意：「对话」场景下三档切换只表达用户意图 / 偏好，统一由主 Agent（main）接待，
+ * 不会更改会话绑定的 Agent。具体角色 Agent（CodeReview 等）是为后续「群组模式」准备的，
+ * 与单聊无关。
+ */
 const preferredMode = ref<WorkMode>(loadStoredMode())
 
-const officeAgent = computed(() => mainAgent.value)
-const codeAgent = computed(() => agents.agents.find((a) => a.id === 'coder'))
-const customAgent = computed(() => agents.agents.find((a) => !a.isMain && a.id !== 'coder'))
-const modeAgents = computed<Record<WorkMode, typeof mainAgent.value>>(() => ({
-  office: officeAgent.value,
-  code: codeAgent.value,
-  custom: customAgent.value,
-}))
-
-/** 当前会话实际生效的模式：按会话绑定的 agent 反推，保证与历史会话一致 */
-const activeMode = computed<WorkMode>(() => {
-  const id = chat.current?.agentId
-  if (id && customAgent.value && id === customAgent.value.id) return 'custom'
-  if (id && codeAgent.value && id === codeAgent.value.id) return 'code'
-  return 'office'
-})
+/** 单聊始终走主 Agent，因此高亮态就是用户所选档位，不按会话反推 */
+const activeMode = computed<WorkMode>(() => preferredMode.value)
 
 function onModeChange(mode: WorkMode) {
-  if (chat.sending || mode === activeMode.value) return
-  const agent = modeAgents.value[mode]
-  if (!agent) {
-    if (mode === 'custom') {
-      status.value = '暂无个性化 Agent：请先到 Agents 页面创建一个自定义角色'
-    } else {
-      status.value = '该模式对应的 Agent 尚未配置，请先到 Agents 中设置'
-    }
-    return
-  }
+  if (chat.sending || mode === preferredMode.value) return
   preferredMode.value = mode
   try {
     localStorage.setItem(WORK_MODE_STORAGE_KEY, mode)
   } catch {
     // localStorage 不可用时仅本次会话生效
   }
-  // 已存在会话：本地乐观切换绑定，下次发送经 agentId 持久化
-  if (chat.current) {
-    chat.setConversationAgent(chat.current.id, agent.id)
-  }
-  status.value = `已切换到「${workModes.find((m) => m.value === mode)?.label}」· ${agent.name}`
+  status.value = `已切换到「${workModes.find((m) => m.value === mode)?.label}」· 由主对话统一接待`
 }
 
 // 编程开发模式：项目根目录（工具 jail 根）。未设置时工具只能在会话沙箱内运行
@@ -248,8 +226,8 @@ function onSelect(c: Conversation) {
 }
 
 async function onAdd() {
-  const modeAgent = modeAgents.value[preferredMode.value]
-  const created = await chat.create({ agentId: modeAgent?.id ?? mainAgent.value?.id })
+  // 单聊始终使用主 Agent；模式档仅记录偏好，不改变绑定
+  const created = await chat.create({ agentId: mainAgent.value?.id })
   setCrumbItem(created.title)
   status.value = `已新建 · ${created.slug}`
   await scrollBottom()
