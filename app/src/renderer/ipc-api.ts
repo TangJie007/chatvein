@@ -57,6 +57,7 @@ export interface IpcApi {
   'chat:remove': (id: string) => Promise<{ ok: true }>
   'chat:send': (input: ChatSendInput) => Promise<ChatSendResult>
   'chat:retry': (input: ChatRetryInput) => Promise<ChatSendResult>
+  'chat:abort': (conversationId: string) => Promise<{ ok: true; aborted: boolean }>
   'chat:listArtifacts': (conversationId: string) => Promise<ChatArtifactItem[]>
   'chat:removeArtifact': (data: {
     conversationId: string
@@ -181,6 +182,10 @@ export interface AppSettingsView {
   cmdAllowlist: boolean
   confirmWrites: boolean
   reduceMotion: boolean
+  confirmForgeStart: boolean
+  forgeBuildCommand: string
+  forgeTestCommand: string
+  forgeSkipBuild: boolean
   effectiveWorkspaceRoot: string
   defaultWorkspaceRoot: string
 }
@@ -188,7 +193,15 @@ export interface AppSettingsView {
 export type AppSettingsPatch = Partial<
   Pick<
     AppSettingsView,
-    'workspaceRoot' | 'devProjectRoot' | 'cmdAllowlist' | 'confirmWrites' | 'reduceMotion'
+    | 'workspaceRoot'
+    | 'devProjectRoot'
+    | 'cmdAllowlist'
+    | 'confirmWrites'
+    | 'reduceMotion'
+    | 'confirmForgeStart'
+    | 'forgeBuildCommand'
+    | 'forgeTestCommand'
+    | 'forgeSkipBuild'
   >
 >
 
@@ -285,12 +298,14 @@ export interface ChatSendInput {
   agentId?: string
   /** office/custom → Chat ReAct；code → Forge orchestrator */
   workMode?: 'office' | 'code' | 'custom'
+  resumeForge?: boolean
 }
 
 export interface ChatRetryInput {
   conversationId: string
   failedMessageId: string
   workMode?: 'office' | 'code' | 'custom'
+  resumeForge?: boolean
 }
 
 export interface ChatSendResult {

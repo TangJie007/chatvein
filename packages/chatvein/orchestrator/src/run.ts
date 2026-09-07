@@ -26,6 +26,8 @@ export interface RunForgeInput {
   testCommand?: string[]
   skipBuild?: boolean
   compileStrategy?: 'single' | 'sections'
+  /** 用户取消 */
+  signal?: AbortSignal
 }
 
 export interface RunForgeResult {
@@ -84,6 +86,7 @@ export async function runForge(input: RunForgeInput): Promise<RunForgeResult> {
     testCommand: input.testCommand,
     skipBuild: input.skipBuild,
     compileStrategy: input.compileStrategy,
+    signal: input.signal,
   }
 
   const graph = buildOrchestratorGraph(deps)
@@ -115,28 +118,61 @@ export async function runForge(input: RunForgeInput): Promise<RunForgeResult> {
     },
   })
 
-  const finalState = await compiled.invoke(initialState, {
-    configurable: { thread_id: threadId },
-    recursionLimit: config.budget.maxSteps + 10,
-  })
-
-  checkpointer.close()
-
-  const result: RunForgeResult = {
-    status: finalState.status === 'done' ? 'done' : 'aborted',
-    finalSummary: finalState.finalSummary ?? '',
-    failedTasks: finalState.failedTasks ?? [],
+  const onAbort = () => {
+    sandbox.killRunning?.()
   }
+  input.signal?.addEventListener('abort', onAbort, { once: true })
 
-  await trace.emit('run_end', {
-    name: 'forge',
-    payload: {
-      status: result.status,
-      failedTasks: result.failedTasks,
-      totalTokens: finalState.tokenUsage?.total?.totalTokens ?? 0,
-      steps: finalState.steps,
-    },
-  })
+  try {
+    if (input.signal?.aborted) {
+      const err = new Error('已取消')
+      err.name = 'AbortError'
+      throw err
+    }
 
-  return result
+    const finalState = await compiled.invoke(initialState, {
+      configurable: { thread_id: threadId },
+      recursionLimit: config.budget.maxSteps + 10,
+      ...(input.signal ? { signal: input.signal } : {}),
+    })
+
+    const result: RunForgeResult = {
+      status: finalState.status === 'done' ? 'done' : 'aborted',
+      finalSummary: finalState.finalSummary ?? '',
+      failedTasks: finalState.failedTasks ?? [],
+    }
+
+    await trace.emit('run_end', {
+      name: 'forge',
+      payload: {
+        status: result.status,
+        failedTasks: result.failedTasks,
+        totalTokens: finalState.tokenUsage?.total?.totalTokens ?? 0,
+        steps: finalState.steps,
+      },
+    })
+
+    return result
+  } catch (err) {
+    const aborted =
+      input.signal?.aborted ||
+      (err instanceof Error && (err.name === 'AbortError' || /abort/i.test(err.message)))
+    if (aborted) {
+      sandbox.killRunning?.()
+      const result: RunForgeResult = {
+        status: 'aborted',
+        finalSummary: '用户已取消 Forge 运行。',
+        failedTasks: [],
+      }
+      await trace.emit('run_end', {
+        name: 'forge',
+        payload: { status: result.status, cancelled: true },
+      })
+      return result
+    }
+    throw err
+  } finally {
+    input.signal?.removeEventListener('abort', onAbort)
+    checkpointer.close()
+  }
 }

@@ -9,8 +9,10 @@ const props = defineProps<{
   hint?: string
   modelValue?: string
   disabled?: boolean
+  /** 生成中：显示停止按钮 */
+  stopping?: boolean
 }>()
-const emit = defineEmits<{ send: [string]; 'update:modelValue': [string] }>()
+const emit = defineEmits<{ send: [string]; 'update:modelValue': [string]; stop: [] }>()
 
 const text = ref(props.modelValue ?? '')
 const ta = ref<HTMLTextAreaElement | null>(null)
@@ -90,6 +92,15 @@ function onKeydown(e: KeyboardEvent) {
           <slot name="footer-left" />
         </div>
         <button
+          v-if="stopping"
+          type="button"
+          class="inline-flex items-center gap-2 rounded-xl border border-[var(--color-line)] bg-[var(--color-elevated)] px-4 py-2 text-[13px] font-semibold text-[var(--color-ink-1)] shadow-[var(--shadow-1)] transition-all duration-200 hover:-translate-y-px"
+          @click="emit('stop')"
+        >
+          停止
+        </button>
+        <button
+          v-else
           type="button"
           class="inline-flex items-center gap-2 rounded-xl border-0 px-4 py-2 text-[13px] font-semibold text-white shadow-[var(--shadow-brand)] transition-all duration-200 hover:-translate-y-px disabled:cursor-not-allowed disabled:opacity-55 disabled:hover:translate-y-0"
           style="background: linear-gradient(180deg, var(--color-brand-lite), var(--color-brand-solid))"

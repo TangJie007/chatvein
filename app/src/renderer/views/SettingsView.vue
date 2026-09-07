@@ -18,6 +18,10 @@ const form = reactive({
   cmdAllowlist: true,
   confirmWrites: true,
   reduceMotion: false,
+  confirmForgeStart: true,
+  forgeBuildCommand: '',
+  forgeTestCommand: '',
+  forgeSkipBuild: false,
 })
 
 const dirty = ref(false)
@@ -39,6 +43,10 @@ function loadForm() {
   form.cmdAllowlist = s.cmdAllowlist
   form.confirmWrites = s.confirmWrites
   form.reduceMotion = s.reduceMotion
+  form.confirmForgeStart = s.confirmForgeStart !== false
+  form.forgeBuildCommand = s.forgeBuildCommand ?? ''
+  form.forgeTestCommand = s.forgeTestCommand ?? ''
+  form.forgeSkipBuild = s.forgeSkipBuild === true
   dirty.value = false
 }
 
@@ -62,6 +70,10 @@ async function save() {
       cmdAllowlist: form.cmdAllowlist,
       confirmWrites: form.confirmWrites,
       reduceMotion: form.reduceMotion,
+      confirmForgeStart: form.confirmForgeStart,
+      forgeBuildCommand: form.forgeBuildCommand.trim(),
+      forgeTestCommand: form.forgeTestCommand.trim(),
+      forgeSkipBuild: form.forgeSkipBuild,
     })
     loadForm()
     const d = new Date()
@@ -103,7 +115,7 @@ onMounted(async () => {
       </div>
       <div>
         <div class="font-serif text-[22px] leading-[1.15] tracking-[0.2px] text-[var(--color-ink-1)]">偏好设置</div>
-        <div class="mt-[3px] text-xs text-[var(--color-ink-3)]">工作区根目录 · 护栏</div>
+        <div class="mt-[3px] text-xs text-[var(--color-ink-3)]">工作区根目录 · 护栏 · Forge</div>
       </div>
     </template>
 
@@ -146,7 +158,40 @@ onMounted(async () => {
       <KvRow k="单轮预算上限" mono>¥ 1.50 / 轮</KvRow>
     </Card>
 
-    <Card idx="3" title="外观" side="appearance">
+    <Card idx="3" title="编程开发 · Forge" side="forge">
+      <KvRow k="启动前确认" sub="在真实项目根改代码前弹窗">
+        <SwitchToggle
+          :model-value="form.confirmForgeStart"
+          label="confirm forge"
+          @update:model-value="(v: boolean) => { form.confirmForgeStart = v; markDirty() }"
+        />
+      </KvRow>
+      <KvRow k="跳过构建" sub="仍可跑测试；无 package.json 时自动跳过">
+        <SwitchToggle
+          :model-value="form.forgeSkipBuild"
+          label="skip build"
+          @update:model-value="(v: boolean) => { form.forgeSkipBuild = v; markDirty() }"
+        />
+      </KvRow>
+      <Field label="构建命令" hint="空 = npm run build；空白分隔 argv，如 pnpm run build">
+        <TextInput
+          v-model="form.forgeBuildCommand"
+          mono
+          placeholder="npm run build"
+          @update:model-value="markDirty"
+        />
+      </Field>
+      <Field label="测试命令" hint="空 = npm test；如 pnpm test 或 npx vitest run">
+        <TextInput
+          v-model="form.forgeTestCommand"
+          mono
+          placeholder="npm test"
+          @update:model-value="markDirty"
+        />
+      </Field>
+    </Card>
+
+    <Card idx="4" title="外观" side="appearance">
       <KvRow k="主题" sub="跟随系统 / 浅色 / 深色"><span class="font-mono text-xs">follow system</span></KvRow>
       <KvRow k="字体" mono>Geist · Instrument Serif · JetBrains Mono</KvRow>
       <KvRow k="减少动态效果">
@@ -158,7 +203,7 @@ onMounted(async () => {
       </KvRow>
     </Card>
 
-    <Card idx="4" title="关于" side="forge">
+    <Card idx="5" title="关于" side="about">
       <KvRow k="产品" mono>Chatvein Forge</KvRow>
       <KvRow k="版本" mono>0.1.0</KvRow>
       <KvRow k="Harness" mono>@chatvein/* · Cordis runtime</KvRow>

@@ -52,6 +52,8 @@ export interface ChatSendInput {
    * 缺省 office。
    */
   workMode?: 'office' | 'code' | 'custom'
+  /** 编程档：从上次 Forge checkpoint 续跑 */
+  resumeForge?: boolean
 }
 
 export interface ChatRetryInput {
@@ -59,6 +61,8 @@ export interface ChatRetryInput {
   /** 失败的助手消息 id */
   failedMessageId: string
   workMode?: 'office' | 'code' | 'custom'
+  /** 编程档：从上次 Forge checkpoint 续跑 */
+  resumeForge?: boolean
 }
 
 /**

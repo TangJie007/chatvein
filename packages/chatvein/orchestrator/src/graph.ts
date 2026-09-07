@@ -56,31 +56,52 @@ export interface OrchestratorDeps {
   skipBuild?: boolean
   /** 需求编译策略 */
   compileStrategy?: 'single' | 'sections'
+  /** 用户取消：透传给内层 ReAct / 工具 exec */
+  signal?: AbortSignal
 }
 
-/** 图内部状态（在 GraphState 基础上增加流转字段） */
+/** 图内部状态（在 GraphState 基础上增加流转字段；各 channel 用 last-write-wins reducer） */
 export const ForgeState = Annotation.Root({
+  /** 本次运行 id（与 runs/<runId>、checkpoint thread 对齐） */
   runId: Annotation<string>({ default: () => '', reducer: (_o, n) => n }),
+  /** 沙箱/项目工作区绝对路径（工具 jail 根） */
   workspacePath: Annotation<string>({ default: () => '', reducer: (_o, n) => n }),
+  /** 需求文档路径（plan 可读盘；Chat 档多为会话 memory/requirement-*.md） */
   requirementPath: Annotation<string>({ default: () => '', reducer: (_o, n) => n }),
+  /** 需求正文缓存（避免每节点重复读文件；空则按 requirementPath 再读） */
   requirementText: Annotation<string>({ default: () => '', reducer: (_o, n) => n }),
+  /** plan 编译出的任务树（含 status / acceptance） */
   taskTree: Annotation<TaskTree>({ default: () => [], reducer: (_o, n) => n }),
+  /** 本轮 dispatch 选出的待办任务 id（一期串行，通常 0/1 个） */
   currentTaskIds: Annotation<string[]>({ default: () => [], reducer: (_o, n) => n }),
+  /** 当前正在 implement/verify/fix 的任务对象；无任务时为 null */
   currentTask: Annotation<Task | null>({ default: () => null, reducer: (_o, n) => n }),
+  /** 最近一次构建结果：unknown | pass | fail */
   buildStatus: Annotation<BuildStatus>({ default: () => 'unknown', reducer: (_o, n) => n }),
+  /** 最近一次 verify/integrate 的结构化验收结果（完成判定唯一依据） */
   lastVerify: Annotation<VerifyResult | null>({ default: () => null, reducer: (_o, n) => n }),
+  /** diagnose 产出的失败归因（喂给 fix） */
   rootCause: Annotation<string>({ default: () => '', reducer: (_o, n) => n }),
+  /** 当前任务已走 diagnose→fix 的次数 */
   retryCount: Annotation<number>({ default: () => 0, reducer: (_o, n) => n }),
+  /** 累计 token（按模型分档汇总） */
   tokenUsage: Annotation<TokenStat>({ default: () => emptyTokenStat(), reducer: (_o, n) => n }),
+  /** 预算护栏：maxTokens / maxSteps / maxWallClockMs / maxConsecutiveFailures */
   budget: Annotation<Budget>({
     default: () => ({ maxTokens: 0, maxSteps: 30, maxWallClockMs: 0, maxConsecutiveFailures: 3 }),
     reducer: (_o, n) => n,
   }),
+  /** 运行整体状态：running | paused | done | aborted */
   status: Annotation<GraphState['status']>({ default: () => 'running', reducer: (_o, n) => n }),
+  /** 已执行外层节点步数（护栏计数） */
   steps: Annotation<number>({ default: () => 0, reducer: (_o, n) => n }),
+  /** 连续 verify 失败次数（超阈值熔断） */
   consecutiveFailures: Annotation<number>({ default: () => 0, reducer: (_o, n) => n }),
+  /** 运行开始时间戳 ms（墙钟护栏） */
   startedAt: Annotation<number>({ default: () => Date.now(), reducer: (_o, n) => n }),
+  /** finalize 写入的交付摘要（回传 Chat / report） */
   finalSummary: Annotation<string>({ default: () => '', reducer: (_o, n) => n }),
+  /** 未达终态或失败的任务 id 列表 */
   failedTasks: Annotation<string[]>({ default: () => [], reducer: (_o, n) => n }),
 })
 
@@ -98,6 +119,7 @@ function patchTask(tree: TaskTree, id: string, patch: Partial<Task>): TaskTree {
 export function buildOrchestratorGraph(deps: OrchestratorDeps) {
   const tools: StructuredToolInterface[] = createForgeTools({
     sandbox: deps.sandbox,
+    signal: deps.signal,
     onToolCall: async (info) => {
       await deps.trace.emit('tool_call', {
         name: info.name,
@@ -163,7 +185,11 @@ export function buildOrchestratorGraph(deps: OrchestratorDeps) {
       name: 'forge-implement',
     })
     const userMsg = `任务 ${task.id}：${task.title}\n\n验收标准：\n- ${task.acceptance.join('\n- ')}\n\n请在工作区内实现并自行跑测试验证。`
-    const result = await invokeReactChatAgent(agent, { message: userMsg, recursionLimit: 40 })
+    const result = await invokeReactChatAgent(agent, {
+      message: userMsg,
+      recursionLimit: 40,
+      signal: deps.signal,
+    })
 
     await deps.trace.emit('model_call', {
       name: 'strong',
@@ -239,7 +265,11 @@ export function buildOrchestratorGraph(deps: OrchestratorDeps) {
       name: 'forge-fix',
     })
     const userMsg = `任务：${task?.title ?? '(集成)'}\n\n诊断结论：\n${state.rootCause}\n\n失败详情：\n${formatVerifyForDiagnose(state.lastVerify)}\n\n请做最小修复并复测。`
-    const result = await invokeReactChatAgent(agent, { message: userMsg, recursionLimit: 40 })
+    const result = await invokeReactChatAgent(agent, {
+      message: userMsg,
+      recursionLimit: 40,
+      signal: deps.signal,
+    })
     await deps.trace.emit('model_call', {
       name: 'strong',
       payload: { node: 'fix', totalTokens: result.usage.totalTokens },

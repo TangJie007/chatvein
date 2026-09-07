@@ -15,6 +15,14 @@ export interface AppSettings {
   cmdAllowlist: boolean
   confirmWrites: boolean
   reduceMotion: boolean
+  /** 编程档：启动 Forge 前是否二次确认（默认 true） */
+  confirmForgeStart: boolean
+  /** 编程档：构建命令，空 = npm run build；空白分隔 argv */
+  forgeBuildCommand: string
+  /** 编程档：测试命令，空 = npm test */
+  forgeTestCommand: string
+  /** 编程档：强制跳过 build（仍跑 test，除非也无 package.json） */
+  forgeSkipBuild: boolean
 }
 
 export interface AppSettingsView extends AppSettings {
@@ -26,6 +34,14 @@ export interface AppSettingsView extends AppSettings {
 export type AppSettingsPatch = Partial<
   Pick<
     AppSettings,
-    'workspaceRoot' | 'devProjectRoot' | 'cmdAllowlist' | 'confirmWrites' | 'reduceMotion'
+    | 'workspaceRoot'
+    | 'devProjectRoot'
+    | 'cmdAllowlist'
+    | 'confirmWrites'
+    | 'reduceMotion'
+    | 'confirmForgeStart'
+    | 'forgeBuildCommand'
+    | 'forgeTestCommand'
+    | 'forgeSkipBuild'
   >
 >

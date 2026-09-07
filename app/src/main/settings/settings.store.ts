@@ -52,6 +52,12 @@ export class SettingsStore {
       cmdAllowlist: data.cmdAllowlist !== false,
       confirmWrites: data.confirmWrites !== false,
       reduceMotion: data.reduceMotion === true,
+      confirmForgeStart: data.confirmForgeStart !== false,
+      forgeBuildCommand:
+        typeof data.forgeBuildCommand === 'string' ? data.forgeBuildCommand : d.forgeBuildCommand,
+      forgeTestCommand:
+        typeof data.forgeTestCommand === 'string' ? data.forgeTestCommand : d.forgeTestCommand,
+      forgeSkipBuild: data.forgeSkipBuild === true,
     }
   }
 
@@ -63,6 +69,10 @@ export class SettingsStore {
       cmdAllowlist: true,
       confirmWrites: true,
       reduceMotion: false,
+      confirmForgeStart: true,
+      forgeBuildCommand: '',
+      forgeTestCommand: '',
+      forgeSkipBuild: false,
     }
   }
 }

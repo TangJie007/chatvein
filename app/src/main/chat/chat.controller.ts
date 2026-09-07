@@ -48,6 +48,12 @@ export class ChatController {
     return this.chat.retry(input, (evt) => this.emitEvent(evt))
   }
 
+  /** 停止当前会话生成（Forge / ReAct） */
+  @IpcHandle('abort')
+  abort(conversationId: string): { ok: true; aborted: boolean } {
+    return this.chat.abort(conversationId)
+  }
+
   /** 会话工作区现有文件（供产物面板回填） */
   @IpcHandle('listArtifacts')
   listArtifacts(conversationId: string) {

@@ -78,6 +78,7 @@ export interface RunOfficeReactTurnArgs {
   setLastBand: (band: ComplexityBand) => void
   persist: OfficePersistFn
   scheduleShortTerm: (result: ChatSendResult) => void
+  signal?: AbortSignal
 }
 
 /**
@@ -276,6 +277,7 @@ export async function runOfficeReactTurn(
         history,
         recursionLimit,
         threadId: conv.id,
+        signal: args.signal,
       },
       {
         onReasoning: (delta) => {

@@ -33,6 +33,9 @@ const removeConfirmOpen = ref(false)
 const removeBusy = ref(false)
 const pendingRemoveId = ref('')
 const pendingRemoveTitle = ref('')
+/** Forge 启动前二次确认 */
+const forgeConfirmOpen = ref(false)
+const pendingForgeText = ref('')
 /** 删除 IPC 超过此时长仍未返回：关弹窗释放 UI，后台继续，不阻塞后续操作 */
 const REMOVE_TIMEOUT_MS = 10_000
 
@@ -304,13 +307,29 @@ async function onSend(text: string) {
     status.value = '请先在 Agents 中绑定模型并填写 API Key'
     return
   }
+  const needsForgeConfirm =
+    preferredMode.value === 'code' &&
+    settingsStore.settings?.confirmForgeStart !== false &&
+    text.trim().length >= 12 &&
+    /实现|添加|新增|修复|重构|改写|编写|写一|写个|创建|删除|优化|升级|迁移|接入|集成|bug|fix|implement|refactor|add\s|create\s|update\s|patch/i.test(
+      text,
+    )
+  if (needsForgeConfirm) {
+    pendingForgeText.value = text
+    forgeConfirmOpen.value = true
+    return
+  }
+  await doSend(text)
+}
+
+async function doSend(text: string, opts?: { resumeForge?: boolean }) {
   draft.value = ''
-  status.value = '生成中…'
+  status.value = preferredMode.value === 'code' ? 'Forge 运行中…' : '生成中…'
   await scrollBottom()
   try {
-    const result = await chat.send(text, preferredMode.value)
+    const result = await chat.send(text, preferredMode.value, opts)
     if (result.failed) {
-      status.value = '回复失败 · 可点击「重试」'
+      status.value = '回复失败 · 可点击「重试」或「继续上次」'
     } else {
       status.value =
         preferredMode.value === 'code'
@@ -323,6 +342,35 @@ async function onSend(text: string) {
     status.value = (e as Error).message || '回复失败 · 可点击「重试」'
     await scrollBottom()
   }
+}
+
+async function onForgeConfirm() {
+  forgeConfirmOpen.value = false
+  const text = pendingForgeText.value
+  pendingForgeText.value = ''
+  if (text) await doSend(text)
+}
+
+function onForgeCancel() {
+  forgeConfirmOpen.value = false
+  pendingForgeText.value = ''
+}
+
+async function onStop() {
+  status.value = '正在停止…'
+  await chat.abort()
+}
+
+async function onResumeForge() {
+  if (!activeModel.value) {
+    status.value = '请先在 Agents 中绑定模型并填写 API Key'
+    return
+  }
+  if (!devProjectRoot.value) {
+    status.value = '请先选择项目根目录'
+    return
+  }
+  await doSend('继续上次', { resumeForge: true })
 }
 
 async function onRetry(failedMessageId: string) {
@@ -499,6 +547,15 @@ onMounted(async () => {
             >
               清除
             </button>
+            <button
+              type="button"
+              class="rounded-md border border-[var(--color-line)] bg-[var(--color-input)] px-2 py-0.5 text-[11px] font-medium text-[var(--color-brand-dark)] transition hover:border-[var(--color-brand)] disabled:opacity-60"
+              :disabled="chat.sending"
+              title="从上次 Forge checkpoint 续跑"
+              @click="onResumeForge"
+            >
+              继续上次
+            </button>
           </template>
           <template v-else>
             <span class="text-xs text-[var(--color-ink-3)]">未选择项目目录，工具将在会话沙箱内运行</span>
@@ -602,12 +659,18 @@ onMounted(async () => {
 
       <Composer
         v-model="draft"
-        :placeholder="`跟 ${activeAgent?.name || 'Agent'} 说点什么…`"
+        :placeholder="
+          activeMode === 'code'
+            ? '描述要实现 / 修复 / 重构的需求…'
+            : `跟 ${activeAgent?.name || 'Agent'} 说点什么…`
+        "
         :scope-label="activeModel ? activeModel.model : '未绑定模型'"
-        :send-label="chat.sending ? '生成中' : '发送'"
-        hint="Enter 发送 · Shift+Enter 换行"
+        :send-label="chat.sending ? '生成中' : activeMode === 'code' ? '启动 Forge' : '发送'"
+        :hint="activeMode === 'code' ? '将改动真实项目 · Enter 发送' : 'Enter 发送 · Shift+Enter 换行'"
         :disabled="chat.sending"
+        :stopping="chat.sending"
         @send="onSend"
+        @stop="onStop"
       >
         <template #tools>
           <span class="px-1 font-mono text-[11px] text-[var(--color-ink-3)]">一期 · 纯对话</span>
@@ -651,5 +714,15 @@ onMounted(async () => {
     :busy="removeBusy"
     @close="onRemoveCancel"
     @confirm="onRemoveConfirm"
+  />
+
+  <ConfirmDialog
+    :open="forgeConfirmOpen"
+    title="在真实项目中启动 Forge？"
+    :description="`将在「${projectFolderName || '所选项目'}」内实现、构建与测试。可在设置中关闭此确认。`"
+    confirm-label="开始编排"
+    cancel-label="取消"
+    @close="onForgeCancel"
+    @confirm="onForgeConfirm"
   />
 </template>

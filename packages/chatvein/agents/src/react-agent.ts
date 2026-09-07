@@ -16,6 +16,8 @@ export interface ReactChatInput {
   recursionLimit?: number
   /** 可选：LangGraph 线程 id；传了即走有状态调用（checkpointer 接管跨轮存储） */
   threadId?: string
+  /** 外部取消（用户停止生成） */
+  signal?: AbortSignal
 }
 
 export interface ReactChatResult {
@@ -74,6 +76,7 @@ export async function invokeReactChatAgent(
   const messages = toLangChainMessages(input)
   const config = {
     recursionLimit: input.recursionLimit ?? 25,
+    ...(input.signal ? { signal: input.signal } : {}),
     ...(input.threadId ? { configurable: { thread_id: input.threadId } } : {}),
   }
   const state = await agent.invoke({ messages }, config)
@@ -111,6 +114,7 @@ export async function streamReactChatAgent(
   const messages = toLangChainMessages(input)
   const config = {
     recursionLimit: input.recursionLimit ?? 25,
+    ...(input.signal ? { signal: input.signal } : {}),
     ...(input.threadId ? { configurable: { thread_id: input.threadId } } : {}),
   }
 

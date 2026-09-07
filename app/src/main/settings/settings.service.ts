@@ -38,9 +38,14 @@ export class SettingsService {
     const next: AppSettings = {
       version: 1,
       workspaceRoot: this.store.defaultWorkspaceRoot(),
+      devProjectRoot: '',
       cmdAllowlist: true,
       confirmWrites: true,
       reduceMotion: false,
+      confirmForgeStart: true,
+      forgeBuildCommand: '',
+      forgeTestCommand: '',
+      forgeSkipBuild: false,
     }
     await ensureDir(next.workspaceRoot)
     await this.store.save(next)

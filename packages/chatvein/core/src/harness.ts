@@ -39,6 +39,10 @@ export interface StartRunInput {
    * 缺省仍为 `runs/<runId>/workspace`。
    */
   workspacePath?: string
+  /** 用户取消 */
+  signal?: AbortSignal
+  /** 断点续跑（复用同一 runId 的 checkpointer） */
+  resume?: boolean
 }
 
 export interface RunPlan {
@@ -66,6 +70,19 @@ export interface HarnessOptions {
   config: ForgeConfig
   /** runs 根目录；缺省用 config.runsRoot（相对 cwd 解析） */
   runsRoot?: string
+}
+
+interface RunMeta {
+  runId: string
+  requirementPath: string
+  workspacePath?: string
+  buildCommand?: string[]
+  testCommand?: string[]
+  skipBuild?: boolean
+  compileStrategy?: 'single' | 'sections'
+  startedAt: string
+  config?: unknown
+  env?: unknown
 }
 
 export class Harness {
@@ -111,34 +128,39 @@ export class Harness {
     })
     await sandbox.prepare()
 
+    const onAbort = () => {
+      sandbox.killRunning()
+    }
+    input.signal?.addEventListener('abort', onAbort, { once: true })
+
     const trace = await TraceSink.create({ runsRoot: this.runsRoot, runId, bus: this.bus })
 
-    // 环境快照落 run.json
+    // 环境快照落 run.json（含 workspace / 验证命令，供 resume）
     const snapshot = await sandbox.snapshot()
-    await writeFile(
-      join(runDir, 'run.json'),
-      JSON.stringify(
-        {
-          runId,
-          requirementPath,
-          startedAt: new Date().toISOString(),
-          config: redactConfig(config),
-          env: snapshot,
-        },
-        null,
-        2,
-      ),
-      'utf8',
-    )
+    const meta: RunMeta = {
+      runId,
+      requirementPath,
+      workspacePath,
+      buildCommand: input.buildCommand,
+      testCommand: input.testCommand,
+      skipBuild: input.skipBuild,
+      compileStrategy: input.compileStrategy ?? 'sections',
+      startedAt: new Date().toISOString(),
+      config: redactConfig(config),
+      env: snapshot,
+    }
+    await writeFile(join(runDir, 'run.json'), JSON.stringify(meta, null, 2), 'utf8')
 
     // 任务树落盘（plan 节点也会编译，这里先落一份供预览/复盘）
-    const requirementText = await readFile(requirementPath, 'utf8')
-    await compileToFile({
-      markdown: requirementText,
-      requirementPath,
-      strategy: input.compileStrategy ?? 'sections',
-      outPath: join(runDir, 'tasks.json'),
-    })
+    if (!input.resume) {
+      const requirementText = await readFile(requirementPath, 'utf8')
+      await compileToFile({
+        markdown: requirementText,
+        requirementPath,
+        strategy: input.compileStrategy ?? 'sections',
+        outPath: join(runDir, 'tasks.json'),
+      })
+    }
 
     let resolveDone!: (r: RunReport) => void
     let rejectDone!: (e: unknown) => void
@@ -156,6 +178,7 @@ export class Harness {
     // 异步驱动，事件经 trace.bus 实时回流
     void (async () => {
       try {
+        const requirementText = await readFile(requirementPath, 'utf8')
         const result: RunForgeResult = await runForge({
           runId,
           runsRoot: this.runsRoot,
@@ -168,6 +191,8 @@ export class Harness {
           testCommand: input.testCommand,
           skipBuild: input.skipBuild,
           compileStrategy: input.compileStrategy,
+          signal: input.signal,
+          resume: input.resume,
         })
         const report: RunReport = {
           runId,
@@ -183,22 +208,28 @@ export class Harness {
           .emit('error', { name: 'run_failed', error: (err as Error).message })
           .catch(() => {})
         rejectDone(err)
+      } finally {
+        input.signal?.removeEventListener('abort', onAbort)
       }
     })()
 
     return handle
   }
 
-  /** 从 checkpoint 恢复（M1：重新驱动图，checkpointer 按 thread_id 续状态） */
-  async resume(runId: string): Promise<RunHandle> {
+  /** 从 checkpoint 恢复（复用 run.json 中的 workspace / 验证命令） */
+  async resume(runId: string, signal?: AbortSignal): Promise<RunHandle> {
     const runDir = join(this.runsRoot, runId)
-    const runMeta = JSON.parse(await readFile(join(runDir, 'run.json'), 'utf8')) as {
-      requirementPath: string
-    }
+    const runMeta = JSON.parse(await readFile(join(runDir, 'run.json'), 'utf8')) as RunMeta
     return this.start({
       requirementPath: runMeta.requirementPath,
       runId,
-      // resume 复用同一 runId → checkpointer 找到 thread forge-<runId> 的最近 checkpoint
+      workspacePath: runMeta.workspacePath,
+      buildCommand: runMeta.buildCommand,
+      testCommand: runMeta.testCommand,
+      skipBuild: runMeta.skipBuild,
+      compileStrategy: runMeta.compileStrategy,
+      signal,
+      resume: true,
     })
   }
 

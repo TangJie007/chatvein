@@ -69,6 +69,8 @@ export class LocalSandboxProvider implements SandboxProvider {
   private readonly templatePath?: string
   private readonly allowCommands: Set<string>
   private readonly envAllow: Set<string>
+  /** 仍在跑的子进程（供 killRunning / AbortSignal） */
+  private readonly running = new Set<ChildProcess>()
 
   constructor(options: LocalSandboxOptions) {
     this.workspacePath = options.workspacePath
@@ -76,6 +78,13 @@ export class LocalSandboxProvider implements SandboxProvider {
     this.templatePath = options.templatePath
     this.allowCommands = new Set(options.allowCommands ?? DEFAULT_ALLOW_COMMANDS)
     this.envAllow = new Set([...ENV_ALLOWLIST, ...(options.envAllowlist ?? [])])
+  }
+
+  killRunning(): void {
+    for (const child of this.running) {
+      killTree(child)
+    }
+    this.running.clear()
   }
 
   async prepare(): Promise<{ workspacePath: string }> {
@@ -130,6 +139,10 @@ export class LocalSandboxProvider implements SandboxProvider {
       return reject((err as Error).message, command, started)
     }
 
+    if (input.signal?.aborted) {
+      return reject('已取消', command, started)
+    }
+
     const env = this.buildEnv(input.env)
     const { file, args, verbatim } = buildSpawn(input.argv)
     const headLines = input.headLines ?? 200
@@ -153,15 +166,50 @@ export class LocalSandboxProvider implements SandboxProvider {
         return
       }
 
+      this.running.add(child)
       let stdout = ''
       let stderr = ''
       let timedOut = false
+      let aborted = false
       let settled = false
+
+      const onAbort = () => {
+        aborted = true
+        killTree(child)
+      }
+      input.signal?.addEventListener('abort', onAbort, { once: true })
 
       const timer = setTimeout(() => {
         timedOut = true
         killTree(child)
+        // Windows 上偶发 close 迟迟不来：强制收尾，避免 Promise 挂死
+        setTimeout(() => {
+          if (settled) return
+          const out = foldOutput(stdout, headLines, tailLines, maxChars)
+          const errOut = foldOutput(stderr, headLines, tailLines, maxChars)
+          finish({
+            code: null,
+            signal: 'SIGTERM',
+            stdout: out.text,
+            stderr: errOut.text,
+            truncated: true,
+            durationMs: Date.now() - started,
+            command,
+            rejected: aborted
+              ? '已取消'
+              : `命令超时（${input.timeoutMs}ms）已终止`,
+          })
+        }, 2000)
       }, input.timeoutMs)
+
+      const finish = (result: ExecResult) => {
+        if (settled) return
+        settled = true
+        clearTimeout(timer)
+        input.signal?.removeEventListener('abort', onAbort)
+        this.running.delete(child)
+        resolve(result)
+      }
 
       child.stdout?.on('data', (chunk: Buffer) => {
         if (stdout.length < maxChars) stdout += chunk.toString('utf8')
@@ -171,27 +219,25 @@ export class LocalSandboxProvider implements SandboxProvider {
       })
 
       child.on('error', (err) => {
-        if (settled) return
-        settled = true
-        clearTimeout(timer)
-        resolve(reject(`子进程错误：${err.message}`, command, started))
+        finish(reject(`子进程错误：${err.message}`, command, started))
       })
 
       child.on('close', (code, signal) => {
-        if (settled) return
-        settled = true
-        clearTimeout(timer)
         const out = foldOutput(stdout, headLines, tailLines, maxChars)
         const errOut = foldOutput(stderr, headLines, tailLines, maxChars)
-        resolve({
-          code: timedOut ? null : code,
-          signal: timedOut ? 'SIGTERM' : signal,
+        finish({
+          code: timedOut || aborted ? null : code,
+          signal: timedOut || aborted ? 'SIGTERM' : signal,
           stdout: out.text,
           stderr: errOut.text,
           truncated: out.truncated || errOut.truncated || timedOut,
           durationMs: Date.now() - started,
           command,
-          ...(timedOut ? { rejected: `命令超时（${input.timeoutMs}ms）已终止` } : {}),
+          ...(aborted
+            ? { rejected: '已取消' }
+            : timedOut
+              ? { rejected: `命令超时（${input.timeoutMs}ms）已终止` }
+              : {}),
         })
       })
     })

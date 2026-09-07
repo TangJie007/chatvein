@@ -8,7 +8,7 @@
 import { z } from 'zod'
 import { tool, type StructuredToolInterface } from '@langchain/core/tools'
 import { readFile, writeFile as fsWriteFile, mkdir } from 'node:fs/promises'
-import { dirname, relative } from 'node:path'
+import { basename, dirname, relative } from 'node:path'
 import type { SandboxProvider } from '@chatvein/sandbox'
 import { truncateFolded } from '@chatvein/context'
 
@@ -16,6 +16,8 @@ export interface ForgeToolsDeps {
   sandbox: SandboxProvider
   /** 工具输出进上下文前的 token 预算（截断） */
   outputTokenBudget?: number
+  /** 透传给 exec：用户取消时杀进程 */
+  signal?: AbortSignal
   /** trace 回调：每次工具调用留痕 */
   onToolCall?: (info: {
     name: string
@@ -28,6 +30,26 @@ export interface ForgeToolsDeps {
 }
 
 const DEFAULT_BUDGET = 1200
+
+/** 禁止读写的敏感文件名（basename 匹配，大小写不敏感） */
+const BLOCKED_BASENAMES = new Set([
+  '.env',
+  '.env.local',
+  '.env.development',
+  '.env.production',
+  '.env.test',
+  '.env.staging',
+  'credentials.json',
+  'credentials.csv',
+  'secrets.json',
+  'secret.json',
+  'id_rsa',
+  'id_ed25519',
+  'id_ecdsa',
+])
+
+/** 路径段命中即拒绝（相对路径任意层级） */
+const BLOCKED_SEGMENTS = [/\.pem$/i, /\.key$/i, /\.p12$/i, /\.pfx$/i]
 
 /** 各工具输入类型（与 zod schema 对齐） */
 interface ReadFileInput {
@@ -59,6 +81,20 @@ function resolvePath(sandbox: SandboxProvider, p: string): string {
 function rel(sandbox: SandboxProvider, abs: string): string {
   const r = relative(sandbox.workspacePath, abs)
   return r === '' ? '.' : r
+}
+
+/** 敏感路径拒绝（.env / 密钥文件等） */
+export function assertNotSecretPath(relOrAbs: string): void {
+  const norm = relOrAbs.replace(/\\/g, '/')
+  const base = basename(norm).toLowerCase()
+  if (BLOCKED_BASENAMES.has(base) || base.startsWith('.env.')) {
+    throw new Error(`出于安全考虑，禁止读写敏感文件：${base}`)
+  }
+  for (const re of BLOCKED_SEGMENTS) {
+    if (re.test(base)) {
+      throw new Error(`出于安全考虑，禁止读写敏感文件：${base}`)
+    }
+  }
 }
 
 /** 构造全套 Forge 编码工具 */
@@ -98,7 +134,9 @@ export function createForgeTools(deps: ForgeToolsDeps): StructuredToolInterface[
 
   const read_file = tool(
     withTrace<ReadFileInput, string>('read_file', async (input) => {
+      assertNotSecretPath(input.path)
       const abs = resolvePath(sandbox, input.path)
+      assertNotSecretPath(abs)
       const raw = await readFile(abs, 'utf8')
       const lines = raw.split(/\r?\n/)
       const start = input.offset ?? 0
@@ -111,7 +149,7 @@ export function createForgeTools(deps: ForgeToolsDeps): StructuredToolInterface[
     {
       name: 'read_file',
       description:
-        '读取工作区内文件内容（UTF-8 文本）。可指定 offset 起始行(0-based)与 limit 行数。路径相对工作区根。',
+        '读取工作区内文件内容（UTF-8 文本）。可指定 offset 起始行(0-based)与 limit 行数。路径相对工作区根。禁止读取 .env / 密钥类文件。',
       schema: z.object({
         path: z.string().describe('文件路径，相对工作区根'),
         offset: z.number().int().nonnegative().optional().describe('起始行号(0-based)'),
@@ -122,7 +160,9 @@ export function createForgeTools(deps: ForgeToolsDeps): StructuredToolInterface[
 
   const write_file = tool(
     withTrace<WriteFileInput, string>('write_file', async (input) => {
+      assertNotSecretPath(input.path)
       const abs = resolvePath(sandbox, input.path)
+      assertNotSecretPath(abs)
       await mkdir(dirname(abs), { recursive: true })
       await fsWriteFile(abs, input.content, 'utf8')
       const lines = input.content.split(/\r?\n/).length
@@ -131,7 +171,7 @@ export function createForgeTools(deps: ForgeToolsDeps): StructuredToolInterface[
     {
       name: 'write_file',
       description:
-        '全量写入/覆盖工作区内文件（自动创建父目录）。优先用于新建文件；修改已有文件优先用 apply_patch 做最小改动。',
+        '全量写入/覆盖工作区内文件（自动创建父目录）。优先用于新建文件；禁止写入 .env / 密钥类文件。',
       schema: z.object({
         path: z.string().describe('文件路径，相对工作区根'),
         content: z.string().describe('完整文件内容'),
@@ -160,6 +200,7 @@ export function createForgeTools(deps: ForgeToolsDeps): StructuredToolInterface[
         argv: splitArgv(input.command),
         cwd: input.cwd,
         timeoutMs: input.timeoutMs ?? 300_000,
+        signal: deps.signal,
       })
       const out = [res.stdout, res.stderr].filter(Boolean).join('\n')
       const body = res.rejected
@@ -182,7 +223,7 @@ export function createForgeTools(deps: ForgeToolsDeps): StructuredToolInterface[
   const git_op = tool(
     withTrace<GitOpInput, string>('git_op', async (input) => {
       const argv = ['git', ...splitArgv(input.args)]
-      const res = await sandbox.exec({ argv, timeoutMs: 30_000 })
+      const res = await sandbox.exec({ argv, timeoutMs: 30_000, signal: deps.signal })
       const out = [res.stdout, res.stderr].filter(Boolean).join('\n')
       return res.rejected
         ? `[拒绝] ${res.rejected}`

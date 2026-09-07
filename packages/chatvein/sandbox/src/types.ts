@@ -17,6 +17,8 @@ export interface ExecInput {
   env?: Record<string, string>
   /** 超时（毫秒）；超时杀进程树并返回 code=null */
   timeoutMs: number
+  /** 可选：外部取消时杀进程树 */
+  signal?: AbortSignal
   /** 覆盖默认 stdout/stderr 头部保留行数 */
   headLines?: number
   /** 覆盖默认尾部保留行数 */
@@ -64,4 +66,6 @@ export interface SandboxProvider {
   resolveInside(relPath: string): string
   /** 环境快照（写入 run.json，保证可复现） */
   snapshot(): Promise<EnvSnapshot>
+  /** 可选：杀掉当前仍在跑的子进程（用户取消） */
+  killRunning?(): void
 }

@@ -63,7 +63,29 @@ export class ChatService implements OnAppReady {
   private lastBandByConv = new Map<string, ComplexityBand>()
   /** 按工作区缓存 LangGraph checkpointer（跨进程持久化 agent 工作记忆） */
   private checkpointers = new Map<string, WorkspaceCheckpointer>()
+  /** 会话当前运行的 AbortController（停止生成） */
+  private abortByConv = new Map<string, AbortController>()
 
+  /** 取消指定会话正在进行的 send/retry */
+  abort(conversationId: string): { ok: true; aborted: boolean } {
+    const ac = this.abortByConv.get(conversationId)
+    if (!ac) return { ok: true, aborted: false }
+    ac.abort()
+    this.abortByConv.delete(conversationId)
+    return { ok: true, aborted: true }
+  }
+
+  private beginAbort(conversationId: string): AbortSignal {
+    this.abortByConv.get(conversationId)?.abort()
+    const ac = new AbortController()
+    this.abortByConv.set(conversationId, ac)
+    return ac.signal
+  }
+
+  private endAbort(conversationId: string, signal: AbortSignal): void {
+    const cur = this.abortByConv.get(conversationId)
+    if (cur?.signal === signal) this.abortByConv.delete(conversationId)
+  }
   async list(): Promise<Conversation[]> {
     return this.store.list()
   }
@@ -251,11 +273,13 @@ export class ChatService implements OnAppReady {
     })
 
     const clearTelemetry = this.llm.beginRequestTelemetry(emit, runId, conv.id)
+    const signal = this.beginAbort(conv.id)
     try {
       if (workMode === 'code') {
         const forgeStarted = Date.now()
+        const weakModel = await this.llm.resolveL2Model(model)
         return await runForgeCodingTurn(
-          { settings: this.settings },
+          { settings: this.settings, weakModel },
           {
             conv,
             agentId,
@@ -266,6 +290,8 @@ export class ChatService implements OnAppReady {
             runId,
             emit,
             thinkingParts,
+            signal,
+            resumeForge: input.resumeForge,
             persist: (text, failed) =>
               this.persistAssistant(
                 conv,
@@ -301,6 +327,7 @@ export class ChatService implements OnAppReady {
           mode: 'send',
           lastBand: this.lastBandByConv.get(conv.id),
           setLastBand: (band) => this.lastBandByConv.set(conv.id, band),
+          signal,
           persist: ({ text, failed, route, latencyMs, usage }) =>
             this.persistAssistant(
               conv,
@@ -319,6 +346,7 @@ export class ChatService implements OnAppReady {
         },
       )
     } finally {
+      this.endAbort(conv.id, signal)
       clearTelemetry?.()
     }
   }
@@ -331,6 +359,7 @@ export class ChatService implements OnAppReady {
       conversationId: string
       failedMessageId: string
       workMode?: 'office' | 'code' | 'custom'
+      resumeForge?: boolean
     },
     emit?: (evt: ChatStreamEvent) => void,
   ): Promise<ChatSendResult> {
@@ -357,7 +386,13 @@ export class ChatService implements OnAppReady {
     await this.store.updateMeta(conv.id, { updatedAt: conv.updatedAt })
     await this.store.replaceMessages(conv.id, conv.messages)
 
-    return this.regenerateAfterUser(conv, userMessage, emit, input.workMode ?? 'office')
+    return this.regenerateAfterUser(
+      conv,
+      userMessage,
+      emit,
+      input.workMode ?? 'office',
+      input.resumeForge,
+    )
   }
 
   /** 会话末尾已是 userMessage 时，只生成助手回复并追加 */
@@ -366,6 +401,7 @@ export class ChatService implements OnAppReady {
     userMessage: ChatMessage,
     emitOuter?: (evt: ChatStreamEvent) => void,
     workMode: 'office' | 'code' | 'custom' = 'office',
+    resumeForge?: boolean,
   ): Promise<ChatSendResult> {
     const thinkingParts: string[] = []
     const emit = (evt: ChatStreamEvent) => {
@@ -391,11 +427,13 @@ export class ChatService implements OnAppReady {
     })
 
     const clearTelemetry = this.llm.beginRequestTelemetry(emit, runId, conv.id)
+    const signal = this.beginAbort(conv.id)
     try {
       if (workMode === 'code') {
         const forgeStarted = Date.now()
+        const weakModel = await this.llm.resolveL2Model(model)
         return await runForgeCodingTurn(
-          { settings: this.settings },
+          { settings: this.settings, weakModel },
           {
             conv,
             agentId,
@@ -406,6 +444,8 @@ export class ChatService implements OnAppReady {
             runId,
             emit,
             thinkingParts,
+            signal,
+            resumeForge,
             persist: (text, failed) =>
               this.appendAssistant(
                 conv,
@@ -441,6 +481,7 @@ export class ChatService implements OnAppReady {
           mode: 'retry',
           lastBand: this.lastBandByConv.get(conv.id),
           setLastBand: (band) => this.lastBandByConv.set(conv.id, band),
+          signal,
           persist: ({ text, failed, route, latencyMs, usage }) =>
             this.appendAssistant(
               conv,
@@ -459,6 +500,7 @@ export class ChatService implements OnAppReady {
         },
       )
     } finally {
+      this.endAbort(conv.id, signal)
       clearTelemetry?.()
     }
   }

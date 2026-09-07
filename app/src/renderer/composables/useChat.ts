@@ -220,20 +220,25 @@ function localFailureMessage(reason: string): ChatMessage {
   }
 }
 
-async function send(content: string, workMode: 'office' | 'code' | 'custom' = 'office'): Promise<ChatSendResult> {
+async function send(
+  content: string,
+  workMode: 'office' | 'code' | 'custom' = 'office',
+  opts?: { resumeForge?: boolean },
+): Promise<ChatSendResult> {
   const conv = await ensureActive()
   const text = content.trim()
-  if (!text) throw new Error('消息不能为空')
+  if (!text && !opts?.resumeForge) throw new Error('消息不能为空')
 
   sending.value = true
   error.value = ''
 
+  const displayText = text || '继续上次'
   // 乐观插入用户气泡；失败也不撤回（用户未主动删除）
   const optimisticId = `pending-${Date.now()}`
   const optimisticMsg: ChatMessage = {
     id: optimisticId,
     role: 'user',
-    content: text,
+    content: displayText,
     createdAt: Date.now(),
   }
   patchConversation(conv.id, (c) => ({
@@ -246,9 +251,10 @@ async function send(content: string, workMode: 'office' | 'code' | 'custom' = 'o
     const result = await api.chat.send(
       toIpcPayload({
         conversationId: conv.id,
-        content: text,
+        content: displayText,
         agentId: conv.agentId,
         workMode,
+        resumeForge: opts?.resumeForge,
       }),
     )
     applySendResult(result)
@@ -267,6 +273,16 @@ async function send(content: string, workMode: 'office' | 'code' | 'custom' = 'o
     sending.value = false
     thinking.active = false
     void refreshArtifacts(conv.id)
+  }
+}
+
+async function abort(): Promise<void> {
+  const id = currentId.value
+  if (!id) return
+  try {
+    await api.chat.abort(id)
+  } catch {
+    // ignore
   }
 }
 async function retry(
@@ -353,5 +369,6 @@ export function useChat() {
     remove,
     send,
     retry,
+    abort,
   })
 }
