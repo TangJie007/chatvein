@@ -5,75 +5,18 @@ import {
   ValidationException,
   type OnAppReady,
 } from '@electrum/common'
-import {
-  createL2Classifier,
-  createReactChatAgent,
-  getDefaultHeuristicRouter,
-  invokeReactChatAgent,
-  WorkspaceCheckpointer,
-} from '@chatvein/agents'
-import type { ComplexityBand, ForgeConfig, RouteDecision, TraceEvent } from '@chatvein/common'
-import {
-  DEFAULT_EXEC_ALLOWLIST,
-  DEFAULT_TRUNCATION,
-  DEFAULT_BUDGET,
-} from '@chatvein/common'
-import { createHarness } from '@chatvein/core'
-import { createEndpointModel, createLangChainChatModel } from '@chatvein/models'
-import {
-  emitTelemetry,
-  isTelemetryEnabled,
-  setTelemetryContext,
-  setTelemetrySink,
-  toIpcSafePayload,
-  type TelemetryEvent,
-} from '@chatvein/observability'
-import {
-  resolveChatTools,
-  summarizeToolsForDebug,
-  parseMcpServersJson,
-  ToolVectorIndex,
-  llmSelectTools,
-  fitToolsWithinBudget,
-  computeToolBudgetTokens,
-  keywordSelect,
-  catalogEntryForTool,
-  humanizeToolName,
-  TOOL_INDEX_SCOPE,
-  TOOL_INDEX_KIND,
-  TOOL_PRESCREEN_TOP_K,
-  type ToolEmbedder,
-  type ToolVectorStore,
-  type LlmSelectToolsStatus,
-  type ToolCatalogEntry,
-} from '@chatvein/tools'
-import type { StructuredToolInterface } from '@chatvein/tools'
-import {
-  buildSummarizePrompt,
-  consolidateShortTerm,
-  planShortTerm,
-  type ShortTermMessage,
-  type ShortTermPlan,
-  type ShortTermState,
-} from '@chatvein/memory'
+import { WorkspaceCheckpointer } from '@chatvein/agents'
+import type { ComplexityBand, RouteDecision } from '@chatvein/common'
 import { randomUUID } from 'node:crypto'
-import { app } from 'electron'
 import { promises as fs } from 'node:fs'
 import { isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { AgentService } from '../agent/agent.service'
 import { MAIN_AGENT_ID } from '../agent/agent.types'
-import type { AgentConfig } from '../agent/agent.types'
 import { ModelService } from '../model/model.service'
-import type { ModelConfig } from '../model/model.types'
 import { SettingsService } from '../settings/settings.service'
-import { ChatStore } from './chat.store'
-import { makeConversationSlug } from './session-paths'
-import {
-  toolIndexMetaFile,
-  toolIndexSignature,
-  ToolIndexMetaStore,
-  type ToolIndexMeta,
-} from './tool-index-meta'
+import { CODER_AGENT_ID } from './constants'
+import { ChatStore } from './session/chat.store'
+import { makeConversationSlug } from './session/session-paths'
 import type {
   ChatMessage,
   ChatSendInput,
@@ -83,18 +26,16 @@ import type {
   TokenUsage,
 } from './chat.types'
 import {
-  artifactsFromReactMessages,
   artifactsFromWorkspaceDiff,
   listWorkspaceFiles,
-  mergeArtifacts,
-  snapshotWorkspaceMtimes,
-} from './workspace-artifacts'
-import { readThinkingLog, writeThinkingLog } from './thinking-log'
-import { readShortTermState, resetShortTermState, writeShortTermState } from './short-term.store'
-import type { BaseMessage } from '@langchain/core/messages'
-
-/** 内置「编程开发」Agent id（与 agent.store 默认 coder 对齐） */
-const CODER_AGENT_ID = 'coder'
+} from './artifacts/workspace-artifacts'
+import { readThinkingLog, writeThinkingLog } from './artifacts/thinking-log'
+import { readShortTermState, resetShortTermState } from './memory/short-term.store'
+import { ShortTermMemory } from './memory/short-term'
+import { ToolIndexService } from './tools/tool-index.service'
+import { runForgeCodingTurn } from './forge/forge-turn'
+import { ChatLlmHelper } from './turn/llm'
+import { runOfficeReactTurn, truncateTitle } from './turn/office-turn'
 
 @Injectable()
 export class ChatService implements OnAppReady {
@@ -110,32 +51,18 @@ export class ChatService implements OnAppReady {
   @Inject(SettingsService)
   private settings!: SettingsService
 
+  @Inject(ToolIndexService)
+  private toolIndex!: ToolIndexService
+
+  @Inject(ShortTermMemory)
+  private shortTerm!: ShortTermMemory
+
+  @Inject(ChatLlmHelper)
+  private llm!: ChatLlmHelper
+
   private lastBandByConv = new Map<string, ComplexityBand>()
-  /** 已为该模型 id 注入过 Structured L2，避免每轮重建 */
-  private l2BoundModelId: string | null = null
-  /** 每会话串行化短期记忆压缩，避免并发写同一份状态 */
-  private shortTermQueue = new Map<string, Promise<void>>()
   /** 按工作区缓存 LangGraph checkpointer（跨进程持久化 agent 工作记忆） */
   private checkpointers = new Map<string, WorkspaceCheckpointer>()
-
-  // —— 工具向量索引（层 C1 语义预筛）；原生模块 @chatvein/vector 懒加载，不进主 bundle 静态图 ——
-  private toolIndex: ToolVectorIndex | null = null
-  private toolIndexInit: Promise<ToolVectorIndex | null> | null = null
-  /** 索引维护串行队列（warmup 全量 + MCP/配置变更 sync，避免并发写库/写 meta） */
-  private toolIndexOps: Promise<unknown> = Promise.resolve()
-  /** 启动 warmup 一次性标记（幂等） */
-  private toolIndexWarmup: Promise<void> | null = null
-  /** 索引元信息内存缓存（index-meta.json 读一次，避免每轮磁盘 IO） */
-  private toolIndexMetaCache: ToolIndexMeta | null = null
-  private readonly toolIndexMetaStore = new ToolIndexMetaStore(
-    toolIndexMetaFile(join(app.getPath('userData'), 'forge', 'vector')),
-  )
-  /** 语义预筛召回上限（粗召回给 L2 精筛）；与 `@chatvein/tools` 常量对齐 */
-  private readonly toolPrescreenTopK = TOOL_PRESCREEN_TOP_K
-  /** L2 弱模型精筛上限 */
-  private readonly toolSelectTopK = 10
-  /** 候选 ≤ 此数跳过弱模型（省延迟） */
-  private readonly toolSelectSkipBelow = 10
 
   async list(): Promise<Conversation[]> {
     return this.store.list()
@@ -180,13 +107,12 @@ export class ChatService implements OnAppReady {
     const removed = await this.store.remove(id)
     if (!removed) throw new NotFoundException(`conversation:${id}`)
     this.lastBandByConv.delete(id)
-    this.shortTermQueue.delete(id)
+    this.shortTerm.dropQueue(id)
     const cp = this.checkpointers.get(removed.workspacePath)
     if (cp) {
       cp.close()
       this.checkpointers.delete(removed.workspacePath)
     }
-    // 会话根目录包含 runs/ 与 scripts/；聊天历史在 SQLite，删库行即可
     await resetShortTermState(removed.workspacePath).catch(() => undefined)
     await fs.rm(removed.workspacePath, { recursive: true, force: true }).catch(() => undefined)
     return { ok: true }
@@ -299,25 +225,10 @@ export class ChatService implements OnAppReady {
     if (!conv) throw new NotFoundException(`conversation:${input.conversationId}`)
 
     const workMode = input.workMode ?? 'office'
-    let agentId = input.agentId || conv.agentId || MAIN_AGENT_ID
-    if (workMode === 'code') {
-      try {
-        await this.agents.get(CODER_AGENT_ID)
-        agentId = CODER_AGENT_ID
-      } catch {
-        // 无内置 coder 时沿用会话 Agent
-      }
-    }
-    const agent = await this.agents.get(agentId)
-    if (!agent.enabled) throw new ValidationException(`Agent「${agent.name}」已停用`, [])
-    if (!agent.modelId) {
-      throw new ValidationException(`Agent「${agent.name}」未绑定模型，请先在 Agents 中选用模型`, [])
-    }
-
-    const model = await this.models.get(agent.modelId)
-    if (!model.enabled) throw new ValidationException(`模型「${model.name}」已停用`, [])
-    if (!model.baseUrl?.trim()) throw new ValidationException('模型 Base URL 为空', [])
-    if (!model.model?.trim()) throw new ValidationException('模型 ID 为空', [])
+    const { agentId, agent, model } = await this.resolveAgentModel(
+      input.agentId || conv.agentId || MAIN_AGENT_ID,
+      workMode,
+    )
 
     const now = Date.now()
     const userMessage: ChatMessage = {
@@ -328,8 +239,7 @@ export class ChatService implements OnAppReady {
     }
 
     const shortTermState = await readShortTermState(conv.workspacePath)
-    const shortTerm = await this.buildShortTermHistory(conv, shortTermState)
-    const history = shortTerm.history
+    const shortTerm = await this.shortTerm.buildHistory(conv, shortTermState)
 
     const runId = randomUUID()
     emit({
@@ -340,263 +250,74 @@ export class ChatService implements OnAppReady {
       ts: Date.now(),
     })
 
-    const clearTelemetry = this.beginRequestTelemetry(emit, runId, conv.id)
+    const clearTelemetry = this.llm.beginRequestTelemetry(emit, runId, conv.id)
     try {
-      // 编程开发档：走 Forge orchestrator（plan→implement→verify…），不进 Chat ReAct
       if (workMode === 'code') {
-        return await this.sendForgeTurn({
-          conv,
-          agentId,
-          agent,
-          model,
-          userMessage,
-          content,
-          runId,
-          emit,
-          thinkingParts,
-        })
+        const forgeStarted = Date.now()
+        return await runForgeCodingTurn(
+          { settings: this.settings },
+          {
+            conv,
+            agentId,
+            agent,
+            model,
+            userMessage,
+            content,
+            runId,
+            emit,
+            thinkingParts,
+            persist: (text, failed) =>
+              this.persistAssistant(
+                conv,
+                agentId,
+                userMessage,
+                text,
+                Date.now() - forgeStarted,
+                model.model,
+                undefined,
+                failed,
+                undefined,
+                thinkingParts.join(''),
+              ),
+          },
+        )
       }
 
-      // L1 →（灰区）L2 结构化分类 → ReAct；L2 用弱模偏好，无分档表时回退当前 Agent 模型
-    const router = await this.routerWithL2(model)
-    const route = await router.route({
-      text: content,
-      session: {
-        turnIndex: history.filter((m) => m.role === 'user').length,
-        lastBand: this.lastBandByConv.get(conv.id),
-        lastAssistantHadTools: false,
-        recentFailure: false,
-        activeMode: 'chat',
-      },
-    })
-    this.lastBandByConv.set(conv.id, route.band)
-
-    emit({
-      type: 'route',
-      runId,
-      conversationId: conv.id,
-      decision: route,
-    })
-    emit({
-      type: 'thinking_delta',
-      runId,
-      conversationId: conv.id,
-      delta: formatRouteThinking(route),
-    })
-    emit({
-      type: 'thinking_delta',
-      runId,
-      conversationId: conv.id,
-      delta: formatShortTermThinking(shortTerm.plan),
-    })
-
-    if (route.terminal?.kind === 'slash') {
-      const cmd = String(route.terminal.payload?.slashCmd ?? '')
-      const text = `已识别命令 /${cmd}（本地处理占位；尚未绑定具体动作）。`
-      emit({ type: 'thinking_done', runId, conversationId: conv.id })
-      return this.persistAssistant(conv, agentId, userMessage, text, 0, model.model, route, false, undefined, thinkingParts.join(''))
-    }
-
-    if (route.terminal?.kind === 'empty') {
-      const text = '（空消息，已忽略）'
-      emit({ type: 'thinking_done', runId, conversationId: conv.id })
-      return this.persistAssistant(conv, agentId, userMessage, text, 0, model.model, route, false, undefined, thinkingParts.join(''))
-    }
-
-    // —— 吃满 L1 policy（开发验证）——
-    const maxSteps = route.policy.maxSteps
-    const toolPolicy = route.policy.tools
-
-    emit({
-      type: 'thinking_delta',
-      runId,
-      conversationId: conv.id,
-      delta: formatPolicyApply(route),
-    })
-
-    // 仅寒暄 / 自我介绍规则允许本地短路；L2 trivial 默认 maxSteps=4，仍走 LLM
-    const allowLocalShortCircuit =
-      maxSteps <= 0 &&
-      (route.reasons.includes('greeting_only') || route.reasons.includes('self_intro'))
-
-    if (allowLocalShortCircuit) {
-      const text = localReplyForRoute(route, content)
-      emit({
-        type: 'thinking_delta',
-        runId,
-        conversationId: conv.id,
-        delta: `执行：maxSteps=${maxSteps} → 本地短路，跳过 LLM\n`,
-      })
-      emitTelemetry('trace:react:skipped', {
-        reason: 'maxSteps<=0',
-        route: {
-          band: route.band,
-          score: route.score,
-          tools: route.policy.tools,
-          modelTier: route.policy.modelTier,
-          maxSteps,
+      return await runOfficeReactTurn(
+        {
+          llm: this.llm,
+          toolIndex: this.toolIndex,
+          getCheckpointer: (ws) => this.getCheckpointer(ws),
         },
-        localReply: text,
-      })
-      emit({ type: 'thinking_done', runId, conversationId: conv.id })
-      return this.persistAssistant(conv, agentId, userMessage, text, 0, model.model, route, false, undefined, thinkingParts.join(''))
-    }
-
-    const recursionLimit = Math.max(1, maxSteps)
-    // 编程开发模式：工具 jail 到用户项目目录（否则仍是会话私有沙箱）
-    const { toolRoot, projectRoot } = await this.resolveToolRoot(agent, conv.workspacePath)
-    if (projectRoot) {
-      emit({
-        type: 'thinking_delta',
-        runId,
-        conversationId: conv.id,
-        delta: `编程开发模式：项目根 ${projectRoot}\n`,
-      })
-    }
-    // 路由约束写入 system：L2/策略 trivial → 友好短答；weak → 简短不列清单
-    const systemPrompt = withCodingContext(systemPromptForRoute(agent.systemPrompt, route), projectRoot)
-    const llm = this.createDebugAwareLlm(model, {
-      temperature: temperatureForTier(route.policy.modelTier, model.temperature),
-      maxTokens: model.maxTokens > 0 ? model.maxTokens : undefined,
-    })
-
-    const toolQuery = route.rewrittenQuery?.trim() || content
-    if (route.rewrittenQuery?.trim()) {
-      emit({
-        type: 'thinking_delta',
-        runId,
-        conversationId: conv.id,
-        delta: `工具检索 query：${toolQuery.slice(0, 120)}${toolQuery.length > 120 ? '…' : ''}\n`,
-      })
-    }
-    const boundTools = await this.resolveBoundTools(
-      agent,
-      toolPolicy,
-      toolRoot,
-      toolQuery,
-      model,
-    )
-    if (boundTools.length > 0) {
-      emit({
-        type: 'thinking_delta',
-        runId,
-        conversationId: conv.id,
-        delta: `绑定工具：${boundTools.map((t) => t.name).join(', ')}\n`,
-      })
-    }
-    const checkpointer = this.getCheckpointer(conv.workspacePath)
-    await checkpointer.deleteThread(conv.id)
-    // 主循环
-    const reactAgent = createReactChatAgent({
-      model: llm,
-      tools: boundTools,
-      systemPrompt,
-      name: agent.name,
-      checkpointer,
-    })
-
-    const started = Date.now()
-    const beforeSnap = await snapshotWorkspaceMtimes(conv.workspacePath)
-    let text: string
-    let usage: TokenUsage | undefined
-    let reactMessages: BaseMessage[] = []
-    try {
-      emitTelemetry('trace:react:request', {
-        model: {
-          id: model.id,
-          name: model.name,
-          model: model.model,
-          baseUrl: model.baseUrl,
-          temperature: temperatureForTier(route.policy.modelTier, model.temperature),
-          maxTokens: model.maxTokens,
-          requestedTier: route.policy.modelTier,
+        {
+          conv,
+          agent,
+          model,
+          content,
+          history: shortTerm.history,
+          shortTermPlan: shortTerm.plan,
+          runId,
+          emit,
+          mode: 'send',
+          lastBand: this.lastBandByConv.get(conv.id),
+          setLastBand: (band) => this.lastBandByConv.set(conv.id, band),
+          persist: ({ text, failed, route, latencyMs, usage }) =>
+            this.persistAssistant(
+              conv,
+              agentId,
+              userMessage,
+              text,
+              latencyMs,
+              model.model,
+              route,
+              failed,
+              usage,
+              thinkingParts.join(''),
+            ),
+          scheduleShortTerm: (result) =>
+            this.shortTerm.scheduleConsolidation(result.conversation, emit, runId),
         },
-        agent: { id: agent.id, name: agent.name },
-        systemPrompt: systemPrompt ?? null,
-        recursionLimit,
-        toolsPolicy: toolPolicy,
-        toolsBound: boundTools.map((t) => t.name),
-        /** 与真实 bind 对齐的工具描述 + JSON Schema（便于对照网关 tools 字段） */
-        tools: summarizeToolsForDebug(boundTools),
-        route: {
-          band: route.band,
-          score: route.score,
-          tools: route.policy.tools,
-          modelTier: route.policy.modelTier,
-          maxSteps,
-        },
-        history,
-        message: content,
-        /** 短期记忆裁剪结果：摘要覆盖 / 窗口 / 待摘要 / 估算 token */
-        shortTerm: shortTermDebugInfo(shortTerm.plan),
-      })
-
-      const result = await invokeReactChatAgent(reactAgent, {
-        message: content,
-        history,
-        recursionLimit,
-        threadId: conv.id,
-      })
-      text = result.content.trim()
-      usage = result.usage
-      reactMessages = result.messages
-
-      emitTelemetry('trace:react:response', {
-        content: result.content,
-        messageCount: result.messages.length,
-        messages: result.messages,
-        usage: result.usage,
-        latencyMs: Date.now() - started,
-      })
-    } catch (err) {
-      emit({ type: 'thinking_done', runId, conversationId: conv.id })
-      return this.persistAssistant(
-        conv,
-        agentId,
-        userMessage,
-        friendlyReplyFailure(formatAgentError(err)),
-        Date.now() - started,
-        model.model,
-        route,
-        true,
-        undefined,
-        thinkingParts.join(''),
       )
-    }
-    const latencyMs = Date.now() - started
-    await this.emitRunArtifacts(emit, runId, conv, beforeSnap, reactMessages)
-    emit({ type: 'thinking_done', runId, conversationId: conv.id })
-
-    if (!text) {
-      return this.persistAssistant(
-        conv,
-        agentId,
-        userMessage,
-        friendlyReplyFailure('模型返回空内容'),
-        latencyMs,
-        model.model,
-        route,
-        true,
-        undefined,
-        thinkingParts.join(''),
-      )
-    }
-
-    const result = await this.persistAssistant(
-      conv,
-      agentId,
-      userMessage,
-      text,
-      latencyMs,
-      model.model,
-      route,
-      false,
-      usage,
-      thinkingParts.join(''),
-    )
-    // 短期记忆：本轮一问一答已落库，异步把挤出窗口的旧消息并入滚动摘要
-    this.scheduleShortTermConsolidation(result.conversation, emit, runId)
-    return result
     } finally {
       clearTelemetry?.()
     }
@@ -606,7 +327,11 @@ export class ChatService implements OnAppReady {
    * 重试失败的助手回复：保留原用户消息，去掉失败气泡后重新生成。
    */
   async retry(
-    input: { conversationId: string; failedMessageId: string; workMode?: 'office' | 'code' | 'custom' },
+    input: {
+      conversationId: string
+      failedMessageId: string
+      workMode?: 'office' | 'code' | 'custom'
+    },
     emit?: (evt: ChatStreamEvent) => void,
   ): Promise<ChatSendResult> {
     let conv = await this.store.get(input.conversationId)
@@ -647,9 +372,99 @@ export class ChatService implements OnAppReady {
       if (evt.type === 'thinking_delta') thinkingParts.push(evt.delta)
       emitOuter?.(evt)
     }
-    const thinkingLog = () => thinkingParts.join('')
 
-    let agentId = conv.agentId || MAIN_AGENT_ID
+    const { agentId, agent, model } = await this.resolveAgentModel(
+      conv.agentId || MAIN_AGENT_ID,
+      workMode,
+    )
+    const content = userMessage.content
+    const shortTermState = await readShortTermState(conv.workspacePath)
+    const shortTerm = await this.shortTerm.buildHistory(conv, shortTermState, { dropLast: true })
+
+    const runId = randomUUID()
+    emit({
+      type: 'run_start',
+      runId,
+      conversationId: conv.id,
+      agent: agent.name,
+      ts: Date.now(),
+    })
+
+    const clearTelemetry = this.llm.beginRequestTelemetry(emit, runId, conv.id)
+    try {
+      if (workMode === 'code') {
+        const forgeStarted = Date.now()
+        return await runForgeCodingTurn(
+          { settings: this.settings },
+          {
+            conv,
+            agentId,
+            agent,
+            model,
+            userMessage,
+            content,
+            runId,
+            emit,
+            thinkingParts,
+            persist: (text, failed) =>
+              this.appendAssistant(
+                conv,
+                agentId,
+                userMessage,
+                text,
+                Date.now() - forgeStarted,
+                model.model,
+                undefined,
+                failed,
+                undefined,
+                thinkingParts.join(''),
+              ),
+          },
+        )
+      }
+
+      return await runOfficeReactTurn(
+        {
+          llm: this.llm,
+          toolIndex: this.toolIndex,
+          getCheckpointer: (ws) => this.getCheckpointer(ws),
+        },
+        {
+          conv,
+          agent,
+          model,
+          content,
+          history: shortTerm.history,
+          shortTermPlan: shortTerm.plan,
+          runId,
+          emit,
+          mode: 'retry',
+          lastBand: this.lastBandByConv.get(conv.id),
+          setLastBand: (band) => this.lastBandByConv.set(conv.id, band),
+          persist: ({ text, failed, route, latencyMs, usage }) =>
+            this.appendAssistant(
+              conv,
+              agentId,
+              userMessage,
+              text,
+              latencyMs,
+              model.model,
+              route,
+              failed,
+              usage,
+              thinkingParts.join(''),
+            ),
+          scheduleShortTerm: (result) =>
+            this.shortTerm.scheduleConsolidation(result.conversation, emit, runId),
+        },
+      )
+    } finally {
+      clearTelemetry?.()
+    }
+  }
+
+  private async resolveAgentModel(preferredAgentId: string, workMode: 'office' | 'code' | 'custom') {
+    let agentId = preferredAgentId
     if (workMode === 'code') {
       try {
         await this.agents.get(CODER_AGENT_ID)
@@ -667,961 +482,16 @@ export class ChatService implements OnAppReady {
     if (!model.enabled) throw new ValidationException(`模型「${model.name}」已停用`, [])
     if (!model.baseUrl?.trim()) throw new ValidationException('模型 Base URL 为空', [])
     if (!model.model?.trim()) throw new ValidationException('模型 ID 为空', [])
-
-    const content = userMessage.content
-    const shortTermState = await readShortTermState(conv.workspacePath)
-    // 会话末尾那条就是本轮输入（retry 场景），不算历史
-    const shortTerm = await this.buildShortTermHistory(conv, shortTermState, { dropLast: true })
-    const history = shortTerm.history
-
-    const runId = randomUUID()
-    emit({
-      type: 'run_start',
-      runId,
-      conversationId: conv.id,
-      agent: agent.name,
-      ts: Date.now(),
-    })
-
-    const clearTelemetry = this.beginRequestTelemetry(emit, runId, conv.id)
-    try {
-      if (workMode === 'code') {
-        return await this.sendForgeTurn({
-          conv,
-          agentId,
-          agent,
-          model,
-          userMessage,
-          content,
-          runId,
-          emit,
-          thinkingParts,
-          appendOnly: true,
-        })
-      }
-
-    const router = await this.routerWithL2(model)
-    const route = await router.route({
-      text: content,
-      session: {
-        turnIndex: history.filter((m) => m.role === 'user').length,
-        lastBand: this.lastBandByConv.get(conv.id),
-        lastAssistantHadTools: false,
-        recentFailure: true,
-        activeMode: 'chat',
-      },
-    })
-    this.lastBandByConv.set(conv.id, route.band)
-
-    emit({ type: 'route', runId, conversationId: conv.id, decision: route })
-    emit({
-      type: 'thinking_delta',
-      runId,
-      conversationId: conv.id,
-      delta: formatRouteThinking(route),
-    })
-    emit({
-      type: 'thinking_delta',
-      runId,
-      conversationId: conv.id,
-      delta: formatShortTermThinking(shortTerm.plan),
-    })
-
-    const maxSteps = route.policy.maxSteps
-    const allowLocalShortCircuit =
-      maxSteps <= 0 &&
-      (route.reasons.includes('greeting_only') || route.reasons.includes('self_intro'))
-
-    if (allowLocalShortCircuit) {
-      const text = localReplyForRoute(route, content)
-      emit({ type: 'thinking_done', runId, conversationId: conv.id })
-      return this.appendAssistant(conv, agentId, userMessage, text, 0, model.model, route, false, undefined, thinkingLog())
-    }
-
-    const recursionLimit = Math.max(1, maxSteps)
-    // 编程开发模式：工具 jail 到用户项目目录（与 send 路径一致）
-    const { toolRoot, projectRoot } = await this.resolveToolRoot(agent, conv.workspacePath)
-    const systemPrompt = withCodingContext(systemPromptForRoute(agent.systemPrompt, route), projectRoot)
-    const llm = this.createDebugAwareLlm(model, {
-      temperature: temperatureForTier(route.policy.modelTier, model.temperature),
-      maxTokens: model.maxTokens > 0 ? model.maxTokens : undefined,
-    })
-    const toolQuery = route.rewrittenQuery?.trim() || content
-    const boundTools = await this.resolveBoundTools(
-      agent,
-      route.policy.tools,
-      toolRoot,
-      toolQuery,
-      model,
-    )
-    const checkpointer = this.getCheckpointer(conv.workspacePath)
-    await checkpointer.deleteThread(conv.id)
-    const reactAgent = createReactChatAgent({
-      model: llm,
-      tools: boundTools,
-      systemPrompt,
-      name: agent.name,
-      checkpointer,
-    })
-
-    const started = Date.now()
-    const beforeSnap = await snapshotWorkspaceMtimes(conv.workspacePath)
-    try {
-      const result = await invokeReactChatAgent(reactAgent, {
-        message: content,
-        history,
-        recursionLimit,
-        threadId: conv.id,
-      })
-      const text = result.content.trim()
-      await this.emitRunArtifacts(emit, runId, conv, beforeSnap, result.messages)
-      emit({ type: 'thinking_done', runId, conversationId: conv.id })
-      if (!text) {
-        return this.appendAssistant(
-          conv,
-          agentId,
-          userMessage,
-          friendlyReplyFailure('模型返回空内容'),
-          Date.now() - started,
-          model.model,
-          route,
-          true,
-          undefined,
-          thinkingLog(),
-        )
-      }
-      const ok = await this.appendAssistant(
-        conv,
-        agentId,
-        userMessage,
-        text,
-        Date.now() - started,
-        model.model,
-        route,
-        false,
-        result.usage,
-        thinkingLog(),
-      )
-      this.scheduleShortTermConsolidation(ok.conversation, emit, runId)
-      return ok
-    } catch (err) {
-      emit({ type: 'thinking_done', runId, conversationId: conv.id })
-      return this.appendAssistant(
-        conv,
-        agentId,
-        userMessage,
-        friendlyReplyFailure(formatAgentError(err)),
-        Date.now() - started,
-        model.model,
-        route,
-        true,
-        undefined,
-        thinkingLog(),
-      )
-    }
-    } finally {
-      clearTelemetry?.()
-    }
+    return { agentId, agent, model }
   }
 
-  /**
-   * 短期记忆读路径：会话全量历史 → `摘要块（system） + 近因窗口`。
-   * `dropLast` 用于 retry：会话末尾那条用户消息是本轮输入，不算历史。
-   */
-  private async buildShortTermHistory(
-    conv: Conversation,
-    state: ShortTermState | null,
-    opts?: { dropLast?: boolean },
-  ): Promise<{ history: Array<{ role: "user" | "assistant" | "system"; content: string }>; plan: ShortTermPlan }> {
-    const source = opts?.dropLast ? conv.messages.slice(0, -1) : conv.messages
-    const messages = toShortTermMessages(source)
-    const plan = await planShortTerm({ messages, state, reserveTokens: SHORT_TERM_RESERVE_TOKENS })
-    const history: Array<{ role: 'user' | 'assistant' | 'system'; content: string }> = []
-    if (plan.summaryBlock) history.push(plan.summaryBlock)
-    for (const m of plan.active) history.push({ role: m.role, content: m.content })
-    return { history, plan }
-  }
-
-  /** 本轮结束后异步压缩短期记忆（不阻塞回复返回，按会话串行） */
-  private scheduleShortTermConsolidation(
-    conv: Conversation,
-    emit: ((evt: ChatStreamEvent) => void) | undefined,
-    runId: string,
-  ): void {
-    const prev = this.shortTermQueue.get(conv.id) ?? Promise.resolve()
-    const next = prev
-      .catch(() => undefined)
-      .then(() => this.runShortTermConsolidation(conv, emit, runId))
-      .catch((err) => {
-        console.warn('[ChatService] short-term consolidation failed', err)
-      })
-    this.shortTermQueue.set(conv.id, next)
-    void next.finally(() => {
-      if (this.shortTermQueue.get(conv.id) === next) this.shortTermQueue.delete(conv.id)
-    })
-  }
-
-  private async runShortTermConsolidation(
-    conv: Conversation,
-    emit: ((evt: ChatStreamEvent) => void) | undefined,
-    runId: string,
-  ): Promise<void> {
-    const state = await readShortTermState(conv.workspacePath)
-    const messages = toShortTermMessages(conv.messages)
-
-    // 先探一次：没有待摘要消息就不必解析模型配置
-    if ((await planShortTerm({ messages, state })).pending.length === 0) return
-
-    const agent = await this.agents.get(conv.agentId || MAIN_AGENT_ID)
-    if (!agent?.modelId) return
-    const model = await this.models.get(agent.modelId)
-    if (!model?.enabled || !model.baseUrl?.trim() || !model.model?.trim()) return
-
-    // 异步压缩发生在请求 sink 已清理之后：为本任务单独挂遥测通道
-    const clear = this.beginRequestTelemetry(emit, runId, conv.id)
-    try {
-      const summarizer = await this.shortTermSummarizer(model)
-      const result = await consolidateShortTerm({ messages, state, summarizer })
-      if (result.consolidated === 0) return
-
-      await writeShortTermState(conv.workspacePath, result.state)
-      emitTelemetry('trace:memory:short-term', {
-        consolidated: result.consolidated,
-        viaModel: result.viaModel,
-        summarizedCount: result.state.summarizedCount,
-        summaryChars: result.state.summary.length,
-        summary: result.state.summary,
-      })
-    } finally {
-      clear?.()
-    }
-  }
-
-  /** 摘要器：weak 档模型 + 短输出；调用失败由 consolidate 内部降级 */
-  private async shortTermSummarizer(agentModel: ModelConfig) {
-    const weak = await this.resolveL2Model(agentModel)
-    const endpoint = createEndpointModel({
-      id: weak.id,
-      baseUrl: weak.baseUrl,
-      apiKey: weak.apiKey,
-      model: weak.model,
-      temperature: 0,
-      maxTokens: 512,
-    })
-    return async (
-      input: Parameters<typeof buildSummarizePrompt>[0],
-    ): Promise<string> => {
-      const [system, user] = buildSummarizePrompt(input)
-      const res = await endpoint.invoke(
-        [
-          { role: 'system', content: system.content },
-          { role: 'user', content: user.content },
-        ],
-        { timeoutMs: 20_000 },
-      )
-      return res.content
-    }
-  }
-
-  /**
-   * 编程开发档：经 `@chatvein/core` Harness → `@chatvein/orchestrator` StateGraph。
-   * 用户消息写成需求文档；沙箱工作区指向 `devProjectRoot`（真实项目）。
-   */
-  private async sendForgeTurn(args: {
-    conv: Conversation
-    agentId: string
-    agent: AgentConfig
-    model: ModelConfig
-    userMessage: ChatMessage
-    content: string
-    runId: string
-    emit: (evt: ChatStreamEvent) => void
-    thinkingParts: string[]
-    /** retry 场景：用户消息已在会话末尾，只追加助手 */
-    appendOnly?: boolean
-  }): Promise<ChatSendResult> {
-    const {
-      conv,
-      agentId,
-      agent,
-      model,
-      userMessage,
-      content,
-      runId,
-      emit,
-      thinkingParts,
-      appendOnly,
-    } = args
-    const started = Date.now()
-    const persist = (text: string, failed: boolean) =>
-      appendOnly
-        ? this.appendAssistant(
-            conv,
-            agentId,
-            userMessage,
-            text,
-            Date.now() - started,
-            model.model,
-            undefined,
-            failed,
-            undefined,
-            thinkingParts.join(''),
-          )
-        : this.persistAssistant(
-            conv,
-            agentId,
-            userMessage,
-            text,
-            Date.now() - started,
-            model.model,
-            undefined,
-            failed,
-            undefined,
-            thinkingParts.join(''),
-          )
-
-    const settings = await this.settings.get()
-    const projectRoot = settings.devProjectRoot?.trim() ?? ''
-    if (!projectRoot || !isAbsolute(projectRoot)) {
-      emit({ type: 'thinking_done', runId, conversationId: conv.id })
-      return persist(
-        friendlyReplyFailure(
-          '编程开发需要先选择项目根目录（页面上方「选择项目」），Forge 才会在真实仓库内编排实现与验证。',
-        ),
-        true,
-      )
-    }
-
-    emit({
-      type: 'thinking_delta',
-      runId,
-      conversationId: conv.id,
-      delta: `Forge 编排：项目根 ${projectRoot}\n`,
-    })
-
-    const runsRoot = join(conv.sandboxPath, 'forge')
-    await fs.mkdir(runsRoot, { recursive: true })
-    await fs.mkdir(join(conv.workspacePath, 'memory'), { recursive: true })
-    const requirementPath = join(conv.workspacePath, 'memory', `requirement-${runId}.md`)
-    const requirementBody = [
-      '# 用户需求',
-      '',
-      content,
-      '',
-      '---',
-      '',
-      `项目根目录：${projectRoot}`,
-      '请在该仓库内完成实现；改动应可构建/测试验证。',
-      '',
-    ].join('\n')
-    await fs.writeFile(requirementPath, requirementBody, 'utf8')
-
-    let skipBuild = false
-    try {
-      await fs.access(join(projectRoot, 'package.json'))
-    } catch {
-      skipBuild = true
-      emit({
-        type: 'thinking_delta',
-        runId,
-        conversationId: conv.id,
-        delta: '未找到 package.json → skipBuild（跳过 npm build/test）\n',
-      })
-    }
-
-    const forgeConfig = forgeConfigFromModel(model, runsRoot)
-    const harness = createHarness({ config: forgeConfig, runsRoot })
-    const forgeRunId = `chat-${runId.slice(0, 8)}`
-
-    emit({
-      type: 'thinking_delta',
-      runId,
-      conversationId: conv.id,
-      delta: `启动 orchestrator runId=${forgeRunId}\n`,
-    })
-
-    try {
-      const handle = await harness.start({
-        requirementPath,
-        runId: forgeRunId,
-        workspacePath: projectRoot,
-        skipBuild,
-        compileStrategy: 'sections',
-      })
-
-      const unsub = handle.onEvent((evt: TraceEvent) => {
-        if (evt.runId !== forgeRunId && evt.runId !== handle.runId) return
-        const line = formatForgeTraceDelta(evt)
-        if (!line) return
-        emit({
-          type: 'thinking_delta',
-          runId,
-          conversationId: conv.id,
-          delta: line,
-        })
-      })
-
-      let report: Awaited<typeof handle.done>
-      try {
-        report = await handle.done
-      } finally {
-        unsub()
-      }
-
-      emit({ type: 'thinking_done', runId, conversationId: conv.id })
-
-      const summary =
-        report.summary?.trim() ||
-        (report.status === 'done'
-          ? 'Forge 运行完成（无汇总文本）。'
-          : 'Forge 运行已中止。')
-      const failed = report.status === 'aborted' || report.failedTasks.length > 0
-      const body = [
-        summary,
-        report.failedTasks.length
-          ? `\n未完成任务：${report.failedTasks.join(', ')}`
-          : '',
-        `\n\n— Forge ${report.status} · run \`${report.runId}\``,
-      ].join('')
-
-      emitTelemetry('trace:forge:response', {
-        runId: report.runId,
-        status: report.status,
-        failedTasks: report.failedTasks,
-        latencyMs: Date.now() - started,
-        projectRoot,
-      })
-
-      return persist(body, failed)
-    } catch (err) {
-      emit({ type: 'thinking_done', runId, conversationId: conv.id })
-      return persist(friendlyReplyFailure(formatAgentError(err)), true)
-    }
-  }
-
-  /**
-   * 本轮结束后：工作区磁盘 diff ∪ 写文件类 tool_calls → `artifacts` 事件。
-   */
-  private async emitRunArtifacts(
-    emit: ((evt: ChatStreamEvent) => void) | undefined,
-    runId: string,
-    conv: Conversation,
-    beforeSnap: Map<string, number>,
-    messages: BaseMessage[],
-  ): Promise<void> {
-    if (!emit) return
-    try {
-      const after = await listWorkspaceFiles(conv.workspacePath)
-      const items = mergeArtifacts(
-        artifactsFromWorkspaceDiff(beforeSnap, after),
-        artifactsFromReactMessages(messages, conv.workspacePath),
-      )
-      if (items.length === 0) return
-      emit({ type: 'artifacts', runId, conversationId: conv.id, items })
-    } catch (err) {
-      console.warn('[ChatService] emitRunArtifacts failed', err)
-    }
-  }
-
-  /**
-   * 解析本轮工具的 jail 根目录。
-   * - 编程开发档（内置 coder Agent）且设置了 `devProjectRoot`：文件读写 / 脚本执行
-   *   等工具的根切换为用户真实项目目录，从而能在仓库内改代码、跑脚本；
-   * - 其余情况回落到会话私有工作区（沙箱），保持隔离。
-   * 返回 toolRoot（传给工具层）与 projectRoot（非空表示正处于项目模式，用于注入提示）。
-   */
-  private async resolveToolRoot(
-    agent: AgentConfig,
-    conversationWorkspace: string,
-  ): Promise<{ toolRoot: string; projectRoot: string }> {
-    const isCodingAgent = agent.id === CODER_AGENT_ID
-    if (!isCodingAgent) return { toolRoot: conversationWorkspace, projectRoot: '' }
-    const settings = await this.settings.get()
-    const projectRoot = settings.devProjectRoot?.trim() ?? ''
-    if (projectRoot && isAbsolute(projectRoot)) {
-      return { toolRoot: projectRoot, projectRoot }
-    }
-    return { toolRoot: conversationWorkspace, projectRoot: '' }
-  }
-
-  /**
-   * policy.tools ∩ 角色白名单 → LangChain 工具实例。
-   * 链路：resolveChatTools → C1 混合预筛 → C2 弱模型精筛 → C3 预算裁剪。
-   * 索引维护仅在启动 warmup / `refreshToolIndex`（MCP 菜单变更）；对话路径只读检索。
-   * query 应为 `route.rewrittenQuery ?? 原文`；**空 query → 不绑工具**（主模型纯聊）。
-   * workspaceRoot 为工具 jail 根：编程模式下是用户项目目录，否则是会话沙箱。
-   */
-  private async resolveBoundTools(
-    agent: AgentConfig,
-    toolPolicy: RouteDecision['policy']['tools'],
-    workspaceRoot?: string,
-    query?: string,
-    model?: ModelConfig,
-  ): Promise<StructuredToolInterface[]> {
-    const q = query?.trim() ?? ''
-    // 无检索句无法做 C1/C2；不强行全量绑工具，避免空白输入拖进整库工具
-    if (!q) return []
-
-    const settings = await this.settings.get()
-    const candidateTools = await resolveChatTools({
-      policy: toolPolicy,
-      allowIds: agent.tools.length > 0 ? agent.tools : 'all',
-      workspaceRoot: workspaceRoot?.trim() || settings.effectiveWorkspaceRoot,
-      secrets: {
-        serpApiKey: process.env.SERPAPI_API_KEY,
-        braveApiKey: process.env.BRAVE_SEARCH_API_KEY,
-        tavilyApiKey: process.env.TAVILY_API_KEY,
-        wolframAppId: process.env.WOLFRAM_ALPHA_APPID,
-      },
-      mcpServers: parseMcpServersJson(process.env.CHATVEIN_MCP_SERVERS),
-    })
-    if (candidateTools.length === 0) return []
-
-    const byName = new Map(candidateTools.map((t) => [t.name, t]))
-    const candidateNames = [...byName.keys()]
-
-    // 等待启动 warmup（若仍在跑），避免签名命中跳过写库后内存未 ready 导致本轮空召回
-    await this.awaitToolIndexWarmup()
-
-    // 层 C1：向量+BM25 混合预筛；未就绪/空命中 → 关键词兜底；再空 → 全候选
-    let c1Source: 'hybrid' | 'keyword' | 'full' = 'full'
-    let narrowed = candidateNames
-    const hybridHits = await this.prescreenWithVector(q, candidateNames)
-    if (hybridHits.length > 0) {
-      narrowed = hybridHits
-      c1Source = 'hybrid'
-    } else {
-      const kwHits = this.prescreenWithKeywords(q, candidateTools)
-      if (kwHits.length > 0 && kwHits.length < candidateNames.length) {
-        narrowed = kwHits
-        c1Source = 'keyword'
-      }
-    }
-
-    // 层 C2：弱模型精筛（候选已很少则跳过）
-    let finalNames = narrowed
-    let c2Status: LlmSelectToolsStatus | 'skipped' = 'skipped'
-    if (model && narrowed.length > this.toolSelectSkipBelow) {
-      const c2 = await this.llmSelectToolsForTurn(q, narrowed, candidateTools, model)
-      finalNames = c2.toolIds
-      c2Status = c2.status
-    }
-
-    // 层 C3 预算裁剪（已按相关度排序）。预算按主模型上下文窗口动态算：
-    // 成本含工具完整参数 JSON Schema（不止 name/description），避免大参数工具撑爆窗口。
-    const ordered = finalNames
-      .map((n) => byName.get(n))
-      .filter((t): t is StructuredToolInterface => Boolean(t))
-    const toolBudgetTokens = computeToolBudgetTokens({ modelId: model?.model })
-    const bound = fitToolsWithinBudget(ordered, toolBudgetTokens)
-
-    this.emitToolSelectionTelemetry(bound, {
-      selector: formatToolSelectorLabel(c1Source, c2Status),
-      candidateCount: candidateNames.length,
-      narrowedCount: narrowed.length,
-      c1: c1Source,
-      c2: c2Status,
-      queryChars: q.length,
-      indexReady: Boolean(this.toolIndex?.ready),
-      toolBudgetTokens,
-    })
-    return bound
-  }
-
-  /** 懒加载 @chatvein/vector（原生模块不进主 bundle 静态图），建好 ToolVectorIndex 单例 */
-  private async ensureToolIndex(): Promise<ToolVectorIndex | null> {
-    if (this.toolIndex) return this.toolIndex
-    if (this.toolIndexInit) return this.toolIndexInit
-    this.toolIndexInit = (async () => {
-      try {
-        const vector = await import('@chatvein/vector')
-        const embedder: ToolEmbedder = vector.createBgeZhEmbedder({
-          cacheDir: this.hfCacheDir(),
-          // 国内直连 huggingface.co 易超时；可用 HF_ENDPOINT / CHATVEIN_HF_ENDPOINT 覆盖
-          remoteHost:
-            process.env.CHATVEIN_HF_ENDPOINT?.trim() ||
-            process.env.HF_ENDPOINT?.trim() ||
-            'https://hf-mirror.com/',
-        })
-        const localStore = vector.createLocalVectorStore({
-          dataDir: this.toolIndexDataDir(),
-          embedder,
-          tableName: 'tool_index',
-        })
-        const store: ToolVectorStore = {
-          upsert: (records) => localStore.upsert(records as never),
-          search: (q, options) =>
-            localStore
-              .search(q, {
-                topK: options?.topK,
-                queryEmbedding: options?.queryEmbedding,
-                filter: { scope: TOOL_INDEX_SCOPE, kind: TOOL_INDEX_KIND },
-              })
-              .then((hits) => hits.map((h) => ({ id: h.id, score: h.score, meta: h.meta }))),
-          remove: (ids) => localStore.remove(ids),
-        }
-        this.toolIndex = new ToolVectorIndex({
-          embedder,
-          store,
-          prescreenTopK: this.toolPrescreenTopK,
-        })
-        return this.toolIndex
-      } catch (e) {
-        console.warn('[ChatService] vector index unavailable, tools fallback to keyword/full', e)
-        this.toolIndexInit = null
-        return null
-      }
-    })()
-    return this.toolIndexInit
-  }
-
-  /** App ready 后后台预建工具索引：版本化全量基准（幂等、失败仅告警，不阻塞窗口） */
   onAppReady(): void {
     console.log('ChatService onAppReady')
-    void this.warmupToolIndex().catch((e) =>
-      console.warn('[ChatService] tool index warmup failed', e),
-    )
+    this.toolIndex.warmupInBackground()
   }
 
-  /**
-   * MCP 菜单 / 环境变量变更后调用：相对已同步名差量 upsert。
-   * 对话路径不再每轮 sync；工具集只在启动与配置变更时维护。
-   */
   async refreshToolIndex(): Promise<void> {
-    const tools = await this.resolveSystemTools()
-    await this.syncToolIndex(tools)
-  }
-
-  /** 索引维护串行化：warmup 全量与配置变更 sync 共享，避免并发写库 / 写 meta */
-  private enqueueToolIndexOp<T>(op: () => Promise<T>): Promise<T> {
-    const run = this.toolIndexOps.then(op, op)
-    this.toolIndexOps = run.then(
-      () => undefined,
-      () => undefined,
-    )
-    return run
-  }
-
-  private async readToolIndexMeta(): Promise<ToolIndexMeta> {
-    if (!this.toolIndexMetaCache) {
-      this.toolIndexMetaCache = await this.toolIndexMetaStore.read()
-    }
-    return this.toolIndexMetaCache
-  }
-
-  private async writeToolIndexMeta(meta: ToolIndexMeta): Promise<void> {
-    this.toolIndexMetaCache = meta
-    await this.toolIndexMetaStore.write(meta)
-  }
-
-  /**
-   * 启动 warmup（版本化基准）：
-   * 解析系统工具全集 → 对入库记录求内容签名；与上次一致且无下线 → 仅 markReady（零写入）；
-   * 否则全量覆盖 upsert + 清理下线记录 + 写回 meta。
-   */
-  private warmupToolIndex(): Promise<void> {
-    if (!this.toolIndexWarmup) {
-      this.toolIndexWarmup = this.enqueueToolIndexOp(async () => {
-        const idx = await this.ensureToolIndex()
-        if (!idx) return
-        const tools = await this.resolveSystemTools()
-        if (tools.length === 0) return
-        const records = idx.recordsFor(this.toolIndexInputsOf(tools))
-        const signature = toolIndexSignature(records)
-        const meta = await this.readToolIndexMeta()
-        const stale = (meta.syncedNames ?? []).filter((n) => !records.some((r) => r.id === n))
-        if (meta.builtinSignature === signature && stale.length === 0) {
-          // 磁盘已有有效快照；必须标记进程内 ready，否则 C1 永远空召回
-          idx.markReady(this.toolIndexInputsOf(tools))
-          console.debug(
-            `[tool-index] warmup skip (sig match) records=${records.length} ready=true lexical=${idx.lexicalSize}`,
-          )
-          return
-        }
-        console.debug(
-          `[tool-index] warmup rebuild sig=${signature.slice(0, 8)} records=${records.length} stale=${stale.length}`,
-        )
-        await idx.replace(this.toolIndexInputsOf(tools))
-        if (stale.length > 0) await idx.purge(stale)
-        await this.writeToolIndexMeta({
-          builtinSignature: signature,
-          syncedNames: records.map((r) => r.id),
-          updatedAt: Date.now(),
-        })
-      })
-    }
-    return this.toolIndexWarmup
-  }
-
-  /** 对话预筛前等待 warmup（失败也继续，走关键词/全量回退） */
-  private async awaitToolIndexWarmup(): Promise<void> {
-    if (this.toolIndex?.ready) return
-    if (!this.toolIndexWarmup) {
-      // 极早消息：主动触发一次 warmup，避免永远不 ready
-      void this.warmupToolIndex().catch((e) =>
-        console.warn('[ChatService] tool index warmup failed', e),
-      )
-    }
-    if (this.toolIndexWarmup) {
-      try {
-        await this.toolIndexWarmup
-      } catch {
-        // 已在 onAppReady / 上方告警
-      }
-    }
-  }
-
-  /**
-   * 配置变更差量同步：相对 meta.syncedNames 仅补录新增工具（upsert）。
-   * 不做删除（agent 白名单收窄误删有风险）；下线收敛到启动 warmup。
-   */
-  private syncToolIndex(candidates: StructuredToolInterface[]): Promise<void> {
-    return this.enqueueToolIndexOp(async () => {
-      const idx = await this.ensureToolIndex()
-      if (!idx || candidates.length === 0) return
-      const meta = await this.readToolIndexMeta()
-      const known = new Set(meta.syncedNames ?? [])
-
-      if (!idx.ready) {
-        await idx.build(this.toolIndexInputsOf(candidates))
-        const names = new Set<string>(meta.syncedNames ?? [])
-        candidates.forEach((t) => names.add(t.name))
-        await this.writeToolIndexMeta({
-          ...meta,
-          syncedNames: [...names],
-          updatedAt: Date.now(),
-        })
-        return
-      }
-
-      const fresh = candidates.filter((t) => !known.has(t.name))
-      if (fresh.length === 0) return
-      const records = idx.recordsFor(this.toolIndexInputsOf(fresh))
-      if (records.length === 0) return
-      await idx.sync(records)
-      const names = new Set<string>(known)
-      records.forEach((r) => names.add(r.id))
-      await this.writeToolIndexMeta({ ...meta, syncedNames: [...names], updatedAt: Date.now() })
-    })
-  }
-
-  /** warmup / refresh 用的系统工具全集：policy full + 无白名单 */
-  private async resolveSystemTools(): Promise<StructuredToolInterface[]> {
-    const settings = await this.settings.get()
-    return resolveChatTools({
-      policy: 'full',
-      allowIds: 'all',
-      workspaceRoot: settings.effectiveWorkspaceRoot?.trim() || undefined,
-      secrets: {
-        serpApiKey: process.env.SERPAPI_API_KEY,
-        braveApiKey: process.env.BRAVE_SEARCH_API_KEY,
-        tavilyApiKey: process.env.TAVILY_API_KEY,
-        wolframAppId: process.env.WOLFRAM_ALPHA_APPID,
-      },
-      mcpServers: parseMcpServersJson(process.env.CHATVEIN_MCP_SERVERS),
-    })
-  }
-
-  private toolIndexInputsOf(
-    tools: StructuredToolInterface[],
-  ): Array<{ name: string; description?: string; schema?: unknown }> {
-    return tools.map((t) => ({
-      name: t.name,
-      description: t.description,
-      schema: (t as { schema?: unknown }).schema,
-    }))
-  }
-
-  /** 层 C1：向量+工具名/别名 BM25 混合预筛；未就绪/失败 → []（由上层改走关键词或全量） */
-  private async prescreenWithVector(query: string, candidateNames: string[]): Promise<string[]> {
-    const idx = this.toolIndex
-    if (!idx?.ready) return []
-    try {
-      return await idx.select(query, candidateNames, this.toolPrescreenTopK)
-    } catch (e) {
-      console.warn('[ChatService] tool vector prescreen failed', e)
-      return []
-    }
-  }
-
-  /** 层 C1 兜底：关键词预筛；无命中（返回全集）视为无效，交给上层全量 */
-  private prescreenWithKeywords(
-    query: string,
-    tools: StructuredToolInterface[],
-  ): string[] {
-    const entries: ToolCatalogEntry[] = tools.map((t) => {
-      const cat = catalogEntryForTool(t.name)
-      if (cat) return cat
-      const human = humanizeToolName(t.name)
-      return {
-        id: t.name,
-        category: 'knowledge',
-        title: human || t.name,
-        description: t.description ?? '',
-        source: 'runtime',
-        defaultEnabled: true,
-        keywords: human.split(/\s+/).filter(Boolean),
-      }
-    })
-    return keywordSelect(query, entries)
-  }
-
-  /** 层 C2：复用 L2 弱模型通道精筛 */
-  private async llmSelectToolsForTurn(
-    query: string,
-    narrowedNames: string[],
-    candidates: StructuredToolInterface[],
-    model: ModelConfig,
-  ): Promise<{ toolIds: string[]; status: LlmSelectToolsStatus }> {
-    const byName = new Map(candidates.map((t) => [t.name, t]))
-    const cand = narrowedNames
-      .map((n) => byName.get(n))
-      .filter((t): t is StructuredToolInterface => Boolean(t))
-      .map((t) => ({ name: t.name, description: t.description }))
-    try {
-      const l2Model = await this.resolveL2Model(model)
-      const llmWeak = this.createDebugAwareLlm(l2Model, { temperature: 0, maxTokens: 256 })
-      return await llmSelectTools(query, cand, llmWeak, {
-        maxK: this.toolSelectTopK,
-        timeoutMs: 10_000,
-      })
-    } catch (e) {
-      console.warn('[ChatService] llmSelectTools failed, fallback narrowed', e)
-      return { toolIds: narrowedNames, status: 'fallback_error' }
-    }
-  }
-
-  /**
-   * 工具选用埋点：真实 C1/C2 路径，而非「索引 ready 即 vector+l2」。
-   * 走统一遥测通道（事件名 `trace:tool_select`），业务字段挂 payload，
-   * 可跨 run 聚合用于调参（lexicalWeight / rrfK / toolBudgetTokens）。
-   */
-  private emitToolSelectionTelemetry(
-    bound: StructuredToolInterface[],
-    info: {
-      selector: string
-      candidateCount: number
-      narrowedCount: number
-      c1: string
-      c2: string
-      queryChars: number
-      indexReady: boolean
-      toolBudgetTokens?: number
-    },
-  ): void {
-    emitTelemetry('trace:tool_select', {
-      selector: info.selector,
-      c1: info.c1,
-      c2: info.c2,
-      candidateCount: info.candidateCount,
-      narrowedCount: info.narrowedCount,
-      boundCount: bound.length,
-      indexReady: info.indexReady,
-      queryChars: info.queryChars,
-      toolBudgetTokens: info.toolBudgetTokens,
-      tools: bound.map((t) => t.name),
-    })
-  }
-
-  private toolIndexDataDir(): string {
-    return join(app.getPath('userData'), 'forge', 'vector')
-  }
-
-  private hfCacheDir(): string {
-    return join(app.getPath('userData'), 'forge', 'hf-cache')
-  }
-
-  /**
-   * 确保默认路由器挂上 Structured L2。
-   * 一期无独立 weak 模型表：优先名称含 flash/mini/turbo/haiku/lite 的已启用模型，否则用当前对话模型（低温短输出）。
-   */
-  private async routerWithL2(agentModel: ModelConfig) {
-    const l2Model = await this.resolveL2Model(agentModel)
-    const router = getDefaultHeuristicRouter()
-    if (this.l2BoundModelId === l2Model.id) return router
-
-    const llm = this.createDebugAwareLlm(l2Model, {
-      temperature: 0,
-      maxTokens: 256,
-    })
-    router.setL2(createL2Classifier({ model: llm, timeoutMs: 12_000 }))
-    this.l2BoundModelId = l2Model.id
-    return router
-  }
-
-  /**
-   * 本轮请求期内挂上遥测 sink + 上下文；L2 / ReAct / 工具选用共用同一通道。
-   * - sink：把事件经 IPC 推渲染进程 console.log（落在哪由业务决定，现阶段即此）。
-   * - 上下文：自动给每个事件补 traceId=runId 与 conversationId，业务字段仍在 payload。
-   * 返回清理函数（finally 调用）。
-   */
-  private beginRequestTelemetry(
-    emit: ((evt: ChatStreamEvent) => void) | undefined,
-    runId: string,
-    conversationId: string,
-  ): (() => void) | undefined {
-    if (!isTelemetryEnabled() || !emit) return undefined
-    const clearSink = setTelemetrySink((event) => {
-      this.forwardTelemetry(emit, event)
-    })
-    const clearContext = setTelemetryContext({
-      traceId: runId,
-      attrs: { conversationId },
-    })
-    return () => {
-      clearContext()
-      clearSink()
-    }
-  }
-
-  /** 把遥测事件收成 IPC 安全数据并推给渲染进程 */
-  private forwardTelemetry(
-    emit: ((evt: ChatStreamEvent) => void) | undefined,
-    event: TelemetryEvent,
-  ): void {
-    if (!emit) return
-    try {
-      emit({
-        type: 'telemetry',
-        event: toIpcSafePayload(event) as TelemetryEvent,
-      })
-    } catch {
-      // ignore
-    }
-  }
-
-  /**
-   * 构建 LangChain 模型。遥测探针（`llm:*`）在桥接层始终挂载、无状态且异步发送，
-   * 是否落地由遥测开关/sink 决定；L2 模型缓存后也能在开关打开时逐步输出。
-   */
-  private createDebugAwareLlm(
-    model: ModelConfig,
-    opts: { temperature?: number; maxTokens?: number },
-  ) {
-    return createLangChainChatModel({
-      id: model.id,
-      baseUrl: model.baseUrl,
-      apiKey: model.apiKey,
-      model: model.model,
-      temperature: opts.temperature ?? model.temperature,
-      maxTokens: opts.maxTokens,
-    })
-  }
-
-  /**
-   * 为 L2 语义路由挑选弱模：优先名称含 flash/mini/turbo/haiku/lite/small 的已启用模型；
-   * 否则回退到当前对话模型（与主 ReAct 解耦，仅作路由分类/改写，不回答用户）。
-   */
-  private async resolveL2Model(agentModel: ModelConfig): Promise<ModelConfig> {
-    const list = await this.models.list()
-    const weakish = list.find(
-      (m) =>
-        m.enabled &&
-        m.baseUrl?.trim() &&
-        m.model?.trim() &&
-        /flash|mini|turbo|haiku|lite|small/i.test(`${m.name} ${m.model}`),
-    )
-    return weakish ?? agentModel
+    await this.toolIndex.refreshToolIndex()
   }
 
   private async persistAssistant(
@@ -1725,261 +595,4 @@ export class ChatService implements OnAppReady {
       ...(failed ? { failed: true } : {}),
     }
   }
-}
-
-/** 短期记忆：给本轮用户消息预留的 token（不占用窗口预算） */
-const SHORT_TERM_RESERVE_TOKENS = 800
-
-/** ChatMessage[] → ShortTermMessage[]（id 作摘要游标） */
-function toShortTermMessages(messages: Conversation['messages']): ShortTermMessage[] {
-  return messages.map((m) => ({
-    id: m.id,
-    role: m.role === 'assistant' ? 'assistant' : m.role === 'system' ? 'system' : 'user',
-    content: m.content,
-    ...(m.failed ? { failed: true } : {}),
-  }))
-}
-
-/** 短期记忆裁剪结果 → 思考面板一行 */
-function formatShortTermThinking(plan: ShortTermPlan): string {
-  const s = plan.stats
-  const parts = [
-    `窗口 ${s.activeCount} 条`,
-    `摘要覆盖 ${s.summarizedCount} 条`,
-    `待摘要 ${s.pendingCount} 条`,
-    `约 ${s.estimatedTokens} tokens`,
-  ]
-  if (s.truncatedCount > 0) parts.push(`折叠 ${s.truncatedCount} 条`)
-  if (!s.cursorValid) parts.push('游标失效→重算')
-  return `短期记忆：${parts.join(' / ')}\n`
-}
-
-/** 短期记忆 → trace:react:request.shortTerm 字段 */
-function shortTermDebugInfo(plan: ShortTermPlan) {
-  return {
-    activeCount: plan.stats.activeCount,
-    summarizedCount: plan.stats.summarizedCount,
-    pendingCount: plan.stats.pendingCount,
-    estimatedTokens: plan.stats.estimatedTokens,
-    truncatedCount: plan.stats.truncatedCount,
-    cursorValid: plan.stats.cursorValid,
-    summaryChars: plan.summaryBlock?.content.length ?? 0,
-  }
-}
-
-/** 用当前 Agent 绑定模型填满 strong/medium/weak（一期同端点） */
-function forgeConfigFromModel(model: ModelConfig, runsRoot: string): ForgeConfig {
-  const endpoint = {
-    id: model.id,
-    baseUrl: model.baseUrl.trim(),
-    apiKey: model.apiKey || undefined,
-    model: model.model.trim(),
-    temperature: model.temperature,
-    maxTokens: model.maxTokens > 0 ? model.maxTokens : undefined,
-  }
-  return {
-    models: {
-      strong: [endpoint],
-      medium: [endpoint],
-      weak: [endpoint],
-    },
-    budget: { ...DEFAULT_BUDGET },
-    parallelism: 1,
-    runsRoot,
-    sandbox: { provider: 'local' },
-    retry: { maxAttempts: 3 },
-    tools: {
-      execAllowlist: [...DEFAULT_EXEC_ALLOWLIST],
-      truncation: { ...DEFAULT_TRUNCATION },
-    },
-  }
-}
-
-function formatForgeTraceDelta(evt: TraceEvent): string {
-  const name = evt.name ? ` ${evt.name}` : ''
-  switch (evt.kind) {
-    case 'run_start':
-      return `▸ run_start${name}\n`
-    case 'run_end':
-      return `▸ run_end${name}${evt.payload?.status ? ` status=${evt.payload.status}` : ''}\n`
-    case 'node_enter':
-      return `→ ${evt.name ?? 'node'}\n`
-    case 'node_exit': {
-      const extra =
-        evt.payload && typeof evt.payload === 'object'
-          ? summarizeForgePayload(evt.payload)
-          : ''
-      return `← ${evt.name ?? 'node'}${extra}\n`
-    }
-    case 'tool_call':
-      return `  ⚙ tool${name}${evt.payload?.error ? ` 失败：${evt.payload.error}` : ''}\n`
-    case 'model_call':
-      return `  模型${name}\n`
-    case 'verify':
-      return `  ✓ verify${evt.error ? ` 失败：${evt.error}` : ''}\n`
-    case 'budget':
-      return `  ⚠ budget${name}${evt.error ? `：${evt.error}` : ''}\n`
-    case 'error':
-      return `  ✕ error${name}${evt.error ? `：${evt.error}` : ''}\n`
-    default:
-      return ''
-  }
-}
-
-function summarizeForgePayload(payload: Record<string, unknown>): string {
-  if (typeof payload.taskCount === 'number') return ` tasks=${payload.taskCount}`
-  if (typeof payload.title === 'string') return ` ${payload.title.slice(0, 60)}`
-  if (typeof payload.taskId === 'string') return ` task=${payload.taskId}`
-  if (payload.noMoreTasks) return '（无更多任务）'
-  if (typeof payload.summary === 'string') return ` ${String(payload.summary).slice(0, 80)}`
-  return ''
-}
-
-function friendlyReplyFailure(reason: string): string {
-  return `抱歉，这次没能完成回复。\n\n原因：${reason}\n\n你可以点击「重试」，或稍后再试。`
-}
-
-function formatRouteThinking(route: RouteDecision): string {
-  const hints: string[] = []
-  if (route.policy.hintUserCreateGroup) hints.push('可提示用户拉群')
-  if (route.policy.hintUserForge) hints.push('可提示派 Forge')
-  if (route.policy.allowSubAgents) hints.push('允许子 Agent')
-  const hintStr = hints.length ? `；${hints.join('、')}` : ''
-  const l2 = route.reasons.includes('l2_classifier')
-    ? route.reasons.includes('l2_structured')
-      ? '；已过 L2(structured)'
-      : route.reasons.includes('l2_text')
-        ? '；已过 L2(text)'
-        : '；已过 L2'
-    : route.reasons.includes('l2_failed') || route.reasons.includes('l2_timeout')
-      ? '；L2 失败保留 L1'
-      : ''
-  const rewrite = route.rewrittenQuery
-    ? `；改写=${route.rewrittenQuery.slice(0, 80)}${route.rewrittenQuery.length > 80 ? '…' : ''}`
-    : ''
-  return `路由 L1/L2：band=${route.band} score=${route.score} tier=${route.policy.modelTier} tools=${route.policy.tools} maxSteps=${route.policy.maxSteps}（${route.reasons.slice(0, 6).join(', ') || '—'}）${hintStr}${l2}${rewrite}\n`
-}
-
-function formatPolicyApply(route: RouteDecision): string {
-  const p = route.policy
-  const lines = [
-    `应用 policy：tier=${p.modelTier}（一期仍用 Agent 绑定模型）`,
-    `tools=${p.tools}${p.tools === 'full' ? ' → 绑定 @chatvein/tools 目录' : ' → 禁用工具'}`,
-    `maxSteps=${p.maxSteps}${p.maxSteps <= 0 ? ' → 将本地短路' : ` → recursionLimit=${Math.max(1, p.maxSteps)}`}`,
-  ]
-  if (route.band === 'trivial' && !(p.maxSteps <= 0 && (route.reasons.includes('greeting_only') || route.reasons.includes('self_intro')))) {
-    lines.push('trivial → 主模型友好短答（POLICY_TRIVIAL_SHORT，默认 maxSteps=4）')
-  } else if (p.modelTier === 'weak' && !(p.maxSteps <= 0 && (route.reasons.includes('greeting_only') || route.reasons.includes('self_intro')))) {
-    lines.push('weak → 注入短回复约束（一两句，不列清单）')
-  }
-  if (p.maxSteps <= 0 && !(route.reasons.includes('greeting_only') || route.reasons.includes('self_intro'))) {
-    lines.push('maxSteps=0 但非 L1 寒暄/自我介绍 → 仍调 LLM（recursionLimit≥1）')
-  }
-  if (p.hintUserCreateGroup) lines.push('hint：提示用户拉群（不自动建群）')
-  if (p.hintUserForge) lines.push('hint：提示用户派 Forge（不自动派单）')
-  if (p.allowSubAgents) lines.push('allowSubAgents=true（子 Agent 能力待接）')
-  return `${lines.join('\n')}\n`
-}
-
-/**
- * 按路由给主模型追加回答约束（仅 LLM 路径；L1 本地短路不会走到这里）。
- * - band=trivial（含 L2 拍板）：友好简短寒暄式回复
- * - modelTier=weak：一两句、不列清单
- */
-const TRIVIAL_BAND_BRIEF =
-  '（路由：闲聊/寒暄档）请友好、简短地回复一两句，像正常打招呼或确认；不要列能力清单，不要长篇展开。'
-const WEAK_TIER_BRIEF = '（路由：简短档）请用一两句回复，不要列清单。'
-
-/**
- * 编程开发模式：把项目根与工作约定注入 system，引导 Agent 用文件/执行工具
- * 在真实仓库内读改代码，而不是在空沙箱里凭空作答。
- */
-function withCodingContext(prompt: string | undefined, projectRoot: string): string | undefined {
-  if (!projectRoot) return prompt
-  const block = [
-    '【编程开发模式】',
-    `当前项目根目录：${projectRoot}（文件读写、脚本执行工具均被限制在此目录内）。`,
-    '工作约定：',
-    '1. 改代码前先用文件工具读取相关文件、确认现状，不要臆造路径或 API；',
-    '2. 优先做最小必要修改，改动后说明涉及的文件与关键行；',
-    '3. 需要运行 / 验证时，用脚本执行工具在项目内跑（如测试、构建），并反馈结果；',
-    '4. 涉及删除、覆盖、安装依赖等有副作用的操作，先说明再执行。',
-  ].join('\n')
-  const base = prompt?.trim()
-  return base ? `${base}\n\n${block}` : block
-}
-
-function systemPromptForRoute(
-  agentPrompt: string | undefined,
-  route: RouteDecision,
-): string | undefined {
-  const base = agentPrompt?.trim() || ''
-  const extras: string[] = []
-  if (route.band === 'trivial') {
-    extras.push(TRIVIAL_BAND_BRIEF)
-  } else if (route.policy.modelTier === 'weak') {
-    extras.push(WEAK_TIER_BRIEF)
-  }
-  if (extras.length === 0) return base || undefined
-  if (!base) return extras.join('\n')
-  return `${base}\n\n${extras.join('\n')}`
-}
-
-/** maxSteps=0 时的本地礼貌回复；开发环境追加「· 命中L1本地短路」便于验证 */
-function localReplyForRoute(route: RouteDecision, userText: string): string {
-  let text: string
-  if (route.reasons.includes('self_intro')) {
-    text = '好的，记住了。有什么我可以帮你的吗？'
-  } else if (route.reasons.includes('greeting_only') || route.band === 'trivial') {
-    text = '你好！有什么我可以帮你的吗？'
-  } else {
-    text = `好的，已收到。需要我继续帮你处理「${truncateTitle(userText)}」相关的事吗？`
-  }
-  if (isTelemetryEnabled()) {
-    text = `${text} · 命中L1本地短路`
-  }
-  return text
-}
-
-/** 按档微调温度，便于验证 tier 已生效（无多模型表时的弱替代） */
-function temperatureForTier(
-  tier: RouteDecision['policy']['modelTier'],
-  base: number,
-): number {
-  if (tier === 'weak') return Math.min(1, base + 0.1)
-  if (tier === 'strong') return Math.max(0, base - 0.1)
-  return base
-}
-
-function truncateTitle(text: string): string {
-  const one = text.replace(/\s+/g, ' ').trim()
-  return one.length <= 28 ? one : `${one.slice(0, 28)}…`
-}
-
-/** 工具选用埋点 selector：反映真实 C1/C2 路径 */
-function formatToolSelectorLabel(
-  c1: 'hybrid' | 'keyword' | 'full',
-  c2: LlmSelectToolsStatus | 'skipped',
-): string {
-  const c2Part =
-    c2 === 'skipped'
-      ? 'none'
-      : c2 === 'selected_structured'
-        ? 'c2'
-        : c2 === 'selected_text'
-          ? 'c2text'
-          : c2 === 'passthrough_small'
-            ? 'c2skip'
-            : `c2fallback:${c2}`
-  return `${c1}+${c2Part}`
-}
-
-function formatAgentError(err: unknown): string {
-  const msg = err instanceof Error ? err.message : String(err)
-  if (/abort|timeout/i.test(msg)) return '模型调用超时'
-  if (/401|unauthorized|invalid.*key/i.test(msg)) return '鉴权失败：API Key 无效'
-  if (/ENOTFOUND|ECONNREFUSED|fetch failed|network/i.test(msg)) {
-    return `无法连接模型：${msg}`
-  }
-  return `对话失败：${msg.slice(0, 200)}`
 }

@@ -3,9 +3,9 @@ import { asc, desc, eq } from 'drizzle-orm'
 import { promises as fs } from 'node:fs'
 import { join } from 'node:path'
 import { app } from 'electron'
-import { getChatDb, type ChatDb } from '../db/client'
-import { conversations, messages } from '../db/schema'
-import type { ChatMessage, Conversation, TokenUsage } from './chat.types'
+import { getChatDb, type ChatDb } from '../../db/client'
+import { conversations, messages } from '../../db/schema'
+import type { ChatMessage, Conversation, TokenUsage } from '../chat.types'
 
 /**
  * 会话元数据 + 历史消息 → SQLite（userData/forge/chat.db）。
