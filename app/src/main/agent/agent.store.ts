@@ -88,7 +88,7 @@ export class AgentStore {
       isMain: false,
       name: '编程开发',
       role: '编码助手',
-      desc: '编程开发档默认 Agent：仓库内实现、评审与验证。',
+      desc: '群组场景的编码角色（单对话「编程开发」档走主 Agent + Forge，不绑此角色）。',
       initial: '码',
       tint: 'violet',
       modelId: '',

@@ -10,7 +10,7 @@ UI 三档里的「编程开发」原先仍走主对话 ReAct（`createReactChatA
 
 单对话在 `workMode=code` 时：
 
-1. 优先绑定内置 `coder` Agent 的模型配置。
+1. ~~优先绑定内置 `coder` Agent 的模型配置。~~ → 已由 [`2026-09-07-chat-code-mode-main-agent.md`](./2026-09-07-chat-code-mode-main-agent.md) 取代：单对话仍走主 Agent，编程档只换 Forge。
 2. 要求设置 `devProjectRoot`；用户消息写入会话 `memory/requirement-*.md`。
 3. 经 `@chatvein/core` `createHarness` → `start({ workspacePath: projectRoot })` 驱动 orchestrator。
 4. Trace 事件映射为聊天 `thinking_delta`；结束摘要写入助手消息。

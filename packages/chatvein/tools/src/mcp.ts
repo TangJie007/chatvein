@@ -63,6 +63,22 @@ const requireFromHere = createRequire(
   typeof __filename !== 'undefined' ? __filename : fileURLToPath(import.meta.url),
 )
 
+/**
+ * 解析本仓 MCP SDK 的 dist/cli.js。
+ * Electron 会把 `@chatvein/tools` 源码打进 `app/out/main`，此时 createRequire(__filename)
+ * 只从 app → 仓库根 node_modules 查找；新建的 workspace 包可能尚未 hoist 到根。
+ * 因此优先经 `@chatvein/tools/package.json` 的依赖树解析。
+ */
+function resolveChatveinMcpCli(pkgName: string): string {
+  const tryResolve = (req: NodeRequire): string => join(dirname(req.resolve(pkgName)), 'cli.js')
+  try {
+    const toolsPkg = requireFromHere.resolve('@chatvein/tools/package.json')
+    return tryResolve(createRequire(toolsPkg))
+  } catch {
+    return tryResolve(requireFromHere)
+  }
+}
+
 function electronRunAsNodeEnv(): Record<string, string> {
   const env: Record<string, string> = { ...process.env } as Record<string, string>
   if (process.versions.electron) {
@@ -79,42 +95,29 @@ export function resolveMcpFilesystemServerEntry(): string {
   return join(dirname(pkgJson), 'dist', 'index.js')
 }
 
-/**
- * 解析 `@chatvein/mcp-openfile-sdk` CLI 入口（包内 dist/cli.js）。
- */
+/** 解析 `@chatvein/mcp-openfile-sdk` CLI 入口（包内 dist/cli.js）。 */
 export function resolveMcpOpenfileServerEntry(): string {
-  const main = requireFromHere.resolve('@chatvein/mcp-openfile-sdk')
-  return join(dirname(main), 'cli.js')
+  return resolveChatveinMcpCli('@chatvein/mcp-openfile-sdk')
 }
 
-/**
- * 解析 `@chatvein/mcp-modsearch-sdk` CLI 入口（包内 dist/cli.js）。
- */
+/** 解析 `@chatvein/mcp-modsearch-sdk` CLI 入口（包内 dist/cli.js）。 */
 export function resolveMcpModsearchServerEntry(): string {
-  const main = requireFromHere.resolve('@chatvein/mcp-modsearch-sdk')
-  return join(dirname(main), 'cli.js')
+  return resolveChatveinMcpCli('@chatvein/mcp-modsearch-sdk')
 }
 
-/**
- * 解析 `@chatvein/mcp-vmsandbox-sdk` CLI 入口（包内 dist/cli.js）。
- */
+/** 解析 `@chatvein/mcp-vmsandbox-sdk` CLI 入口（包内 dist/cli.js）。 */
 export function resolveMcpVmsandboxServerEntry(): string {
-  const main = requireFromHere.resolve('@chatvein/mcp-vmsandbox-sdk')
-  return join(dirname(main), 'cli.js')
+  return resolveChatveinMcpCli('@chatvein/mcp-vmsandbox-sdk')
 }
 
 /** 解析 `@chatvein/mcp-shellsandbox-sdk` CLI 入口 */
 export function resolveMcpShellsandboxServerEntry(): string {
-  const main = requireFromHere.resolve('@chatvein/mcp-shellsandbox-sdk')
-  return join(dirname(main), 'cli.js')
+  return resolveChatveinMcpCli('@chatvein/mcp-shellsandbox-sdk')
 }
 
-/**
- * 解析 `@chatvein/mcp-pyodide-sdk` CLI 入口（包内 dist/cli.js）。
- */
+/** 解析 `@chatvein/mcp-pyodide-sdk` CLI 入口（包内 dist/cli.js）。 */
 export function resolveMcpPyodideServerEntry(): string {
-  const main = requireFromHere.resolve('@chatvein/mcp-pyodide-sdk')
-  return join(dirname(main), 'cli.js')
+  return resolveChatveinMcpCli('@chatvein/mcp-pyodide-sdk')
 }
 
 /**

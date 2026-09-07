@@ -32,6 +32,9 @@ importers:
       '@chatvein/core':
         specifier: workspace:*
         version: link:../packages/chatvein/core
+      '@chatvein/mcp-shellsandbox-sdk':
+        specifier: workspace:*
+        version: link:../packages/mcps/shellsandbox
       '@chatvein/memory':
         specifier: workspace:*
         version: link:../packages/chatvein/memory

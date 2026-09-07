@@ -67,9 +67,9 @@ export class ToolIndexService {
 
   /**
    * 解析本轮工具的 jail 根目录。
-   * - 编程开发档（内置 coder Agent）且设置了 `devProjectRoot`：文件读写 / 脚本执行
-   *   等工具的根切换为用户真实项目目录，从而能在仓库内改代码、跑脚本；
-   * - 其余情况回落到会话私有工作区（沙箱），保持隔离。
+   * - 群组编码角色（内置 coder Agent）且设置了 `devProjectRoot`：文件读写 / 脚本执行
+   *   等工具的根切换为用户真实项目目录；
+   * - 单对话「编程开发」档走 Forge，不经此路径；其余回落到会话私有工作区（沙箱）。
    * 返回 toolRoot（传给工具层）与 projectRoot（非空表示正处于项目模式，用于注入提示）。
    */
   async resolveToolRoot(
