@@ -18,10 +18,12 @@ import { CODER_AGENT_ID } from './constants'
 import { ChatStore } from './session/chat.store'
 import { conversationOutputPath, makeConversationSlug } from './session/session-paths'
 import type {
+  ChatAttachment,
   ChatMessage,
   ChatSendInput,
   ChatSendResult,
   ChatStreamEvent,
+  ChatWorkMode,
   Conversation,
   TokenUsage,
 } from './chat.types'
@@ -34,6 +36,7 @@ import { readShortTermState, resetShortTermState } from './memory/short-term.sto
 import { ShortTermMemory } from './memory/short-term'
 import { ToolIndexService } from './tools/tool-index.service'
 import { runForgeCodingTurn } from './forge/forge-turn'
+import { formatUserContentWithAttachments } from './forge/forge-requirement'
 import { ChatLlmHelper } from './turn/llm'
 import { runOfficeReactTurn, truncateTitle } from './turn/office-turn'
 
@@ -236,23 +239,34 @@ export class ChatService implements OnAppReady {
       emitOuter?.(evt)
     }
     const content = (input.content || '').trim()
-    if (!content) throw new ValidationException('消息不能为空', [])
+    const attachments = normalizeAttachments(input.attachments)
+    const requestedMode = input.workMode ?? 'office'
+    if (
+      !content &&
+      !input.resumeForge &&
+      !(requestedMode === 'code' && attachments.length > 0)
+    ) {
+      throw new ValidationException('消息不能为空', [])
+    }
 
     const conv = await this.store.get(input.conversationId)
     if (!conv) throw new NotFoundException(`conversation:${input.conversationId}`)
 
-    const workMode = input.workMode ?? 'office'
+    const workMode = await this.lockWorkMode(conv, requestedMode)
+
     const { agentId, agent, model } = await this.resolveAgentModel(
       input.agentId || conv.agentId || MAIN_AGENT_ID,
       workMode,
     )
 
     const now = Date.now()
+    const displayContent = formatUserContentWithAttachments(content, attachments)
     const userMessage: ChatMessage = {
       id: randomUUID(),
       role: 'user',
-      content,
+      content: displayContent || content || '（需求文档）',
       createdAt: now,
+      ...(attachments.length ? { attachments } : {}),
     }
 
     const shortTermState = await readShortTermState(conv.workspacePath)
@@ -287,6 +301,7 @@ export class ChatService implements OnAppReady {
             thinkingParts,
             signal,
             resumeForge: input.resumeForge,
+            attachments,
             persist: (text, failed) =>
               this.persistAssistant(
                 conv,
@@ -353,7 +368,7 @@ export class ChatService implements OnAppReady {
     input: {
       conversationId: string
       failedMessageId: string
-      workMode?: 'office' | 'code' | 'custom'
+      workMode?: ChatWorkMode
       resumeForge?: boolean
     },
     emit?: (evt: ChatStreamEvent) => void,
@@ -373,21 +388,21 @@ export class ChatService implements OnAppReady {
     if (userIdx < 0) throw new ValidationException('找不到对应的用户消息', [])
     const userMessage = conv.messages[userIdx]!
 
+    const workMode = await this.lockWorkMode(
+      conv,
+      input.workMode ?? conv.workMode ?? 'office',
+    )
+
     conv = {
       ...conv,
+      workMode,
       messages: conv.messages.slice(0, failIdx),
       updatedAt: Date.now(),
     }
     await this.store.updateMeta(conv.id, { updatedAt: conv.updatedAt })
     await this.store.replaceMessages(conv.id, conv.messages)
 
-    return this.regenerateAfterUser(
-      conv,
-      userMessage,
-      emit,
-      input.workMode ?? 'office',
-      input.resumeForge,
-    )
+    return this.regenerateAfterUser(conv, userMessage, emit, workMode, input.resumeForge)
   }
 
   /** 会话末尾已是 userMessage 时，只生成助手回复并追加 */
@@ -395,7 +410,7 @@ export class ChatService implements OnAppReady {
     conv: Conversation,
     userMessage: ChatMessage,
     emitOuter?: (evt: ChatStreamEvent) => void,
-    workMode: 'office' | 'code' | 'custom' = 'office',
+    workMode: ChatWorkMode = 'office',
     resumeForge?: boolean,
   ): Promise<ChatSendResult> {
     const thinkingParts: string[] = []
@@ -409,6 +424,8 @@ export class ChatService implements OnAppReady {
       workMode,
     )
     const content = userMessage.content
+    // 展示文案可能含 📎 前缀；Forge 合成需求时优先用 attachments + 尽量剥掉纯附件行
+    const forgeText = stripAttachmentLines(content)
     const shortTermState = await readShortTermState(conv.workspacePath)
     const shortTerm = await this.shortTerm.buildHistory(conv, shortTermState, { dropLast: true })
 
@@ -435,12 +452,13 @@ export class ChatService implements OnAppReady {
             agent,
             model,
             userMessage,
-            content,
+            content: forgeText,
             runId,
             emit,
             thinkingParts,
             signal,
             resumeForge,
+            attachments: userMessage.attachments,
             persist: (text, failed) =>
               this.appendAssistant(
                 conv,
@@ -505,7 +523,7 @@ export class ChatService implements OnAppReady {
    * 单对话场景统一走会话绑定的 Agent（默认主 Agent）；`workMode=code` 只切换执行引擎
    * （Forge），不切换角色。内置 `coder` 留给后续群组，若会话误绑到它则回退主 Agent。
    */
-  private async resolveAgentModel(preferredAgentId: string, workMode: 'office' | 'code' | 'custom') {
+  private async resolveAgentModel(preferredAgentId: string, workMode: ChatWorkMode) {
     let agentId = preferredAgentId || MAIN_AGENT_ID
     if (agentId === CODER_AGENT_ID) agentId = MAIN_AGENT_ID
 
@@ -538,6 +556,28 @@ export class ChatService implements OnAppReady {
     if (!model.baseUrl?.trim()) throw new ValidationException('模型 Base URL 为空', [])
     if (!model.model?.trim()) throw new ValidationException('模型 ID 为空', [])
     return { agentId, agent, model }
+  }
+
+  /**
+   * 会话工作模式：首条有效聊天后锁定；之后 send/retry 必须一致。
+   * 就地写入 `conv.workMode`，保证后续 persist 带回锁定态。
+   */
+  private async lockWorkMode(conv: Conversation, requested: ChatWorkMode): Promise<ChatWorkMode> {
+    if (conv.workMode) {
+      if (conv.workMode !== requested) {
+        throw new ValidationException(
+          `本会话已锁定为「${workModeLabel(conv.workMode)}」，不能切换到「${workModeLabel(requested)}」。请新建对话。`,
+          [],
+        )
+      }
+      return conv.workMode
+    }
+    conv.workMode = requested
+    await this.store.updateMeta(conv.id, {
+      workMode: requested,
+      updatedAt: Date.now(),
+    })
+    return requested
   }
 
   onAppReady(): void {
@@ -650,4 +690,34 @@ export class ChatService implements OnAppReady {
       ...(failed ? { failed: true } : {}),
     }
   }
+}
+
+function normalizeAttachments(raw: ChatAttachment[] | undefined): ChatAttachment[] {
+  if (!Array.isArray(raw)) return []
+  const out: ChatAttachment[] = []
+  for (const a of raw) {
+    const path = typeof a?.path === 'string' ? a.path.trim() : ''
+    if (!path || !isAbsolute(path)) continue
+    out.push({
+      path,
+      name: typeof a.name === 'string' && a.name.trim() ? a.name.trim() : undefined,
+      kind: a.kind === 'file' ? 'file' : 'requirement',
+    })
+  }
+  return out
+}
+
+/** 去掉气泡里的 📎 附件行，留给 attachments 字段表达 */
+function stripAttachmentLines(content: string): string {
+  return content
+    .split(/\r?\n/)
+    .filter((line) => !/^📎\s/.test(line.trim()))
+    .join('\n')
+    .trim()
+}
+
+function workModeLabel(mode: ChatWorkMode): string {
+  if (mode === 'code') return '编程开发'
+  if (mode === 'custom') return '个性化Agent'
+  return '日常办公'
 }

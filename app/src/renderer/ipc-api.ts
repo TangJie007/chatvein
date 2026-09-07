@@ -73,6 +73,11 @@ export interface IpcApi {
   'settings:update': (patch: AppSettingsPatch) => Promise<AppSettingsView>
   'settings:reset': () => Promise<AppSettingsView>
   'settings:pickFolder': (data?: { title?: string; defaultPath?: string }) => Promise<string | null>
+  'settings:pickFile': (data?: {
+    title?: string
+    defaultPath?: string
+    filters?: Array<{ name: string; extensions: string[] }>
+  }) => Promise<string | null>
 
   // ---- 向量数据库（数据集浏览器）----
   'vector:inspectTables': () => Promise<VectorTableInfo[]>
@@ -278,6 +283,14 @@ export interface ChatMessage {
   latencyMs?: number
   /** 助手回复失败占位；可触发重试 */
   failed?: boolean
+  attachments?: ChatAttachment[]
+}
+
+/** 对话框附件（赛事需求文档等） */
+export interface ChatAttachment {
+  path: string
+  name?: string
+  kind?: 'requirement' | 'file'
 }
 
 export interface Conversation {
@@ -287,6 +300,8 @@ export interface Conversation {
   workspacePath: string
   sandboxPath: string
   slug: string
+  /** 首条聊天后锁定；空=尚未聊天可切换 */
+  workMode?: 'office' | 'code' | 'custom'
   messages: ChatMessage[]
   createdAt: number
   updatedAt: number
@@ -299,6 +314,7 @@ export interface ChatSendInput {
   /** office/custom → Chat ReAct；code → Forge orchestrator */
   workMode?: 'office' | 'code' | 'custom'
   resumeForge?: boolean
+  attachments?: ChatAttachment[]
 }
 
 export interface ChatRetryInput {

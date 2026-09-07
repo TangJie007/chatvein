@@ -12,6 +12,8 @@ export const conversations = sqliteTable('conversations', {
   workspacePath: text('workspace_path').notNull(), // settings.workspaceRoot / {slug}
   sandboxPath: text('sandbox_path').notNull(), // workspacePath / runs
   slug: text('slug').notNull(), // 目录名，如 20260906-001209-a1b2c3d4
+  /** 会话锁定工作模式：office | code | custom；空=尚未聊天可切换 */
+  workMode: text('work_mode'),
   createdAt: integer('created_at', { mode: 'number' }).notNull(), // Unix ms
   updatedAt: integer('updated_at', { mode: 'number' }).notNull(), // Unix ms
 })
@@ -27,6 +29,8 @@ export const messages = sqliteTable('messages', {
   usageJson: text('usage_json'), // JSON：TokenUsage（仅 assistant）
   latencyMs: integer('latency_ms', { mode: 'number' }), // 生成耗时 ms（仅 assistant）
   failed: integer('failed', { mode: 'boolean' }).notNull().default(false), // 失败占位，可重试
+  /** JSON：ChatAttachment[]（用户消息附件，如赛事需求文档路径） */
+  attachmentsJson: text('attachments_json'),
 })
 
 export type ConversationRow = typeof conversations.$inferSelect

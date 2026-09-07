@@ -69,6 +69,31 @@ export class SettingsService {
     return result.filePaths[0]
   }
 
+  /**
+   * 系统文件选择器（赛事需求文档等）。返回选中路径；取消则 null。
+   */
+  async pickFile(opts?: {
+    title?: string
+    defaultPath?: string
+    filters?: Array<{ name: string; extensions: string[] }>
+  }): Promise<string | null> {
+    const win = BrowserWindow.getFocusedWindow()
+    const options = {
+      title: opts?.title ?? '选择文件',
+      defaultPath: opts?.defaultPath || undefined,
+      properties: ['openFile'] as Array<'openFile'>,
+      filters: opts?.filters ?? [
+        { name: '需求文档', extensions: ['md', 'markdown', 'txt'] },
+        { name: '所有文件', extensions: ['*'] },
+      ],
+    }
+    const result = win
+      ? await dialog.showOpenDialog(win, options)
+      : await dialog.showOpenDialog(options)
+    if (result.canceled || !result.filePaths[0]) return null
+    return result.filePaths[0]
+  }
+
   private toView(s: AppSettings): AppSettingsView {
     const defaultWorkspaceRoot = this.store.defaultWorkspaceRoot()
     return {

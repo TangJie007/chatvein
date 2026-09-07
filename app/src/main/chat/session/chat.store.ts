@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { app } from 'electron'
 import { getChatDb, type ChatDb } from '../../db/client'
 import { conversations, messages } from '../../db/schema'
-import type { ChatMessage, Conversation, TokenUsage } from '../chat.types'
+import type { ChatMessage, ChatWorkMode, Conversation, TokenUsage } from '../chat.types'
 
 /**
  * 会话元数据 + 历史消息 → SQLite（userData/forge/chat.db）。
@@ -50,6 +50,7 @@ export class ChatStore {
         workspacePath: conv.workspacePath,
         sandboxPath: conv.sandboxPath,
         slug: conv.slug,
+        workMode: conv.workMode ?? null,
         createdAt: conv.createdAt,
         updatedAt: conv.updatedAt,
       })
@@ -62,13 +63,14 @@ export class ChatStore {
 
   async updateMeta(
     id: string,
-    patch: Partial<Pick<Conversation, 'title' | 'agentId' | 'updatedAt'>>,
+    patch: Partial<Pick<Conversation, 'title' | 'agentId' | 'updatedAt' | 'workMode'>>,
   ): Promise<void> {
     const db = this.getDb()
     const next: Record<string, unknown> = {}
     if (patch.title !== undefined) next.title = patch.title
     if (patch.agentId !== undefined) next.agentId = patch.agentId
     if (patch.updatedAt !== undefined) next.updatedAt = patch.updatedAt
+    if (patch.workMode !== undefined) next.workMode = patch.workMode
     if (Object.keys(next).length === 0) return
     db.update(conversations).set(next).where(eq(conversations.id, id)).run()
   }
@@ -88,6 +90,7 @@ export class ChatStore {
           usageJson: m.usage ? JSON.stringify(m.usage) : null,
           latencyMs: m.latencyMs ?? null,
           failed: Boolean(m.failed),
+          attachmentsJson: m.attachments?.length ? JSON.stringify(m.attachments) : null,
         })),
       )
       .run()
@@ -108,6 +111,7 @@ export class ChatStore {
     workspacePath: string
     sandboxPath: string
     slug: string
+    workMode?: string | null
     createdAt: number
     updatedAt: number
   }): Promise<Conversation> {
@@ -118,6 +122,7 @@ export class ChatStore {
       .where(eq(messages.conversationId, row.id))
       .orderBy(asc(messages.createdAt))
       .all()
+    const workMode = parseWorkMode(row.workMode)
     return {
       id: row.id,
       title: row.title,
@@ -125,6 +130,7 @@ export class ChatStore {
       workspacePath: row.workspacePath,
       sandboxPath: row.sandboxPath,
       slug: row.slug,
+      ...(workMode ? { workMode } : {}),
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
       messages: msgs.map((m) => ({
@@ -135,6 +141,7 @@ export class ChatStore {
         usage: parseUsage(m.usageJson),
         latencyMs: m.latencyMs ?? undefined,
         failed: m.failed ? true : undefined,
+        attachments: parseAttachments(m.attachmentsJson ?? null),
       })),
     }
   }
@@ -159,4 +166,20 @@ function parseUsage(raw: string | null): TokenUsage | undefined {
   } catch {
     return undefined
   }
+}
+
+function parseAttachments(raw: string | null | undefined): ChatMessage['attachments'] {
+  if (!raw) return undefined
+  try {
+    const parsed = JSON.parse(raw) as unknown
+    if (!Array.isArray(parsed) || parsed.length === 0) return undefined
+    return parsed as ChatMessage['attachments']
+  } catch {
+    return undefined
+  }
+}
+
+function parseWorkMode(raw: string | null | undefined): ChatWorkMode | undefined {
+  if (raw === 'office' || raw === 'code' || raw === 'custom') return raw
+  return undefined
 }

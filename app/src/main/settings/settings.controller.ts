@@ -26,4 +26,13 @@ export class SettingsController {
   pickFolder(data?: { title?: string; defaultPath?: string }): Promise<string | null> {
     return this.settings.pickFolder(data)
   }
+
+  @IpcHandle('pickFile')
+  pickFile(data?: {
+    title?: string
+    defaultPath?: string
+    filters?: Array<{ name: string; extensions: string[] }>
+  }): Promise<string | null> {
+    return this.settings.pickFile(data)
+  }
 }

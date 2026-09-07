@@ -14,7 +14,7 @@ import { useAgents } from '../composables/useAgents'
 import { useModels } from '../composables/useModels'
 import { useSettings } from '../composables/useSettings'
 import { setCrumbItem } from '../composables/useUi'
-import type { AvatarTint, Conversation } from '../ipc-api'
+import type { AvatarTint, ChatAttachment, Conversation } from '../ipc-api'
 
 const router = useRouter()
 const chat = useChat()
@@ -36,6 +36,8 @@ const pendingRemoveTitle = ref('')
 /** Forge 启动前二次确认 */
 const forgeConfirmOpen = ref(false)
 const pendingForgeText = ref('')
+/** 编程档：待发送的需求文档附件（本机路径，不写入项目仓） */
+const pendingAttachments = ref<ChatAttachment[]>([])
 /** 删除 IPC 超过此时长仍未返回：关弹窗释放 UI，后台继续，不阻塞后续操作 */
 const REMOVE_TIMEOUT_MS = 10_000
 
@@ -80,14 +82,27 @@ function loadStoredMode(): WorkMode {
  * 注意：「对话」场景下三档切换只表达用户意图 / 偏好，统一由主 Agent（main）接待，
  * 不会更改会话绑定的 Agent。具体角色 Agent（CodeReview 等）是为后续「群组模式」准备的，
  * 与单聊无关。
+ *
+ * 单会话一旦有聊天（或已写入 workMode），模式锁定，不能再切换；换模式请新建对话。
  */
 const preferredMode = ref<WorkMode>(loadStoredMode())
 
-/** 单聊始终走主 Agent，因此高亮态就是用户所选档位，不按会话反推 */
-const activeMode = computed<WorkMode>(() => preferredMode.value)
+/** 本会话已开聊或已锁定 → 禁止切换档位 */
+const modeLocked = computed(() => {
+  const c = chat.current
+  if (!c) return false
+  return Boolean(c.workMode) || c.messages.length > 0
+})
+
+/** 有锁定态用会话 workMode；否则用本地偏好 */
+const activeMode = computed<WorkMode>(() => {
+  const locked = chat.current?.workMode
+  if (locked === 'office' || locked === 'code' || locked === 'custom') return locked
+  return preferredMode.value
+})
 
 function onModeChange(mode: WorkMode) {
-  if (chat.sending || mode === preferredMode.value) return
+  if (chat.sending || modeLocked.value || mode === preferredMode.value) return
   preferredMode.value = mode
   try {
     localStorage.setItem(WORK_MODE_STORAGE_KEY, mode)
@@ -97,6 +112,13 @@ function onModeChange(mode: WorkMode) {
   status.value = `已切换到「${workModes.find((m) => m.value === mode)?.label}」· ${
     mode === 'code' ? 'Forge 编排（orchestrator）' : '主对话 ReAct'
   }`
+}
+
+function syncModeFromConversation(c: Conversation | null | undefined) {
+  if (!c) return
+  if (c.workMode === 'office' || c.workMode === 'code' || c.workMode === 'custom') {
+    preferredMode.value = c.workMode
+  }
 }
 
 // 编程开发模式：项目根目录（工具 jail 根）。未设置时工具只能在会话沙箱内运行
@@ -227,12 +249,14 @@ async function scrollBottom() {
 
 function onSelect(c: Conversation) {
   void chat.select(c.id)
+  syncModeFromConversation(c)
   setCrumbItem(c.title)
 }
 
 async function onAdd() {
   // 单聊始终使用主 Agent；模式档仅记录偏好，不改变绑定
   const created = await chat.create({ agentId: mainAgent.value?.id })
+  // 新会话未锁定，沿用当前 preferredMode（localStorage）
   setCrumbItem(created.title)
   status.value = `已新建 · ${created.slug}`
   await scrollBottom()
@@ -307,13 +331,18 @@ async function onSend(text: string) {
     status.value = '请先在 Agents 中绑定模型并填写 API Key'
     return
   }
+  if (!text.trim() && pendingAttachments.value.length === 0) {
+    status.value = '请输入需求描述，或上传需求文档'
+    return
+  }
   const needsForgeConfirm =
-    preferredMode.value === 'code' &&
+    activeMode.value === 'code' &&
     settingsStore.settings?.confirmForgeStart !== false &&
-    text.trim().length >= 12 &&
-    /实现|添加|新增|修复|重构|改写|编写|写一|写个|创建|删除|优化|升级|迁移|接入|集成|bug|fix|implement|refactor|add\s|create\s|update\s|patch/i.test(
-      text,
-    )
+    (pendingAttachments.value.length > 0 ||
+      (text.trim().length >= 12 &&
+        /实现|添加|新增|修复|重构|改写|编写|写一|写个|创建|删除|优化|升级|迁移|接入|集成|bug|fix|implement|refactor|add\s|create\s|update\s|patch|初始化|脚手架/i.test(
+          text,
+        )))
   if (needsForgeConfirm) {
     pendingForgeText.value = text
     forgeConfirmOpen.value = true
@@ -323,16 +352,21 @@ async function onSend(text: string) {
 }
 
 async function doSend(text: string, opts?: { resumeForge?: boolean }) {
+  const attachments = [...pendingAttachments.value]
   draft.value = ''
-  status.value = preferredMode.value === 'code' ? 'Forge 运行中…' : '生成中…'
+  pendingAttachments.value = []
+  status.value = activeMode.value === 'code' ? 'Forge 运行中…' : '生成中…'
   await scrollBottom()
   try {
-    const result = await chat.send(text, preferredMode.value, opts)
+    const result = await chat.send(text, activeMode.value, {
+      ...opts,
+      attachments: attachments.length ? attachments : undefined,
+    })
     if (result.failed) {
       status.value = '回复失败 · 可点击「重试」或「继续上次」'
     } else {
       status.value =
-        preferredMode.value === 'code'
+        activeMode.value === 'code'
           ? `Forge 完成 · ${result.latencyMs} ms · ${result.model}`
           : `完成 · ${result.latencyMs} ms · ${result.model}`
     }
@@ -348,12 +382,43 @@ async function onForgeConfirm() {
   forgeConfirmOpen.value = false
   const text = pendingForgeText.value
   pendingForgeText.value = ''
-  if (text) await doSend(text)
+  await doSend(text)
 }
 
 function onForgeCancel() {
   forgeConfirmOpen.value = false
   pendingForgeText.value = ''
+}
+
+function fileBaseName(p: string): string {
+  const norm = p.replace(/\\/g, '/')
+  const i = norm.lastIndexOf('/')
+  return i >= 0 ? norm.slice(i + 1) : norm
+}
+
+async function pickRequirementDoc() {
+  if (chat.sending) return
+  const path = await settingsStore.pickFile({
+    title: '选择需求文档（赛事）',
+    filters: [
+      { name: '需求文档', extensions: ['md', 'markdown', 'txt'] },
+      { name: '所有文件', extensions: ['*'] },
+    ],
+  })
+  if (!path) return
+  if (pendingAttachments.value.some((a) => a.path === path)) {
+    status.value = '该文档已添加'
+    return
+  }
+  pendingAttachments.value = [
+    ...pendingAttachments.value,
+    { path, name: fileBaseName(path), kind: 'requirement' },
+  ]
+  status.value = `已添加需求文档：${fileBaseName(path)}`
+}
+
+function removePendingAttachment(path: string) {
+  pendingAttachments.value = pendingAttachments.value.filter((a) => a.path !== path)
 }
 
 async function onStop() {
@@ -378,7 +443,7 @@ async function onRetry(failedMessageId: string) {
   status.value = '正在重试…'
   await scrollBottom()
   try {
-    const result = await chat.retry(failedMessageId, preferredMode.value)
+    const result = await chat.retry(failedMessageId, activeMode.value)
     if (result.failed) {
       status.value = '回复仍失败 · 可再次重试'
     } else {
@@ -399,6 +464,13 @@ watch(
   },
 )
 
+watch(
+  () => chat.currentId,
+  () => {
+    syncModeFromConversation(chat.current)
+  },
+)
+
 onMounted(async () => {
   await Promise.all([
     agents.loaded ? Promise.resolve() : agents.refresh(),
@@ -413,6 +485,7 @@ onMounted(async () => {
     await chat.refreshArtifacts(chat.currentId)
   }
   const cur = chat.current
+  syncModeFromConversation(cur)
   setCrumbItem(cur?.title || '对话')
   await scrollBottom()
 })
@@ -491,11 +564,12 @@ onMounted(async () => {
           </div>
         </div>
 
-        <!-- 工作模式三档切换：日常办公 / 编程开发 / 个性化 Agent（联动会话绑定的 Agent） -->
+        <!-- 工作模式三档：空会话可切；一旦有聊天则锁定本会话模式 -->
         <div
           class="mx-[26px] mt-1 inline-flex w-fit items-center gap-0.5 rounded-full border border-[var(--color-line)] bg-[var(--color-track)] p-[3px]"
           role="tablist"
           aria-label="工作模式切换"
+          :title="modeLocked ? '本会话已开聊，模式已锁定；换模式请新建对话' : undefined"
         >
           <button
             v-for="m in workModes"
@@ -503,8 +577,8 @@ onMounted(async () => {
             type="button"
             role="tab"
             :aria-selected="activeMode === m.value"
-            :title="m.hint"
-            :disabled="chat.sending"
+            :title="modeLocked && activeMode !== m.value ? '本会话模式已锁定' : m.hint"
+            :disabled="chat.sending || (modeLocked && activeMode !== m.value)"
             class="inline-flex items-center gap-1.5 rounded-full border-0 px-3.5 py-[5px] text-xs font-medium transition-all duration-200 ease-[var(--ease-soft)] focus-visible:outline-2 focus-visible:outline-[var(--color-brand)] focus-visible:outline-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
             :class="
               activeMode === m.value
@@ -593,7 +667,8 @@ onMounted(async () => {
             <template v-if="!chat.current">点击左侧「+」新建会话；将在工作区根下创建「时间戳」目录（含 runs/）。</template>
             <template v-else>
               <template v-if="activeMode === 'code'">
-                编程开发走 Forge 编排（plan → implement → verify）。请先选择项目根目录，再描述要实现的需求。
+                编程开发走 Forge：在对话框描述需求，或上传需求文档（.md/.txt）并补充说明。需求写入会话
+                memory，不进入项目仓。请先选择项目根目录。
               </template>
               <template v-else>
                 消息将发送给「{{ activeAgent?.name || '主对话 Agent' }}」。
@@ -661,19 +736,57 @@ onMounted(async () => {
         v-model="draft"
         :placeholder="
           activeMode === 'code'
-            ? '描述要实现 / 修复 / 重构的需求…'
+            ? pendingAttachments.length
+              ? '可补充说明（也可直接发送已上传的需求文档）…'
+              : '描述需求，或点击回形针上传需求文档…'
             : `跟 ${activeAgent?.name || 'Agent'} 说点什么…`
         "
         :scope-label="activeModel ? activeModel.model : '未绑定模型'"
         :send-label="chat.sending ? '生成中' : activeMode === 'code' ? '启动 Forge' : '发送'"
-        :hint="activeMode === 'code' ? '将改动真实项目 · Enter 发送' : 'Enter 发送 · Shift+Enter 换行'"
+        :hint="
+          activeMode === 'code'
+            ? '需求在对话框 · 改动在项目根 · Enter 发送'
+            : 'Enter 发送 · Shift+Enter 换行'
+        "
         :disabled="chat.sending"
         :stopping="chat.sending"
+        :allow-empty-send="activeMode === 'code' && pendingAttachments.length > 0"
         @send="onSend"
         @stop="onStop"
       >
         <template #tools>
-          <span class="px-1 font-mono text-[11px] text-[var(--color-ink-3)]">一期 · 纯对话</span>
+          <button
+            v-if="activeMode === 'code'"
+            type="button"
+            class="inline-grid h-[30px] w-[30px] place-items-center rounded-[9px] border-0 bg-transparent text-[var(--color-brand)] transition hover:bg-[var(--color-hover)] disabled:opacity-50"
+            aria-label="上传需求文档"
+            title="上传赛事需求文档（.md / .txt）"
+            :disabled="chat.sending"
+            @click="pickRequirementDoc"
+          >
+            <AppIcon name="paperclip" :size="16" :stroke-width="2" />
+          </button>
+          <span v-else class="px-1 font-mono text-[11px] text-[var(--color-ink-3)]">一期 · 纯对话</span>
+        </template>
+        <template v-if="activeMode === 'code' && pendingAttachments.length" #attachments>
+          <div class="flex flex-wrap gap-1.5">
+            <span
+              v-for="a in pendingAttachments"
+              :key="a.path"
+              class="inline-flex max-w-full items-center gap-1.5 rounded-full border border-[var(--color-line)] bg-[var(--color-input)] py-0.5 pl-2.5 pr-1 text-[11px] text-[var(--color-ink-2)]"
+              :title="a.path"
+            >
+              <span class="truncate">📎 {{ a.name || fileBaseName(a.path) }}</span>
+              <button
+                type="button"
+                class="rounded-full border-0 bg-transparent px-1.5 text-[var(--color-ink-3)] hover:text-rose-600"
+                :disabled="chat.sending"
+                @click="removePendingAttachment(a.path)"
+              >
+                ×
+              </button>
+            </span>
+          </div>
         </template>
         <template #footer-left>
           <span>· {{ activeAgent?.name || '—' }}</span>

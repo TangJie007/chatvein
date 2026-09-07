@@ -31,7 +31,8 @@ export function createChatDb(dbPath = getChatDbPath()) {
       sandbox_path TEXT NOT NULL,
       slug TEXT NOT NULL,
       created_at INTEGER NOT NULL,
-      updated_at INTEGER NOT NULL
+      updated_at INTEGER NOT NULL,
+      work_mode TEXT
     );
     CREATE TABLE IF NOT EXISTS messages (
       id TEXT PRIMARY KEY NOT NULL,
@@ -41,11 +42,23 @@ export function createChatDb(dbPath = getChatDbPath()) {
       created_at INTEGER NOT NULL,
       usage_json TEXT,
       latency_ms INTEGER,
-      failed INTEGER NOT NULL DEFAULT 0
+      failed INTEGER NOT NULL DEFAULT 0,
+      attachments_json TEXT
     );
     CREATE INDEX IF NOT EXISTS idx_messages_conversation_id ON messages(conversation_id);
     CREATE INDEX IF NOT EXISTS idx_conversations_updated_at ON conversations(updated_at);
   `)
+  // 已有库增量列（忽略已存在）
+  try {
+    client.exec('ALTER TABLE messages ADD COLUMN attachments_json TEXT;')
+  } catch {
+    // column exists
+  }
+  try {
+    client.exec('ALTER TABLE conversations ADD COLUMN work_mode TEXT;')
+  } catch {
+    // column exists
+  }
   sqliteClient = client
   return drizzle({ client })
 }

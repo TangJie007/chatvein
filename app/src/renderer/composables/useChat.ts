@@ -1,6 +1,6 @@
 import { reactive, ref } from 'vue'
 import { createClient } from '@electrum/client'
-import type { IpcApi, Conversation, ChatSendResult, ChatStreamEvent, ChatMessage, ChatArtifactItem } from '../ipc-api'
+import type { IpcApi, Conversation, ChatSendResult, ChatStreamEvent, ChatMessage, ChatArtifactItem, ChatAttachment } from '../ipc-api'
 import { toIpcPayload } from '../utils/toIpcPayload'
 
 const api = createClient<IpcApi>()
@@ -223,16 +223,27 @@ function localFailureMessage(reason: string): ChatMessage {
 async function send(
   content: string,
   workMode: 'office' | 'code' | 'custom' = 'office',
-  opts?: { resumeForge?: boolean },
+  opts?: { resumeForge?: boolean; attachments?: ChatAttachment[] },
 ): Promise<ChatSendResult> {
   const conv = await ensureActive()
   const text = content.trim()
-  if (!text && !opts?.resumeForge) throw new Error('消息不能为空')
+  const attachments = (opts?.attachments ?? []).filter((a) => a.path?.trim())
+  if (!text && !opts?.resumeForge && !(workMode === 'code' && attachments.length > 0)) {
+    throw new Error('消息不能为空')
+  }
 
   sending.value = true
   error.value = ''
 
-  const displayText = text || '继续上次'
+  const attachLines = attachments.map((a) => `📎 ${a.name || a.path}`)
+  const displayText =
+    opts?.resumeForge && !text
+      ? '继续上次'
+      : attachLines.length
+        ? text
+          ? `${attachLines.join('\n')}\n\n${text}`
+          : attachLines.join('\n')
+        : text || '（需求文档）'
   // 乐观插入用户气泡；失败也不撤回（用户未主动删除）
   const optimisticId = `pending-${Date.now()}`
   const optimisticMsg: ChatMessage = {
@@ -240,9 +251,11 @@ async function send(
     role: 'user',
     content: displayText,
     createdAt: Date.now(),
+    ...(attachments.length ? { attachments } : {}),
   }
   patchConversation(conv.id, (c) => ({
     ...c,
+    ...(c.workMode ? {} : { workMode }),
     messages: [...c.messages, optimisticMsg],
     updatedAt: Date.now(),
   }))
@@ -251,10 +264,11 @@ async function send(
     const result = await api.chat.send(
       toIpcPayload({
         conversationId: conv.id,
-        content: displayText,
+        content: text || (opts?.resumeForge ? '继续上次' : ''),
         agentId: conv.agentId,
         workMode,
         resumeForge: opts?.resumeForge,
+        attachments: attachments.length ? attachments : undefined,
       }),
     )
     applySendResult(result)

@@ -7,6 +7,16 @@ export interface TokenUsage {
   totalTokens: number
 }
 
+/** 对话框附件（赛事需求文档等；路径在本机，不要求位于项目根内） */
+export interface ChatAttachment {
+  /** 本机绝对路径 */
+  path: string
+  /** 展示名 */
+  name?: string
+  /** requirement = 需求文档；其它预留 */
+  kind?: 'requirement' | 'file'
+}
+
 export interface ChatMessage {
   id: string
   role: ChatRole
@@ -18,7 +28,11 @@ export interface ChatMessage {
   latencyMs?: number
   /** 助手回复失败占位；可触发重试，用户消息仍保留 */
   failed?: boolean
+  /** 用户消息附件（需求文档等） */
+  attachments?: ChatAttachment[]
 }
+
+export type ChatWorkMode = 'office' | 'code' | 'custom'
 
 export interface Conversation {
   id: string
@@ -32,6 +46,11 @@ export interface Conversation {
   sandboxPath: string
   /** 目录名 slug（时间戳） */
   slug: string
+  /**
+   * 会话锁定的工作模式。首条有效聊天后写入，之后不可再改。
+   * 未聊天前为空，可选档。
+   */
+  workMode?: ChatWorkMode
   messages: ChatMessage[]
   createdAt: number
   updatedAt: number
@@ -49,18 +68,23 @@ export interface ChatSendInput {
   agentId?: string
   /**
    * 工作模式：office/custom → Chat ReAct；code → Forge orchestrator。
-   * 缺省 office。
+   * 缺省 office。会话已锁定 workMode 时必须与之一致。
    */
-  workMode?: 'office' | 'code' | 'custom'
+  workMode?: ChatWorkMode
   /** 编程档：从上次 Forge checkpoint 续跑 */
   resumeForge?: boolean
+  /**
+   * 编程档附件：赛事需求文档等（本机路径）。
+   * 与 content 至少其一非空（续跑除外）。
+   */
+  attachments?: ChatAttachment[]
 }
 
 export interface ChatRetryInput {
   conversationId: string
   /** 失败的助手消息 id */
   failedMessageId: string
-  workMode?: 'office' | 'code' | 'custom'
+  workMode?: ChatWorkMode
   /** 编程档：从上次 Forge checkpoint 续跑 */
   resumeForge?: boolean
 }

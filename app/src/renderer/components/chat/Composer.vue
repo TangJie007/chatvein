@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import AppIcon from '../AppIcon.vue'
 
 const props = defineProps<{
@@ -11,8 +11,15 @@ const props = defineProps<{
   disabled?: boolean
   /** 生成中：显示停止按钮 */
   stopping?: boolean
+  /** 允许无正文发送（例如仅附件） */
+  allowEmptySend?: boolean
 }>()
-const emit = defineEmits<{ send: [string]; 'update:modelValue': [string]; stop: [] }>()
+const emit = defineEmits<{
+  send: [string]
+  'update:modelValue': [string]
+  stop: []
+  attach: []
+}>()
 
 const text = ref(props.modelValue ?? '')
 const ta = ref<HTMLTextAreaElement | null>(null)
@@ -22,6 +29,10 @@ watch(
   (v) => {
     if (v !== undefined && v !== text.value) text.value = v
   },
+)
+
+const canSend = computed(
+  () => !props.disabled && (Boolean(text.value.trim()) || Boolean(props.allowEmptySend)),
 )
 
 function autosize() {
@@ -39,9 +50,9 @@ function onInput(e: Event) {
 }
 
 function send() {
-  if (props.disabled) return
+  if (!canSend.value) return
   const value = text.value.trim()
-  if (!value) return
+  if (!value && !props.allowEmptySend) return
   emit('send', value)
 }
 
@@ -61,7 +72,13 @@ function onKeydown(e: KeyboardEvent) {
     >
       <div class="flex items-center gap-1 px-0.5 pb-2">
         <slot name="tools">
-          <button class="tool-btn text-[var(--color-brand)]" aria-label="附件">
+          <button
+            type="button"
+            class="tool-btn text-[var(--color-brand)]"
+            aria-label="附件"
+            :disabled="disabled"
+            @click="emit('attach')"
+          >
             <AppIcon name="paperclip" :size="16" :stroke-width="2" />
           </button>
         </slot>
@@ -69,6 +86,10 @@ function onKeydown(e: KeyboardEvent) {
           <kbd class="rounded-md bg-[var(--color-input)] px-1.5 py-0.5 font-mono text-[10.5px] text-[var(--color-ink-2)]">/</kbd>
           {{ hint }}
         </div>
+      </div>
+
+      <div v-if="$slots.attachments" class="px-1 pb-2">
+        <slot name="attachments" />
       </div>
 
       <textarea
@@ -104,7 +125,7 @@ function onKeydown(e: KeyboardEvent) {
           type="button"
           class="inline-flex items-center gap-2 rounded-xl border-0 px-4 py-2 text-[13px] font-semibold text-white shadow-[var(--shadow-brand)] transition-all duration-200 hover:-translate-y-px disabled:cursor-not-allowed disabled:opacity-55 disabled:hover:translate-y-0"
           style="background: linear-gradient(180deg, var(--color-brand-lite), var(--color-brand-solid))"
-          :disabled="disabled"
+          :disabled="!canSend"
           @click="send"
         >
           {{ sendLabel }}
@@ -137,5 +158,9 @@ function onKeydown(e: KeyboardEvent) {
 .tool-btn:hover {
   background: var(--color-hover);
   color: var(--color-ink-1);
+}
+.tool-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 </style>

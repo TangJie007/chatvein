@@ -42,6 +42,14 @@ async function pickFolder(opts?: { title?: string; defaultPath?: string }): Prom
   return api.settings.pickFolder(opts ? toIpcPayload(opts) : undefined)
 }
 
+async function pickFile(opts?: {
+  title?: string
+  defaultPath?: string
+  filters?: Array<{ name: string; extensions: string[] }>
+}): Promise<string | null> {
+  return api.settings.pickFile(opts ? toIpcPayload(opts) : undefined)
+}
+
 export function useSettings() {
   return reactive({
     settings,
@@ -52,5 +60,6 @@ export function useSettings() {
     update,
     reset,
     pickFolder,
+    pickFile,
   })
 }

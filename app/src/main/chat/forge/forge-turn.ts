@@ -12,7 +12,13 @@ import { isAbsolute, join } from 'node:path'
 import type { AgentConfig } from '../../agent/agent.types'
 import type { ModelConfig } from '../../model/model.types'
 import type { SettingsService } from '../../settings/settings.service'
-import type { ChatMessage, ChatSendResult, ChatStreamEvent, Conversation } from '../chat.types'
+import type {
+  ChatAttachment,
+  ChatMessage,
+  ChatSendResult,
+  ChatStreamEvent,
+  Conversation,
+} from '../chat.types'
 import {
   artifactsFromWorkspaceDiff,
   listWorkspaceFiles,
@@ -20,6 +26,7 @@ import {
   snapshotWorkspaceMtimes,
 } from '../artifacts/workspace-artifacts'
 import { formatAgentError, friendlyReplyFailure } from '../turn/office-helpers'
+import { writeForgeRequirementFile } from './forge-requirement'
 
 export type ForgePersistFn = (text: string, failed: boolean) => Promise<ChatSendResult>
 
@@ -43,6 +50,8 @@ export interface RunForgeCodingTurnArgs {
   signal?: AbortSignal
   /** 显式续跑上次 Forge（也可由文案「继续上次」触发） */
   resumeForge?: boolean
+  /** 对话框上传的需求文档（本机路径；写入会话 memory，不进项目仓） */
+  attachments?: ChatAttachment[]
 }
 
 const RESUME_RE = /^(继续(上次|上一次|forge|运行)?|resume(\s+forge)?|续跑)$/i
@@ -100,12 +109,15 @@ export async function runForgeCodingTurn(
     return resumeForgeTurn(deps, args, { projectRoot, runsRoot, started })
   }
 
-  // 轻量路径：短句且无编码意图 → 不直接改仓库
+  // 轻量路径：短句且无编码意图、且无上传需求文档 → 不直接改仓库
   const trimmed = content.trim()
-  if (trimmed.length < 12 && !CODING_INTENT_RE.test(trimmed)) {
+  const hasReqAttach = (args.attachments ?? args.userMessage.attachments ?? []).some(
+    (a) => a.path?.trim(),
+  )
+  if (!hasReqAttach && trimmed.length < 12 && !CODING_INTENT_RE.test(trimmed)) {
     emit({ type: 'thinking_done', runId, conversationId: conv.id })
     return persist(
-      '当前是编程开发档。请用一两句话说明要在仓库里**实现 / 修复 / 重构**什么（可点「继续上次」续跑）。确认后会在所选项目根内启动 Forge。',
+      '当前是编程开发档。请用一两句话说明要在仓库里**实现 / 修复 / 重构**什么，或上传需求文档后再发送（可点「继续上次」续跑）。',
       false,
     )
   }
@@ -118,18 +130,19 @@ export async function runForgeCodingTurn(
   })
 
   const requirementPath = join(conv.workspacePath, 'memory', `requirement-${runId}.md`)
-  const requirementBody = [
-    '# 用户需求',
-    '',
-    content,
-    '',
-    '---',
-    '',
-    `项目根目录：${projectRoot}`,
-    '请在该仓库内完成实现；改动应可构建/测试验证。',
-    '',
-  ].join('\n')
-  await fs.writeFile(requirementPath, requirementBody, 'utf8')
+  const attachments = args.attachments ?? args.userMessage.attachments
+  let reqMeta: { source: string; attachmentNames: string[] }
+  try {
+    reqMeta = await writeForgeRequirementFile({
+      destPath: requirementPath,
+      projectRoot,
+      userText: content,
+      attachments,
+    })
+  } catch (err) {
+    emit({ type: 'thinking_done', runId, conversationId: conv.id })
+    return persist(friendlyReplyFailure((err as Error).message), true)
+  }
 
   const { skipBuild, buildCommand, testCommand } = await resolveVerifyCommands(settings, projectRoot, emit, runId, conv.id)
 
@@ -137,11 +150,17 @@ export async function runForgeCodingTurn(
   const harness = createHarness({ config: forgeConfig, runsRoot })
   const forgeRunId = `chat-${runId.slice(0, 8)}`
 
+  const srcHint =
+    reqMeta.source === 'chat'
+      ? '来源=对话框描述'
+      : reqMeta.source === 'upload'
+        ? `来源=上传文档（${reqMeta.attachmentNames.join(', ')}）`
+        : `来源=上传文档+说明（${reqMeta.attachmentNames.join(', ')}）`
   emit({
     type: 'thinking_delta',
     runId,
     conversationId: conv.id,
-    delta: `启动 orchestrator runId=${forgeRunId}${skipBuild ? ' · skipBuild' : ''}${buildCommand ? ` · build=${buildCommand.join(' ')}` : ''}${testCommand ? ` · test=${testCommand.join(' ')}` : ''}\n`,
+    delta: `需求已写入会话 memory（不进项目仓）· ${srcHint}\n启动 orchestrator runId=${forgeRunId}${skipBuild ? ' · skipBuild' : ''}${buildCommand ? ` · build=${buildCommand.join(' ')}` : ''}${testCommand ? ` · test=${testCommand.join(' ')}` : ''}\n`,
   })
 
   const beforeSnap = await snapshotWorkspaceMtimes(projectRoot)
