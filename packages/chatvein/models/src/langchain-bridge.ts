@@ -19,6 +19,9 @@ export function createLangChainChatModel(cfg: OpenAICompatibleConfig): ChatOpenA
     apiKey: cfg.apiKey || 'EMPTY',
     temperature: cfg.temperature ?? 0.2,
     maxTokens: cfg.maxTokens && cfg.maxTokens > 0 ? cfg.maxTokens : undefined,
+    // 流式调用：让 ReAct 边跑边透出 reasoning_content（思考流）与工具调用；
+    // invoke 非流式路径不受影响（LangChain 内部按需聚合）。
+    streaming: true,
     configuration: { baseURL },
     callbacks: [...llmTelemetryCallbacks],
   })

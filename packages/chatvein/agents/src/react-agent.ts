@@ -1,5 +1,5 @@
 import type { BaseMessage } from '@langchain/core/messages'
-import { AIMessage, HumanMessage, SystemMessage } from '@langchain/core/messages'
+import { AIMessage, AIMessageChunk, HumanMessage, SystemMessage } from '@langchain/core/messages'
 import type { LanguageModelLike } from '@langchain/core/language_models/base'
 import type { StructuredToolInterface } from '@langchain/core/tools'
 import type { TokenUsage } from '@chatvein/common'
@@ -82,6 +82,108 @@ export async function invokeReactChatAgent(
     messages: state.messages,
     usage: aggregateTokenUsage(state.messages),
   }
+}
+
+/** 流式回调：reasoning 逐字、工具调用开始、工具返回、正文逐字 */
+export interface ReactStreamHandlers {
+  /** 模型「思考」增量（DeepSeek-R1 / Qwen 等的 reasoning_content；不支持推理的模型不触发） */
+  onReasoning?: (delta: string) => void
+  /** 一次工具调用开始（拿到工具名即触发；args 为已累积的原始参数字符串） */
+  onToolCallStart?: (info: { name: string; args: string }) => void
+  /** 正文 token 增量（最终回答的流式文本；可选，用于打字机正文） */
+  onAnswerDelta?: (delta: string) => void
+}
+
+/**
+ * 流式版 invoke：跑同一个 ReAct 图，但用 `agent.stream` 边跑边回调。
+ *
+ * - streamMode `messages`：逐 `AIMessageChunk` 透出 reasoning / 工具调用 / 正文增量；
+ * - streamMode `values`：每步给出完整 state，最后一次即终态，用于提取 content / messages / usage。
+ *
+ * reasoning 位于 `additional_kwargs.reasoning_content`（部分网关为 `reasoning`）。
+ * 工具调用块在 chunk 上以 `tool_call_chunks` 增量到达，按 index 聚合出工具名。
+ */
+export async function streamReactChatAgent(
+  agent: ReactChatAgent,
+  input: ReactChatInput,
+  handlers: ReactStreamHandlers = {},
+): Promise<ReactChatResult> {
+  const messages = toLangChainMessages(input)
+  const config = {
+    recursionLimit: input.recursionLimit ?? 25,
+    ...(input.threadId ? { configurable: { thread_id: input.threadId } } : {}),
+  }
+
+  /** 已开始回调过的工具调用，按 index 去重（同一工具调用跨多个 chunk） */
+  const announcedToolCalls = new Set<number>()
+  let finalMessages: BaseMessage[] | null = null
+
+  const stream = (await agent.stream(
+    { messages },
+    { ...config, streamMode: ['messages', 'values'] },
+  )) as AsyncIterable<[mode: string, payload: unknown]>
+
+  for await (const [mode, payload] of stream) {
+    if (mode === 'messages') {
+      const [chunk] = payload as [AIMessageChunk, unknown]
+      if (!AIMessageChunk.isInstance(chunk)) continue
+
+      const reasoning = extractReasoningDelta(chunk)
+      if (reasoning) handlers.onReasoning?.(reasoning)
+
+      // 工具调用：按 chunk 上的 tool_call_chunks 聚合，第一次拿到名字即回调一次
+      const toolChunks = (chunk as unknown as { tool_call_chunks?: Array<{
+        index?: number
+        name?: string
+        args?: string
+      }> }).tool_call_chunks
+      if (toolChunks && toolChunks.length) {
+        for (const tc of toolChunks) {
+          const idx = tc.index ?? 0
+          const name = tc.name
+          if (name && !announcedToolCalls.has(idx)) {
+            announcedToolCalls.add(idx)
+            handlers.onToolCallStart?.({ name, args: tc.args ?? '' })
+          }
+        }
+      }
+
+      // 正文增量：仅当该 chunk 没有携带工具调用时，才是面向用户的回答文本
+      const hasToolCall =
+        (toolChunks && toolChunks.length > 0) ||
+        (chunk.tool_calls && chunk.tool_calls.length > 0)
+      if (!hasToolCall && typeof chunk.content === 'string' && chunk.content) {
+        handlers.onAnswerDelta?.(chunk.content)
+      }
+    } else if (mode === 'values') {
+      const state = payload as { messages?: BaseMessage[] }
+      if (state && Array.isArray(state.messages)) finalMessages = state.messages
+    }
+  }
+
+  const resultMessages = finalMessages ?? messages
+  return {
+    content: extractFinalAssistantText(resultMessages),
+    messages: resultMessages,
+    usage: aggregateTokenUsage(resultMessages),
+  }
+}
+
+/** 从 AIMessageChunk 中取推理增量（reasoning_content / reasoning），无则空串 */
+function extractReasoningDelta(chunk: AIMessageChunk): string {
+  const kw = chunk.additional_kwargs as
+    | { reasoning_content?: unknown; reasoning?: unknown }
+    | undefined
+  const rc = kw?.reasoning_content
+  if (typeof rc === 'string' && rc) return rc
+  if (Array.isArray(rc)) {
+    return rc
+      .map((p) => (typeof p === 'string' ? p : (p as { text?: unknown })?.text))
+      .filter((x): x is string => typeof x === 'string')
+      .join('')
+  }
+  if (typeof kw?.reasoning === 'string' && kw.reasoning) return kw.reasoning
+  return ''
 }
 
 function toLangChainMessages(input: ReactChatInput): BaseMessage[] {

@@ -1,6 +1,6 @@
 import {
   createReactChatAgent,
-  invokeReactChatAgent,
+  streamReactChatAgent,
   type WorkspaceCheckpointer,
 } from '@chatvein/agents'
 import type { ComplexityBand, RouteDecision } from '@chatvein/common'
@@ -267,12 +267,39 @@ export async function runOfficeReactTurn(
       })
     }
 
-    const result = await invokeReactChatAgent(reactAgent, {
-      message: content,
-      history,
-      recursionLimit,
-      threadId: conv.id,
-    })
+    // 思考流：是否已插入「模型思考」分隔标题（避免长推理中重复打印）
+    let reasoningHeaderEmitted = false
+    const result = await streamReactChatAgent(
+      reactAgent,
+      {
+        message: content,
+        history,
+        recursionLimit,
+        threadId: conv.id,
+      },
+      {
+        onReasoning: (delta) => {
+          if (!reasoningHeaderEmitted) {
+            emit({
+              type: 'thinking_delta',
+              runId,
+              conversationId: conv.id,
+              delta: '\n模型思考：\n',
+            })
+            reasoningHeaderEmitted = true
+          }
+          emit({ type: 'thinking_delta', runId, conversationId: conv.id, delta })
+        },
+        onToolCallStart: ({ name }) => {
+          emit({
+            type: 'thinking_delta',
+            runId,
+            conversationId: conv.id,
+            delta: `\n调用工具：${name}\n`,
+          })
+        },
+      },
+    )
     const text = result.content.trim()
 
     if (mode === 'send') {

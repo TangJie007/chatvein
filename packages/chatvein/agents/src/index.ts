@@ -9,6 +9,7 @@ export const CHATVEIN_AGENTS_VERSION = '0.1.0'
 export {
   createReactChatAgent,
   invokeReactChatAgent,
+  streamReactChatAgent,
   extractFinalAssistantText,
   aggregateTokenUsage,
   tokenUsageFromMessage,
@@ -16,6 +17,7 @@ export {
   type ReactChatAgent,
   type ReactChatInput,
   type ReactChatResult,
+  type ReactStreamHandlers,
 } from './react-agent'
 
 export {
