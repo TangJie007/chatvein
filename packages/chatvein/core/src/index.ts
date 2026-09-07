@@ -1,21 +1,18 @@
 /**
  * @chatvein/core
  *
- * The Harness facade — the only package callers (the Electron app and the
- * @chatvein/service CLI/sidecar) import directly.
+ * Harness 门面：调用方（Electron 应用、`@chatvein/service` CLI/sidecar）应只直接依赖本包。
  *
- * Plugin runtime: @deepseek-ai/cordis (Context / Service / Fiber).
- * Capability packages (models, tools, sandbox, …) are mounted as Cordis plugins
- * and exposed as services on the root Context. LangGraph remains the task-graph
- * orchestrator inside the orchestrator plugin — Cordis does not replace it.
+ * 插件运行时：`@deepseek-ai/cordis`（Context / Service / Fiber）。
+ * 能力包（models、tools、sandbox 等）以 Cordis 插件挂到根 Context 并暴露为服务。
+ * 任务图编排仍由 orchestrator 内的 LangGraph 负责，Cordis 不替代它。
  *
- * Boundary: Cordis lives only in pure Node (sidecar/in-process harness). The
- * Electron shell stays on @electrum/* and must not import cordis.
+ * 边界：Cordis 仅用于纯 Node（sidecar / 进程内 Harness）；Electron 壳走 `@electrum/*`，禁止 import cordis。
  */
 
 export const CHATVEIN_CORE_VERSION = '0.1.0'
 
-/** Re-export Cordis primitives so callers can type plugins against one entry. */
+/** 再导出 Cordis 原语，便于调用方统一从本入口做插件类型标注 */
 export { Context, Service, Fiber } from '@deepseek-ai/cordis'
 
 /** Harness 门面：start / resume / preview / loadRun */
