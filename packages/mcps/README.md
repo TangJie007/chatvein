@@ -6,6 +6,7 @@ Chatvein 自研 MCP server 包（workspace：`packages/mcps/*`）。由 `@chatve
 |----|----------|------|
 | `@chatvein/mcp-openfile-sdk` | `openfile__*` | 系统文件管理器打开文件夹 |
 | `@chatvein/mcp-modsearch-sdk` | `modsearch__*` | ModSearch 联网；搜索兜底 DuckDuckGo |
+| `@chatvein/mcp-shellsandbox-sdk` | `shellsandbox__*` | 工作区白名单 exec_shell / git_op |
 | `@chatvein/mcp-vmsandbox-sdk` | `vmsandbox__*` | 绑定 workspace；NodeVM 跑 scripts；可信包安装 |
 | `@chatvein/mcp-pyodide-sdk` | `pyodide__*` | 绑定 workspace；Pyodide 跑 `scripts/**/*.py`；可信包安装 |
 
@@ -20,6 +21,7 @@ pnpm mcp:inspect
 # 直连本仓 MCP
 pnpm mcp:inspect:openfile
 pnpm mcp:inspect:modsearch
+pnpm mcp:inspect:shellsandbox
 pnpm mcp:inspect:vmsandbox
 pnpm mcp:inspect:pyodide
 pnpm mcp:inspect:filesystem     # 官方 FS，默认 jail=.
@@ -27,6 +29,7 @@ pnpm mcp:inspect:filesystem     # 官方 FS，默认 jail=.
 # 或在子包内
 pnpm --filter @chatvein/mcp-openfile-sdk inspect
 pnpm --filter @chatvein/mcp-modsearch-sdk inspect
+pnpm --filter @chatvein/mcp-shellsandbox-sdk inspect
 pnpm --filter @chatvein/mcp-vmsandbox-sdk inspect
 pnpm --filter @chatvein/mcp-pyodide-sdk inspect
 ```

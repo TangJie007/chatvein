@@ -281,7 +281,7 @@ watch(
           </div>
         </template>
         <p v-else class="m-0 px-0.5 py-1 text-[11.5px] leading-[1.5] text-[var(--color-ink-3)]">
-          会话工作区暂无文件。脚本、导出等会出现在这里。
+          产物目录（output）暂无文件。对话生成的文档、脚本、导出等都会出现在这里。
         </p>
       </DisclosureSection>
     </div>

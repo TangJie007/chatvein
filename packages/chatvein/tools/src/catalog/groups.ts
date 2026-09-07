@@ -1,6 +1,6 @@
 import type { ToolCatalogGroup } from '../types'
 
-/** MCP server 级分组（6 个）：UI 折叠、整组白名单、连接信息、workspace 依赖 */
+/** MCP server 级分组：UI 折叠、整组白名单、连接信息、workspace 依赖 */
 export const TOOL_CATALOG_GROUPS: readonly ToolCatalogGroup[] = [
   {
     id: 'mcp_filesystem',
@@ -13,6 +13,29 @@ export const TOOL_CATALOG_GROUPS: readonly ToolCatalogGroup[] = [
     requiresWorkspace: true,
     defaultEnabled: true,
     keywords: ['文件', '读取文件', '写文件', '目录', '列目录', '搜索文件', 'file', 'read', 'write', 'ls', 'folder'],
+  },
+  {
+    id: 'mcp_shellsandbox',
+    category: 'compute',
+    title: '工作区 Shell 沙箱（MCP）',
+    description:
+      '经 @chatvein/mcp-shellsandbox-sdk：LocalSandboxProvider 白名单 exec_shell / git_op。读写文件用 mcp_filesystem。',
+    source: 'mcp:@chatvein/mcp-shellsandbox-sdk',
+    mcpServer: 'shellsandbox',
+    requiresWorkspace: true,
+    defaultEnabled: true,
+    keywords: [
+      '跑命令',
+      '构建',
+      '测试',
+      'npm',
+      'pnpm',
+      'git',
+      'shell',
+      'exec',
+      '沙箱',
+      '终端',
+    ],
   },
   {
     id: 'mcp_openfile',

@@ -93,7 +93,14 @@ export class AgentStore {
       tint: 'violet',
       modelId: '',
       enabled: true,
-      tools: ['mcp_filesystem', 'mcp_openfile', 'mcp_modsearch', 'mcp_vmsandbox', 'mcp_pyodide'],
+      tools: [
+        'mcp_filesystem',
+        'mcp_shellsandbox',
+        'mcp_openfile',
+        'mcp_modsearch',
+        'mcp_vmsandbox',
+        'mcp_pyodide',
+      ],
       skills: ['frontend-code-review'],
       knowledgeBases: [],
       systemPrompt:

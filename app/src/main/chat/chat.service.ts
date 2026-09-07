@@ -16,7 +16,7 @@ import { ModelService } from '../model/model.service'
 import { SettingsService } from '../settings/settings.service'
 import { CODER_AGENT_ID } from './constants'
 import { ChatStore } from './session/chat.store'
-import { makeConversationSlug } from './session/session-paths'
+import { conversationOutputPath, makeConversationSlug } from './session/session-paths'
 import type {
   ChatMessage,
   ChatSendInput,
@@ -107,6 +107,7 @@ export class ChatService implements OnAppReady {
     const sandboxPath = join(workspacePath, 'runs')
     await fs.mkdir(workspacePath, { recursive: true })
     await fs.mkdir(sandboxPath, { recursive: true })
+    await fs.mkdir(conversationOutputPath(workspacePath), { recursive: true })
     await fs.mkdir(join(workspacePath, 'scripts'), { recursive: true })
     await fs.mkdir(join(workspacePath, 'logs'), { recursive: true })
     await fs.mkdir(join(workspacePath, 'memory'), { recursive: true })
@@ -154,16 +155,18 @@ export class ChatService implements OnAppReady {
     return cp
   }
 
-  /** 列出会话工作区现有文件（产物面板回填；不含空目录） */
+  /** 列出会话产物目录（output/）现有文件（产物面板回填；不含空目录） */
   async listArtifacts(conversationId: string) {
     const conv = await this.store.get(conversationId)
     if (!conv) throw new NotFoundException(`conversation:${conversationId}`)
-    const files = await listWorkspaceFiles(conv.workspacePath)
+    const outputPath = conversationOutputPath(conv.workspacePath)
+    await fs.mkdir(outputPath, { recursive: true })
+    const files = await listWorkspaceFiles(outputPath)
     return artifactsFromWorkspaceDiff(new Map(), files)
   }
 
   /**
-   * 删除产物文件：必须落在该会话 workspace 内，且不得删 memory/ 等内部目录。
+   * 删除产物文件：必须落在该会话产物目录（output/）内。
    */
   async removeArtifact(
     conversationId: string,
@@ -175,7 +178,8 @@ export class ChatService implements OnAppReady {
     const targetRaw = absPath?.trim()
     if (!targetRaw) throw new ValidationException('产物路径不能为空', [])
 
-    const root = resolve(conv.workspacePath)
+    // 产物只允许出现在会话工作区的 output/ 目录内
+    const root = resolve(conversationOutputPath(conv.workspacePath))
     const target = resolve(isAbsolute(targetRaw) ? targetRaw : join(root, targetRaw))
     const relToRoot = relative(root, target)
     if (
@@ -186,16 +190,7 @@ export class ChatService implements OnAppReady {
       relToRoot.startsWith('../') ||
       relToRoot.startsWith('..\\')
     ) {
-      throw new ValidationException('只能删除当前会话工作区内的文件', [])
-    }
-
-    const relPosix = relToRoot.split(/[/\\]/).join('/')
-    if (relPosix === 'memory' || relPosix.startsWith('memory/')) {
-      throw new ValidationException('不能删除 memory 内部文件', [])
-    }
-    const top = relPosix.split('/')[0] ?? ''
-    if (['node_modules', '.git', '.venv', '__pycache__', '.cache', 'logs'].includes(top)) {
-      throw new ValidationException(`不能删除受保护目录：${top}`, [])
+      throw new ValidationException('只能删除当前会话产物目录（output）内的文件', [])
     }
 
     let st

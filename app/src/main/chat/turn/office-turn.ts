@@ -8,6 +8,7 @@ import type { ShortTermPlan } from '@chatvein/memory'
 import { emitTelemetry } from '@chatvein/observability'
 import { summarizeToolsForDebug } from '@chatvein/tools'
 import type { BaseMessage } from '@langchain/core/messages'
+import { promises as fs } from 'node:fs'
 import type { AgentConfig } from '../../agent/agent.types'
 import type { ModelConfig } from '../../model/model.types'
 import type {
@@ -16,6 +17,7 @@ import type {
   Conversation,
   TokenUsage,
 } from '../chat.types'
+import { CODER_AGENT_ID } from '../constants'
 import {
   artifactsFromReactMessages,
   artifactsFromWorkspaceDiff,
@@ -24,6 +26,7 @@ import {
   snapshotWorkspaceMtimes,
 } from '../artifacts/workspace-artifacts'
 import { formatShortTermThinking, shortTermDebugInfo } from '../memory/short-term'
+import { conversationOutputPath } from '../session/session-paths'
 import type { ToolIndexService } from '../tools/tool-index.service'
 import type { ChatLlmHelper } from './llm'
 import {
@@ -184,7 +187,13 @@ export async function runOfficeReactTurn(
   }
 
   const recursionLimit = Math.max(1, maxSteps)
-  const { toolRoot, projectRoot } = await deps.toolIndex.resolveToolRoot(agent, conv.workspacePath)
+  // 普通对话的产物根：会话工作区下的 output/。对话产出的文件都落在这里，
+  // 文件工具 jail 与产物扫描均以它为根（编程开发档仍直接操作真实项目根）。
+  const isCodingAgent = agent.id === CODER_AGENT_ID
+  const artifactRoot = isCodingAgent ? conv.workspacePath : conversationOutputPath(conv.workspacePath)
+  if (!isCodingAgent) await fs.mkdir(artifactRoot, { recursive: true })
+
+  const { toolRoot, projectRoot } = await deps.toolIndex.resolveToolRoot(agent, artifactRoot)
   if (mode === 'send' && projectRoot) {
     emit({
       type: 'thinking_delta',
@@ -236,7 +245,7 @@ export async function runOfficeReactTurn(
   })
 
   const started = Date.now()
-  const beforeSnap = await snapshotWorkspaceMtimes(conv.workspacePath)
+  const beforeSnap = await snapshotWorkspaceMtimes(artifactRoot)
   try {
     if (mode === 'send') {
       emitTelemetry('trace:react:request', {
@@ -314,7 +323,7 @@ export async function runOfficeReactTurn(
       })
     }
 
-    await emitRunArtifacts(emit, runId, conv, beforeSnap, result.messages)
+    await emitRunArtifacts(emit, runId, conv, artifactRoot, beforeSnap, result.messages)
     emit({ type: 'thinking_done', runId, conversationId: conv.id })
 
     if (!text) {
@@ -350,15 +359,16 @@ async function emitRunArtifacts(
   emit: ((evt: ChatStreamEvent) => void) | undefined,
   runId: string,
   conv: Conversation,
+  artifactRoot: string,
   beforeSnap: Map<string, number>,
   messages: BaseMessage[],
 ): Promise<void> {
   if (!emit) return
   try {
-    const after = await listWorkspaceFiles(conv.workspacePath)
+    const after = await listWorkspaceFiles(artifactRoot)
     const items = mergeArtifacts(
       artifactsFromWorkspaceDiff(beforeSnap, after),
-      artifactsFromReactMessages(messages, conv.workspacePath),
+      artifactsFromReactMessages(messages, artifactRoot),
     )
     if (items.length === 0) return
     emit({ type: 'artifacts', runId, conversationId: conv.id, items })

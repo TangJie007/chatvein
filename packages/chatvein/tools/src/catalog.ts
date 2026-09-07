@@ -4,6 +4,7 @@ import { CORE_TOOLS } from './catalog/tools-core'
 import { FILESYSTEM_TOOLS } from './catalog/tools-filesystem'
 import { OPENFILE_TOOLS } from './catalog/tools-openfile'
 import { MODSEARCH_TOOLS } from './catalog/tools-modsearch'
+import { SHELLSANDBOX_TOOLS } from './catalog/tools-shellsandbox'
 import { VMSANDBOX_TOOLS } from './catalog/tools-vmsandbox'
 import { PYODIDE_TOOLS } from './catalog/tools-pyodide'
 import { PLAYWRIGHT_TOOLS } from './catalog/tools-playwright'
@@ -12,6 +13,7 @@ import { PLAYWRIGHT_TOOLS } from './catalog/tools-playwright'
 export const TOOL_CATALOG: readonly ToolCatalogEntry[] = [
   ...CORE_TOOLS,
   ...FILESYSTEM_TOOLS,
+  ...SHELLSANDBOX_TOOLS,
   ...OPENFILE_TOOLS,
   ...MODSEARCH_TOOLS,
   ...VMSANDBOX_TOOLS,

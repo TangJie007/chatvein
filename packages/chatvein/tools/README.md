@@ -18,6 +18,7 @@ const tools = await resolveChatTools({
 | `mcp_filesystem` | `filesystem` | `@modelcontextprotocol/server-filesystem` |
 | `mcp_openfile` | `openfile` | `@chatvein/mcp-openfile-sdk` |
 | `mcp_modsearch` | `modsearch` | `@chatvein/mcp-modsearch-sdk`（ModSearch → DuckDuckGo 兜底） |
+| `mcp_shellsandbox` | `shellsandbox` | `@chatvein/mcp-shellsandbox-sdk`（白名单 shell/git） |
 | `mcp_vmsandbox` | `vmsandbox` | `@chatvein/mcp-vmsandbox-sdk`（工作区 JS + 可信 npm） |
 | `mcp_pyodide` | `pyodide` | `@chatvein/mcp-pyodide-sdk`（工作区 Python + 可信包） |
 | `mcp_playwright` | `playwright` | `@playwright/mcp`（浏览器自动化，默认 headless） |
@@ -25,8 +26,8 @@ const tools = await resolveChatTools({
 ## 品类
 
 1. **search** — **MCP modsearch**（默认）；community DDG 默认关  
-2. **compute** — Calculator、**MCP vmsandbox / pyodide**（工作区 `scripts/`）；builtin `js_eval` 默认关  
-3. **local_fs** — **仅 MCP**（`mcp_filesystem`、`mcp_openfile`）  
+2. **compute** — Calculator、**MCP vmsandbox / pyodide / shellsandbox**（工作区 scripts/ 与白名单命令）；builtin `js_eval` 默认关  
+3. **local_fs** — **仅 MCP**（`mcp_filesystem`、`mcp_openfile`）；shell/git 见 `mcp_shellsandbox`  
 4. **web** — `fetch_url`、**MCP playwright**  
 5. **news_finance** — Google Trends  
 6. **database** — `sqlite_query`  
@@ -36,6 +37,6 @@ const tools = await resolveChatTools({
 
 ## 调试 MCP
 
-根目录：`pnpm mcp:inspect` / `mcp:inspect:openfile|modsearch|vmsandbox|pyodide|playwright|filesystem`。说明见 `packages/mcps/README.md`。
+根目录：`pnpm mcp:inspect` / `mcp:inspect:openfile|modsearch|shellsandbox|vmsandbox|pyodide|playwright|filesystem`。说明见 `packages/mcps/README.md`。
 
 浏览器二进制（首次）：`pnpm exec playwright install chromium`

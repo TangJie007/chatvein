@@ -522,6 +522,9 @@ importers:
       '@chatvein/mcp-pyodide-sdk':
         specifier: workspace:*
         version: link:../../mcps/pyodide
+      '@chatvein/mcp-shellsandbox-sdk':
+        specifier: workspace:*
+        version: link:../../mcps/shellsandbox
       '@chatvein/mcp-vmsandbox-sdk':
         specifier: workspace:*
         version: link:../../mcps/vmsandbox
@@ -785,6 +788,31 @@ importers:
       pyodide:
         specifier: ^0.28.2
         version: 0.28.3
+      zod:
+        specifier: ^4.5.4
+        version: 4.5.4
+    devDependencies:
+      '@types/node':
+        specifier: ^24.0.0
+        version: 24.13.3
+      tsup:
+        specifier: ^8.5.0
+        version: 8.5.1(jiti@2.7.0)(postcss@8.5.26)(supports-color@7.2.0)(typescript@5.9.3)(yaml@2.9.0)
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: ^4.1.0
+        version: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@24.13.3)(vite@8.2.2(@types/node@24.13.3)(esbuild@0.27.7)(jiti@2.7.0)(yaml@2.9.0))
+
+  packages/mcps/shellsandbox:
+    dependencies:
+      '@chatvein/sandbox':
+        specifier: workspace:*
+        version: link:../../chatvein/sandbox
+      '@modelcontextprotocol/sdk':
+        specifier: ^1.30.0
+        version: 1.30.0(@cfworker/json-schema@4.1.1)(supports-color@7.2.0)(zod@4.5.4)
       zod:
         specifier: ^4.5.4
         version: 4.5.4

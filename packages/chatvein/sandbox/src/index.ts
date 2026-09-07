@@ -29,3 +29,14 @@ export {
   pathExists,
   type LocalSandboxOptions,
 } from './local-provider'
+
+export {
+  assertNotSecretPath,
+  applyExactReplace,
+  summarizeReplaceDiff,
+  relToWorkspace,
+  readWorkspaceText,
+  writeWorkspaceText,
+  applyWorkspacePatch,
+  splitArgv,
+} from './coding-ops'

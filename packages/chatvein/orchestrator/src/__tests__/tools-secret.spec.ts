@@ -3,7 +3,7 @@ import {
   applyExactReplace,
   assertNotSecretPath,
   summarizeReplaceDiff,
-} from '../tools'
+} from '@chatvein/sandbox'
 
 describe('assertNotSecretPath', () => {
   it('blocks .env and credentials', () => {

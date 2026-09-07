@@ -1,16 +1,26 @@
 /**
  * Forge 编码工具层（implement/fix 节点绑定给内层 ReAct agent）。
  *
- * 与 Chat 轨 @chatvein/tools（MCP 对话工具目录）物理隔离：
- * 这里的工具全部经 SandboxProvider 在隔离工作区内执行，带路径 jail、
- * 命令白名单、超时与输出截断。每个工具返回字符串（LangChain tool 约定）。
+ * 读写/patch 原语来自 `@chatvein/sandbox` coding-ops（进程内 LangChain 包装）。
+ * Chat 轨文件读写走官方 MCP filesystem；白名单 shell/git 走 `mcp_shellsandbox`。
  */
 import { z } from 'zod'
 import { tool, type StructuredToolInterface } from '@langchain/core/tools'
-import { readFile, writeFile as fsWriteFile, mkdir } from 'node:fs/promises'
-import { basename, dirname, relative } from 'node:path'
 import type { SandboxProvider } from '@chatvein/sandbox'
+import {
+  applyWorkspacePatch,
+  readWorkspaceText,
+  splitArgv,
+  writeWorkspaceText,
+} from '@chatvein/sandbox'
 import { truncateFolded } from '@chatvein/context'
+
+/** 兼容旧 import；新代码请从 `@chatvein/sandbox` 导入 */
+export {
+  assertNotSecretPath,
+  applyExactReplace,
+  summarizeReplaceDiff,
+} from '@chatvein/sandbox'
 
 export interface ForgeToolsDeps {
   sandbox: SandboxProvider
@@ -31,27 +41,6 @@ export interface ForgeToolsDeps {
 
 const DEFAULT_BUDGET = 1200
 
-/** 禁止读写的敏感文件名（basename 匹配，大小写不敏感） */
-const BLOCKED_BASENAMES = new Set([
-  '.env',
-  '.env.local',
-  '.env.development',
-  '.env.production',
-  '.env.test',
-  '.env.staging',
-  'credentials.json',
-  'credentials.csv',
-  'secrets.json',
-  'secret.json',
-  'id_rsa',
-  'id_ed25519',
-  'id_ecdsa',
-])
-
-/** 路径段命中即拒绝（相对路径任意层级） */
-const BLOCKED_SEGMENTS = [/\.pem$/i, /\.key$/i, /\.p12$/i, /\.pfx$/i]
-
-/** 各工具输入类型（与 zod schema 对齐） */
 interface ReadFileInput {
   path: string
   offset?: number
@@ -65,7 +54,6 @@ interface ApplyPatchInput {
   path: string
   old_string: string
   new_string: string
-  /** 为 true 时替换全部匹配；默认仅允许恰好 1 处 */
   replace_all?: boolean
 }
 interface ListDirInput {
@@ -80,113 +68,12 @@ interface GitOpInput {
   args: string
 }
 
-/** 把相对/绝对路径规整为 workspace 内绝对路径 */
-function resolvePath(sandbox: SandboxProvider, p: string): string {
-  return sandbox.resolveInside(p)
-}
-
-function rel(sandbox: SandboxProvider, abs: string): string {
-  const r = relative(sandbox.workspacePath, abs)
-  return r === '' ? '.' : r
-}
-
-/** 敏感路径拒绝（.env / 密钥文件等） */
-export function assertNotSecretPath(relOrAbs: string): void {
-  const norm = relOrAbs.replace(/\\/g, '/')
-  const base = basename(norm).toLowerCase()
-  if (BLOCKED_BASENAMES.has(base) || base.startsWith('.env.')) {
-    throw new Error(`出于安全考虑，禁止读写敏感文件：${base}`)
-  }
-  for (const re of BLOCKED_SEGMENTS) {
-    if (re.test(base)) {
-      throw new Error(`出于安全考虑，禁止读写敏感文件：${base}`)
-    }
-  }
-}
-
-/**
- * 精确字符串替换（search-replace）。
- * - 默认要求 old_string 在文件中恰好出现 1 次；
- * - replaceAll 时替换全部出现；
- * - old === new 拒绝（无意义调用）。
- */
-export function applyExactReplace(
-  content: string,
-  oldString: string,
-  newString: string,
-  replaceAll = false,
-): { next: string; count: number } {
-  if (!oldString) {
-    throw new Error('old_string 不能为空')
-  }
-  if (oldString === newString) {
-    throw new Error('old_string 与 new_string 相同，无需修改')
-  }
-  const count = countOccurrences(content, oldString)
-  if (count === 0) {
-    throw new Error(
-      'old_string 未在文件中找到。请先 read_file 核对原文（含缩进/换行），再缩小唯一匹配片段。',
-    )
-  }
-  if (!replaceAll && count > 1) {
-    throw new Error(
-      `old_string 匹配 ${count} 处；请扩大上下文使匹配唯一，或设 replace_all=true 全部替换。`,
-    )
-  }
-  const next = replaceAll
-    ? content.split(oldString).join(newString)
-    : content.replace(oldString, newString)
-  return { next, count: replaceAll ? count : 1 }
-}
-
-function countOccurrences(haystack: string, needle: string): number {
-  if (!needle) return 0
-  let n = 0
-  let from = 0
-  while (from <= haystack.length) {
-    const i = haystack.indexOf(needle, from)
-    if (i < 0) break
-    n++
-    from = i + needle.length
-  }
-  return n
-}
-
-/** 生成极简 unified hunk 摘要（前后各留少量上下文），便于模型确认 */
-export function summarizeReplaceDiff(
-  before: string,
-  after: string,
-  oldString: string,
-  newString: string,
-  maxContextLines = 2,
-): string {
-  const beforeLines = before.split(/\r?\n/)
-  const idx = before.indexOf(oldString)
-  if (idx < 0) return `(已替换 ${oldString.length}→${newString.length} 字符)`
-  const lineStart = before.slice(0, idx).split(/\r?\n/).length - 1
-  const oldLineCount = oldString.split(/\r?\n/).length
-  const newLines = newString.split(/\r?\n/)
-  const ctxBefore = beforeLines.slice(Math.max(0, lineStart - maxContextLines), lineStart)
-  const ctxAfter = beforeLines.slice(
-    lineStart + oldLineCount,
-    lineStart + oldLineCount + maxContextLines,
-  )
-  const hunk = [
-    ...ctxBefore.map((l) => ` ${l}`),
-    ...oldString.split(/\r?\n/).map((l) => `-${l}`),
-    ...newLines.map((l) => `+${l}`),
-    ...ctxAfter.map((l) => ` ${l}`),
-  ]
-  return `@@ ~L${lineStart + 1} @@\n${hunk.join('\n')}`
-}
-
-/** 构造全套 Forge 编码工具 */
+/** 构造全套 Forge 编码工具（进程内；Chat shell 见 mcp_shellsandbox） */
 export function createForgeTools(deps: ForgeToolsDeps): StructuredToolInterface[] {
   const { sandbox } = deps
   const budget = deps.outputTokenBudget ?? DEFAULT_BUDGET
   const trace = deps.onToolCall ?? (() => {})
 
-  /** 给工具函数包一层 trace 计时与错误留痕 */
   function withTrace<I, O extends string>(name: string, fn: (input: I) => Promise<O>) {
     return async (input: I): Promise<O> => {
       const started = Date.now()
@@ -217,17 +104,12 @@ export function createForgeTools(deps: ForgeToolsDeps): StructuredToolInterface[
 
   const read_file = tool(
     withTrace<ReadFileInput, string>('read_file', async (input) => {
-      assertNotSecretPath(input.path)
-      const abs = resolvePath(sandbox, input.path)
-      assertNotSecretPath(abs)
-      const raw = await readFile(abs, 'utf8')
-      const lines = raw.split(/\r?\n/)
-      const start = input.offset ?? 0
-      const end = input.limit ? start + input.limit : lines.length
-      const slice = lines.slice(start, end)
-      const text = slice.join('\n')
-      const r = truncateFolded(text, budget)
-      return `文件 ${rel(sandbox, abs)}（${lines.length} 行，显示 ${start + 1}-${Math.min(end, lines.length)}）\n${r.text}`
+      const r = await readWorkspaceText(sandbox, input.path, {
+        offset: input.offset,
+        limit: input.limit,
+      })
+      const folded = truncateFolded(r.text, budget)
+      return `文件 ${r.rel}（${r.totalLines} 行，显示 ${r.range}）\n${folded.text}`
     }),
     {
       name: 'read_file',
@@ -243,13 +125,8 @@ export function createForgeTools(deps: ForgeToolsDeps): StructuredToolInterface[
 
   const write_file = tool(
     withTrace<WriteFileInput, string>('write_file', async (input) => {
-      assertNotSecretPath(input.path)
-      const abs = resolvePath(sandbox, input.path)
-      assertNotSecretPath(abs)
-      await mkdir(dirname(abs), { recursive: true })
-      await fsWriteFile(abs, input.content, 'utf8')
-      const lines = input.content.split(/\r?\n/).length
-      return `已写入 ${rel(sandbox, abs)}（${lines} 行，${input.content.length} 字符）`
+      const r = await writeWorkspaceText(sandbox, input.path, input.content)
+      return `已写入 ${r.rel}（${r.lines} 行，${r.chars} 字符）`
     }),
     {
       name: 'write_file',
@@ -264,20 +141,15 @@ export function createForgeTools(deps: ForgeToolsDeps): StructuredToolInterface[
 
   const apply_patch = tool(
     withTrace<ApplyPatchInput, string>('apply_patch', async (input) => {
-      assertNotSecretPath(input.path)
-      const abs = resolvePath(sandbox, input.path)
-      assertNotSecretPath(abs)
-      const before = await readFile(abs, 'utf8')
-      const { next, count } = applyExactReplace(
-        before,
+      const r = await applyWorkspacePatch(
+        sandbox,
+        input.path,
         input.old_string,
         input.new_string,
         input.replace_all === true,
       )
-      await fsWriteFile(abs, next, 'utf8')
-      const diff = summarizeReplaceDiff(before, next, input.old_string, input.new_string)
-      const r = truncateFolded(diff, budget)
-      return `已 patch ${rel(sandbox, abs)}（替换 ${count} 处）\n${r.text}`
+      const folded = truncateFolded(r.diff, budget)
+      return `已 patch ${r.rel}（替换 ${r.count} 处）\n${folded.text}`
     }),
     {
       name: 'apply_patch',
@@ -355,15 +227,4 @@ export function createForgeTools(deps: ForgeToolsDeps): StructuredToolInterface[
   )
 
   return [read_file, apply_patch, write_file, list_dir, exec_shell, git_op]
-}
-
-/** 极简 argv 切分（支持双引号包裹）；沙箱内命令简单，不做完整 shell 解析 */
-function splitArgv(command: string): string[] {
-  const out: string[] = []
-  const re = /"([^"]*)"|(\S+)/g
-  let m: RegExpExecArray | null
-  while ((m = re.exec(command))) {
-    out.push(m[1] ?? m[2]!)
-  }
-  return out
 }

@@ -98,6 +98,10 @@ export interface ResolveChatToolsOptions {
    */
   mcpVmsandbox?: boolean
   /**
+   * 是否在有 workspaceRoot 时自动挂 MCP shellsandbox（默认 true）。
+   */
+  mcpShellsandbox?: boolean
+  /**
    * 是否在有 workspaceRoot 时自动挂 MCP pyodide（默认 true）。
    */
   mcpPyodide?: boolean

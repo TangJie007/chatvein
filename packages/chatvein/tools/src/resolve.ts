@@ -7,7 +7,7 @@ import { createKnowledgeTools } from './categories/knowledge'
 import { createNewsFinanceTools } from './categories/news-finance'
 import { createSearchTools } from './categories/search'
 import { createWebTools } from './categories/web'
-import { loadMcpTools, withDefaultMcpFilesystem, withDefaultMcpModsearch, withDefaultMcpOpenfile, withDefaultMcpPlaywright, withDefaultMcpPyodide, withDefaultMcpVmsandbox } from './mcp'
+import { loadMcpTools, withDefaultMcpFilesystem, withDefaultMcpModsearch, withDefaultMcpOpenfile, withDefaultMcpPlaywright, withDefaultMcpPyodide, withDefaultMcpShellsandbox, withDefaultMcpVmsandbox } from './mcp'
 import type { ResolveChatToolsOptions, ToolCatalogEntry, ToolSecrets } from './types'
 
 function hasSecret(entry: ToolCatalogEntry, secrets?: ToolSecrets): boolean {
@@ -69,6 +69,8 @@ export async function resolveChatTools(
     options.mcpModsearch !== false && selected.some((e) => e.groupId === 'mcp_modsearch')
   const wantVmsandbox =
     options.mcpVmsandbox !== false && selected.some((e) => e.groupId === 'mcp_vmsandbox')
+  const wantShellsandbox =
+    options.mcpShellsandbox !== false && selected.some((e) => e.groupId === 'mcp_shellsandbox')
   const wantPyodide =
     options.mcpPyodide !== false && selected.some((e) => e.groupId === 'mcp_pyodide')
   const wantPlaywright =
@@ -89,6 +91,11 @@ export async function resolveChatTools(
     wantVmsandbox ? options.workspaceRoot : undefined,
     mcpServers,
     wantVmsandbox,
+  )
+  mcpServers = withDefaultMcpShellsandbox(
+    wantShellsandbox ? options.workspaceRoot : undefined,
+    mcpServers,
+    wantShellsandbox,
   )
   mcpServers = withDefaultMcpPyodide(
     wantPyodide ? options.workspaceRoot : undefined,

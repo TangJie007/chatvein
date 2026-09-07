@@ -50,6 +50,9 @@ export const MCP_MODSEARCH_SERVER_NAME = 'modsearch'
 /** 默认 MCP vmsandbox server 名（工具前缀 `vmsandbox__*`） */
 export const MCP_VMSANDBOX_SERVER_NAME = 'vmsandbox'
 
+/** 默认 MCP shellsandbox server 名（工具前缀 `shellsandbox__*`） */
+export const MCP_SHELLSANDBOX_SERVER_NAME = 'shellsandbox'
+
 /** 默认 MCP pyodide server 名（工具前缀 `pyodide__*`） */
 export const MCP_PYODIDE_SERVER_NAME = 'pyodide'
 
@@ -97,6 +100,12 @@ export function resolveMcpModsearchServerEntry(): string {
  */
 export function resolveMcpVmsandboxServerEntry(): string {
   const main = requireFromHere.resolve('@chatvein/mcp-vmsandbox-sdk')
+  return join(dirname(main), 'cli.js')
+}
+
+/** 解析 `@chatvein/mcp-shellsandbox-sdk` CLI 入口 */
+export function resolveMcpShellsandboxServerEntry(): string {
+  const main = requireFromHere.resolve('@chatvein/mcp-shellsandbox-sdk')
   return join(dirname(main), 'cli.js')
 }
 
@@ -204,6 +213,27 @@ export function createMcpVmsandboxServer(
   }
 }
 
+/** 挂 MCP shellsandbox：LocalSandboxProvider 白名单 exec/git */
+export function createMcpShellsandboxServer(
+  workspaceRoot: string,
+  options?: { timeoutMs?: number },
+): McpServerConnection {
+  const root = workspaceRoot.trim()
+  if (!root) {
+    throw new Error('createMcpShellsandboxServer: workspaceRoot 不能为空')
+  }
+  const args = [resolveMcpShellsandboxServerEntry(), root]
+  if (options?.timeoutMs && options.timeoutMs > 0) {
+    args.push(`--timeout=${options.timeoutMs}`)
+  }
+  return {
+    transport: 'stdio',
+    command: process.execPath,
+    args,
+    env: electronRunAsNodeEnv(),
+  }
+}
+
 /**
  * 合并多份 mcpServers；后者覆盖同名 server。
  * `undefined` / 空对象跳过。
@@ -280,6 +310,20 @@ export function withDefaultMcpVmsandbox(
   if (servers?.[MCP_VMSANDBOX_SERVER_NAME]) return servers
   return mergeMcpServers(
     { [MCP_VMSANDBOX_SERVER_NAME]: createMcpVmsandboxServer(workspaceRoot) },
+    servers,
+  )
+}
+
+/** 默认注入 `shellsandbox`（需 workspaceRoot；可用同名配置覆盖） */
+export function withDefaultMcpShellsandbox(
+  workspaceRoot: string | undefined,
+  servers: Record<string, McpServerConnection> | undefined,
+  enabled = true,
+): Record<string, McpServerConnection> | undefined {
+  if (!enabled || !workspaceRoot?.trim()) return servers
+  if (servers?.[MCP_SHELLSANDBOX_SERVER_NAME]) return servers
+  return mergeMcpServers(
+    { [MCP_SHELLSANDBOX_SERVER_NAME]: createMcpShellsandboxServer(workspaceRoot) },
     servers,
   )
 }
@@ -466,6 +510,12 @@ export function hasMcpModsearchTools(tools: StructuredToolInterface[]): boolean 
 /** 是否已拉到 vmsandbox MCP 工具 */
 export function hasMcpVmsandboxTools(tools: StructuredToolInterface[]): boolean {
   const prefix = `${MCP_VMSANDBOX_SERVER_NAME}__`
+  return tools.some((t) => t.name.startsWith(prefix))
+}
+
+/** 是否已拉到 shellsandbox MCP 工具 */
+export function hasMcpShellsandboxTools(tools: StructuredToolInterface[]): boolean {
+  const prefix = `${MCP_SHELLSANDBOX_SERVER_NAME}__`
   return tools.some((t) => t.name.startsWith(prefix))
 }
 
