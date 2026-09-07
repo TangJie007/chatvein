@@ -5,6 +5,10 @@ import type { StructuredToolInterface } from '@langchain/core/tools'
 import type { TokenUsage } from '@chatvein/common'
 import { addTokenUsage, emptyTokenUsage } from '@chatvein/common'
 import { createAgent } from 'langchain'
+import {
+  createStateFilesystemMiddleware,
+  type FilesRecord,
+} from './filesystem'
 
 /** 单轮对话输入（最简 ReAct） */
 export interface ReactChatInput {
@@ -18,6 +22,11 @@ export interface ReactChatInput {
   threadId?: string
   /** 外部取消（用户停止生成） */
   signal?: AbortSignal
+  /**
+   * 可选：注入 StateBackend 初始 files（虚路径 → FileData）。
+   * 有 createFilesystemMiddleware 时生效；办公/编程 seed 用。
+   */
+  files?: FilesRecord
 }
 
 export interface ReactChatResult {
@@ -27,6 +36,8 @@ export interface ReactChatResult {
   messages: BaseMessage[]
   /** 轨迹内各次模型调用的 token 合计（供应商不回传时为 0） */
   usage: TokenUsage
+  /** 终态 StateBackend files（供 flush 到磁盘 / 产物扫描） */
+  files?: FilesRecord
 }
 
 export interface CreateReactChatAgentOptions {
@@ -48,6 +59,14 @@ export interface CreateReactChatAgentOptions {
    * 注意：它与本模块的短期记忆摘要态（short-term.store.ts）是不同层，互不替代。
    */
   checkpointer?: unknown
+  /**
+   * 挂载 deepagents createFilesystemMiddleware（StateBackend）。
+   * - `true`：默认工具集（ls/read_file/write_file/edit_file/glob/grep）
+   * - 也可传入已构造的 middleware（测试或自定义 permissions）
+   */
+  filesystem?: boolean | ReturnType<typeof createStateFilesystemMiddleware>
+  /** 额外 middleware（排在 filesystem 之后） */
+  middleware?: unknown[]
 }
 
 /**
@@ -55,11 +74,20 @@ export interface CreateReactChatAgentOptions {
  * 替代已弃用的 `@langchain/langgraph/prebuilt` `createReactAgent`。
  */
 export function createReactChatAgent(options: CreateReactChatAgentOptions) {
+  const middleware: unknown[] = []
+  if (options.filesystem === true) {
+    middleware.push(createStateFilesystemMiddleware())
+  } else if (options.filesystem) {
+    middleware.push(options.filesystem)
+  }
+  if (options.middleware?.length) middleware.push(...options.middleware)
+
   return createAgent({
     model: options.model,
     tools: options.tools ?? [],
     systemPrompt: options.systemPrompt,
     name: options.name,
+    ...(middleware.length ? { middleware: middleware as never } : {}),
     ...(options.checkpointer ? { checkpointer: options.checkpointer as never } : {}),
   })
 }
@@ -79,11 +107,15 @@ export async function invokeReactChatAgent(
     ...(input.signal ? { signal: input.signal } : {}),
     ...(input.threadId ? { configurable: { thread_id: input.threadId } } : {}),
   }
-  const state = await agent.invoke({ messages }, config)
+  const state = (await agent.invoke(reactInvokePayload(input, messages), config)) as {
+    messages: BaseMessage[]
+    files?: FilesRecord
+  }
   return {
     content: extractFinalAssistantText(state.messages),
     messages: state.messages,
     usage: aggregateTokenUsage(state.messages),
+    ...(state.files ? { files: state.files } : {}),
   }
 }
 
@@ -121,9 +153,10 @@ export async function streamReactChatAgent(
   /** 已开始回调过的工具调用，按 index 去重（同一工具调用跨多个 chunk） */
   const announcedToolCalls = new Set<number>()
   let finalMessages: BaseMessage[] | null = null
+  let finalFiles: FilesRecord | undefined
 
   const stream = (await agent.stream(
-    { messages },
+    reactInvokePayload(input, messages),
     { ...config, streamMode: ['messages', 'values'] },
   )) as AsyncIterable<[mode: string, payload: unknown]>
 
@@ -160,8 +193,9 @@ export async function streamReactChatAgent(
         handlers.onAnswerDelta?.(chunk.content)
       }
     } else if (mode === 'values') {
-      const state = payload as { messages?: BaseMessage[] }
+      const state = payload as { messages?: BaseMessage[]; files?: FilesRecord }
       if (state && Array.isArray(state.messages)) finalMessages = state.messages
+      if (state?.files) finalFiles = state.files
     }
   }
 
@@ -170,7 +204,15 @@ export async function streamReactChatAgent(
     content: extractFinalAssistantText(resultMessages),
     messages: resultMessages,
     usage: aggregateTokenUsage(resultMessages),
+    ...(finalFiles ? { files: finalFiles } : {}),
   }
+}
+
+function reactInvokePayload(
+  input: ReactChatInput,
+  messages: BaseMessage[],
+): { messages: BaseMessage[]; files?: FilesRecord } {
+  return input.files ? { messages, files: input.files } : { messages }
 }
 
 /** 从 AIMessageChunk 中取推理增量（reasoning_content / reasoning），无则空串 */

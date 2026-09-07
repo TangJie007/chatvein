@@ -115,11 +115,16 @@ export class ToolIndexService {
         wolframAppId: process.env.WOLFRAM_ALPHA_APPID,
       },
       mcpServers: parseMcpServersJson(process.env.CHATVEIN_MCP_SERVERS),
+      // 本地文件统一走 deepagents StateBackend middleware，不再挂 MCP filesystem
+      mcpFilesystem: false,
     })
     if (candidateTools.length === 0) return []
 
-    const byName = new Map(candidateTools.map((t) => [t.name, t]))
+    // 防御：目录里若仍残留 filesystem__*，不进入 C1/C2
+    const withoutMcpFs = candidateTools.filter((t) => !t.name.startsWith('filesystem__'))
+    const byName = new Map(withoutMcpFs.map((t) => [t.name, t]))
     const candidateNames = [...byName.keys()]
+    if (candidateNames.length === 0) return []
 
     // 等待启动 warmup（若仍在跑），避免签名命中跳过写库后内存未 ready 导致本轮空召回
     await this.awaitToolIndexWarmup()

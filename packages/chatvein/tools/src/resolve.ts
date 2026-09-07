@@ -60,9 +60,10 @@ export async function resolveChatTools(
     maxOutputChars: options.maxOutputChars ?? 8_000,
   }
 
-  // 本地文件只走 MCP filesystem / openfile（无 builtin 读/列/grep）
+  // 本地文件默认不挂 MCP filesystem（改由 deepagents StateBackend middleware）；
+  // openfile / shellsandbox 等仍可按目录注入。
   const wantFs =
-    options.mcpFilesystem !== false && selected.some((e) => e.groupId === 'mcp_filesystem')
+    options.mcpFilesystem === true && selected.some((e) => e.groupId === 'mcp_filesystem')
   const wantOpen =
     options.mcpOpenfile !== false && selected.some((e) => e.groupId === 'mcp_openfile')
   const wantModsearch =

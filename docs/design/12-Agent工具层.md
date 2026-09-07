@@ -1,43 +1,44 @@
 # Agent 工具层（`@chatvein/tools`）
 
-> 版本：v0.5 ｜ 日期：2026-09-05  
-> **决策状态：一期落地（目录 + MCP filesystem / openfile / modsearch）**  
+> 版本：v0.6 ｜ 日期：2026-09-07  
+> **决策状态：一期落地；本地文件已迁 deepagents StateBackend（见 `.agents/notes/2026-09-07-deepagents-filesystem-statebackend.md`）**  
 > 上位：[`01-核心骨架.md`](./01-核心骨架.md)、[`02-agent循环方案.md`](./02-agent循环方案.md)、[`07-沙箱方案.md`](./07-沙箱方案.md)、[`11-L3-ReAct自适应循环推理层.md`](./11-L3-ReAct自适应循环推理层.md)  
-> 实现：`packages/chatvein/tools`
+> 实现：`packages/chatvein/tools` + `@chatvein/agents` filesystem middleware
 
 ---
 
 ## 1 定位一句话
 
-**工具层 = L3 可调用能力的目录与治理壳**：按品类组织；**外部与文件系统能力优先经 MCP**；执行前做 `policy.tools ∩ role.tools` 求交、超时与输出截断；危险执行仍经沙箱（后续）。
+**工具层 = L3 可调用能力的目录与治理壳**：按品类组织；**外部能力优先经 MCP**；**本地文件读写经 deepagents `createFilesystemMiddleware` + `StateBackend`**（主 Agent / 编程 Agent 同步）；执行前做 `policy.tools ∩ role.tools` 求交、超时与输出截断；危险执行仍经沙箱。
 
 | 做 | 不做 |
 |----|------|
 | 七大品类目录 + Chat 绑定 | 不替代 L1/L2 路由 |
 | **MCP → LangChain tools**（`@langchain/mcp-adapters`） | 不为每个第三方再写专用适配包 |
-| MCP filesystem **仅允许 `workspaceRoot`** | 不把宿主任意路径暴露给模型 |
+| StateBackend 文件工具（middleware） | 默认不再挂 MCP filesystem 进程 |
 
 ---
 
-## 2 接入优先级：MCP 优先
+## 2 接入优先级：MCP 优先（外部）+ StateBackend（本地文件）
 
 ```
-resolveChatTools({ workspaceRoot, mcpServers, mcpFilesystem?, mcpOpenfile?, mcpModsearch?, mcpVmsandbox?, mcpPyodide?, mcpPlaywright? })
-  ├─ withDefaultMcpFilesystem(workspaceRoot)  → server `filesystem`
-  ├─ withDefaultMcpOpenfile(workspaceRoot)    → server `openfile`
-  ├─ withDefaultMcpModsearch()                → server `modsearch`（不依赖 workspace）
-  ├─ withDefaultMcpVmsandbox(workspaceRoot)   → server `vmsandbox`（vm2 NodeVM；需 workspace）
-  ├─ withDefaultMcpPyodide(workspaceRoot)     → server `pyodide`（Pyodide；需 workspace）
-  ├─ withDefaultMcpPlaywright()               → server `playwright`（浏览器；不依赖 workspace）
-  ├─ loadMcpTools(mcpServers)
-  └─ catalog / community / 其它 builtin（计算、sqlite、fetch…）
-       → createReactChatAgent({ tools })
+createReactChatAgent({ filesystem: true, tools: resolveChatTools(...) })
+  ├─ createFilesystemMiddleware({ backend: StateBackend })  → ls/read_file/write_file/edit_file/glob/grep
+  └─ resolveChatTools({ workspaceRoot, mcpServers, mcpFilesystem: false, … })
+       ├─ withDefaultMcpOpenfile(workspaceRoot)    → server `openfile`
+       ├─ withDefaultMcpModsearch()                → server `modsearch`
+       ├─ withDefaultMcpVmsandbox(workspaceRoot)   → server `vmsandbox`
+       ├─ withDefaultMcpPyodide(workspaceRoot)     → server `pyodide`
+       ├─ withDefaultMcpShellsandbox(workspaceRoot)→ server `shellsandbox`
+       ├─ withDefaultMcpPlaywright()               → server `playwright`
+       └─ catalog / community / 其它 builtin
 ```
 
 | 来源 | 用途 |
 |------|------|
-| **MCP `filesystem`** | 本地读写/列/搜：`@modelcontextprotocol/server-filesystem`，args=`[workspaceRoot]` |
+| **StateBackend middleware** | 本地读写/列/搜：deepagents 内置工具；seed/flush 与工作区同步 |
 | **MCP `openfile`** | 系统文件管理器打开目录：`@chatvein/mcp-openfile-sdk`（文件 → 父目录） |
+| **MCP `filesystem`（可选）** | 遗留；仅 `mcpFilesystem: true` 时注入 |
 | **MCP `modsearch`** | 联网搜索 / 读页：`@chatvein/mcp-modsearch-sdk`（ModSearch → DuckDuckGo 兜底） |
 | **MCP `vmsandbox`** | 工作区 JS：`@chatvein/mcp-vmsandbox-sdk`（NodeVM + 可信 npm；需 workspaceRoot） |
 | **MCP `pyodide`** | 工作区 Python：`@chatvein/mcp-pyodide-sdk`（Pyodide + 可信包；需 workspaceRoot） |

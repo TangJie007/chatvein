@@ -36,7 +36,7 @@ export function defineMcpTools(
     mcp: { server, tool: t.tool },
     requiresWorkspace: group.requiresWorkspace,
     keywords: t.keywords ?? group.keywords,
-    defaultEnabled: t.defaultEnabled ?? true,
+    defaultEnabled: t.defaultEnabled ?? group.defaultEnabled ?? true,
     deprecated: t.deprecated,
   }))
 }

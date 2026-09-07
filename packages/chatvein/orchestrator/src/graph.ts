@@ -3,10 +3,11 @@
  *
  * 外层 = Plan-Execute 任务级状态机：
  *   plan → dispatch → implement → verify → diagnose → fix → integrate → finalize
- * 内层 = implement/fix 节点内的 ReAct 小循环（createReactChatAgent + 编码工具）。
+ * 内层 = implement/fix 节点内的 ReAct 小循环（createReactChatAgent + StateBackend 文件 middleware + shell 工具）。
  *
  * 硬规则：任务"完成"只能由 verify 节点的结构化结果判定，模型不得自述完成。
  * 护栏：token / 步数 / 墙钟 / 连续失败，任一触发即熔断进 finalize。
+ * 文件：deepagents createFilesystemMiddleware + StateBackend；节点前后 seed/flush 工作区。
  */
 import { Annotation, StateGraph, START, END } from '@langchain/langgraph'
 import type { LanguageModelLike } from '@langchain/core/language_models/base'
@@ -30,7 +31,7 @@ import type { SandboxProvider } from '@chatvein/sandbox'
 import type { TraceSink } from '@chatvein/observability'
 import { compileRequirement } from '@chatvein/compiler'
 import { verify as runVerify } from '@chatvein/verifier'
-import { createReactChatAgent, invokeReactChatAgent } from '@chatvein/agents'
+import { createReactChatAgent, invokeReactChatAgent, seedFilesFromDisk, flushFilesToDisk } from '@chatvein/agents'
 import { readFile } from 'node:fs/promises'
 import { createForgeTools } from './tools'
 import { checkBudget, type GuardState } from './guards'
@@ -171,25 +172,29 @@ export function buildOrchestratorGraph(deps: OrchestratorDeps) {
     }
   }
 
-  // ── implement：内层 ReAct 写代码 ────────────────────────────────
+  // ── implement：内层 ReAct 写代码（文件经 StateBackend middleware） ─
   const implement = async (state: ForgeStateType) => {
     const task = state.currentTask
     await deps.trace.emit('node_enter', { name: 'implement', payload: { taskId: task?.id } })
     if (!task) return { steps: state.steps + 1 }
 
     const tree = patchTask(state.taskTree, task.id, { status: 'running' })
+    const files = await seedFilesFromDisk(state.workspacePath)
     const agent = createReactChatAgent({
       model: deps.lcModel('strong'),
       tools,
       systemPrompt: IMPLEMENT_SYSTEM,
       name: 'forge-implement',
+      filesystem: true,
     })
     const userMsg = `任务 ${task.id}：${task.title}\n\n验收标准：\n- ${task.acceptance.join('\n- ')}\n\n请在工作区内实现并自行跑测试验证。`
     const result = await invokeReactChatAgent(agent, {
       message: userMsg,
       recursionLimit: 40,
       signal: deps.signal,
+      files,
     })
+    await flushFilesToDisk(state.workspacePath, result.files)
 
     await deps.trace.emit('model_call', {
       name: 'strong',
@@ -254,22 +259,26 @@ export function buildOrchestratorGraph(deps: OrchestratorDeps) {
     }
   }
 
-  // ── fix：内层 ReAct 定向修复 ────────────────────────────────────
+  // ── fix：内层 ReAct 定向修复（文件经 StateBackend middleware） ───
   const fix = async (state: ForgeStateType) => {
     await deps.trace.emit('node_enter', { name: 'fix' })
     const task = state.currentTask
+    const files = await seedFilesFromDisk(state.workspacePath)
     const agent = createReactChatAgent({
       model: deps.lcModel('strong'),
       tools,
       systemPrompt: FIX_SYSTEM,
       name: 'forge-fix',
+      filesystem: true,
     })
     const userMsg = `任务：${task?.title ?? '(集成)'}\n\n诊断结论：\n${state.rootCause}\n\n失败详情：\n${formatVerifyForDiagnose(state.lastVerify)}\n\n请做最小修复并复测。`
     const result = await invokeReactChatAgent(agent, {
       message: userMsg,
       recursionLimit: 40,
       signal: deps.signal,
+      files,
     })
+    await flushFilesToDisk(state.workspacePath, result.files)
     await deps.trace.emit('model_call', {
       name: 'strong',
       payload: { node: 'fix', totalTokens: result.usage.totalTokens },

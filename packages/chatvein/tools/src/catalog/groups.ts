@@ -5,13 +5,13 @@ export const TOOL_CATALOG_GROUPS: readonly ToolCatalogGroup[] = [
   {
     id: 'mcp_filesystem',
     category: 'local_fs',
-    title: '工作区文件系统（MCP）',
+    title: '工作区文件系统（已弃用 · MCP）',
     description:
-      '经 @modelcontextprotocol/server-filesystem 提供读/写/列/搜等；仅允许 workspaceRoot。',
+      '已弃用：本地文件改由 deepagents createFilesystemMiddleware + StateBackend。保留目录项仅兼容旧白名单 id。',
     source: 'mcp:@modelcontextprotocol/server-filesystem',
     mcpServer: 'filesystem',
     requiresWorkspace: true,
-    defaultEnabled: true,
+    defaultEnabled: false,
     keywords: ['文件', '读取文件', '写文件', '目录', '列目录', '搜索文件', 'file', 'read', 'write', 'ls', 'folder'],
   },
   {
@@ -19,7 +19,7 @@ export const TOOL_CATALOG_GROUPS: readonly ToolCatalogGroup[] = [
     category: 'compute',
     title: '工作区 Shell 沙箱（MCP）',
     description:
-      '经 @chatvein/mcp-shellsandbox-sdk：LocalSandboxProvider 白名单 exec_shell / git_op。读写文件用 mcp_filesystem。',
+      '经 @chatvein/mcp-shellsandbox-sdk：LocalSandboxProvider 白名单 exec_shell / git_op。读写文件用 StateBackend middleware。',
     source: 'mcp:@chatvein/mcp-shellsandbox-sdk',
     mcpServer: 'shellsandbox',
     requiresWorkspace: true,

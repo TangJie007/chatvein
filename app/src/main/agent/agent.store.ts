@@ -94,7 +94,6 @@ export class AgentStore {
       modelId: '',
       enabled: true,
       tools: [
-        'mcp_filesystem',
         'mcp_shellsandbox',
         'mcp_openfile',
         'mcp_modsearch',

@@ -3,7 +3,7 @@ import { TOOL_CATALOG_GROUPS } from './groups'
 
 const SHELLSANDBOX = TOOL_CATALOG_GROUPS.find((g) => g.id === 'mcp_shellsandbox')!
 
-/** 白名单 shell/git；读写走 mcp_filesystem */
+/** 白名单 shell/git；读写走 deepagents StateBackend middleware */
 export const SHELLSANDBOX_TOOLS = defineMcpTools(SHELLSANDBOX, [
   {
     tool: 'exec_shell',

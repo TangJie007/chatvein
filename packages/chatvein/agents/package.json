@@ -35,6 +35,7 @@
     "@langchain/core": "^1.2.9",
     "@langchain/langgraph": "^1.4.13",
     "@langchain/langgraph-checkpoint": "^1.1.5",
+    "deepagents": "^1.13.3",
     "langchain": "^1.5.10",
     "zod": "^4.5.4"
   },

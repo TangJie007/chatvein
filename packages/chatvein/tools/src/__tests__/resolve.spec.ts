@@ -46,9 +46,11 @@ describe('TOOL_CATALOG', () => {
     expect(pw.some((e) => e.id === 'playwright__browser_run_code_unsafe' && e.defaultEnabled)).toBe(false)
   })
 
-  it('deprecated filesystem read_file is excluded from default set', () => {
+  it('deprecated mcp_filesystem tools are excluded from default set', () => {
+    const fsTools = TOOL_CATALOG.filter((e) => e.groupId === 'mcp_filesystem')
+    expect(fsTools.length).toBeGreaterThan(0)
+    expect(fsTools.every((e) => e.defaultEnabled === false)).toBe(true)
     expect(TOOL_CATALOG.find((e) => e.id === 'filesystem__read_file')?.deprecated).toBe(true)
-    expect(TOOL_CATALOG.find((e) => e.id === 'filesystem__read_file')?.defaultEnabled).toBe(false)
   })
 })
 
@@ -62,6 +64,16 @@ describe('resolveChatTools', () => {
   it('returns empty when policy is none', async () => {
     const tools = await resolveChatTools({ policy: 'none' })
     expect(tools).toEqual([])
+  })
+
+  it('does not inject MCP filesystem by default', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'chatvein-tools-nofs-'))
+    const tools = await resolveChatTools({
+      policy: 'full',
+      workspaceRoot: root,
+      allowIds: 'all',
+    })
+    expect(tools.some((t) => t.name.startsWith('filesystem__'))).toBe(false)
   })
 
   it('binds calculator + js_eval via explicit allowIds (bypass defaultEnabled)', async () => {

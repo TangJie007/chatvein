@@ -2,6 +2,8 @@
 
 状态：已落地
 
+> **已被取代**：本地文件改走 deepagents StateBackend，见 [2026-09-07-deepagents-filesystem-statebackend.md](./2026-09-07-deepagents-filesystem-statebackend.md)。下文保留历史依据。
+
 ## 背景
 
 外部工具已定为 MCP 优先（见 [2026-09-05-mcp-first-tools.md](./2026-09-05-mcp-first-tools.md)）。官方 [`@modelcontextprotocol/server-filesystem`](https://www.npmjs.com/package/@modelcontextprotocol/server-filesystem) 提供完整 FS 工具；若与 builtin 读/列/grep 并存，模型会在两套 API 间摇摆。

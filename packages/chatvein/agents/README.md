@@ -11,7 +11,8 @@ Chat 产品轨的 **Agent 运行时**：
 
 ```
 src/
-  react-agent.ts      # createReactChatAgent / invokeReactChatAgent
+  react-agent.ts      # createReactChatAgent / invoke / stream（可挂 filesystem middleware）
+  filesystem.ts       # createStateFilesystemMiddleware + seed/flush（deepagents StateBackend）
   define-tool.ts
   routing/
     pipeline.ts       # HeuristicRouter：L1 → 可选 L2

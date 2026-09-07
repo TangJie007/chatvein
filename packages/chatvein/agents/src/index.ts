@@ -21,6 +21,21 @@ export {
 } from './react-agent'
 
 export {
+  createStateFilesystemMiddleware,
+  CHATVEIN_FS_TOOL_NAMES,
+  CHATVEIN_FS_DENY_PERMISSIONS,
+  textToFileData,
+  fileDataToText,
+  toVirtualPath,
+  toRelativePath,
+  seedFilesFromDisk,
+  flushFilesToDisk,
+  type ChatveinFsToolName,
+  type FilesRecord,
+  type SeedFilesOptions,
+} from './filesystem'
+
+export {
   WorkspaceCheckpointer,
   type WorkspaceCheckpointerOptions,
 } from './checkpointer'

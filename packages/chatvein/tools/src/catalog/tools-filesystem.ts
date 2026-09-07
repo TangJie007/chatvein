@@ -3,7 +3,7 @@ import { TOOL_CATALOG_GROUPS } from './groups'
 
 const FILESYSTEM = TOOL_CATALOG_GROUPS.find((g) => g.id === 'mcp_filesystem')!
 
-/** 默认集 6 个（read/write/edit/list/search/create）；其余按需（向量召回 / 显式白名单） */
+/** 已弃用 MCP filesystem 目录（默认全关；本地文件走 StateBackend middleware） */
 export const FILESYSTEM_TOOLS = defineMcpTools(FILESYSTEM, [
   {
     tool: 'read_file',

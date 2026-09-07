@@ -62,7 +62,7 @@ Chat UI「编程开发」档同样经 Harness：`chat.service` 在 `workMode=cod
 
 1. 取模型档：implement/fix 用强模型，diagnose 用中模型（经 `ModelRouter`）。
 2. 组装 system prompt：角色说明 + 当前任务标题/验收标准 +（fix 时）错误关键帧 + 文件索引。
-3. 绑定 Forge 编码工具（`createForgeTools`）。
+3. 绑定执行工具（`createForgeTools`：仅 `exec_shell` / `git_op`）+ `filesystem: true`（StateBackend）。
 4. `createReactChatAgent({ model, tools })` → `invokeReactChatAgent`：内层自动循环——模型决定调工具→观察→继续，直到无 tool_calls 或触发 BudgetGuard。
 
 工具全部经 `SandboxProvider` 执行，天然受路径 jail / 命令白名单 / 超时约束。
@@ -153,7 +153,7 @@ FORGE_BASE_URL=https://<网关>/v1 FORGE_API_KEY=sk-xxx FORGE_MODEL=claude-xxx \
 
 ## 11 关键设计决策与踩坑
 
-1. **Forge 工具 ≠ Chat 的 MCP 工具**：`orchestrator/src/tools.ts` 的 `createForgeTools` 是另一套——它必须经 `SandboxProvider` 在隔离工作区执行、带路径 jail 与命令白名单。Chat 的 `@chatvein/tools` 是面向对话的 MCP 目录，二者物理隔离。
+1. **文件统一 StateBackend，shell 仍隔离**：主 Agent / Forge implement·fix 共用 `createFilesystemMiddleware` + `StateBackend`（`@chatvein/agents`）。`createForgeTools` 仅剩 `exec_shell` / `git_op`（`SandboxProvider` 白名单）。详见 `.agents/notes/2026-09-07-deepagents-filesystem-statebackend.md`。
 2. **不写手写 while 循环**：外层用 LangGraph `StateGraph` 声明节点/边，内层用官方 `createReactChatAgent`（langchain）。`@chatvein/*` 只做装配、prompt、工具、trace、护栏。复用了 Chat 轨已验证的 `createReactChatAgent`。
 3. **checkpoint 复用**：`agents/src/checkpointer.ts` 的 `WorkspaceCheckpointer`（基于 `node:sqlite`）被 Forge 复用——外层 StateGraph 每节点后落盘，崩溃后 `resume` 按 thread 续状态。
 4. **verify 是唯一真相源**：模型不能自述完成，必须 verify 跑真实 build/test 出结构化 `TestReport`。
