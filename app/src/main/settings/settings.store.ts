@@ -48,6 +48,7 @@ export class SettingsStore {
     return {
       version: 1,
       workspaceRoot: typeof data.workspaceRoot === 'string' ? data.workspaceRoot : d.workspaceRoot,
+      devProjectRoot: typeof data.devProjectRoot === 'string' ? data.devProjectRoot : d.devProjectRoot,
       cmdAllowlist: data.cmdAllowlist !== false,
       confirmWrites: data.confirmWrites !== false,
       reduceMotion: data.reduceMotion === true,
@@ -58,6 +59,7 @@ export class SettingsStore {
     return {
       version: 1,
       workspaceRoot: this.defaultWorkspaceRoot(),
+      devProjectRoot: '',
       cmdAllowlist: true,
       confirmWrites: true,
       reduceMotion: false,

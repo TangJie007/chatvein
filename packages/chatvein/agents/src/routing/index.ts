@@ -40,5 +40,6 @@ export {
   policyForBand,
   mergePolicy,
   POLICY_SHORT_CIRCUIT,
+  POLICY_TRIVIAL_SHORT,
   POLICY_DEFER_TO_L2,
 } from './policy'

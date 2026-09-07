@@ -6,6 +6,12 @@ export interface AppSettings {
    * 空字符串 = 使用系统建议默认（文档/Chatvein/workspaces）。
    */
   workspaceRoot: string
+  /**
+   * 编程开发模式的项目根目录：开启「编程开发」档时，文件读写 / 脚本执行等
+   * 工具的 jail 根从会话私有沙箱切换为该项目目录，从而能在真实仓库内改代码。
+   * 空字符串 = 未设置（回落到会话沙箱）。
+   */
+  devProjectRoot: string
   cmdAllowlist: boolean
   confirmWrites: boolean
   reduceMotion: boolean
@@ -18,5 +24,8 @@ export interface AppSettingsView extends AppSettings {
 }
 
 export type AppSettingsPatch = Partial<
-  Pick<AppSettings, 'workspaceRoot' | 'cmdAllowlist' | 'confirmWrites' | 'reduceMotion'>
+  Pick<
+    AppSettings,
+    'workspaceRoot' | 'devProjectRoot' | 'cmdAllowlist' | 'confirmWrites' | 'reduceMotion'
+  >
 >

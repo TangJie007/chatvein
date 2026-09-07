@@ -60,7 +60,7 @@ L1/L2 的职责是**选哪张图 / 开哪些闸**，不是让模型画图。
 | 来源 | 谁答 |
 |------|------|
 | **L1** `greeting_only` / `self_intro` → trivial | **本地模板**（不调 LLM） |
-| **L2**（或其它路径）拍成 `trivial` | **L3 主模型** + system「友好简短」；即使 `maxSteps=0` 也 `recursionLimit≥1` |
+| **L2**（或其它路径）拍成 `trivial` | **L3 主模型** + system「友好简短」；默认 `maxSteps=4`（与 L1 短路 `maxSteps=0` 分离） |
 
 L2 的 trivial = 策略偏闲聊，**不**表示本地模板够用。见 [10 §4.1](./10-L2语义路由层.md)。
 
@@ -115,7 +115,7 @@ runChatTurn(input: L3RunInput): Promise<L3RunResult>
 | 包入口 | `packages/chatvein/agents/src/react-agent.ts` |
 | 循环 | `langchain.createAgent`（底层 LangGraph），**不自研 while** |
 | 调用 | `invokeReactChatAgent` + `recursionLimit` |
-| 步数 | `recursionLimit = max(1, route.policy.maxSteps)`；band 默认 simple=8 / standard=16 / complex=64（trivial=0） |
+| 步数 | `recursionLimit = max(1, route.policy.maxSteps)`；band 默认 trivial=4 / simple=8 / standard=16 / complex=64（L1 短路仍为 0） |
 | 工具 | `policy.tools=full` → `@chatvein/tools` `resolveChatTools`（∩ 角色白名单 + MCP）；`none/unknown` → `[]` |
 | 短答约束 | `systemPromptForRoute`：`band=trivial` / `tier=weak` 注入 |
 | 挂载地图 | 见 [13-Prompt-MCP-Tool挂载](./13-Prompt-MCP-Tool挂载.md) |

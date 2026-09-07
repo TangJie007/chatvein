@@ -21,7 +21,7 @@ export const L2_SYSTEM_PROMPT = `你是 Chatvein 的 L2 路由分类器，不是
 
 ## 可选字段（省略则按 band 默认策略）
 - modelTier: "weak"|"medium"|"strong"
-- maxSteps: 3–64（默认 simple≈8 / standard≈16 / complex≈64）
+- maxSteps: 0–64（默认 trivial≈4 / simple≈8 / standard≈16 / complex≈64；L1 本地短路仍为 0）
 - memoryRecall: boolean
 - allowSubAgents: boolean（子 Agent ≠ 拉群）
 - hintUserCreateGroup / hintUserForge: boolean（仅提示 UI，禁止自动建群/派单）

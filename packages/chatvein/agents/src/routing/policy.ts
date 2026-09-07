@@ -1,14 +1,25 @@
 /**
  * band → 默认 RoutePolicy（主要给 L2 merge 用）。
- * L1 只用 SHORT_CIRCUIT / DEFER_TO_L2 两档，见 l1/materialize。
+ * L1 短路用 POLICY_SHORT_CIRCUIT（maxSteps=0）；band=trivial 用 POLICY_TRIVIAL_SHORT（4）。
  */
 import type { ComplexityBand, ModelTier, RoutePolicy } from '@chatvein/common'
 
-/** L1 寒暄/自我介绍/empty/slash 短路 */
+/** L1 寒暄/自我介绍/empty/slash 短路（本地模板，不进 LLM） */
 export const POLICY_SHORT_CIRCUIT: RoutePolicy = {
   modelTier: 'weak',
   tools: 'none',
   maxSteps: 0,
+  memoryRecall: false,
+}
+
+/**
+ * L2/`policyForBand('trivial')` 短答预算：仍走主模型友好短答，
+ * 与 L1 短路分离，避免 maxSteps=0 → recursionLimit=1 误杀 ReAct。
+ */
+export const POLICY_TRIVIAL_SHORT: RoutePolicy = {
+  modelTier: 'weak',
+  tools: 'none',
+  maxSteps: 4,
   memoryRecall: false,
 }
 
@@ -30,7 +41,7 @@ export function policyForBand(
 function bandPolicy(band: ComplexityBand): RoutePolicy {
   switch (band) {
     case 'trivial':
-      return POLICY_SHORT_CIRCUIT
+      return POLICY_TRIVIAL_SHORT
     case 'simple':
       return { modelTier: 'weak', tools: 'none', maxSteps: 8, memoryRecall: false }
     case 'standard':

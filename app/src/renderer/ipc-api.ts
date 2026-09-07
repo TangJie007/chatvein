@@ -176,6 +176,8 @@ export interface AgentInput {
 export interface AppSettingsView {
   version: 1
   workspaceRoot: string
+  /** 编程开发模式的项目根目录（空字符串 = 未设置，回落到会话沙箱） */
+  devProjectRoot: string
   cmdAllowlist: boolean
   confirmWrites: boolean
   reduceMotion: boolean
@@ -184,7 +186,10 @@ export interface AppSettingsView {
 }
 
 export type AppSettingsPatch = Partial<
-  Pick<AppSettingsView, 'workspaceRoot' | 'cmdAllowlist' | 'confirmWrites' | 'reduceMotion'>
+  Pick<
+    AppSettingsView,
+    'workspaceRoot' | 'devProjectRoot' | 'cmdAllowlist' | 'confirmWrites' | 'reduceMotion'
+  >
 >
 
 // ---- 向量数据库（数据集浏览器）--------------------------------------------

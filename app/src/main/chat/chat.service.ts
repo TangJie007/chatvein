@@ -87,6 +87,9 @@ import { readThinkingLog, writeThinkingLog } from './thinking-log'
 import { readShortTermState, resetShortTermState, writeShortTermState } from './short-term.store'
 import type { BaseMessage } from '@langchain/core/messages'
 
+/** 内置「编程开发」Agent id（与 agent.store 默认 coder 对齐） */
+const CODER_AGENT_ID = 'coder'
+
 @Injectable()
 export class ChatService implements OnAppReady {
   @Inject(ChatStore)
@@ -381,7 +384,7 @@ export class ChatService implements OnAppReady {
       delta: formatPolicyApply(route),
     })
 
-    // 仅寒暄 / 自我介绍规则允许本地短路；其它 maxSteps=0（如误判 trivial）仍走 LLM
+    // 仅寒暄 / 自我介绍规则允许本地短路；L2 trivial 默认 maxSteps=4，仍走 LLM
     const allowLocalShortCircuit =
       maxSteps <= 0 &&
       (route.reasons.includes('greeting_only') || route.reasons.includes('self_intro'))
@@ -410,8 +413,18 @@ export class ChatService implements OnAppReady {
     }
 
     const recursionLimit = Math.max(1, maxSteps)
+    // 编程开发模式：工具 jail 到用户项目目录（否则仍是会话私有沙箱）
+    const { toolRoot, projectRoot } = await this.resolveToolRoot(agent, conv.workspacePath)
+    if (projectRoot) {
+      emit({
+        type: 'thinking_delta',
+        runId,
+        conversationId: conv.id,
+        delta: `编程开发模式：项目根 ${projectRoot}\n`,
+      })
+    }
     // 路由约束写入 system：L2/策略 trivial → 友好短答；weak → 简短不列清单
-    const systemPrompt = systemPromptForRoute(agent.systemPrompt, route)
+    const systemPrompt = withCodingContext(systemPromptForRoute(agent.systemPrompt, route), projectRoot)
     const llm = this.createDebugAwareLlm(model, {
       temperature: temperatureForTier(route.policy.modelTier, model.temperature),
       maxTokens: model.maxTokens > 0 ? model.maxTokens : undefined,
@@ -429,7 +442,7 @@ export class ChatService implements OnAppReady {
     const boundTools = await this.resolveBoundTools(
       agent,
       toolPolicy,
-      conv.workspacePath,
+      toolRoot,
       toolQuery,
       model,
     )
@@ -672,7 +685,9 @@ export class ChatService implements OnAppReady {
     }
 
     const recursionLimit = Math.max(1, maxSteps)
-    const systemPrompt = systemPromptForRoute(agent.systemPrompt, route)
+    // 编程开发模式：工具 jail 到用户项目目录（与 send 路径一致）
+    const { toolRoot, projectRoot } = await this.resolveToolRoot(agent, conv.workspacePath)
+    const systemPrompt = withCodingContext(systemPromptForRoute(agent.systemPrompt, route), projectRoot)
     const llm = this.createDebugAwareLlm(model, {
       temperature: temperatureForTier(route.policy.modelTier, model.temperature),
       maxTokens: model.maxTokens > 0 ? model.maxTokens : undefined,
@@ -681,7 +696,7 @@ export class ChatService implements OnAppReady {
     const boundTools = await this.resolveBoundTools(
       agent,
       route.policy.tools,
-      conv.workspacePath,
+      toolRoot,
       toolQuery,
       model,
     )
@@ -879,10 +894,32 @@ export class ChatService implements OnAppReady {
   }
 
   /**
+   * 解析本轮工具的 jail 根目录。
+   * - 编程开发档（内置 coder Agent）且设置了 `devProjectRoot`：文件读写 / 脚本执行
+   *   等工具的根切换为用户真实项目目录，从而能在仓库内改代码、跑脚本；
+   * - 其余情况回落到会话私有工作区（沙箱），保持隔离。
+   * 返回 toolRoot（传给工具层）与 projectRoot（非空表示正处于项目模式，用于注入提示）。
+   */
+  private async resolveToolRoot(
+    agent: AgentConfig,
+    conversationWorkspace: string,
+  ): Promise<{ toolRoot: string; projectRoot: string }> {
+    const isCodingAgent = agent.id === CODER_AGENT_ID
+    if (!isCodingAgent) return { toolRoot: conversationWorkspace, projectRoot: '' }
+    const settings = await this.settings.get()
+    const projectRoot = settings.devProjectRoot?.trim() ?? ''
+    if (projectRoot && isAbsolute(projectRoot)) {
+      return { toolRoot: projectRoot, projectRoot }
+    }
+    return { toolRoot: conversationWorkspace, projectRoot: '' }
+  }
+
+  /**
    * policy.tools ∩ 角色白名单 → LangChain 工具实例。
    * 链路：resolveChatTools → C1 混合预筛 → C2 弱模型精筛 → C3 预算裁剪。
    * 索引维护仅在启动 warmup / `refreshToolIndex`（MCP 菜单变更）；对话路径只读检索。
    * query 应为 `route.rewrittenQuery ?? 原文`；**空 query → 不绑工具**（主模型纯聊）。
+   * workspaceRoot 为工具 jail 根：编程模式下是用户项目目录，否则是会话沙箱。
    */
   private async resolveBoundTools(
     agent: AgentConfig,
@@ -1532,8 +1569,8 @@ function formatPolicyApply(route: RouteDecision): string {
     `tools=${p.tools}${p.tools === 'full' ? ' → 绑定 @chatvein/tools 目录' : ' → 禁用工具'}`,
     `maxSteps=${p.maxSteps}${p.maxSteps <= 0 ? ' → 将本地短路' : ` → recursionLimit=${Math.max(1, p.maxSteps)}`}`,
   ]
-  if (route.band === 'trivial') {
-    lines.push('trivial → 主模型友好短答（非 L1 本地模板）')
+  if (route.band === 'trivial' && !(p.maxSteps <= 0 && (route.reasons.includes('greeting_only') || route.reasons.includes('self_intro')))) {
+    lines.push('trivial → 主模型友好短答（POLICY_TRIVIAL_SHORT，默认 maxSteps=4）')
   } else if (p.modelTier === 'weak' && !(p.maxSteps <= 0 && (route.reasons.includes('greeting_only') || route.reasons.includes('self_intro')))) {
     lines.push('weak → 注入短回复约束（一两句，不列清单）')
   }
@@ -1554,6 +1591,25 @@ function formatPolicyApply(route: RouteDecision): string {
 const TRIVIAL_BAND_BRIEF =
   '（路由：闲聊/寒暄档）请友好、简短地回复一两句，像正常打招呼或确认；不要列能力清单，不要长篇展开。'
 const WEAK_TIER_BRIEF = '（路由：简短档）请用一两句回复，不要列清单。'
+
+/**
+ * 编程开发模式：把项目根与工作约定注入 system，引导 Agent 用文件/执行工具
+ * 在真实仓库内读改代码，而不是在空沙箱里凭空作答。
+ */
+function withCodingContext(prompt: string | undefined, projectRoot: string): string | undefined {
+  if (!projectRoot) return prompt
+  const block = [
+    '【编程开发模式】',
+    `当前项目根目录：${projectRoot}（文件读写、脚本执行工具均被限制在此目录内）。`,
+    '工作约定：',
+    '1. 改代码前先用文件工具读取相关文件、确认现状，不要臆造路径或 API；',
+    '2. 优先做最小必要修改，改动后说明涉及的文件与关键行；',
+    '3. 需要运行 / 验证时，用脚本执行工具在项目内跑（如测试、构建），并反馈结果；',
+    '4. 涉及删除、覆盖、安装依赖等有副作用的操作，先说明再执行。',
+  ].join('\n')
+  const base = prompt?.trim()
+  return base ? `${base}\n\n${block}` : block
+}
 
 function systemPromptForRoute(
   agentPrompt: string | undefined,

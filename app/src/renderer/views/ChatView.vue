@@ -12,6 +12,7 @@ import Avatar from '../components/ui/Avatar.vue'
 import { useChat } from '../composables/useChat'
 import { useAgents } from '../composables/useAgents'
 import { useModels } from '../composables/useModels'
+import { useSettings } from '../composables/useSettings'
 import { setCrumbItem } from '../composables/useUi'
 import type { AvatarTint, Conversation } from '../ipc-api'
 
@@ -19,6 +20,7 @@ const router = useRouter()
 const chat = useChat()
 const agents = useAgents()
 const models = useModels()
+const settingsStore = useSettings()
 
 const scroller = ref<HTMLElement | null>(null)
 const status = ref('')
@@ -112,6 +114,40 @@ function onModeChange(mode: WorkMode) {
     chat.setConversationAgent(chat.current.id, agent.id)
   }
   status.value = `已切换到「${workModes.find((m) => m.value === mode)?.label}」· ${agent.name}`
+}
+
+// 编程开发模式：项目根目录（工具 jail 根）。未设置时工具只能在会话沙箱内运行
+const devProjectRoot = computed(() => settingsStore.settings?.devProjectRoot?.trim() ?? '')
+const projectFolderName = computed(() => {
+  const p = devProjectRoot.value
+  if (!p) return ''
+  const parts = p.split(/[\\/]/).filter(Boolean)
+  return parts[parts.length - 1] || p
+})
+
+async function pickProjectFolder() {
+  if (chat.sending) return
+  try {
+    const picked = await settingsStore.pickFolder({
+      title: '选择编程开发的项目根目录',
+      defaultPath: devProjectRoot.value || undefined,
+    })
+    if (!picked) return
+    await settingsStore.update({ devProjectRoot: picked })
+    status.value = `编程开发将作用于项目：${picked}`
+  } catch (e) {
+    status.value = (e as Error).message || '选择项目目录失败'
+  }
+}
+
+async function clearProjectFolder() {
+  if (chat.sending) return
+  try {
+    await settingsStore.update({ devProjectRoot: '' })
+    status.value = '已清除项目目录；编程工具回到会话沙箱'
+  } catch (e) {
+    status.value = (e as Error).message || '清除项目目录失败'
+  }
 }
 
 // 思考面板：运行中显示实时流；结束后 / 点击气泡显示对应日志
@@ -337,6 +373,7 @@ onMounted(async () => {
     agents.loaded ? Promise.resolve() : agents.refresh(),
     models.loaded ? Promise.resolve() : models.refresh(),
     chat.loaded ? Promise.resolve() : chat.refresh(),
+    settingsStore.loaded ? Promise.resolve() : settingsStore.refresh(),
   ])
   // 新装/空库：列表保持为空，由用户点「+」创建；不自动建会话
   if (chat.conversations.length && !chat.currentId) {
@@ -448,6 +485,49 @@ onMounted(async () => {
             <AppIcon :name="m.icon" :size="13" :stroke-width="1.9" />
             {{ m.label }}
           </button>
+        </div>
+
+        <!-- 编程开发模式：项目目录选择。文件读写 / 脚本执行工具将 jail 到该项目根 -->
+        <div
+          v-if="activeMode === 'code'"
+          class="mx-[26px] mt-2 flex w-fit max-w-full items-center gap-2 rounded-[10px] border border-[var(--color-line)] bg-[var(--color-elevated)] px-3 py-1.5"
+        >
+          <AppIcon name="folder" :size="14" class="shrink-0 text-[var(--color-brand-deep)]" />
+          <template v-if="devProjectRoot">
+            <span class="text-xs font-medium text-[var(--color-ink-1)]">项目：{{ projectFolderName }}</span>
+            <span class="max-w-[280px] truncate font-mono text-[11px] text-[var(--color-ink-3)]" :title="devProjectRoot">
+              {{ devProjectRoot }}
+            </span>
+            <button
+              type="button"
+              class="rounded-md border-0 bg-transparent px-1.5 py-0.5 text-[11px] font-medium text-[var(--color-ink-3)] transition hover:text-[var(--color-brand-dark)] focus-visible:outline-2 focus-visible:outline-[var(--color-brand)] disabled:opacity-60"
+              :disabled="chat.sending"
+              title="重新选择项目目录"
+              @click="pickProjectFolder"
+            >
+              更换
+            </button>
+            <button
+              type="button"
+              class="rounded-md border-0 bg-transparent px-1.5 py-0.5 text-[11px] font-medium text-[var(--color-ink-3)] transition hover:text-rose-600 focus-visible:outline-2 focus-visible:outline-[var(--color-brand)] disabled:opacity-60"
+              :disabled="chat.sending"
+              title="清除后工具仅在会话沙箱内运行，无法访问真实项目"
+              @click="clearProjectFolder"
+            >
+              清除
+            </button>
+          </template>
+          <template v-else>
+            <span class="text-xs text-[var(--color-ink-3)]">未选择项目目录，工具将在会话沙箱内运行</span>
+            <button
+              type="button"
+              class="inline-flex items-center gap-1 rounded-full border-0 bg-[var(--color-brand-soft)] px-2.5 py-1 text-[11px] font-medium text-[var(--color-brand-dark)] transition hover:bg-[var(--color-brand-mist)] focus-visible:outline-2 focus-visible:outline-[var(--color-brand)] disabled:opacity-60"
+              :disabled="chat.sending"
+              @click="pickProjectFolder"
+            >
+              <AppIcon name="folder" :size="12" /> 选择项目目录
+            </button>
+          </template>
         </div>
       </header>
 

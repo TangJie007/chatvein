@@ -25,6 +25,10 @@ export class SettingsService {
     if (patch.workspaceRoot != null) {
       next.workspaceRoot = normalizePath(patch.workspaceRoot)
     }
+    // 项目根为用户既有真实目录：仅校验绝对路径，不代为创建
+    if (patch.devProjectRoot != null) {
+      next.devProjectRoot = normalizePath(patch.devProjectRoot)
+    }
     await ensureDir(this.effectiveWorkspace(next))
     await this.store.save(next)
     return this.toView(next)
