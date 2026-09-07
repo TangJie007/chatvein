@@ -1,11 +1,16 @@
 /**
  * @chatvein/compiler
  *
- * Requirement compiler: local Markdown sectioning (no model calls), model-driven
- * extraction of feature points and acceptance criteria into validated JSON,
- * schema-retry/degrade fallback, topological sort and parallel grouping.
- * Produces the Task[] consumed by the orchestrator.
+ * Requirement compiler: Markdown requirement doc → structured TaskTree.
+ * M1 is deterministic (section split, zero model calls); M2 adds strong-model
+ * extraction of feature points + acceptance criteria per section.
  */
 
 export const CHATVEIN_COMPILER_VERSION = '0.1.0'
-export {}
+
+export { splitMarkdownSections, extractAcceptance, type MdSection } from './sections'
+export {
+  compileRequirement,
+  compileToFile,
+  type CompileOptions,
+} from './compile'

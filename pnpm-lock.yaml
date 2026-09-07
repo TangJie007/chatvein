@@ -223,6 +223,9 @@ importers:
 
   packages/chatvein/core:
     dependencies:
+      '@chatvein/agents':
+        specifier: workspace:*
+        version: link:../agents
       '@chatvein/common':
         specifier: workspace:*
         version: link:../common
@@ -387,15 +390,42 @@ importers:
 
   packages/chatvein/orchestrator:
     dependencies:
+      '@chatvein/agents':
+        specifier: workspace:*
+        version: link:../agents
       '@chatvein/common':
         specifier: workspace:*
         version: link:../common
+      '@chatvein/compiler':
+        specifier: workspace:*
+        version: link:../compiler
+      '@chatvein/context':
+        specifier: workspace:*
+        version: link:../context
+      '@chatvein/models':
+        specifier: workspace:*
+        version: link:../models
+      '@chatvein/observability':
+        specifier: workspace:*
+        version: link:../observability
+      '@chatvein/sandbox':
+        specifier: workspace:*
+        version: link:../sandbox
+      '@chatvein/verifier':
+        specifier: workspace:*
+        version: link:../verifier
       '@langchain/core':
         specifier: ^1.2.9
         version: 1.2.9(@opentelemetry/api@1.9.1)(openai@7.9.0(undici@8.10.2)(ws@8.21.3)(zod@4.5.4))(ws@8.21.3)
       '@langchain/langgraph':
         specifier: ^1.4.13
         version: 1.4.13(@langchain/core@1.2.9(@opentelemetry/api@1.9.1)(openai@7.9.0(undici@8.10.2)(ws@8.21.3)(zod@4.5.4))(ws@8.21.3))(react@19.2.8)(zod@4.5.4)
+      '@langchain/openai':
+        specifier: ^1.3.0
+        version: 1.5.11(@langchain/core@1.2.9(@opentelemetry/api@1.9.1)(openai@7.9.0(undici@8.10.2)(ws@8.21.3)(zod@4.5.4))(ws@8.21.3))(undici@8.10.2)(ws@8.21.3)
+      zod:
+        specifier: ^4.5.4
+        version: 4.5.4
     devDependencies:
       '@types/node':
         specifier: ^24.0.0
@@ -452,6 +482,9 @@ importers:
       cac:
         specifier: ^7.0.0
         version: 7.0.0
+      jiti:
+        specifier: ^2.4.0
+        version: 2.7.0
       zod:
         specifier: ^4.5.4
         version: 4.5.4
@@ -563,6 +596,9 @@ importers:
       '@chatvein/common':
         specifier: workspace:*
         version: link:../common
+      '@chatvein/sandbox':
+        specifier: workspace:*
+        version: link:../sandbox
     devDependencies:
       '@types/node':
         specifier: ^24.0.0

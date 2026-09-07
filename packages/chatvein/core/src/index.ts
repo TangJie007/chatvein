@@ -18,4 +18,13 @@ export const CHATVEIN_CORE_VERSION = '0.1.0'
 /** Re-export Cordis primitives so callers can type plugins against one entry. */
 export { Context, Service, Fiber } from '@deepseek-ai/cordis'
 
-export {}
+/** Harness 门面：start / resume / preview / loadRun */
+export {
+  Harness,
+  createHarness,
+  type HarnessOptions,
+  type StartRunInput,
+  type RunPlan,
+  type RunHandle,
+  type RunReport,
+} from './harness'

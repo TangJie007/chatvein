@@ -15,6 +15,17 @@ export const CHATVEIN_SANDBOX_VERSION = '0.1.0'
 /** Default provider kind — do not change without updating design/07. */
 export const DEFAULT_SANDBOX_PROVIDER = 'local' as const
 
-export type SandboxProviderKind = 'local' | 'docker'
-
-export {}
+export type { SandboxProviderKind } from './types'
+export type {
+  SandboxProvider,
+  ExecInput,
+  ExecResult,
+  EnvSnapshot,
+} from './types'
+export { PathJail } from './path-jail'
+export {
+  LocalSandboxProvider,
+  DEFAULT_ALLOW_COMMANDS,
+  pathExists,
+  type LocalSandboxOptions,
+} from './local-provider'

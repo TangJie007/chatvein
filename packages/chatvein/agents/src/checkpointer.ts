@@ -12,9 +12,16 @@
  * thread 每轮从压缩 history 重置，回复行为与无状态范式完全一致；checkpointer 同时把
  * 本轮 agent 的完整消息轨迹落盘，支持跨进程持久化与崩溃恢复。
  */
-import { DatabaseSync } from 'node:sqlite'
 import { mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
+import type { DatabaseSync as DatabaseSyncType } from 'node:sqlite'
+
+// 动态加载 node:sqlite：模块名用变量拼接，避免 esbuild/tsup 静态分析把
+// `node:sqlite` 打包成 require('sqlite')（CJS 输出会丢失 node: 前缀）。
+const nodeRequire = eval('require') as NodeRequire
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const sqlite = nodeRequire('node:sql' + 'ite') as { DatabaseSync: new (p: string) => DatabaseSyncType }
+const DatabaseSync = sqlite.DatabaseSync
 import {
   BaseCheckpointSaver,
   WRITES_IDX_MAP,
@@ -79,7 +86,7 @@ interface WriteRow {
 }
 
 export class WorkspaceCheckpointer extends BaseCheckpointSaver {
-  private db: DatabaseSync
+  private db: DatabaseSyncType
 
   constructor(opts: WorkspaceCheckpointerOptions) {
     super()

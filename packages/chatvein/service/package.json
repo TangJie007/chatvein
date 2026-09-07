@@ -36,6 +36,7 @@
     "@langchain/langgraph": "^1.4.13",
     "@langchain/langgraph-checkpoint-sqlite": "^1.0.4",
     "cac": "^7.0.0",
+    "jiti": "^2.4.0",
     "zod": "^4.5.4"
   },
   "devDependencies": {

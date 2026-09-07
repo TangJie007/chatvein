@@ -25,9 +25,18 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@chatvein/agents": "workspace:*",
     "@chatvein/common": "workspace:*",
+    "@chatvein/compiler": "workspace:*",
+    "@chatvein/context": "workspace:*",
+    "@chatvein/models": "workspace:*",
+    "@chatvein/observability": "workspace:*",
+    "@chatvein/sandbox": "workspace:*",
+    "@chatvein/verifier": "workspace:*",
     "@langchain/core": "^1.2.9",
-    "@langchain/langgraph": "^1.4.13"
+    "@langchain/langgraph": "^1.4.13",
+    "@langchain/openai": "^1.3.0",
+    "zod": "^4.5.4"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",

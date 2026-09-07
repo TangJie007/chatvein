@@ -25,7 +25,8 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@chatvein/common": "workspace:*"
+    "@chatvein/common": "workspace:*",
+    "@chatvein/sandbox": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",

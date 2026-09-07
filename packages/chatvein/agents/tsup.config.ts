@@ -8,4 +8,6 @@ export default defineConfig({
   splitting: false,
   sourcemap: true,
   clean: true,
+  // node:sqlite 等内置模块必须保持外部引用，不能被打包成 require('sqlite')
+  external: ['node:sqlite'],
 })
