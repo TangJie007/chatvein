@@ -1,0 +1,21 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "types": ["node"],
+    "baseUrl": ".",
+    "paths": {
+      "@chatvein/agents": ["../packages/chatvein/agents/src"],
+      "@chatvein/harness": ["../packages/chatvein/harness/src"],
+      "@chatvein/observability": ["../packages/chatvein/observability/src"],
+      "@chatvein/runtime": ["../packages/chatvein/runtime/src"],
+      "@chatvein/tools": ["../packages/chatvein/tools/src"],
+      "@chatvein/filesystem": ["../packages/chatvein/filesystem/src"],
+      "@chatvein/store": ["../packages/store/src"],
+      "@chatvein/store/sqlite": ["../packages/store/src/sqlite/index.ts"],
+      "@electrum/common": ["../packages/electrum/common/src"],
+      "@electrum/core": ["../packages/electrum/core/src"],
+      "@electrum/preload": ["../packages/electrum/preload/src"],
+    }
+  },
+  "include": ["src/main/**/*", "src/preload/**/*"]
+}
