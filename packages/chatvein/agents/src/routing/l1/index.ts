@@ -1,6 +1,0 @@
-export { L1HeuristicRouter, createL1Router } from './router'
-export type { L1RouterOptions, RouteInput } from './router'
-export { decideL1 } from './decide'
-export { extractFacts, isGreetingOnly, isSelfIntro } from './features'
-export type { HeuristicCtx, HeuristicSession } from './features'
-export { resolveDict, ZH_DICT, type HeuristicDict } from './dict'
