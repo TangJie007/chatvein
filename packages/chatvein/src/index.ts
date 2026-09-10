@@ -37,9 +37,7 @@ export {
 // ---------------------------------------------------------------------------
 export {
   createChatModel,
-  resolveChatModel,
   type ChatModelConfig,
-  type ChatModelConnection,
   type CreateChatModelOptions,
 } from './model'
 

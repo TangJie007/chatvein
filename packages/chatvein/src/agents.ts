@@ -10,7 +10,6 @@
  * 调用方只需给「模型 + 工具（可选）+ checkpointer（可选）」。
  */
 import type { BaseMessage } from '@langchain/core/messages'
-import type { LanguageModelLike } from '@langchain/core/language_models/base'
 import type { StructuredToolInterface } from '@langchain/core/tools'
 import type { BaseCheckpointSaver } from '@langchain/langgraph'
 import { LRUCache } from 'lru-cache'
@@ -33,16 +32,16 @@ import type {
   Domain,
   Lane,
 } from './conversation/types'
-import { resolveChatModel, type ChatModelConfig } from './model'
+import { createChatModel, type ChatModelConfig } from './model'
 
 /** 门面选项：除 `model` 外全部可省 */
 export interface ChatveinAgentsOptions extends Omit<ChatModelConfig, 'model'> {
   /**
-   * 模型：模型名（`gpt-4o` / `deepseek-chat`），连接信息用同级的
-   * `apiKey` / `baseUrl` / `temperature` / `maxTokens`；
-   * 也可直接传已建好的模型实例（本地 Ollama / LM Studio / 测试）。
+   * 模型名（`gpt-4o` / `deepseek-chat`）。连接信息用同级的
+   * `apiKey` / `baseUrl` / `temperature`；
+   * 包内自行构造实例（流式默认开启），调用方无需传实例。
    */
-  model: string | LanguageModelLike
+  model: string
   /** 候选工具全集；包内按 domain + toolsPolicy + 模型筛选逐层收窄 */
   tools?: StructuredToolInterface[]
   /** 按领域预切好的工具表（优先于对 tools 的二次过滤） */
@@ -107,11 +106,11 @@ export function createChatveinAgents(
   if (!options?.model) {
     throw new Error('createChatveinAgents: options.model is required')
   }
-  const model = resolveChatModel(options.model, {
+  const model = createChatModel({
+    model: options.model,
     apiKey: options.apiKey,
     baseUrl: options.baseUrl,
     temperature: options.temperature,
-    maxTokens: options.maxTokens,
   })
   const tools = options.tools ?? []
   const hooks = options.hooks

@@ -72,8 +72,6 @@ export interface L2Options {
   model?: LanguageModelLike
   /** 默认 0 */
   temperature?: number
-  /** 小输出预算，默认 400 */
-  maxTokens?: number
   /** 超时 ms，默认 2000（设计 §13） */
   timeoutMs?: number
   signal?: AbortSignal
@@ -83,4 +81,5 @@ export interface L2Options {
 
 export const L2_PROMPT_VERSION = 'l2-v1'
 export const L2_DEFAULT_TIMEOUT_MS = 2_000
+/** 包内输出上限，不对外配置 */
 export const L2_DEFAULT_MAX_TOKENS = 400

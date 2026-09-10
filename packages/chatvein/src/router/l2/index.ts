@@ -134,7 +134,7 @@ export async function classifyL2(
     model: options.model,
     messages,
     temperature: options.temperature ?? 0,
-    maxTokens: options.maxTokens ?? L2_DEFAULT_MAX_TOKENS,
+    maxTokens: L2_DEFAULT_MAX_TOKENS,
     timeoutMs: options.timeoutMs ?? L2_DEFAULT_TIMEOUT_MS,
     signal: options.signal,
   })

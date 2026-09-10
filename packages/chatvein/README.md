@@ -96,30 +96,11 @@ createChatveinAgents({
   model: 'gpt-4o',
   apiKey, baseUrl,
   temperature: 0.7,
-  // maxTokens: 4096,   // 可选
 })
 ```
 
 > 「弱模 / 强模」只是路由内部的执行策略说法，不体现在对外配置上。
-
-### 本地单模型 / 已有模型实例
-
-任何 `LanguageModelLike`（含 `@langchain/community` 的本地模型）都可直接传入：
-
-```ts
-import { ChatOllama } from '@langchain/community/chat_models/ollama'
-
-createChatveinAgents({ model: new ChatOllama({ model: 'qwen2.5' }) })
-```
-
-需要 `streaming` / `callbacks` 等建模选项时，自己构造实例再传入：
-
-```ts
-import { createChatModel } from '@chatvein/agents'
-
-const model = createChatModel({ model: 'deepseek-chat', apiKey }, { streaming: true })
-createChatveinAgents({ model })
-```
+> 流式（`streaming`）默认开启，无需额外配置。
 
 ---
 
@@ -287,7 +268,7 @@ const result = await graph.invoke({ input: '你好', thread_id: 't1' })
 ```ts
 import { runL0, DEFAULT_SAFETY_RULES } from '@chatvein/agents/router'
 import { createAgenticLane, resolveTools } from '@chatvein/agents/conversation'
-import { createChatModel, resolveChatModel } from '@chatvein/agents/model'
+import { createChatModel } from '@chatvein/agents/model'
 import { createToolsFilterAgent } from '@chatvein/agents/tools-filter'
 ```
 

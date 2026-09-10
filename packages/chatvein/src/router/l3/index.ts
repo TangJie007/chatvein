@@ -128,7 +128,7 @@ export async function classifyL3(
     model: options.model,
     messages,
     temperature: options.temperature ?? 0,
-    maxTokens: options.maxTokens ?? L3_DEFAULT_MAX_TOKENS,
+    maxTokens: L3_DEFAULT_MAX_TOKENS,
     timeoutMs: options.timeoutMs ?? L3_DEFAULT_TIMEOUT_MS,
     signal: options.signal,
   })

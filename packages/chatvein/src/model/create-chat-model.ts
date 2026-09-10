@@ -15,12 +15,10 @@ export interface ChatModelConfig {
   /** OpenAI 兼容 base URL */
   baseUrl?: string
   temperature?: number
-  /** ≤0 表示不传 maxTokens（交给服务端默认） */
-  maxTokens?: number
 }
 
 export interface CreateChatModelOptions {
-  /** 开流式：才能拿到 thinking / token 增量回调 */
+  /** 关流式（**默认开启**）；开着才能拿到 thinking / token 增量回调 */
   streaming?: boolean
   callbacks?: BaseCallbackHandler[]
 }
@@ -43,10 +41,7 @@ export function createChatModel(
       ? { configuration: { baseURL: cfg.baseUrl.trim() } }
       : {}),
     temperature: cfg.temperature ?? 0.7,
-    ...(cfg.maxTokens != null && cfg.maxTokens > 0
-      ? { maxTokens: cfg.maxTokens }
-      : {}),
-    ...(options.streaming ? { streaming: true, streamUsage: true } : {}),
+    ...(options.streaming === false ? {} : { streaming: true, streamUsage: true }),
     ...(options.callbacks?.length ? { callbacks: options.callbacks } : {}),
   })
 }

@@ -91,8 +91,6 @@ export interface L3Options {
   model?: LanguageModelLike
   /** 默认 0 */
   temperature?: number
-  /** 比 L2 宽松：强模重判 + 判别理由，默认 800 */
-  maxTokens?: number
   /** 超时 ms，默认 8000（设计 §13：L1/L2/L3 = 50ms/2s/8s） */
   timeoutMs?: number
   signal?: AbortSignal
@@ -108,6 +106,7 @@ export interface L3Thresholds {
 
 export const L3_PROMPT_VERSION = 'l3-v1'
 export const L3_DEFAULT_TIMEOUT_MS = 8_000
+/** 包内输出上限（比 L2 宽松），不对外配置 */
 export const L3_DEFAULT_MAX_TOKENS = 800
 export const L3_DEFAULT_ACCEPT = 0.85
 export const L3_DEFAULT_ESCALATE = 0.6

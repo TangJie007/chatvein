@@ -21,7 +21,7 @@
 | 能力 | 位置 | 说明 |
 | --- | --- | --- |
 | **门面（唯一推荐入口）** | `src/agents.ts` `createChatveinAgents` | 一次装配「模型 + 分层路由 + 每轮工具筛选 + 会话母图」 |
-| 模型归一化 | `src/model/resolve.ts` `resolveChatModel` | 模型名 + 连接参数 → 单个实例；L2 / L3 / 工具筛选 / 母图共用 |
+| 模型构造 | `src/model/create-chat-model.ts` `createChatModel` | 模型名 + 连接参数 → 单个 `ChatOpenAI`（流式默认开）；L2 / L3 / 工具筛选 / 母图共用 |
 | 路由全链路 L0→L1→L2→L3 | `src/router/agent.ts` `createRouterAgent` | 输出 `RouterDecision`（含 `budget` / `safety` / `query` / `meta.layerPath`），已含 L3 收口与抬档降级 |
 | 工具预筛 | `src/tools-filter/agent.ts` `createToolsFilterAgent` | 弱模挑本轮工具；候选 ≤ `passthroughK` 直通；异常回退全部候选 |
 | 预算声明与校验 | `src/router/l0/budget.ts` | `deriveBudget` / `checkBudget` / `DEFAULT_BUDGET_TABLE`（`trivial→4·none`，`simple→12·readonly`，`standard→512·full`（其余∞），`complex→1024·full`（其余∞）） |
