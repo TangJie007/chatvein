@@ -1,0 +1,9 @@
+packages:
+  - 'packages/electrum/*'
+  - 'app'
+
+# pnpm 11 默认不执行依赖的构建脚本，需显式放行
+# electron 需下载运行时二进制；esbuild 需落地平台二进制
+allowBuilds:
+  electron: true
+  esbuild: true

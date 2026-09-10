@@ -1,8 +1,9 @@
 import { Module } from '@electrum/common'
+import { ChatController } from './chat.controller'
+import { ChatService } from './chat.service'
 
 @Module({
-  imports: [],
-  controllers: [],
-  providers: [],
+  controllers: [ChatController],
+  providers: [ChatService],
 })
 export class ChatModule {}

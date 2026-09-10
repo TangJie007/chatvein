@@ -1,9 +1,10 @@
-import { Module, WindowDeclaration } from '@electrum/common'
 import { join } from 'node:path'
+import { Module, WindowDeclaration } from '@electrum/common'
 import { WindowController } from './window.controller'
-import { WindowService } from './window.service'
-// import { MenuService } from './menu.service'
 
+/**
+ * 主窗口：无边框 + 自绘标题栏（渲染端 TitleBar 组件负责三个交通灯按钮）。
+ */
 @WindowDeclaration({
   name: 'main',
   options: {
@@ -11,12 +12,10 @@ import { WindowService } from './window.service'
     height: 760,
     minWidth: 880,
     minHeight: 560,
-    title: 'Electrum Admin',
+    title: 'Chatvein',
     show: false,
     frame: false,
-    titleBarStyle: 'hidden',
     backgroundColor: '#f5f7fa',
-    // webviewTag: true,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,
@@ -31,6 +30,5 @@ export class MainWindow {}
 @Module({
   declarations: [MainWindow],
   controllers: [WindowController],
-  providers: [WindowService],
 })
 export class WindowModule {}

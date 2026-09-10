@@ -1,27 +1,39 @@
-import { join } from 'node:path'
-import { app } from 'electron'
-import {
-  Inject,
-  Injectable,
-  Logger,
-  type OnAppReady,
-  type OnModuleDestroy,
-} from '@electrum/common'
+import { Injectable, Logger, type OnAppReady, type OnModuleDestroy } from '@electrum/common'
 
-/**
- * harness 宿主：把 `@chatvein/harness` 的生命周期挂到 Electrum 的模块生命周期上。
- *
- * - `onAppReady`：Electron 已 ready、窗口与 IPC 通道都注册完之后才启动 harness，
- *   避免插件在窗口就绪前就往渲染端推事件。
- * - `onModuleDestroy`：`before-quit` 时由框架调用，递归卸载全部插件——
- *   MCP 子进程、沙箱容器、SSE 连接、定时器都随各自的 `ctx.effect()` 撤销。
- *
- * 启动失败不会拖垮应用：LifecycleManager 对钩子异常只记日志。
- *
- * Agent 不在此挂载：`@chatvein/agents` 是工厂包；编排由 `conversationRuntimePlugin`
- * 内部调用 createRouter / createToolsFilter / createChatAgent。
- */
+export interface AppInfo {
+  name: string
+  version: string
+  electron: string
+  node: string
+  chrome: string
+  platform: string
+}
+
+/** 应用级服务：目前只承载问候语与运行时信息，后续可挂载真正的宿主能力。 */
 @Injectable()
 export class AppService implements OnAppReady, OnModuleDestroy {
+  private readonly logger = new Logger('AppService')
 
+  onAppReady(): void {
+    this.logger.log('application ready')
+  }
+
+  onModuleDestroy(): void {
+    this.logger.log('application shutting down')
+  }
+
+  greet(name: string): string {
+    return `Hello, ${name || 'world'}!`
+  }
+
+  info(): AppInfo {
+    return {
+      name: 'Chatvein',
+      version: '0.1.0',
+      electron: process.versions.electron ?? 'unknown',
+      node: process.versions.node,
+      chrome: process.versions.chrome ?? 'unknown',
+      platform: process.platform,
+    }
+  }
 }

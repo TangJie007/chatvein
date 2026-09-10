@@ -1,1 +1,37 @@
 @import "tailwindcss";
+
+/* 设计令牌：Tailwind v4 会自动据此生成 bg-* / text-* / border-* / shadow-* 工具类 */
+@theme {
+  --color-canvas: #f4f6fa;
+  --color-surface: #ffffff;
+  --color-surface-2: #eef1f7;
+  --color-line: #dde2ec;
+  --color-ink: #1e2430;
+  --color-ink-soft: #626c7d;
+  --color-brand: #4f7cff;
+  --color-brand-soft: #e9efff;
+  --shadow-panel: 0 12px 32px rgba(23, 33, 61, 0.12);
+}
+
+html,
+body,
+#app {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family: system-ui, -apple-system, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  color: var(--color-ink);
+  background: var(--color-canvas);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* 无边框窗口：标题栏可拖拽，按钮区域需 no-drag */
+.drag-region {
+  -webkit-app-region: drag;
+}
+
+.no-drag {
+  -webkit-app-region: no-drag;
+}

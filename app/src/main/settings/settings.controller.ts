@@ -1,12 +1,24 @@
-import { Controller, IpcHandle, Inject, NotFoundException } from '@electrum/common'
+import { Controller, Inject, IpcHandle } from '@electrum/common'
+import { SettingsService, type AppSettings, type SettingsPatch } from './settings.service'
 
-/**
- * 设置域 IPC 入口：统一承载「模型选型 / Agent 角色 / 应用设置」三块，
- * 因为它们本质上都是 settings 的一部分。
- * `settings:*`，仅做参数透传与异常包装，
- * 逻辑全部在 SettingsService。
- */
+/** 设置域 IPC：`settings:*`。 */
 @Controller('settings')
 export class SettingsController {
+  @Inject(SettingsService)
+  settingsService!: SettingsService
 
+  @IpcHandle('get')
+  get(): AppSettings {
+    return this.settingsService.get()
+  }
+
+  @IpcHandle('set')
+  set(patch: SettingsPatch): AppSettings {
+    return this.settingsService.set(patch)
+  }
+
+  @IpcHandle('reset')
+  reset(): AppSettings {
+    return this.settingsService.reset()
+  }
 }
