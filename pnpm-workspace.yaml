@@ -6,6 +6,6 @@ packages:
 # pnpm 11 默认不执行依赖的构建脚本，需显式放行
 # electron 需下载运行时二进制；esbuild 需落地平台二进制
 allowBuilds:
-  better-sqlite3: set this to true or false
+  better-sqlite3: true
   electron: true
   esbuild: true

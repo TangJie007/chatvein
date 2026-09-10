@@ -20,8 +20,8 @@
 
 | 能力 | 位置 | 说明 |
 | --- | --- | --- |
-| **门面（唯一推荐入口）** | `src/agents.ts` `createChatveinAgents` | 一次装配「模型档位 + 分层路由 + 每轮工具筛选 + 会话母图」 |
-| 模型档位派生 | `src/model/bundle.ts` `resolveModelBundle` | 一份配置 → `main / fast / strong / filter`；传模型实例则四档共用 |
+| **门面（唯一推荐入口）** | `src/agents.ts` `createChatveinAgents` | 一次装配「模型 + 分层路由 + 每轮工具筛选 + 会话母图」 |
+| 模型归一化 | `src/model/resolve.ts` `resolveChatModel` | 模型名 + 连接参数 → 单个实例；L2 / L3 / 工具筛选 / 母图共用 |
 | 路由全链路 L0→L1→L2→L3 | `src/router/agent.ts` `createRouterAgent` | 输出 `RouterDecision`（含 `budget` / `safety` / `query` / `meta.layerPath`），已含 L3 收口与抬档降级 |
 | 工具预筛 | `src/tools-filter/agent.ts` `createToolsFilterAgent` | 弱模挑本轮工具；候选 ≤ `passthroughK` 直通；异常回退全部候选 |
 | 预算声明与校验 | `src/router/l0/budget.ts` | `deriveBudget` / `checkBudget` / `DEFAULT_BUDGET_TABLE`（`trivial→4·none`，`simple→12·readonly`，`standard→512·full`（其余∞），`complex→1024·full`（其余∞）） |
@@ -365,7 +365,7 @@ Checkpointer：**宿主注入** `SqliteSaver`（或等价）+ `thread_id`；`int
 | 阶段 | 内容 | 验收 |
 | --- | --- | --- |
 | **A · 最小可跑图** | 真实 `Annotation.Root` + 纠正 `DEFAULT_ROUTE`；`routeFromRouterPlan`；`entryNode`；`direct`（`reply_only` / `one_shot` 按 §6）；`finalize`（复用 `extractFinalAssistantText`）；`createConversationGraph` 编译 + **invoke**（stream 可暂缓） | ✅ 「闭包是什么」→ `direct·general` 出 `finalText`；无 router 时默认 `direct·general·trivial`；预填 `routeReady` 路径可用 |
-| **A+ · 门面内置** | `createChatveinAgents` 一次装配；模型档位派生（`main/fast/strong/filter`）；内置路由 + 每轮工具筛选；主入口收敛 | ✅ 只给 `model` 即可跑通；`router: false` / `toolsFilter: false` 可关闭 |
+| **A+ · 门面内置** | `createChatveinAgents` 一次装配；单模型贯穿（L2 / L3 / 工具筛选 / 母图）；内置路由 + 每轮工具筛选；主入口收敛 | ✅ 只给 `model` 即可跑通；`router: false` / `toolsFilter: false` 可关闭 |
 | **B · agentic + runtime 薄切** | `createAgenticLane` + `react_chat` + `coder_task`；`recursionLimit`/`checkBudget`；工具二次过滤；**`runTurn` 改为母图 invoke**（去掉临时 `pickExecutor` chat/coder 双轨）；可选挂上 `stream` | 🟡 `agentic·general` 已接线（`createChatAgent`）；`coder_task`（`createDeepAgent`）**未接线**，降级为 general worker 并标注；runtime 侧接入待做 |
 | **C · orchestrated 档** | `clarify / plan / hitl_plan / execute / update_plan / repair(≤3) / verify / deliver`；子图复用；HITL 规则见 §8 | 「重构 utils…」→ plan→coder×N→verify；`risk:high` / `review` 可 resume |
 | **D · 契约打磨** | prompts 内化补全；设计 §7 黄金集全绿；streaming / hooks 与 thinking panel 联调 | L3 抬档结果被母图正确消费；预算耗尽路径有单测 |

@@ -3,12 +3,14 @@
  *
  * Chatvein agent 工厂包（纯 Node）：会话母图 / 分层路由 / 工具预筛。
  *
- * **推荐用法**：只用 `createChatveinAgents` —— 模型档位、分层路由、每轮工具筛选、
+ * **推荐用法**：只用 `createChatveinAgents` —— 模型、分层路由、每轮工具筛选、
  * 预算表、persona 全部内置，调用方只给「模型 + 工具（可选）+ checkpointer（可选）」。
  *
  * ```ts
  * const agents = createChatveinAgents({
- *   model: { model: 'deepseek-chat', apiKey, baseUrl },
+ *   model: 'deepseek-chat',
+ *   apiKey,
+ *   baseUrl,
  *   tools,
  * })
  * const { finalText, route } = await agents.invoke({ input: '惠阳天气', thread_id: 't1' })
@@ -35,12 +37,10 @@ export {
 // ---------------------------------------------------------------------------
 export {
   createChatModel,
-  resolveModelBundle,
+  resolveChatModel,
   type ChatModelConfig,
-  type ChatveinModelConfig,
+  type ChatModelConnection,
   type CreateChatModelOptions,
-  type ModelBundle,
-  type ModelTier,
 } from './model'
 
 // ---------------------------------------------------------------------------

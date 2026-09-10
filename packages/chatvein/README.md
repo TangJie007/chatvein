@@ -2,13 +2,15 @@
 
 Chatvein 的 agent 工厂包（纯 Node）：**会话母图 + 分层路由 + 工具预筛**。
 
-路由、预算、persona、模型档位、每轮工具筛选全部内置 —— 调用方只需要给「模型 + 工具（可选）」。
+路由、预算、persona、每轮工具筛选全部内置 —— 调用方只需要给「模型 + 工具（可选）」。
 
 ```ts
 import { createChatveinAgents } from '@chatvein/agents'
 
 const agents = createChatveinAgents({
-  model: { model: 'deepseek-chat', apiKey, baseUrl },
+  model: 'deepseek-chat',
+  apiKey,
+  baseUrl,
   tools,
 })
 
@@ -33,14 +35,11 @@ pnpm add @chatvein/agents
 import { createChatveinAgents } from '@chatvein/agents'
 
 const agents = createChatveinAgents({
-  // 1) 模型：一份配置即可，包内派生 main / fast / strong 三档
-  model: {
-    model: 'deepseek-chat',
-    apiKey: process.env.OPENAI_KEY,
-    baseUrl: 'https://api.deepseek.com/v1',
-    fast: 'deepseek-lite',      // 可选：路由 L2 + 工具筛选用的弱模
-  },
-  // 2) 工具：候选全集，包内按 domain / 权限档 / 弱模逐层收窄
+  // 1) 模型：只需一个模型名 + 连接参数，路由与执行复用同一实例
+  model: 'deepseek-chat',
+  apiKey: process.env.OPENAI_KEY,
+  baseUrl: 'https://api.deepseek.com/v1',
+  // 2) 工具：候选全集，包内按 domain / 权限档 / 模型逐层收窄
   tools: [weatherTool, readFileTool],
 })
 
@@ -87,45 +86,39 @@ entry（定路由）→ direct | agentic | orchestrated（执行）→ finalize�
 
 ## 配置模型
 
-### 一份配置派生三档
+### 一个模型
+
+只需模型名 + 连接参数。路由 L2 / L3、每轮工具筛选、母图与 worker **共用同一个实例**，
+调用方不需要也无法分别指定模型：
 
 ```ts
 createChatveinAgents({
-  model: {
-    model: 'gpt-4o',          // main：母图与 worker 主执行
-    fast: 'gpt-4o-mini',      // fast：路由 L2 + 每轮工具筛选
-    strong: 'gpt-4o',         // strong：路由 L3 升级（省略则复用 fast）
-    apiKey, baseUrl,
-    temperature: 0.7,
-    maxTokens: 4096,
-    options: { streaming: true, callbacks: [handler] },  // 三档共用
-  },
+  model: 'gpt-4o',
+  apiKey, baseUrl,
+  temperature: 0.7,
+  // maxTokens: 4096,   // 可选
 })
 ```
 
-`fast` / `strong` 也支持完整配置对象（不只是模型名）：
-
-```ts
-model: { model: 'gpt-4o', fast: { model: 'qwen-lite', baseUrl: 'http://localhost:11434/v1' } }
-```
+> 「弱模 / 强模」只是路由内部的执行策略说法，不体现在对外配置上。
 
 ### 本地单模型 / 已有模型实例
 
-直接传实例，四档共用，不再派生：
+任何 `LanguageModelLike`（含 `@langchain/community` 的本地模型）都可直接传入：
 
 ```ts
-// 任何 LanguageModelLike（含 @langchain/community 的本地模型）都可直接传入
 import { ChatOllama } from '@langchain/community/chat_models/ollama'
 
 createChatveinAgents({ model: new ChatOllama({ model: 'qwen2.5' }) })
 ```
 
-也可以自己构造：
+需要 `streaming` / `callbacks` 等建模选项时，自己构造实例再传入：
 
 ```ts
 import { createChatModel } from '@chatvein/agents'
 
 const model = createChatModel({ model: 'deepseek-chat', apiKey }, { streaming: true })
+createChatveinAgents({ model })
 ```
 
 ---
@@ -157,7 +150,7 @@ createChatveinAgents({
 ```ts
 import { createToolsFilterAgent } from '@chatvein/agents'
 
-const filter = createToolsFilterAgent({ model: fastModel })
+const filter = createToolsFilterAgent({ model })
 const { tools, toolIds, via, reason } = await filter.filter({ message: '查天气', tools })
 ```
 
@@ -294,7 +287,7 @@ const result = await graph.invoke({ input: '你好', thread_id: 't1' })
 ```ts
 import { runL0, DEFAULT_SAFETY_RULES } from '@chatvein/agents/router'
 import { createAgenticLane, resolveTools } from '@chatvein/agents/conversation'
-import { createChatModel, resolveModelBundle } from '@chatvein/agents/model'
+import { createChatModel, resolveChatModel } from '@chatvein/agents/model'
 import { createToolsFilterAgent } from '@chatvein/agents/tools-filter'
 ```
 

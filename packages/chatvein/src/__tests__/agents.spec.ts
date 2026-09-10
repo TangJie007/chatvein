@@ -8,7 +8,7 @@ import { DynamicStructuredTool } from '@langchain/core/tools'
 import { describe, expect, it } from 'vitest'
 import { z } from 'zod'
 import { createChatveinAgents } from '../agents'
-import { resolveModelBundle } from '../model'
+import { resolveChatModel } from '../model'
 import { ScriptedChatModel } from './scripted-model'
 
 function weatherTool(onCall?: (city: string) => void) {
@@ -23,32 +23,23 @@ function weatherTool(onCall?: (city: string) => void) {
   })
 }
 
-describe('resolveModelBundle', () => {
-  it('传模型实例 → 四档共用', () => {
+describe('resolveChatModel', () => {
+  it('传模型实例 → 原样返回，不再派生档位', () => {
     const model = new ScriptedChatModel([new AIMessage('x')])
-    const bundle = resolveModelBundle(model)
-    expect(bundle.main).toBe(model)
-    expect(bundle.fast).toBe(model)
-    expect(bundle.strong).toBe(model)
-    expect(bundle.filter).toBe(model)
+    expect(resolveChatModel(model)).toBe(model)
   })
 
-  it('传配置 → fast / strong 缺省继承主配置，可单独覆盖', () => {
-    const bundle = resolveModelBundle({
-      model: 'main-model',
+  it('传模型名 + 连接参数 → 建出可用实例', () => {
+    const model = resolveChatModel('gpt-4o', {
       apiKey: 'k',
       baseUrl: 'https://example.invalid/v1',
-      fast: 'fast-model',
+      temperature: 0.3,
     })
-    expect(bundle.main).not.toBe(bundle.fast)
-    expect(bundle.strong).toBe(bundle.fast)
-    expect(bundle.filter).toBe(bundle.fast)
-    expect((bundle.fast as { model?: string }).model).toBe('fast-model')
-    expect((bundle.main as { model?: string }).model).toBe('main-model')
+    expect(typeof (model as { invoke?: unknown }).invoke).toBe('function')
   })
 
-  it('缺 model 时明确报错', () => {
-    expect(() => resolveModelBundle({} as never)).toThrow(/model is required/)
+  it('模型名为空时明确报错', () => {
+    expect(() => resolveChatModel('')).toThrow(/model is required/)
   })
 })
 
@@ -57,6 +48,17 @@ describe('createChatveinAgents', () => {
     expect(() => createChatveinAgents(undefined as never)).toThrow(
       /options\.model is required/,
     )
+  })
+
+  it('扁平模型配置：模型名 + 连接参数即可装配', () => {
+    const agents = createChatveinAgents({
+      model: 'gpt-4o',
+      apiKey: 'k',
+      baseUrl: 'https://example.invalid/v1',
+      temperature: 0.3,
+    })
+
+    expect(agents.router).toBeDefined()
   })
 
   it('最小配置：只给模型即可跑通 direct 链路', async () => {

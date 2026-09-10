@@ -3,9 +3,4 @@ export {
   type ChatModelConfig,
   type CreateChatModelOptions,
 } from './create-chat-model'
-export {
-  resolveModelBundle,
-  type ChatveinModelConfig,
-  type ModelBundle,
-  type ModelTier,
-} from './bundle'
+export { resolveChatModel, type ChatModelConnection } from './resolve'

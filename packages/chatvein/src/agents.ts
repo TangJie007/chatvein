@@ -2,9 +2,9 @@
  * `createChatveinAgents` —— 本包**唯一推荐入口**。
  *
  * 内置的东西（调用方无需再装配）：
- * - 模型档位：一份配置派生 main / fast（路由 L2 + 工具筛选）/ strong（路由 L3 升级）
+ * - 模型：一个模型贯穿母图 / L2 / L3 / 工具筛选（不再分档）
  * - 分层路由 L0→L1→L2→L3（含安全护栏、LRU 缓存、阈值、超时）
- * - 每轮工具筛选（弱模挑选本轮工具，≤`passthroughK` 个候选时不调模型）
+ * - 每轮工具筛选（模型挑选本轮工具，≤`passthroughK` 个候选时不调模型）
  * - 预算表 / persona / lane 默认提示 / 递归上限
  *
  * 调用方只需给「模型 + 工具（可选）+ checkpointer（可选）」。
@@ -33,16 +33,17 @@ import type {
   Domain,
   Lane,
 } from './conversation/types'
-import { resolveModelBundle, type ChatveinModelConfig } from './model'
+import { resolveChatModel, type ChatModelConfig } from './model'
 
 /** 门面选项：除 `model` 外全部可省 */
-export interface ChatveinAgentsOptions {
+export interface ChatveinAgentsOptions extends Omit<ChatModelConfig, 'model'> {
   /**
-   * 模型。传配置对象则按档位派生；传已建好的模型实例则四档共用。
-   * 本地单模型（Ollama / LM Studio）直接传实例即可。
+   * 模型：模型名（`gpt-4o` / `deepseek-chat`），连接信息用同级的
+   * `apiKey` / `baseUrl` / `temperature` / `maxTokens`；
+   * 也可直接传已建好的模型实例（本地 Ollama / LM Studio / 测试）。
    */
-  model: ChatveinModelConfig | LanguageModelLike
-  /** 候选工具全集；包内按 domain + toolsPolicy + 弱模筛选逐层收窄 */
+  model: string | LanguageModelLike
+  /** 候选工具全集；包内按 domain + toolsPolicy + 模型筛选逐层收窄 */
   tools?: StructuredToolInterface[]
   /** 按领域预切好的工具表（优先于对 tools 的二次过滤） */
   toolsByDomain?: ToolsByDomain
@@ -70,7 +71,7 @@ export interface ChatveinAgentsOptions {
    * - `false`：关闭，候选工具全集直接进 lane
    */
   toolsFilter?: false | Omit<CreateToolsFilterAgentOptions, 'model'>
-  /** 工具筛选结果缓存条数（同文本不重复调弱模） */
+  /** 工具筛选结果缓存条数（同文本不重复调模型） */
   toolsFilterCacheMax?: number
 }
 
@@ -106,7 +107,12 @@ export function createChatveinAgents(
   if (!options?.model) {
     throw new Error('createChatveinAgents: options.model is required')
   }
-  const models = resolveModelBundle(options.model)
+  const model = resolveChatModel(options.model, {
+    apiKey: options.apiKey,
+    baseUrl: options.baseUrl,
+    temperature: options.temperature,
+    maxTokens: options.maxTokens,
+  })
   const tools = options.tools ?? []
   const hooks = options.hooks
 
@@ -114,8 +120,8 @@ export function createChatveinAgents(
     options.router === false
       ? undefined
       : createRouterAgent({
-          fastModel: models.fast,
-          strongModel: models.strong,
+          fastModel: model,
+          strongModel: model,
           ...(options.router ?? {}),
         })
 
@@ -123,7 +129,7 @@ export function createChatveinAgents(
     options.toolsFilter === false || tools.length === 0
       ? undefined
       : createToolsFilterAgent({
-          model: models.filter,
+          model,
           ...(options.toolsFilter ?? {}),
         })
 
@@ -149,7 +155,7 @@ export function createChatveinAgents(
     : undefined
 
   const conversation = createConversationGraph({
-    model: models.main,
+    model,
     ...(tools.length ? { tools } : {}),
     ...(options.toolsByDomain ? { toolsByDomain: options.toolsByDomain } : {}),
     ...(toolsResolver ? { toolsResolver } : {}),
