@@ -7,6 +7,7 @@
   "scripts": {
     "dev": "electron-vite dev --watch",
     "build": "electron-vite build",
+    "start": "electron .",
     "preview": "electron-vite preview",
     "codegen": "node node_modules/@electrum/codegen/dist/cli.js --tsconfig tsconfig.json --output src/renderer/api/ipc-api.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.web.json"

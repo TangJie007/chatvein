@@ -1,5 +1,6 @@
 packages:
   - 'packages/electrum/*'
+  - 'packages/chatvein'
   - 'app'
 
 # pnpm 11 默认不执行依赖的构建脚本，需显式放行

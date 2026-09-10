@@ -9,10 +9,11 @@
   },
   "scripts": {
     "dev": "pnpm --filter @electrum/chatvein dev",
+    "start": "pnpm --filter @electrum/chatvein start",
     "build": "pnpm run build:packages && pnpm --filter @electrum/chatvein build",
-    "build:packages": "pnpm -r --filter \"./packages/electrum/*\" build",
+    "build:packages": "pnpm -r --filter \"./packages/electrum/*\" --filter \"./packages/chatvein\" build",
     "codegen": "pnpm --filter @electrum/codegen build && pnpm --filter @electrum/chatvein codegen",
-    "typecheck": "pnpm --filter @electrum/chatvein typecheck",
-    "test": "pnpm -r --filter \"./packages/electrum/*\" test"
+    "typecheck": "pnpm --filter @electrum/chatvein typecheck && pnpm --filter @chatvein/agents typecheck",
+    "test": "pnpm -r --filter \"./packages/electrum/*\" --filter \"./packages/chatvein\" test"
   }
 }
