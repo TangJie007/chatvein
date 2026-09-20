@@ -17,7 +17,7 @@ pub fn run() {
             backend::spawn_backend(app.handle());
             // 2) Wait for it to accept connections, then notify the UI.
             let ready =
-                backend::wait_for_backend(backend::BACKEND_PORT, std::time::Duration::from_secs(20));
+                backend::wait_for_backend(backend::backend_port(), std::time::Duration::from_secs(20));
             if ready {
                 let _ = app.emit("backend-ready", true);
             } else {

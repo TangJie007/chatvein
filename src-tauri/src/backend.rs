@@ -3,12 +3,38 @@ use std::process::{Child, Command, Stdio};
 use std::sync::{Mutex, OnceLock};
 use tauri::{AppHandle, Emitter, Manager};
 
-/// Port the Python backend listens on (loopback only).
-pub const BACKEND_PORT: u16 = 18793;
+/// Chosen backend port, resolved once and reused by the spawner, the readiness
+/// probe and the proxy commands so they always agree.
+///
+/// - Dev builds (`tauri dev`, debug): a fixed, predictable port `8420`.
+/// - Release builds (`tauri build`): a dynamically picked free port >= `3000`.
+static BACKEND_PORT: OnceLock<u16> = OnceLock::new();
+
+/// Resolve the backend port. Computed lazily on first use and cached.
+pub fn backend_port() -> u16 {
+    *BACKEND_PORT.get_or_init(|| {
+        if cfg!(debug_assertions) {
+            8420
+        } else {
+            find_free_port(3000)
+        }
+    })
+}
 
 /// Base URL of the embedded Python backend.
 pub fn backend_base_url() -> String {
-    format!("http://127.0.0.1:{}", BACKEND_PORT)
+    format!("http://127.0.0.1:{}", backend_port())
+}
+
+/// Find an available TCP port >= `start` on the loopback interface.
+/// The listener is dropped immediately so the port is free for the backend.
+fn find_free_port(start: u16) -> u16 {
+    for port in start..=65535 {
+        if std::net::TcpListener::bind(("127.0.0.1", port)).is_ok() {
+            return port;
+        }
+    }
+    8420 // extremely unlikely fallback
 }
 
 /// Global handle to the spawned Python process so we can terminate it on exit.
@@ -51,12 +77,13 @@ pub fn spawn_backend(app: &AppHandle) {
         }
     };
 
+    let port = backend_port();
     let mut child = match Command::new(&python)
         .arg(&main_py)
         .arg("--port")
-        .arg(BACKEND_PORT.to_string())
+        .arg(port.to_string())
         .current_dir(&backend_dir)
-        .env("CHATVEIN_PORT", BACKEND_PORT.to_string())
+        .env("CHATVEIN_PORT", port.to_string())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()

@@ -64,7 +64,7 @@ def main() -> None:
     parser.add_argument(
         "--port",
         type=int,
-        default=int(os.environ.get("CHATVEIN_PORT", "18793")),
+        default=int(os.environ.get("CHATVEIN_PORT", "8420")),
     )
     args = parser.parse_args()
 

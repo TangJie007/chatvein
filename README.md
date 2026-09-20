@@ -62,6 +62,15 @@ npm run tauri icon src-tauri/icons/icon-source.png   # 见下方说明
 npm run tauri dev
 ```
 
+## 后端端口策略
+
+端口完全由 Rust 消息层内部管理（前端经 `backend_request` 命令代理，不直接连端口）：
+
+- **开发阶段（`tauri dev`，debug 构建）**：固定使用 `8420`，方便本地调试与抓包。
+- **生产打包（`tauri build`，release 构建）**：启动时自动探测一个 `3000+` 的空闲端口，避免与宿主机已有服务冲突。
+
+端口在进程内只解析一次并缓存，Rust 的启动、就绪探测与代理命令共用同一端口，无需手动配置。
+
 ## 自定义后端接口
 
 在 `backend/main.py` 中新增 FastAPI 路由，然后在前端通过：
