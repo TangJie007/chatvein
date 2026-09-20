@@ -173,6 +173,15 @@ def init_db() -> Path:
     return path
 
 
+def _scalar(session: Session, statement: str, default: object = "") -> object:
+    """查一个标量，异常时回落到 ``default``（缺表 / 扩展未加载时用得上）。"""
+    try:
+        value = session.scalar(text(statement))
+    except Exception:  # noqa: BLE001 — 诊断字段不允许把整个请求打挂
+        return default
+    return value if value is not None else default
+
+
 def _vec_version(session: Session) -> str | None:
     """sqlite-vec 版本号；扩展不可用时返回 None。"""
     if not vec_available():
@@ -199,4 +208,73 @@ def stats() -> dict[str, object]:
             "version": vec_version,
             "error": _vec_error,
         },
+    }
+
+
+def info() -> dict[str, object]:
+    """设置页用的数据库概况：连接层 + 业务表行数 + 文件占用 + 引擎信息。"""
+    path = resolve_db_path()
+    payload = stats()
+    with session_scope() as session:
+        conversations = int(_scalar(session, "SELECT count(*) FROM conversations", 0))  # pyright: ignore[reportArgumentType]
+        messages = int(_scalar(session, "SELECT count(*) FROM messages", 0))  # pyright: ignore[reportArgumentType]
+        journal_mode = str(_scalar(session, "PRAGMA journal_mode", ""))
+        sqlite_version = str(_scalar(session, "SELECT sqlite_version()", ""))
+        page_size = int(_scalar(session, "PRAGMA page_size", 0))  # pyright: ignore[reportArgumentType]
+        page_count = int(_scalar(session, "PRAGMA page_count", 0))  # pyright: ignore[reportArgumentType]
+        free_pages = int(_scalar(session, "PRAGMA freelist_count", 0))  # pyright: ignore[reportArgumentType]
+    size_bytes = path.stat().st_size if path.exists() else 0
+    payload.update(
+        {
+            "conversations": conversations,
+            "messages": messages,
+            "journal_mode": journal_mode.lower(),
+            "sqlite_version": sqlite_version,
+            "size_bytes": size_bytes,
+            # WAL 下主库里尚未 checkpoint 的页不计入文件大小，这里给出逻辑容量
+            "logical_bytes": page_size * page_count,
+            "page_count": page_count,
+            "free_pages": free_pages,
+        }
+    )
+    return payload
+
+
+def vacuum() -> dict[str, object]:
+    """重建数据库文件并回收空闲页（VACUUM 不能在事务里执行）。"""
+    raw = get_engine().raw_connection()
+    try:
+        driver = raw.connection
+        previous = driver.isolation_level
+        driver.isolation_level = None
+        try:
+            driver.execute("VACUUM")
+        finally:
+            driver.isolation_level = previous
+    finally:
+        raw.close()
+    return info()
+
+
+def backup() -> dict[str, object]:
+    """把当前库（含 WAL）复制成同目录的 ``<name>.bak-<时间戳>``。"""
+    path = resolve_db_path()
+    if not path.exists():
+        raise FileNotFoundError(f"数据库文件不存在：{path}")
+    stamp = utc_now().strftime("%Y%m%d-%H%M%S")
+    target = path.with_name(f"{path.stem}.bak-{stamp}{path.suffix}")
+    # WAL 模式：用 SQLite 的 backup API 才能拿到包含未 checkpoint 页的一致快照
+    source = sqlite3.connect(path)
+    try:
+        destination = sqlite3.connect(target)
+        try:
+            source.backup(destination)
+        finally:
+            destination.close()
+    finally:
+        source.close()
+    return {
+        "path": str(path),
+        "backup_path": str(target),
+        "size_bytes": target.stat().st_size,
     }

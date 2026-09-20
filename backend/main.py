@@ -11,7 +11,7 @@ from contextlib import asynccontextmanager
 from typing import cast
 
 import uvicorn
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 import db  # pyright: ignore[reportImplicitRelativeImport]
@@ -64,6 +64,27 @@ def health():
         "python": sys.version.split()[0],
         "db": db.stats(),
     }
+
+
+@app.get("/api/db/info", tags=["db"], summary="数据库概况")
+def db_info():
+    """设置页「SQLite」分区的数据源：路径 / schema / 行数 / 占用。"""
+    return db.info()
+
+
+@app.post("/api/db/vacuum", tags=["db"], summary="整理数据库")
+def db_vacuum():
+    """VACUUM：重建文件并回收空闲页，返回整理后的概况。"""
+    return db.vacuum()
+
+
+@app.post("/api/db/backup", tags=["db"], summary="备份数据库")
+def db_backup():
+    """复制出一份一致快照（含 WAL 中未 checkpoint 的页）。"""
+    try:
+        return db.backup()
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 def main() -> None:

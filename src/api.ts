@@ -95,17 +95,43 @@ export interface ConversationRecord {
   last_message: string | null;
 }
 
+export interface DbVectorInfo {
+  loaded: boolean;
+  version: string | null;
+  error: string | null;
+}
+
 export interface DbInfo {
   path: string;
   exists: boolean;
   schema_version: number;
   conversations: number;
   messages: number;
+  journal_mode: string;
+  sqlite_version: string;
+  size_bytes: number;
+  logical_bytes: number;
+  page_count: number;
+  free_pages: number;
+  vector_extension: DbVectorInfo;
 }
 
 /** Database file location, schema version and row counts. */
 export function dbInfo() {
   return backendRequest<DbInfo>("/api/db/info");
+}
+
+/** VACUUM the database and return the refreshed stats. */
+export function dbVacuum() {
+  return backendRequest<DbInfo>("/api/db/vacuum", "POST");
+}
+
+/** Copy the database (including WAL) to a timestamped sibling file. */
+export function dbBackup() {
+  return backendRequest<{ path: string; backup_path: string; size_bytes: number }>(
+    "/api/db/backup",
+    "POST"
+  );
 }
 
 /** Conversations, newest activity first. */

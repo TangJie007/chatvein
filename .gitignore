@@ -8,7 +8,7 @@ src-tauri/target/
 # Python
 __pycache__/
 *.pyc
-.venv/
+.venv*/
 python-runtime/
 
 # Local SQLite data (when the backend runs outside Tauri, e.g. `python backend/main.py`)

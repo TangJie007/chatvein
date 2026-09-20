@@ -184,7 +184,9 @@ CREATE VIRTUAL TABLE message_vec USING vec0(embedding float[384]);
 | `GET` | `/api/conversations/{id}/messages` | 仅消息列表 |
 | `DELETE` | `/api/conversations/{id}` | 删除会话（消息级联删除） |
 | `DELETE` | `/api/conversations` | 清空全部历史 |
-| `GET` | `/api/db/info` | 数据库文件路径、schema 版本、行数统计（`/api/health` 也内嵌了该字段） |
+| `GET` | `/api/db/info` | 数据库文件路径、schema 版本、行数统计、占用与向量扩展状态（`/api/health` 也内嵌了连接层字段） |
+| `POST` | `/api/db/vacuum` | 整理数据库（VACUUM）：重建文件、回收空闲页，返回整理后的概况 |
+| `POST` | `/api/db/backup` | 复制出一份一致快照（含 WAL 中未 checkpoint 的页）到 `<库名>.bak-<时间戳>.db` |
 
 `POST /api/chat` 的 `conversation_id` 省略（或传入已失效的 id）时会自动新建会话，
 标题取首条用户消息前 30 字，无需前端额外调用建会话接口。
