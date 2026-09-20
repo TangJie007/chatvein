@@ -1,21 +1,25 @@
-"""ChatVein 的 SQLite 持久化层。
+"""ChatVein 的 SQLite 持久化层（SQLModel / SQLAlchemy ORM）。
 
 设计原则：
-- **零新增依赖**：只用标准库 ``sqlite3``（打包用的 standalone Python 自带），
-  不需要 ORM / 驱动，`requirements.txt` 保持不变。
-- **位置由消息层决定**：数据库目录由 Rust 通过 ``CHATVEIN_DATA_DIR`` 注入
-  （打包后指向系统用户数据目录，避免写入只读的 resources 目录）；
-  也可用 ``CHATVEIN_DB_PATH`` 直接指定文件；两者都缺失时回落到 ``backend/data/``，
-  方便脱离 Tauri 直接跑后端调试。
-- **并发安全**：每次调用新建连接（桌面场景开销可忽略），开启 WAL 让读不阻塞写，
-  并设置 ``busy_timeout`` 兜住瞬时写冲突。
-- **可演进**：使用 ``PRAGMA user_version`` 记录 schema 版本，后续加表/改表在
-  ``_migrate`` 中增量追加即可。
+- **ORM 优先**：表结构用 SQLModel 声明（一个类 = 一张表），查询走 SQLAlchemy 2.0 的
+  `select()`，不手写 SQL 字符串。SQLModel 由 SQLAlchemy + Pydantic 驱动，和项目已有的
+  pydantic / FastAPI 生态同源；后续加字段、加关联、加迁移都只需改模型。
+- **位置由消息层决定**：数据库目录由 Rust 通过 ``CHATVEIN_DATA_DIR`` 注入（打包后指向
+  用户数据目录，避免写入只读的 resources 目录）；也可用 ``CHATVEIN_DB_PATH`` 直接指定
+  文件；两者都缺失时回落到 ``backend/data/``，方便脱离 Tauri 直接调试后端。
+- **时间统一 naive UTC**：SQLite 的 DATETIME 不保存时区，因此库内一律存 naive UTC，
+  对外输出时补回 ``+00:00``（前端不用做任何区分）。
+- **并发安全**：连接级 PRAGMA（外键 / busy_timeout）+ WAL 日志模式，读写不互相阻塞。
+- **可演进**：``PRAGMA user_version`` 记录 schema 版本，改表时在 ``_migrate`` 里追加分支，
+  缺表由 ``SQLModel.metadata.create_all`` 自动补齐。
 """
-# sqlite3.Row 的取值是 Any，本模块通过显式 cast 收窄，故放宽该条规则。
-# pyright: reportAny=false
-
-from __future__ import annotations
+# SQLModel/SQLAlchemy 的泛型在编译期无法完全具体化，Session/Row 会带出 Unknown；
+# 这里只在本文件放宽这几条基于第三方宽松类型的规则，不影响项目其它文件。
+#
+# 注意：**不要**在本文件加 `from __future__ import annotations`。PEP 563 会把
+# `list["Message"]` 变成字符串 `"list['Message']"` 传给 SQLAlchemy 的 relationship()，
+# 导致 mapper 初始化失败（InvalidRequestError: using a generic class as the argument）。
+# pyright: reportAny=false, reportUnknownMemberType=false, reportUnknownVariableType=false, reportUnknownArgumentType=false, reportImplicitRelativeImport=false
 
 import os
 import sqlite3
@@ -24,20 +28,73 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Literal, TypedDict, cast
+from typing import Literal, TypedDict
 
-# 角色限定为这三种，DB 层用 CHECK 约束兜底。
+from sqlalchemy import CheckConstraint, Connection, Engine, create_engine, delete, event, func, text
+from sqlmodel import Field, Relationship, Session, SQLModel, select
+
+# 角色限定为这三种，同时用 CHECK 约束在数据库层兜底。
 Role = Literal["user", "assistant", "system"]
 
-SCHEMA_VERSION = 1
+# v1: 手写 sqlite3；v2: SQLModel（时间戳存储格式随之规范化）。
+SCHEMA_VERSION = 2
 DB_FILENAME = "chatvein.db"
 # 新会话自动用首条用户消息做标题，超出长度截断。
 TITLE_MAX_LEN = 30
 
 _BACKEND_DIR = Path(__file__).resolve().parent
 _db_path_cache: Path | None = None
+_engine: Engine | None = None
 
 
+# --------------------------------------------------------------------------
+# 表模型
+# --------------------------------------------------------------------------
+class Conversation(SQLModel, table=True):
+    """会话。"""
+
+    __tablename__ = "conversations"
+
+    id: str = Field(default_factory=lambda: uuid.uuid4().hex, primary_key=True, max_length=64)
+    title: str = Field(default="", max_length=200)
+    created_at: datetime = Field(default_factory=lambda: _utc_now())
+    updated_at: datetime = Field(default_factory=lambda: _utc_now())
+
+    # ORM 级联：删除会话对象时一并删除其消息。
+    messages: list["Message"] = Relationship(back_populates="conversation", cascade_delete=True)
+
+
+class Message(SQLModel, table=True):
+    """一条消息（user / assistant / system）。"""
+
+    __tablename__ = "messages"
+    __table_args__ = (
+        CheckConstraint(
+            "role IN ('user', 'assistant', 'system')",
+            name="ck_messages_role",
+        ),
+    )
+
+    id: int | None = Field(default=None, primary_key=True)
+    conversation_id: str = Field(
+        foreign_key="conversations.id",
+        # 数据库层兜底：直接删行（不经 ORM）时同样级联。
+        ondelete="CASCADE",
+        index=True,
+        max_length=64,
+    )
+    role: str = Field(max_length=16)
+    content: str = Field()
+    used_llm: bool = Field(default=False)
+    route: str | None = Field(default=None, max_length=32)
+    created_at: datetime = Field(default_factory=lambda: _utc_now())
+
+    conversation: Conversation | None = Relationship(back_populates="messages")
+
+
+# --------------------------------------------------------------------------
+# 对外记录类型（HTTP 契约，前端 src/api.ts 与此一一对应）
+# --------------------------------------------------------------------------
 class MessageRecord(TypedDict):
     """messages 表中的一行。"""
 
@@ -61,13 +118,59 @@ class ConversationRecord(TypedDict):
     last_message: str | None
 
 
-def _utc_now() -> str:
-    """统一的时间戳格式：UTC ISO-8601（秒精度），前端 Date 可直接解析。"""
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+# --------------------------------------------------------------------------
+# 时间与序列化
+# --------------------------------------------------------------------------
+def _utc_now() -> datetime:
+    """naive UTC：SQLite 不保存时区，统一按 UTC 存以避免歧义。"""
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
+def _iso(value: datetime) -> str:
+    """输出 ISO-8601（秒精度，带时区），前端 `new Date()` 可直接解析。"""
+    aware = value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value
+    return aware.astimezone(timezone.utc).isoformat(timespec="seconds")
+
+
+def _message_dict(message: Message) -> MessageRecord:
+    return MessageRecord(
+        id=int(message.id or 0),
+        conversation_id=message.conversation_id,
+        role=message.role,
+        content=message.content,
+        used_llm=message.used_llm,
+        route=message.route,
+        created_at=_iso(message.created_at),
+    )
+
+
+def _conversation_dict(
+    conversation: Conversation,
+    message_count: int = 0,
+    last_message: str | None = None,
+) -> ConversationRecord:
+    return ConversationRecord(
+        id=conversation.id,
+        title=conversation.title,
+        created_at=_iso(conversation.created_at),
+        updated_at=_iso(conversation.updated_at),
+        message_count=message_count,
+        last_message=last_message,
+    )
+
+
+def _derive_title(value: str) -> str:
+    title = " ".join(value.strip().split())
+    if len(title) > TITLE_MAX_LEN:
+        return title[:TITLE_MAX_LEN] + "…"
+    return title or "新会话"
+
+
+# --------------------------------------------------------------------------
+# 路径 / 引擎 / 会话
+# --------------------------------------------------------------------------
 def resolve_db_path() -> Path:
-    """解析数据库文件路径（结果在进程内缓存，保证全程一致）。
+    """解析数据库文件路径（进程内缓存，保证全程一致）。
 
     优先级：``CHATVEIN_DB_PATH`` > ``CHATVEIN_DATA_DIR``/chatvein.db >
     ``<backend>/data/chatvein.db``。
@@ -88,184 +191,159 @@ def resolve_db_path() -> Path:
     return path
 
 
+def _set_sqlite_pragmas(dbapi_connection: sqlite3.Connection, _record: object) -> None:
+    """SQLite 的外键默认关闭，必须逐连接开启；顺带设置写锁等待。"""
+    cursor = dbapi_connection.cursor()
+    cursor.execute("PRAGMA foreign_keys = ON")
+    cursor.execute("PRAGMA busy_timeout = 5000")
+    cursor.close()
+
+
+def get_engine() -> Engine:
+    """进程内单例引擎；路径在首次使用时才解析，便于测试改环境变量。"""
+    global _engine
+    if _engine is None:
+        path = resolve_db_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        _engine = create_engine(
+            f"sqlite:///{path.as_posix()}",
+            echo=False,
+            # FastAPI 的同步端点跑在线程池里，连接会跨线程复用。
+            connect_args={"check_same_thread": False},
+        )
+        event.listen(_engine, "connect", _set_sqlite_pragmas)
+    return _engine
+
+
 @contextmanager
-def connect(path: Path | None = None) -> Iterator[sqlite3.Connection]:
-    """打开一个连接，正常退出时提交、异常时回滚、无论如何都关闭。"""
-    target = path or resolve_db_path()
-    target.parent.mkdir(parents=True, exist_ok=True)
-
-    conn = sqlite3.connect(target, timeout=10.0)
-    conn.row_factory = sqlite3.Row
-    # 外键默认关闭，必须逐连接开启；busy_timeout 避免并发写直接抛 locked。
-    conn.execute("PRAGMA foreign_keys = ON")
-    conn.execute("PRAGMA busy_timeout = 5000")
-    try:
-        yield conn
-        conn.commit()
-    except Exception:
-        conn.rollback()
-        raise
-    finally:
-        conn.close()
+def session_scope() -> Iterator[Session]:
+    """一个事务内的 Session：正常退出提交，异常回滚，最后关闭。"""
+    with Session(get_engine()) as session:
+        try:
+            yield session
+            session.commit()
+        except Exception:
+            session.rollback()
+            raise
 
 
-_SCHEMA = """
-CREATE TABLE IF NOT EXISTS conversations (
-    id         TEXT PRIMARY KEY,
-    title      TEXT NOT NULL DEFAULT '',
-    created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL
-);
+# --------------------------------------------------------------------------
+# 初始化与迁移
+# --------------------------------------------------------------------------
+def _normalise_v1_timestamps(connection: Connection) -> None:
+    """把 v1 的时间戳（``2026-01-01T00:00:00+00:00``）规范成 ORM 读得懂的格式。
 
-CREATE TABLE IF NOT EXISTS messages (
-    id              INTEGER PRIMARY KEY AUTOINCREMENT,
-    conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
-    role            TEXT NOT NULL CHECK (role IN ('user', 'assistant', 'system')),
-    content         TEXT NOT NULL,
-    used_llm        INTEGER NOT NULL DEFAULT 0,
-    route           TEXT,
-    created_at      TEXT NOT NULL
-);
-
-CREATE INDEX IF NOT EXISTS idx_messages_conversation
-    ON messages (conversation_id, id);
-
-CREATE INDEX IF NOT EXISTS idx_conversations_updated
-    ON conversations (updated_at DESC);
-"""
+    v1 是手写 SQL 写入的，带 ``T`` 分隔符与 ``+00:00``；SQLModel 的 DateTime 列
+    期望 ``2026-01-01 00:00:00``（naive UTC）。只改含 ``T`` 的行，可重复执行。
+    """
+    targets = (("conversations", ("created_at", "updated_at")), ("messages", ("created_at",)))
+    for table, columns in targets:
+        for column in columns:
+            connection.exec_driver_sql(
+                f"UPDATE {table} SET {column} = replace(replace({column}, 'T', ' '), '+00:00', '')"  # noqa: S608
+                f" WHERE {column} LIKE '%T%'"
+            )
 
 
-def _migrate(conn: sqlite3.Connection) -> None:
-    """按 ``user_version`` 增量迁移。新增版本时在此追加分支即可。"""
-    row = conn.execute("PRAGMA user_version").fetchone()
-    current = 0 if row is None else cast(int, row[0])
-    if current >= SCHEMA_VERSION:
-        return
+def _migrate(connection: Connection) -> None:
+    """按 ``user_version`` 增量迁移；新增版本时在此追加分支即可。"""
+    current = int(connection.exec_driver_sql("PRAGMA user_version").scalar_one())
 
-    if current < 1:
-        conn.executescript(_SCHEMA)
+    if current == 1:
+        _normalise_v1_timestamps(connection)
 
-    conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
+    # 幂等：新建库时建表，老库缺表时补齐。
+    SQLModel.metadata.create_all(connection)
+
+    if current != SCHEMA_VERSION:
+        connection.exec_driver_sql(f"PRAGMA user_version = {SCHEMA_VERSION}")
 
 
 def init_db() -> Path:
-    """建库建表并返回数据库文件路径，应在服务启动时调用一次。"""
+    """建库/建表/迁移，返回数据库文件路径。应在服务启动时调用一次。"""
     path = resolve_db_path()
-    with connect(path) as conn:
-        # WAL 是数据库级持久设置，只需设置一次；读写并发更好。
-        conn.execute("PRAGMA journal_mode = WAL")
-        _migrate(conn)
+    engine = get_engine()
+
+    # WAL 是数据库级持久设置，且必须在事务外执行，因此单独用一个连接设置一次。
+    with engine.connect() as connection:
+        connection.exec_driver_sql("PRAGMA journal_mode = WAL")
+
+    with engine.begin() as connection:
+        _migrate(connection)
+
     return path
-
-
-# --------------------------------------------------------------------------
-# 行 -> 记录
-# --------------------------------------------------------------------------
-def _row_message(row: sqlite3.Row) -> MessageRecord:
-    return MessageRecord(
-        id=cast(int, row["id"]),
-        conversation_id=cast(str, row["conversation_id"]),
-        role=cast(str, row["role"]),
-        content=cast(str, row["content"]),
-        used_llm=bool(cast(int, row["used_llm"])),
-        route=cast("str | None", row["route"]),
-        created_at=cast(str, row["created_at"]),
-    )
-
-
-def _row_conversation(row: sqlite3.Row) -> ConversationRecord:
-    keys = row.keys()
-    return ConversationRecord(
-        id=cast(str, row["id"]),
-        title=cast(str, row["title"]),
-        created_at=cast(str, row["created_at"]),
-        updated_at=cast(str, row["updated_at"]),
-        message_count=cast(int, row["message_count"]) if "message_count" in keys else 0,
-        last_message=cast("str | None", row["last_message"])
-        if "last_message" in keys
-        else None,
-    )
-
-
-def _derive_title(text: str) -> str:
-    title = " ".join(text.strip().split())
-    if len(title) > TITLE_MAX_LEN:
-        return title[:TITLE_MAX_LEN] + "…"
-    return title or "新会话"
 
 
 # --------------------------------------------------------------------------
 # 会话
 # --------------------------------------------------------------------------
+def _conversation_statement(limit: int | None = None):
+    """会话列表查询：附带消息数与最后一条消息，按最近活跃排序。"""
+    last_message = (
+        select(Message.content)
+        .where(Message.conversation_id == Conversation.id)
+        .order_by(Message.id.desc())
+        .limit(1)
+        # 外层已经 JOIN 了 messages，不加 correlate 会被自动关联掉 FROM 子句。
+        .correlate(Conversation)
+        .scalar_subquery()
+    )
+    statement = (
+        select(Conversation, func.count(Message.id), last_message)
+        .outerjoin(Message, Message.conversation_id == Conversation.id)
+        .group_by(Conversation.id)
+        .order_by(Conversation.updated_at.desc())
+    )
+    return statement.limit(limit) if limit is not None else statement
+
+
 def create_conversation(title: str = "") -> ConversationRecord:
     """新建会话；标题为空时先留空，等首条消息自动补上。"""
-    now = _utc_now()
-    conversation_id = uuid.uuid4().hex
-    with connect() as conn:
-        conn.execute(
-            "INSERT INTO conversations (id, title, created_at, updated_at)"
-            " VALUES (?, ?, ?, ?)",
-            (conversation_id, title.strip(), now, now),
-        )
-    return ConversationRecord(
-        id=conversation_id,
-        title=title.strip(),
-        created_at=now,
-        updated_at=now,
-        message_count=0,
-        last_message=None,
-    )
-
-
-_SELECT_PREFIX = """
-SELECT c.id,
-       c.title,
-       c.created_at,
-       c.updated_at,
-       COUNT(m.id) AS message_count,
-       (SELECT content FROM messages
-         WHERE conversation_id = c.id
-         ORDER BY id DESC LIMIT 1) AS last_message
-  FROM conversations c
-  LEFT JOIN messages m ON m.conversation_id = c.id
-"""
-_GROUP_BY = "\n GROUP BY c.id, c.title, c.created_at, c.updated_at\n"
-_LIST_SQL = _SELECT_PREFIX + _GROUP_BY + " ORDER BY c.updated_at DESC\n LIMIT ?"
-_GET_SQL = _SELECT_PREFIX + " WHERE c.id = ?" + _GROUP_BY
+    with session_scope() as session:
+        conversation = Conversation(title=title.strip())
+        session.add(conversation)
+        return _conversation_dict(conversation)
 
 
 def list_conversations(limit: int = 50) -> list[ConversationRecord]:
-    with connect() as conn:
-        rows = conn.execute(_LIST_SQL, (limit,)).fetchall()
-    return [_row_conversation(row) for row in rows]
+    with session_scope() as session:
+        rows = session.exec(_conversation_statement(limit)).all()
+        return [
+            _conversation_dict(conversation, count, last) for conversation, count, last in rows
+        ]
 
 
 def get_conversation(conversation_id: str) -> ConversationRecord | None:
-    with connect() as conn:
-        rows = conn.execute(_GET_SQL, (conversation_id,)).fetchall()
-    return _row_conversation(rows[0]) if rows else None
+    with session_scope() as session:
+        rows = session.exec(
+            _conversation_statement().where(Conversation.id == conversation_id)
+        ).all()
+        if not rows:
+            return None
+        conversation, count, last = rows[0]
+        return _conversation_dict(conversation, count, last)
 
 
 def delete_conversation(conversation_id: str) -> bool:
-    """删除会话；messages 依靠外键级联一起删除。"""
-    with connect() as conn:
-        cursor = conn.execute("DELETE FROM conversations WHERE id = ?", (conversation_id,))
-    return cursor.rowcount > 0
+    """删除会话；其消息由 ORM 级联（并叠加数据库级 CASCADE）一并删除。"""
+    with session_scope() as session:
+        conversation = session.get(Conversation, conversation_id)
+        if conversation is None:
+            return False
+        session.delete(conversation)
+    return True
 
 
 def clear_conversations() -> int:
     """清空全部会话与消息，返回删除的会话数。"""
-    with connect() as conn:
-        cursor = conn.execute("DELETE FROM conversations")
-        conn.execute("DELETE FROM sqlite_sequence WHERE name = 'messages'")
-    return cursor.rowcount
-
-
-def _touch(conn: sqlite3.Connection, conversation_id: str, now: str) -> None:
-    conn.execute(
-        "UPDATE conversations SET updated_at = ? WHERE id = ?",
-        (now, conversation_id),
-    )
+    with session_scope() as session:
+        # 先删子表再删父表：不依赖数据库是否开外键级联，语义也更直白。
+        # synchronize_session=False：Session 随后即销毁，无需回写内存对象。
+        session.execute(delete(Message).execution_options(synchronize_session=False))
+        result = session.execute(
+            delete(Conversation).execution_options(synchronize_session=False)
+        )
+        return int(result.rowcount or 0)
 
 
 # --------------------------------------------------------------------------
@@ -281,46 +359,35 @@ def add_message(
 ) -> MessageRecord:
     """追加一条消息，并刷新所属会话的 updated_at。"""
     now = _utc_now()
-    with connect() as conn:
-        cursor = conn.execute(
-            "INSERT INTO messages (conversation_id, role, content, used_llm, route, created_at)"
-            " VALUES (?, ?, ?, ?, ?, ?)",
-            (conversation_id, role, content, int(used_llm), route, now),
+    with session_scope() as session:
+        conversation = session.get(Conversation, conversation_id)
+        if conversation is None:
+            raise ValueError(f"会话不存在: {conversation_id}")
+
+        message = Message(
+            conversation_id=conversation_id,
+            role=role,
+            content=content,
+            used_llm=used_llm,
+            route=route,
+            created_at=now,
         )
-        _touch(conn, conversation_id, now)
-        message_id = cast(int, cursor.lastrowid)
-    return MessageRecord(
-        id=message_id,
-        conversation_id=conversation_id,
-        role=role,
-        content=content,
-        used_llm=used_llm,
-        route=route,
-        created_at=now,
-    )
+        session.add(message)
+        conversation.updated_at = now
+        session.flush()
+        return _message_dict(message)
 
 
 def list_messages(conversation_id: str, limit: int = 200) -> list[MessageRecord]:
     """按时间正序返回会话内的消息（最多 limit 条）。"""
-    with connect() as conn:
-        rows = conn.execute(
-            "SELECT * FROM messages WHERE conversation_id = ? ORDER BY id ASC LIMIT ?",
-            (conversation_id, limit),
-        ).fetchall()
-    return [_row_message(row) for row in rows]
-
-
-def ensure_conversation(conversation_id: str | None, title_hint: str = "") -> str:
-    """返回可用的会话 id：传入的 id 存在则复用，否则新建（含标题推导）。"""
-    if conversation_id:
-        with connect() as conn:
-            row = conn.execute(
-                "SELECT id FROM conversations WHERE id = ?", (conversation_id,)
-            ).fetchone()
-        if row is not None:
-            return cast(str, row["id"])
-
-    return create_conversation(_derive_title(title_hint))["id"]
+    statement = (
+        select(Message)
+        .where(Message.conversation_id == conversation_id)
+        .order_by(Message.id)
+        .limit(limit)
+    )
+    with session_scope() as session:
+        return [_message_dict(message) for message in session.exec(statement).all()]
 
 
 def save_exchange(
@@ -340,83 +407,52 @@ def save_exchange(
     now = _utc_now()
     hint = _derive_title(title_hint or user_text)
 
-    with connect() as conn:
-        # 1) 定位/创建会话
-        target_id = conversation_id
-        if target_id:
-            row = conn.execute(
-                "SELECT id FROM conversations WHERE id = ?", (target_id,)
-            ).fetchone()
-            if row is None:
-                target_id = None
-        if not target_id:
-            target_id = uuid.uuid4().hex
-            conn.execute(
-                "INSERT INTO conversations (id, title, created_at, updated_at)"
-                " VALUES (?, ?, ?, ?)",
-                (target_id, hint, now, now),
-            )
-        else:
-            conn.execute(
-                "UPDATE conversations SET title = ?"
-                " WHERE id = ? AND (title IS NULL OR title = '')",
-                (hint, target_id),
-            )
+    with session_scope() as session:
+        conversation = session.get(Conversation, conversation_id) if conversation_id else None
+        if conversation is None:
+            conversation = Conversation(title=hint, created_at=now, updated_at=now)
+            session.add(conversation)
+        elif not conversation.title:
+            conversation.title = hint
 
-        # 2) 写入两条消息
-        cursor = conn.execute(
-            "INSERT INTO messages (conversation_id, role, content, used_llm, route, created_at)"
-            " VALUES (?, 'user', ?, 0, ?, ?)",
-            (target_id, user_text, route, now),
-        )
-        user_id = cast(int, cursor.lastrowid)
-
-        cursor = conn.execute(
-            "INSERT INTO messages (conversation_id, role, content, used_llm, route, created_at)"
-            " VALUES (?, 'assistant', ?, ?, ?, ?)",
-            (target_id, reply_text, int(used_llm), route, now),
-        )
-        assistant_id = cast(int, cursor.lastrowid)
-
-        _touch(conn, target_id, now)
-
-    return (
-        target_id,
-        MessageRecord(
-            id=user_id,
-            conversation_id=target_id,
+        user_message = Message(
+            conversation_id=conversation.id,
             role="user",
             content=user_text,
-            used_llm=False,
             route=route,
             created_at=now,
-        ),
-        MessageRecord(
-            id=assistant_id,
-            conversation_id=target_id,
+        )
+        assistant_message = Message(
+            conversation_id=conversation.id,
             role="assistant",
             content=reply_text,
             used_llm=used_llm,
             route=route,
             created_at=now,
-        ),
-    )
+        )
+        session.add(user_message)
+        session.add(assistant_message)
+        conversation.updated_at = now
+
+        session.flush()
+        return (
+            conversation.id,
+            _message_dict(user_message),
+            _message_dict(assistant_message),
+        )
 
 
 def stats() -> dict[str, object]:
     """数据库概况，供 /api/health 与调试接口展示。"""
     path = resolve_db_path()
-    with connect() as conn:
-        conversations = cast(
-            int, conn.execute("SELECT COUNT(*) FROM conversations").fetchone()[0]
-        )
-        messages = cast(int, conn.execute("SELECT COUNT(*) FROM messages").fetchone()[0])
-        row = conn.execute("PRAGMA user_version").fetchone()
-        version = 0 if row is None else cast(int, row[0])
+    with session_scope() as session:
+        conversations = session.scalar(select(func.count()).select_from(Conversation)) or 0
+        messages = session.scalar(select(func.count()).select_from(Message)) or 0
+        version = session.execute(text("PRAGMA user_version")).scalar_one()
     return {
         "path": str(path),
         "exists": path.exists(),
-        "schema_version": version,
-        "conversations": conversations,
-        "messages": messages,
+        "schema_version": int(version),
+        "conversations": int(conversations),
+        "messages": int(messages),
     }

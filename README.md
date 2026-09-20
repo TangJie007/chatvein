@@ -30,7 +30,7 @@ chatvein/
 └── backend/             # Python 后端（FastAPI 侧车进程）
     ├── main.py
     ├── graph.py         # LangGraph 工作流
-    ├── db.py            # SQLite 持久化层
+    ├── db.py            # SQLite 持久化层（SQLModel）
     └── requirements.txt
 ```
 
@@ -112,8 +112,15 @@ START → classify（判断是否为问句）
 
 ## 数据持久化（SQLite）
 
-会话与消息通过 Python 标准库 `sqlite3` 落盘（`backend/db.py`），**不引入任何新依赖**
-（`requirements.txt` 未变），打包后的 standalone Python 自带该模块。
+会话与消息通过 **SQLModel** 持久化到 SQLite（`backend/db.py`）。SQLModel 由
+**SQLAlchemy 2.0 + Pydantic** 驱动，和项目既有的 pydantic / FastAPI 生态同源：
+一张表 = 一个类，查询走 `select()` 而不手写 SQL 字符串，后续加字段、加关联、加迁移
+都只需改模型。依赖已在 `backend/requirements.txt` 中声明（`sqlmodel>=0.0.22,<2.0`），
+`npm run prepare:runtime` 会一并装进打包运行时。
+
+> ⚠️ `db.py` 中**不要**加 `from __future__ import annotations`：PEP 563 会让
+> `list["Message"]` 以字符串 `"list['Message']"` 的形式传给 SQLAlchemy 的
+> `relationship()`，导致 mapper 初始化报 `InvalidRequestError`。
 
 **数据库位置由 Rust 消息层决定**，通过 `CHATVEIN_DATA_DIR` 注入，Python 只负责读取：
 
@@ -126,12 +133,21 @@ START → classify（判断是否为问句）
 > 打包后的 `backend/` 位于只读的资源目录，数据库不能写在那里 —— 这正是把路径决策
 > 交给 Rust、由它注入环境变量的原因。
 
-**表结构**（用 `PRAGMA user_version` 记录 schema 版本，后续加表/改表在 `db.py::_migrate`
-中追加分支即可）：
+**表模型**（`db.py` 中的 `Conversation` / `Message`；缺失的表由
+`SQLModel.metadata.create_all` 自动补齐，改表时在 `db.py::_migrate` 中追加分支）：
 
-- `conversations(id TEXT PK, title, created_at, updated_at)`
-- `messages(id INTEGER PK AUTOINCREMENT, conversation_id → conversations.id
-  ON DELETE CASCADE, role CHECK(user/assistant/system), content, used_llm, route, created_at)`
+- `Conversation`：`id` / `title` / `created_at` / `updated_at`，并以 `Relationship`
+  关联 `messages`（`cascade_delete=True`，删除会话时消息一并删除）
+- `Message`：`id` / `conversation_id`（外键 → `conversations.id`，`ON DELETE CASCADE`
+  兜底）/ `role`（CHECK 约束限定 user/assistant/system）/ `content` / `used_llm` /
+  `route` / `created_at`
+
+**schema 版本**由 `PRAGMA user_version` 记录，当前为 **v2**：
+
+| 版本 | 说明 |
+| --- | --- |
+| v2 | 改用 SQLModel；时间戳统一按 naive UTC 存储，启动时自动把 v1 的 `T` + `+00:00` 文本时间戳规范化（只影响旧库，幂等） |
+| v1 | 手写 `sqlite3`（已被 v2 取代） |
 
 **接口**：
 

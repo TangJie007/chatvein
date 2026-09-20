@@ -64,12 +64,18 @@ def main() -> None:
     assert roles == ["user", "assistant", "user", "assistant"], f"消息顺序异常: {roles}"
     print("messages of first conversation:", roles)
 
-    print("db info:", get("/api/db/info"))
+    info = json.loads(get("/api/db/info"))
+    print("db info:", info)
 
-    # --- 删除 -----------------------------------------------------------
+    # --- 删除（消息必须级联删除，不能留孤儿行） --------------------------
+    before = json.loads(get("/api/db/info"))["messages"]
     print("delete:", delete(f"/api/conversations/{orphan['conversation_id']}"))
+    after = json.loads(get("/api/db/info"))["messages"]
+    assert after == before - 2, f"级联删除失败: {before} -> {after}"
+
     print("clear:", delete("/api/conversations"))
     assert json.loads(get("/api/conversations"))["conversations"] == [], "清空失败"
+    assert json.loads(get("/api/db/info"))["messages"] == 0, "清空后仍有残留消息"
 
     print("\nALL CHECKS PASSED")
 
