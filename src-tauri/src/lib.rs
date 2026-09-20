@@ -6,6 +6,7 @@ use tauri::Emitter;
 /// Entry point called from `main.rs`.
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_http::init())
         .setup(|app| {
             // 1) Launch the Python backend as a child process (sidecar).
             backend::spawn_backend(app.handle());

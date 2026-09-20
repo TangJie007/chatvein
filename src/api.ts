@@ -1,4 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
+// Native fetch provided by Tauri's HTTP plugin: the request is executed in Rust
+// (reqwest), so browser CORS does not apply and no CSP connect-src is needed.
+import { fetch } from "@tauri-apps/plugin-http";
 
 /**
  * The Rust layer launches the Python backend and, at startup, hands the

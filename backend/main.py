@@ -16,7 +16,9 @@ from pydantic import BaseModel
 
 app = FastAPI(title="ChatVein Backend")
 
-# Rust proxies same-origin requests; permissive CORS is only a safety net.
+# The frontend reaches Python through Tauri's native HTTP plugin (request is
+# executed in Rust, so browser CORS never applies). This middleware is just a
+# safety net for anything else that might call the backend directly.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
