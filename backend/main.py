@@ -1,9 +1,11 @@
 """ChatVein Python backend.
 
 This process is launched by the Rust/Tauri layer as a sidecar and exposes a
-small HTTP API on loopback. The frontend never calls this directly — all
-traffic is proxied through Rust (`backend_request`), which acts as the
-message layer between React and Python.
+small HTTP API on loopback. At startup Rust pushes the real base URL to the
+frontend, which then talks to Python *directly* via fetch. Rust is the
+process / URL provider and event bridge, not a per-request proxy.
+
+The /api/chat endpoint is backed by a LangGraph workflow (see graph.py).
 """
 import argparse
 import os
@@ -13,6 +15,8 @@ import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+
+from graph import run_chat
 
 app = FastAPI(title="ChatVein Backend")
 
@@ -47,9 +51,13 @@ def echo(msg: Message):
 
 @app.post("/api/chat")
 def chat(msg: Message):
-    """Minimal chat handler — replace with your real LLM / business logic."""
-    reply = f"Python 后端已收到：{msg.message}"
-    return {"reply": reply, "from": "python-backend"}
+    """Chat handler backed by a LangGraph workflow.
+
+    The graph routes questions to an LLM node (or a deterministic offline
+    fallback when no API key is configured) and non-questions to an echo node.
+    """
+    result = run_chat(msg.message)
+    return {"reply": result["reply"], "from": "langgraph"}
 
 
 @app.get("/api/version")

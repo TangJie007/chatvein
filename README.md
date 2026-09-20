@@ -67,7 +67,7 @@ npm run tauri dev
 
 ## 后端端口策略
 
-端口完全由 Rust 消息层内部管理（前端经 `backend_request` 命令代理，不直接连端口）：
+端口完全由 Rust 消息层内部管理（Rust 启动时把真实 URL 推给前端，前端直接 `fetch` 连 Python，不经代理）：
 
 - **开发阶段（`tauri dev`，debug 构建）**：固定使用 `8420`，方便本地调试与抓包。
 - **生产打包（`tauri build`，release 构建）**：启动时自动探测一个 `3000+` 的空闲端口，避免与宿主机已有服务冲突。
@@ -84,6 +84,29 @@ await backendRequest("/api/your-endpoint", "POST", { ... });
 ```
 
 Rust 只负责把真实后端 URL 交给前端，新增接口无需改动 Rust 代码。
+
+## LangGraph 集成
+
+`/api/chat` 已接入 LangGraph 工作流（见 `backend/graph.py`）：
+
+```
+START → classify（判断是否为问句）
+          ├─ 问句 → llm 节点（真实 LLM，未配置 key 时自动降级）
+          └─ 非问句 → echo 节点（回声 / 可替换为检索、工具调用等）
+                ↓
+              END
+```
+
+- **离线可跑**：未设置 `OPENAI_API_KEY` 时，`generate` 节点走确定性降级回复，开发期无需任何 key。
+- **接入真实 LLM**：在 `backend` 目录下设置环境变量即可，无需改代码：
+
+  ```bash
+  export OPENAI_API_KEY=sk-xxx
+  export OPENAI_MODEL=gpt-4o-mini      # 可选
+  export OPENAI_BASE_URL=https://...   # 可选，兼容代理 / 第三方 OpenAI 兼容服务
+  ```
+
+- **扩展**：在 `graph.py` 里增删 `add_node` / `add_conditional_edges` 即可编排多步 agent（工具调用、检索、记忆等），`/api/chat` 无需改动。
 
 ## 打包发布
 
