@@ -139,7 +139,7 @@ class ModelsService:
         return self.to_response(entity) if entity else None
 
     def get_runtime_config(self) -> LlmModel | None:
-        """供 graph / chat 使用：优先主模型，其次默认，再取列表第一条。"""
+        """供 agents / chat 使用：优先主模型，其次默认，再取列表第一条。"""
         return (
             self._repo.find_primary()
             or self._repo.find_default()
