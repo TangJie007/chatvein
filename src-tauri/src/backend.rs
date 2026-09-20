@@ -24,9 +24,15 @@ pub fn spawn_backend(app: &AppHandle) {
         }
     };
 
-    // In dev, `resource_dir` is `src-tauri`, so `../backend` is the project backend.
-    let backend_dir = resource_dir.join("../backend");
-    let backend_dir = backend_dir.canonicalize().unwrap_or(backend_dir);
+    // Bundled layout: <resources>/backend/main.py
+    // Dev layout:      <src-tauri>/../backend/main.py
+    let bundled_backend = resource_dir.join("backend");
+    let backend_dir = if bundled_backend.join("main.py").exists() {
+        bundled_backend
+    } else {
+        let dev = resource_dir.join("../backend");
+        dev.canonicalize().unwrap_or(dev)
+    };
     let main_py = backend_dir.join("main.py");
 
     if !main_py.exists() {
@@ -34,12 +40,12 @@ pub fn spawn_backend(app: &AppHandle) {
         return;
     }
 
-    let python = match find_python(&backend_dir) {
+    let python = match find_python(&backend_dir, &resource_dir) {
         Some(p) => p,
         None => {
             emit_error(
                 app,
-                "未找到 Python 解释器（已尝试 python / python3 以及 backend/.venv）",
+                "未找到 Python 解释器（已尝试打包运行时、backend/.venv 以及 python / python3）",
             );
             return;
         }
@@ -103,8 +109,20 @@ pub fn kill_backend() {
     }
 }
 
-/// Locate a usable Python interpreter: prefer a bundled venv, then PATH.
-fn find_python(backend_dir: &std::path::Path) -> Option<std::path::PathBuf> {
+/// Locate a usable Python interpreter, in priority order:
+///   1. bundled standalone runtime (shipped via `bundle.resources` as `python-runtime`)
+///   2. dev virtualenv at `backend/.venv`
+///   3. `python` / `python3` found on PATH
+fn find_python(backend_dir: &std::path::Path, resource_dir: &std::path::Path) -> Option<std::path::PathBuf> {
+    let runtime = if cfg!(windows) {
+        resource_dir.join("python-runtime").join("python.exe")
+    } else {
+        resource_dir.join("python-runtime").join("bin").join("python")
+    };
+    if runtime.exists() {
+        return Some(runtime);
+    }
+
     let venv = if cfg!(windows) {
         backend_dir.join(".venv").join("Scripts").join("python.exe")
     } else {

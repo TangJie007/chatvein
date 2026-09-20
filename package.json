@@ -7,7 +7,9 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "app:dev": "tauri dev",
+    "prepare:runtime": "powershell -ExecutionPolicy Bypass -File tools/prepare_runtime.ps1"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.1.1",

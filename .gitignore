@@ -10,6 +10,7 @@ __pycache__/
 *.pyc
 backend/.venv/
 .venv/
+python-runtime/
 
 # Tauri generated
 src-tauri/gen/

@@ -75,10 +75,28 @@ await backendRequest("/api/your-endpoint", "POST", { ... });
 
 ## 打包发布
 
+打包时会把 **Python 解释器 + 后端代码** 一起封装进安装包，最终用户无需安装
+任何 Python 环境。原理：
+
+- `tools/prepare_runtime.ps1` 下载官方
+  [python-build-standalone](https://github.com/astral-sh/python-build-standalone)
+  （一个免安装、可再分发的 Python），解压到 `python-runtime/`，并安装
+  `backend/requirements.txt` 中的依赖。
+- `tauri.conf.json` 的 `bundle.resources` 把 `backend/` 和 `python-runtime/`
+  复制进应用资源目录。
+- Rust 在运行时自动区分两种布局：打包后从 `资源目录/python-runtime/python.exe`
+  启动；开发时回落到 `backend/.venv` 或系统 `python`。
+
 ```bash
+# 1) 准备运行时（npm run tauri build 的 beforeBuildCommand 会自动执行，也可手动跑）
+npm run prepare:runtime
+
+# 2) 构建并打包（首次会编译 Release 版 Rust，耗时较长）
 npm run tauri build
 ```
 
-正式打包时，需要把 Python 解释器与依赖一起随应用分发（Tauri `externalBin`
-侧车方案）。本初始化模板在 `dev` 下直接调用系统/venv 中的 Python，便于开发；
-生产打包请参考 Tauri 官方 [Sidecar 文档](https://v2.tauri.app/develop/sidecar/)。
+产物在 `src-tauri/target/release/bundle/` 下（Windows 默认生成 NSIS 安装包 / MSI）。
+
+> 说明：`prepare_runtime.ps1` 当前面向 Windows x86_64。macOS / Linux 请参考
+> 同一份 standalone 发行物换成对应平台的压缩包，并调整脚本里的 URL 与解压逻辑；
+> `python-runtime/` 已被 `.gitignore` 忽略，属于构建产物而非源码。
