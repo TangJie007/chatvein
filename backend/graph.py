@@ -14,16 +14,20 @@
       ▼
      END
 """
+# langgraph 的泛型在编译期无法完全具体化，节点注册 API 会带出 Unknown；
+# 这里只在本文件放宽这两条基于第三方宽松类型的规则，不影响项目其它文件。
+# pyright: reportUnknownMemberType=false, reportUnusedCallResult=false
+
 from __future__ import annotations
 
 import os
-from typing import Literal, TypedDict
+from typing import TYPE_CHECKING, Literal, TypedDict, cast
 
 from langgraph.graph import END, START, StateGraph
+from pydantic import SecretStr
 
-# 模块级缓存 LLM 实例，避免每次请求重建。无 key 时为 None → 走降级。
-_LLM = None
-_LLM_READY = False
+if TYPE_CHECKING:
+    from langchain_openai import ChatOpenAI
 
 
 class ChatState(TypedDict, total=False):
@@ -35,12 +39,17 @@ class ChatState(TypedDict, total=False):
     used_llm: bool
 
 
-def _get_llm():
+# 模块级缓存 LLM 实例，避免每次请求重建。无 key 时为 None → 走降级。
+_llm: ChatOpenAI | None = None
+_llm_ready = False
+
+
+def _get_llm() -> ChatOpenAI | None:
     """惰性构造 LLM，仅在首次调用且环境存在 key 时构建。"""
-    global _LLM, _LLM_READY
-    if _LLM_READY:
-        return _LLM
-    _LLM_READY = True
+    global _llm, _llm_ready
+    if _llm_ready:
+        return _llm
+    _llm_ready = True
 
     api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:
@@ -50,13 +59,13 @@ def _get_llm():
     except ImportError:
         return None
 
-    _LLM = ChatOpenAI(
+    _llm = ChatOpenAI(
         model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
-        api_key=api_key,
+        api_key=SecretStr(api_key),
         base_url=os.getenv("OPENAI_BASE_URL"),  # 兼容代理 / 第三方 OpenAI 兼容服务
         temperature=0.7,
     )
-    return _LLM
+    return _llm
 
 
 def classify(state: ChatState) -> ChatState:
@@ -83,8 +92,11 @@ def generate(state: ChatState) -> ChatState:
 
     if llm is not None:
         try:
-            result = llm.invoke([{"role": "user", "content": text}])
-            return {"reply": result.content, "used_llm": True}
+            result = llm.invoke(text)
+            # langchain 的 content 是宽松类型（可能含未知字典块），先收窄再处理。
+            content = cast("str | list[object]", result.content)
+            reply = content if isinstance(content, str) else str(content)
+            return {"reply": reply, "used_llm": True}
         except Exception as exc:  # 调用失败不要中断整个请求
             return {
                 "reply": f"[LLM 调用失败，已降级] {exc}\n{text}",
@@ -110,8 +122,8 @@ def build_chat_graph():
     return builder.compile()
 
 
-def run_chat(message: str) -> dict:
+def run_chat(message: str) -> dict[str, str | bool]:
     """对单条消息跑一遍图，返回 {reply, used_llm}。"""
     graph = build_chat_graph()
-    result = graph.invoke({"input": message})
+    result = cast("ChatState", graph.invoke({"input": message}))
     return {"reply": result.get("reply", ""), "used_llm": result.get("used_llm", False)}

@@ -1,6 +1,6 @@
 {
   "include": ["backend"],
-  "reportMissingImports": false,
-  "reportMissingModuleSource": false,
-  "reportMissingTypeStubs": false
+  "exclude": ["**/.venv", "**/__pycache__"],
+  "venvPath": "backend",
+  "venv": ".venv"
 }

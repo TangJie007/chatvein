@@ -10,13 +10,15 @@ The /api/chat endpoint is backed by a LangGraph workflow (see graph.py).
 import argparse
 import os
 import sys
+from importlib.metadata import PackageNotFoundError, version as pkg_version
+from typing import cast
 
 import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from graph import run_chat
+from graph import run_chat  # pyright: ignore[reportImplicitRelativeImport]
 
 app = FastAPI(title="ChatVein Backend")
 
@@ -62,7 +64,11 @@ def chat(msg: Message):
 
 @app.get("/api/version")
 def version():
-    return {"python": sys.version, "fastapi": __import__("fastapi").__version__}
+    try:
+        fastapi_version: str = pkg_version("fastapi")
+    except PackageNotFoundError:
+        fastapi_version = "unknown"
+    return {"python": sys.version, "fastapi": fastapi_version}
 
 
 @app.get("/api/hello")
@@ -77,20 +83,23 @@ def hello():
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="ChatVein Python backend")
-    parser.add_argument(
+    parser.add_argument(  # pyright: ignore[reportUnusedCallResult]
         "--host",
         default=os.environ.get("CHATVEIN_HOST", "127.0.0.1"),
     )
-    parser.add_argument(
+    parser.add_argument(  # pyright: ignore[reportUnusedCallResult]
         "--port",
         type=int,
         default=int(os.environ.get("CHATVEIN_PORT", "8420")),
     )
     args = parser.parse_args()
+    # argparse.Namespace 的属性是 Any，显式收窄以消除 reportAny。
+    host = cast(str, args.host)
+    port = cast(int, args.port)
 
     # Surface a ready marker on stdout so the Rust layer can observe startup.
-    print(f"CHATVEIN_BACKEND_READY host={args.host} port={args.port}", flush=True)
-    uvicorn.run(app, host=args.host, port=args.port, log_level="info")
+    print(f"CHATVEIN_BACKEND_READY host={host} port={port}", flush=True)
+    uvicorn.run(app, host=host, port=port, log_level="info")
 
 
 if __name__ == "__main__":
