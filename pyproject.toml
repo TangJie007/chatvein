@@ -1,6 +1,6 @@
 [tool.ruff]
 line-length = 225
-target-version = "py312"
+target-version = "py313"
 src = ["backend"]
 
 [tool.ruff.lint]

@@ -7,6 +7,6 @@
     "backend/.venv/Lib/site-packages",
     "python-runtime/Lib/site-packages"
   ],
-  "pythonVersion": "3.12",
+  "pythonVersion": "3.13",
   "typeCheckingMode": "basic"
 }

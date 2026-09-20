@@ -2,8 +2,12 @@ fastapi>=0.115,<1.0
 uvicorn>=0.32,<1.0
 pydantic>=2.9,<3.0
 sqlmodel>=0.0.22,<2.0
-# BM25 全文检索。numpy 由 bm25s 自动带入，pip 会按 Python 版本挑兼容版本
-# （3.10 → numpy 2.2.x，3.14 → numpy 2.5.x），无需在此固定。
+# BM25 全文检索。numpy 由 bm25s 自动带入，pip 会按 Python 版本挑兼容版本，
+# 无需在此固定（dev / 打包 / 类型检查三处运行时已统一锁定为 Python 3.13）。
 bm25s>=0.3,<1.0
+# 向量检索。0.39.0 尚未发布 win_amd64 wheel（只有 mac / linux），
+# 不带此上界时 Windows 打包会静默回退到旧版，故显式锁到 0.38.x；
+# 待官方补齐 Windows wheel 后再放开为 <0.40。
+lancedb>=0.38,<0.39
 langgraph>=1.2,<2.0
 langchain-openai>=1.6,<2.0

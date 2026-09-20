@@ -46,16 +46,24 @@ npm install
 
 ### 2. 准备 Python 后端（推荐用虚拟环境）
 
+项目统一锁定 **Python 3.13**（dev 的 `.venv`、打包的 `python-runtime`、
+类型检查的 `pyrightconfig.json` 三处必须一致）。开发用的 venv 请直接由打包
+运行时的解释器创建，避免跟随系统版本：
+
 ```bash
-python -m venv backend/.venv
 # Windows
+python-runtime/python.exe -m venv backend/.venv
 backend/.venv/Scripts/pip install -r backend/requirements.txt
-# macOS / Linux
+# macOS / Linux（需自行准备 3.13 的 standalone 发行物）
+python-runtime/bin/python -m venv backend/.venv
 backend/.venv/bin/pip install -r backend/requirements.txt
 ```
 
-> 若不使用虚拟环境，也可直接 `pip install -r backend/requirements.txt`，
-> Rust 会自动探测 `python` / `python3` 以及 `backend/.venv`。
+> 若 `python-runtime/` 尚不存在，先执行一次 `npm run prepare:runtime`。
+>
+> ⚠️ 不要用系统的 `python -m venv` 直接创建：那样会跟随系统版本（如 3.14），
+> 与打包运行时脱节。三处版本的具体取值见 `tools/prepare_runtime.ps1` 的
+> `$Version` —— 升级 Python 时需同步改这一处与 `pyrightconfig.json`。
 
 ### 3. 生成应用图标（首次需要）
 

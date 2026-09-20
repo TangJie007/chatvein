@@ -9,8 +9,8 @@
     dependencies. Tauri then ships this folder via `bundle.resources`, so the
     packaged app runs Python with zero external dependencies.
 
-    Safe to re-run: if `python-runtime/python.exe` already exists the download
-    is skipped.
+    Safe to re-run: the download is skipped only when the existing runtime
+    already matches $Version; otherwise the runtime is rebuilt.
 #>
 $ErrorActionPreference = "Stop"
 
@@ -20,15 +20,28 @@ $ReqFile     = Join-Path $Root "backend\requirements.txt"
 $PythonExe   = Join-Path $RuntimeDir "python.exe"
 
 # python-build-standalone (Windows x86_64, install_only). Bump the tag/version
-# here to upgrade the bundled Python. CPython 3.10 is used for broad library
-# compatibility; change to a newer tag if you need a different version.
+# here to upgrade the bundled Python. 3.13 is the single pinned version shared by
+# dev (.venv), packaging (python-runtime) and type-checking (pyrightconfig.json);
+# change all three together when upgrading.
 $Release     = "20260901"
-$Version     = "3.10.21"
+$Version     = "3.13.15"
 $Url         = "https://github.com/astral-sh/python-build-standalone/releases/download/$Release/cpython-$Version+${Release}-x86_64-pc-windows-msvc-install_only.tar.gz"
 
+$needDownload = $true
 if (Test-Path $PythonExe) {
-    Write-Host "[prepare_runtime] python-runtime already present, skipping download."
-} else {
+    $installed = (& $PythonExe -c "import sys; print('%d.%d.%d' % sys.version_info[:3])" 2>$null)
+    if ($installed -eq $Version) {
+        Write-Host "[prepare_runtime] python-runtime $installed matches target version, skipping download."
+        $needDownload = $false
+    } else {
+        # Rebuild from scratch, otherwise bumping $Version would silently keep
+        # the stale runtime on every re-run.
+        Write-Host "[prepare_runtime] existing runtime is $installed, expected $Version; rebuilding ..."
+        Remove-Item -Recurse -Force $RuntimeDir
+    }
+}
+
+if ($needDownload) {
     Write-Host "[prepare_runtime] Downloading standalone Python $Version ..."
     $tmp = Join-Path $env:TEMP "pbs-python.tar.gz"
     Invoke-WebRequest -Uri $Url -OutFile $tmp -UseBasicParsing
