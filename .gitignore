@@ -10,13 +10,13 @@ __pycache__/
 *.pyc
 .venv*/
 python-runtime/
+dist-backend/
+build/pyinstaller/
 
 # Local SQLite data (when the backend runs outside Tauri, e.g. `python backend/main.py`)
 backend/data/
 
-# Local model cache. Must live OUTSIDE backend/: bundle.resources copies
-# ../backend verbatim and does not honour .gitignore, so anything under
-# backend/ ends up in the installer.
+# Local model cache (HF / fastembed weights). Keep outside installable trees.
 .chatvein/
 
 # Tauri generated

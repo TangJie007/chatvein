@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "app:dev": "tauri dev",
-    "prepare:runtime": "powershell -ExecutionPolicy Bypass -File tools/prepare_runtime.ps1"
+    "prepare:runtime": "powershell -ExecutionPolicy Bypass -File tools/build_backend.ps1",
+    "prepare:backend": "powershell -ExecutionPolicy Bypass -File tools/build_backend.ps1"
   },
   "dependencies": {
     "@radix-ui/react-dialog": "^1.1.23",

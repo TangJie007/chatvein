@@ -50,49 +50,74 @@ pub fn spawn_backend(app: &AppHandle) {
         }
     };
 
-    // Bundled layout: <resources>/backend/main.py
-    // Dev layout:      <src-tauri>/../backend/main.py
-    let bundled_backend = resource_dir.join("backend");
-    let backend_dir = if bundled_backend.join("main.py").exists() {
-        bundled_backend
+    // Release: PyInstaller onedir at <resources>/backend-runtime/backend(.exe)
+    // Dev:     <repo>/backend/main.py via .venv / PATH python
+    let frozen = frozen_backend_exe(&resource_dir);
+    let (program, args, cwd, fallback_dir) = if let Some(exe) = frozen {
+        let cwd = exe
+            .parent()
+            .map(|p| p.to_path_buf())
+            .unwrap_or_else(|| resource_dir.join("backend-runtime"));
+        (exe, Vec::<String>::new(), cwd.clone(), cwd)
     } else {
-        let dev = resource_dir.join("../backend");
-        dev.canonicalize().unwrap_or(dev)
-    };
-    let main_py = backend_dir.join("main.py");
-
-    if !main_py.exists() {
-        emit_error(app, &format!("未找到后端入口: {}", main_py.display()));
-        return;
-    }
-
-    let python = match find_python(&backend_dir, &resource_dir) {
-        Some(p) => p,
-        None => {
+        let backend_dir = {
+            let bundled = resource_dir.join("backend");
+            if bundled.join("main.py").exists() {
+                bundled
+            } else {
+                let dev = resource_dir.join("../backend");
+                dev.canonicalize().unwrap_or(dev)
+            }
+        };
+        let main_py = backend_dir.join("main.py");
+        if !main_py.exists() {
             emit_error(
                 app,
-                "未找到 Python 解释器（已尝试打包运行时、仓库根 .venv 以及 python / python3）",
+                &format!(
+                    "未找到后端（已尝试打包产物 backend-runtime 与源码入口 {}）",
+                    main_py.display()
+                ),
             );
             return;
         }
+        let python = match find_python(&backend_dir) {
+            Some(p) => p,
+            None => {
+                emit_error(
+                    app,
+                    "未找到 Python 解释器（已尝试仓库根 .venv 以及 python / python3）",
+                );
+                return;
+            }
+        };
+        (
+            python,
+            vec![main_py.to_string_lossy().into_owned()],
+            backend_dir.clone(),
+            backend_dir,
+        )
     };
 
-    // Own the storage location here (message layer decides paths): the bundled
-    // `backend/` lives in a read-only resources dir, so the SQLite database
-    // must go to the per-user app data dir instead.
-    let data_dir = resolve_data_dir(app, &backend_dir);
+    // Own the storage location here (message layer decides paths): the packaged
+    // backend lives in a read-only resources dir, so the SQLite database must
+    // go to the per-user app data dir instead.
+    let data_dir = resolve_data_dir(app, &fallback_dir);
     if let Err(e) = std::fs::create_dir_all(&data_dir) {
         emit_error(app, &format!("无法创建数据目录 {}: {e}", data_dir.display()));
     }
 
     let port = backend_port();
-    let mut child = match Command::new(&python)
-        .arg(&main_py)
+    let mut cmd = Command::new(&program);
+    for arg in &args {
+        cmd.arg(arg);
+    }
+    let mut child = match cmd
         .arg("--port")
         .arg(port.to_string())
-        .current_dir(&backend_dir)
+        .current_dir(&cwd)
         .env("CHATVEIN_PORT", port.to_string())
         .env("CHATVEIN_DATA_DIR", &data_dir)
+        .env("PYTHONUNBUFFERED", "1")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
@@ -145,23 +170,22 @@ pub fn kill_backend() {
     }
 }
 
-/// Locate a usable Python interpreter, in priority order:
-///   1. bundled standalone runtime (shipped via `bundle.resources` as `python-runtime`)
-///   2. dev virtualenv at `<repo-root>/.venv`
-///   3. `python` / `python3` found on PATH
-fn find_python(backend_dir: &std::path::Path, resource_dir: &std::path::Path) -> Option<std::path::PathBuf> {
-    let runtime = if cfg!(windows) {
-        resource_dir.join("python-runtime").join("python.exe")
+/// PyInstaller onedir entry shipped via `bundle.resources` as `backend-runtime`.
+fn frozen_backend_exe(resource_dir: &std::path::Path) -> Option<std::path::PathBuf> {
+    let exe = if cfg!(windows) {
+        resource_dir.join("backend-runtime").join("backend.exe")
     } else {
-        resource_dir.join("python-runtime").join("bin").join("python")
+        resource_dir.join("backend-runtime").join("backend")
     };
-    if runtime.exists() {
-        return Some(runtime);
-    }
+    exe.exists().then_some(exe)
+}
 
+/// Locate a usable Python interpreter for **dev** (source) runs, in priority order:
+///   1. repo-root `.venv`
+///   2. `python` / `python3` on PATH
+fn find_python(backend_dir: &std::path::Path) -> Option<std::path::PathBuf> {
     // The dev virtualenv lives at the repo root, deliberately outside `backend/`
-    // so that the whole `backend/` directory can be bundled as-is without
-    // dragging a several-hundred-MB venv into the installer.
+    // so local caches and a several-hundred-MB venv never get mixed into source.
     let repo_root = backend_dir.parent()?;
     let venv = if cfg!(windows) {
         repo_root.join(".venv").join("Scripts").join("python.exe")
@@ -190,10 +214,10 @@ fn find_python(backend_dir: &std::path::Path, resource_dir: &std::path::Path) ->
 /// Directory handed to the Python backend for its SQLite database (and any
 /// other persistent state) via `CHATVEIN_DATA_DIR`.
 ///
-/// Rust owns path selection: the packaged `backend/` sits inside the read-only
+/// Rust owns path selection: the packaged backend sits inside the read-only
 /// resources directory, so the database must live in the per-user app data
 /// directory instead. If that cannot be resolved we fall back to
-/// `<backend>/data` so the app still starts (dev / unusual sandboxing).
+/// `<backend-or-runtime>/data` so the app still starts (dev / unusual sandboxing).
 fn resolve_data_dir(app: &AppHandle, backend_dir: &std::path::Path) -> std::path::PathBuf {
     match app.path().app_data_dir() {
         Ok(dir) => dir,

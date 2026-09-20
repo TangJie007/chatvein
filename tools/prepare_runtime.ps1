@@ -1,72 +1,11 @@
 <#:
 .SYNOPSIS
-    Prepare a self-contained Python runtime for bundling with the Tauri app.
+    Compatibility shim — backend packaging now uses PyInstaller.
 
 .DESCRIPTION
-    Downloads the official "python-build-standalone" distribution (a portable,
-    redistributable Python that needs no system install), extracts it into
-    `python-runtime/`, ensures pip is available, and installs the backend's
-    dependencies. Tauri then ships this folder via `bundle.resources`, so the
-    packaged app runs Python with zero external dependencies.
-
-    Safe to re-run: the download is skipped only when the existing runtime
-    already matches $Version; otherwise the runtime is rebuilt.
+    Delegates to tools/build_backend.ps1. Kept so existing
+    `npm run prepare:runtime` invocations keep working.
 #>
 $ErrorActionPreference = "Stop"
-
-$Root        = Split-Path -Parent $PSScriptRoot
-$RuntimeDir  = Join-Path $Root "python-runtime"
-$ReqFile     = Join-Path $Root "backend\requirements.txt"
-$PythonExe   = Join-Path $RuntimeDir "python.exe"
-
-# python-build-standalone (Windows x86_64, install_only). Bump the tag/version
-# here to upgrade the bundled Python. 3.13 is the single pinned version shared by
-# dev (.venv), packaging (python-runtime) and type-checking (pyrightconfig.json);
-# change all three together when upgrading.
-$Release     = "20260901"
-$Version     = "3.13.15"
-$Url         = "https://github.com/astral-sh/python-build-standalone/releases/download/$Release/cpython-$Version+${Release}-x86_64-pc-windows-msvc-install_only.tar.gz"
-
-$needDownload = $true
-if (Test-Path $PythonExe) {
-    $installed = (& $PythonExe -c "import sys; print('%d.%d.%d' % sys.version_info[:3])" 2>$null)
-    if ($installed -eq $Version) {
-        Write-Host "[prepare_runtime] python-runtime $installed matches target version, skipping download."
-        $needDownload = $false
-    } else {
-        # Rebuild from scratch, otherwise bumping $Version would silently keep
-        # the stale runtime on every re-run.
-        Write-Host "[prepare_runtime] existing runtime is $installed, expected $Version; rebuilding ..."
-        Remove-Item -Recurse -Force $RuntimeDir
-    }
-}
-
-if ($needDownload) {
-    Write-Host "[prepare_runtime] Downloading standalone Python $Version ..."
-    $tmp = Join-Path $env:TEMP "pbs-python.tar.gz"
-    Invoke-WebRequest -Uri $Url -OutFile $tmp -UseBasicParsing
-    New-Item -ItemType Directory -Force -Path $RuntimeDir | Out-Null
-    # The tarball wraps everything in a top-level `python/` dir; strip it so
-    # python.exe lands directly at python-runtime/python.exe.
-    tar.exe -xzf $tmp -C $RuntimeDir --strip-components=1
-    Remove-Item $tmp
-    if (-not (Test-Path $PythonExe)) {
-        throw "[prepare_runtime] python.exe not found after extraction; check the archive layout."
-    }
-}
-
-# Ensure pip exists (install_only builds may omit it).
-& $PythonExe -m pip --version 2>$null
-if ($LASTEXITCODE -ne 0) {
-    Write-Host "[prepare_runtime] Bootstrapping pip ..."
-    $gp = Join-Path $env:TEMP "get-pip.py"
-    Invoke-WebRequest -Uri "https://bootstrap.pypa.io/get-pip.py" -OutFile $gp -UseBasicParsing
-    & $PythonExe $gp
-    if ($LASTEXITCODE -ne 0) { throw "[prepare_runtime] pip bootstrap failed." }
-}
-
-Write-Host "[prepare_runtime] Installing backend dependencies ..."
-& $PythonExe -m pip install -r $ReqFile
-if ($LASTEXITCODE -ne 0) { throw "[prepare_runtime] dependency install failed." }
-
-Write-Host "[prepare_runtime] Done. Runtime at $RuntimeDir"
+& (Join-Path $PSScriptRoot "build_backend.ps1")
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

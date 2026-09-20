@@ -46,28 +46,18 @@ npm install
 
 ### 2. 准备 Python 后端（推荐用虚拟环境）
 
-项目统一锁定 **Python 3.13**（dev 的 `.venv`、打包的 `python-runtime`、
-类型检查的 `pyrightconfig.json` 三处必须一致）。开发用的 venv 请直接由打包
-运行时的解释器创建，避免跟随系统版本。
-
-> venv 必须建在**仓库根**（`.venv/`），不要建在 `backend/` 下：`bundle.resources`
-> 会把整个 `backend/` 打进安装包，而 Tauri **不支持排除子目录**，venv 放在
-> `backend/` 里等于给安装包白送几百 MB。
+项目统一锁定 **Python 3.13**（dev 的 `.venv`、PyInstaller 冻结产物、
+类型检查的 `pyrightconfig.json` 必须一致）。venv 建在**仓库根**（`.venv/`）。
 
 ```bash
-# Windows
-python-runtime/python.exe -m venv .venv
-.venv/Scripts/pip install -r backend/requirements.txt
-# macOS / Linux（需自行准备 3.13 的 standalone 发行物）
-python-runtime/bin/python -m venv .venv
-.venv/bin/pip install -r backend/requirements.txt
+# 使用本机已安装的 Python 3.13
+python -m venv .venv
+.venv/Scripts/pip install -r backend/requirements.txt   # Windows
+# .venv/bin/pip install -r backend/requirements.txt     # macOS / Linux
 ```
 
-> 若 `python-runtime/` 尚不存在，先执行一次 `npm run prepare:runtime`。
->
-> ⚠️ 不要用系统的 `python -m venv` 直接创建：那样会跟随系统版本（如 3.14），
-> 与打包运行时脱节。三处版本的具体取值见 `tools/prepare_runtime.ps1` 的
-> `$Version` —— 升级 Python 时需同步改这一处与 `pyrightconfig.json`。
+> `pyrightconfig.json` 从仓库根 `.venv/Lib/site-packages` 解析第三方库；
+> 改完 `requirements.txt` 后在同一 venv 里重装即可。
 
 ### 3. 生成应用图标（首次需要）
 
@@ -111,14 +101,8 @@ Rust 只负责把真实后端 URL 交给前端，新增接口无需改动 Rust �
 会话与消息通过 **SQLModel** 持久化到 SQLite（`backend/db.py`）。SQLModel 由
 **SQLAlchemy 2.0 + Pydantic** 驱动，和项目既有的 pydantic / FastAPI 生态同源：
 一张表 = 一个类，查询走 `select()` 而不手写 SQL 字符串，后续加字段、加关联、加迁移
-都只需改模型。依赖已在 `backend/requirements.txt` 中声明（`sqlmodel>=0.0.22,<2.0`），
-`npm run prepare:runtime` 会一并装进打包运行时。
-
-> 类型检查（basedpyright）是经 `pyrightconfig.json` 的 `extraPaths` 从
-> `python-runtime/Lib/site-packages` 解析第三方库的，**不是**从仓库根的 `.venv`。
-> 所以改完 `requirements.txt` 后要跑一次 `npm run prepare:runtime`（或手动对
-> `python-runtime/python.exe` 执行 `pip install -r backend/requirements.txt`），
-> 否则 IDE 会报 `无法解析导入 "sqlmodel"` 这类错误，而程序本身却能正常运行。
+都只需改模型。依赖已在 `backend/requirements.txt` 中声明（`sqlmodel>=0.0.22,<2.0`）；
+发布打包时由 `npm run prepare:runtime`（PyInstaller）打进 `dist-backend/`。
 
 > ⚠️ `db.py` 中**不要**加 `from __future__ import annotations`：PEP 563 会让
 > `list["Message"]` 以字符串 `"list['Message']"` 的形式传给 SQLAlchemy 的
@@ -132,7 +116,7 @@ Rust 只负责把真实后端 URL 交给前端，新增接口无需改动 Rust �
 | 直接跑后端 `python backend/main.py` | `backend/data/chatvein.db`（已在 `.gitignore` 中） |
 | 显式覆盖 | `CHATVEIN_DB_PATH`（完整文件路径）优先于 `CHATVEIN_DATA_DIR`（目录） |
 
-> 打包后的 `backend/` 位于只读的资源目录，数据库不能写在那里 —— 这正是把路径决策
+> 打包后的 `backend-runtime/` 位于只读的资源目录，数据库不能写在那里 —— 这正是把路径决策
 > 交给 Rust、由它注入环境变量的原因。
 
 **表模型**（`db.py` 中的 `Conversation` / `Message`；缺失的表由
@@ -170,8 +154,8 @@ CREATE VIRTUAL TABLE message_vec USING vec0(embedding float[384]);
 
 > 原方案是 `lancedb`，但它会连带引入 `pyarrow` 等重型依赖，占用约 **380MB**
 > （`lancedb` ~298MB + `pyarrow` ~85MB），对桌面端安装包不可接受，故整体移除。
-> 注意 `python-runtime/` 是构建产物，删除依赖后需手动卸载旧包（或重建运行时），
-> 否则残留文件仍会被打进安装包。
+> 改依赖后请重跑 `npm run prepare:runtime`，用干净的 PyInstaller 产物覆盖
+> `dist-backend/`，避免旧包残留进安装包。
 
 **接口**：
 
@@ -204,20 +188,19 @@ python tools/test_backend.py
 
 ## 打包发布
 
-打包时会把 **Python 解释器 + 后端代码** 一起封装进安装包，最终用户无需安装
-任何 Python 环境。原理：
+发布包内嵌 **PyInstaller 冻结的后端**（onedir：`backend.exe` + `_internal/`），
+最终用户无需安装 Python。原理：
 
-- `tools/prepare_runtime.ps1` 下载官方
-  [python-build-standalone](https://github.com/astral-sh/python-build-standalone)
-  （一个免安装、可再分发的 Python），解压到 `python-runtime/`，并安装
-  `backend/requirements.txt` 中的依赖。
-- `tauri.conf.json` 的 `bundle.resources` 把 `backend/` 和 `python-runtime/`
-  复制进应用资源目录。
-- Rust 在运行时自动区分两种布局：打包后从 `资源目录/python-runtime/python.exe`
-  启动；开发时回落到仓库根 `.venv` 或系统 `python`。
+- `tools/build_backend.ps1`（`npm run prepare:runtime` / `prepare:backend`）在仓库根
+  `.venv` 中安装依赖与 PyInstaller，按 [`backend/backend.spec`](backend/backend.spec)
+  产出 `dist-backend/`。
+- `tauri.conf.json` 的 `bundle.resources` 把 `dist-backend/` 复制为资源目录下的
+  `backend-runtime/`。
+- Rust：打包后直接启动 `backend-runtime/backend.exe`；开发时回落到
+  `.venv` + `backend/main.py`。
 
 ```bash
-# 1) 准备运行时（npm run tauri build 的 beforeBuildCommand 会自动执行，也可手动跑）
+# 1) 冻结后端（tauri build 的 beforeBuildCommand 会自动执行，也可手动跑）
 npm run prepare:runtime
 
 # 2) 构建并打包（首次会编译 Release 版 Rust，耗时较长）
@@ -226,6 +209,6 @@ npm run tauri build
 
 产物在 `src-tauri/target/release/bundle/` 下（Windows 默认生成 NSIS 安装包 / MSI）。
 
-> 说明：`prepare_runtime.ps1` 当前面向 Windows x86_64。macOS / Linux 请参考
-> 同一份 standalone 发行物换成对应平台的压缩包，并调整脚本里的 URL 与解压逻辑；
-> `python-runtime/` 已被 `.gitignore` 忽略，属于构建产物而非源码。
+> 说明：当前构建脚本面向 Windows。`dist-backend/` 已被 `.gitignore` 忽略，
+> 属于构建产物而非源码。模型权重仍不打进安装包，首次使用时下载到
+> `CHATVEIN_DATA_DIR/embeddings`。

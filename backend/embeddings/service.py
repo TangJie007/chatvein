@@ -67,10 +67,9 @@ def data_dir() -> Path:
     1. ``CHATVEIN_DATA_DIR``（Rust 注入的 app_data_dir，打包时走这条路）
     2. 项目根的 ``.chatvein``（dev 直跑时回落）
 
-    ⚠️ 回落目录**必须**落在 ``backend/`` 之外：tauri.conf.json 的
-    ``bundle.resources`` 会把整个 ``../backend`` 打进安装包，而打包是按文件系统
-    复制的，不看 .gitignore。模型缓存若放在 backend 下，几百 MB 权重会直接进
-    安装包（dev 数据库同理）。
+    ⚠️ 回落目录**必须**落在可写位置：发布包里的 PyInstaller 产物位于只读
+    资源目录，模型缓存若落在旁边会写失败。dev 数据库 / 权重同理，勿放进
+    会被误拷进安装树的目录。
 
     结果做进程内缓存：写探测有 I/O，且环境变量在运行期不会变。
     """
