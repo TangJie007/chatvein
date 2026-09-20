@@ -14,24 +14,40 @@
   缺表由 ``SQLModel.metadata.create_all`` 自动补齐。
 """
 # SQLModel/SQLAlchemy 的泛型在编译期无法完全具体化，Session/Row 会带出 Unknown；
-# 这里只在本文件放宽这几条基于第三方宽松类型的规则，不影响项目其它文件。
+# 另外 SQLAlchemy 自身的标注里 `Any` 是常态（列表达式本就是「类型未知的列」），
+# 因此这里的显式 Any 是语义正确的表达，而非偷懒。
+# 只在本文件放宽这几条基于第三方宽松类型的规则，不影响项目其它文件。
 #
 # 注意：**不要**在本文件加 `from __future__ import annotations`。PEP 563 会把
 # `list["Message"]` 变成字符串 `"list['Message']"` 传给 SQLAlchemy 的 relationship()，
 # 导致 mapper 初始化失败（InvalidRequestError: using a generic class as the argument）。
-# pyright: reportAny=false, reportUnknownMemberType=false, reportUnknownVariableType=false, reportUnknownArgumentType=false, reportImplicitRelativeImport=false
+# pyright: reportAny=false, reportExplicitAny=false, reportUnknownMemberType=false, reportUnknownVariableType=false, reportUnknownArgumentType=false, reportImplicitRelativeImport=false
 
 import os
 import sqlite3
 import uuid
-from collections.abc import Iterator
+from collections.abc import Generator
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Literal, TypedDict
+from typing import Any, Literal, TypedDict, cast
 
-from sqlalchemy import CheckConstraint, Connection, Engine, create_engine, delete, event, func, text
+from sqlalchemy import (
+    CheckConstraint,
+    ColumnElement,
+    Connection,
+    Engine,
+    UnaryExpression,
+    create_engine,
+    delete,
+    event,
+    func,
+    text,
+)
 from sqlmodel import Field, Relationship, Session, SQLModel, select
+# sqlmodel.select() 返回的是 sqlalchemy.Select 的子类，Session.exec() 的重载也是按这个
+# 子类标注的 —— 用基类做返回类型标注会导致重载匹配失败。
+from sqlmodel.sql.expression import Select
 
 # 角色限定为这三种，同时用 CHECK 约束在数据库层兜底。
 Role = Literal["user", "assistant", "system"]
@@ -53,7 +69,8 @@ _engine: Engine | None = None
 class Conversation(SQLModel, table=True):
     """会话。"""
 
-    __tablename__ = "conversations"
+    # SQLModel 把 __tablename__ 声明为 declared_attr，直接赋字面量需要显式放行。
+    __tablename__ = "conversations"  # pyright: ignore[reportAssignmentType, reportUnannotatedClassAttribute]
 
     id: str = Field(default_factory=lambda: uuid.uuid4().hex, primary_key=True, max_length=64)
     title: str = Field(default="", max_length=200)
@@ -67,8 +84,8 @@ class Conversation(SQLModel, table=True):
 class Message(SQLModel, table=True):
     """一条消息（user / assistant / system）。"""
 
-    __tablename__ = "messages"
-    __table_args__ = (
+    __tablename__ = "messages"  # pyright: ignore[reportAssignmentType, reportUnannotatedClassAttribute]
+    __table_args__ = (  # pyright: ignore[reportUnannotatedClassAttribute]
         CheckConstraint(
             "role IN ('user', 'assistant', 'system')",
             name="ck_messages_role",
@@ -167,6 +184,24 @@ def _derive_title(value: str) -> str:
 
 
 # --------------------------------------------------------------------------
+# 列表达式收窄
+# --------------------------------------------------------------------------
+# SQLModel 的字段在**类型层面**是普通 Python 值（int / datetime / str），运行时才是
+# SQLAlchemy 的 InstrumentedAttribute（列表达式）。因此
+# `Message.id.desc()`、`func.count(Message.id)`、`Message.conversation_id == Conversation.id`
+# 这些运行时完全正确的写法，类型检查器会分别报「int 没有 desc」「bool 不能作 onclause」。
+# 下面两个助手把这一层差异集中收口，避免让 type: ignore 散落在各个查询里。
+def _col(column: object) -> ColumnElement[Any]:
+    """把 SQLModel 字段收窄成 SQLAlchemy 列表达式。"""
+    return cast("ColumnElement[Any]", column)
+
+
+def _desc(column: object) -> UnaryExpression[Any]:
+    """ORDER BY 降序（等价于运行时的 ``字段.desc()``）。"""
+    return _col(column).desc()
+
+
+# --------------------------------------------------------------------------
 # 路径 / 引擎 / 会话
 # --------------------------------------------------------------------------
 def resolve_db_path() -> Path:
@@ -194,8 +229,8 @@ def resolve_db_path() -> Path:
 def _set_sqlite_pragmas(dbapi_connection: sqlite3.Connection, _record: object) -> None:
     """SQLite 的外键默认关闭，必须逐连接开启；顺带设置写锁等待。"""
     cursor = dbapi_connection.cursor()
-    cursor.execute("PRAGMA foreign_keys = ON")
-    cursor.execute("PRAGMA busy_timeout = 5000")
+    _ = cursor.execute("PRAGMA foreign_keys = ON")
+    _ = cursor.execute("PRAGMA busy_timeout = 5000")
     cursor.close()
 
 
@@ -216,7 +251,7 @@ def get_engine() -> Engine:
 
 
 @contextmanager
-def session_scope() -> Iterator[Session]:
+def session_scope() -> Generator[Session, None, None]:
     """一个事务内的 Session：正常退出提交，异常回滚，最后关闭。"""
     with Session(get_engine()) as session:
         try:
@@ -239,10 +274,15 @@ def _normalise_v1_timestamps(connection: Connection) -> None:
     targets = (("conversations", ("created_at", "updated_at")), ("messages", ("created_at",)))
     for table, columns in targets:
         for column in columns:
-            connection.exec_driver_sql(
-                f"UPDATE {table} SET {column} = replace(replace({column}, 'T', ' '), '+00:00', '')"  # noqa: S608
-                f" WHERE {column} LIKE '%T%'"
+            # 表名/列名都是本文件内的常量，不存在拼接用户输入的注入风险。
+            statement = (
+                f"UPDATE {table} SET {column} ="  # noqa: S608
+                + f" replace(replace({column}, 'T', ' '), '+00:00', '')"
+                + f" WHERE {column} LIKE '%T%'"
             )
+            # 必须显式 close：结果对象一旦被变量长期持有，pysqlite 就不会释放游标，
+            # 提交时会报 "cannot commit transaction - SQL statements in progress"。
+            connection.exec_driver_sql(statement).close()
 
 
 def _migrate(connection: Connection) -> None:
@@ -256,7 +296,7 @@ def _migrate(connection: Connection) -> None:
     SQLModel.metadata.create_all(connection)
 
     if current != SCHEMA_VERSION:
-        connection.exec_driver_sql(f"PRAGMA user_version = {SCHEMA_VERSION}")
+        connection.exec_driver_sql(f"PRAGMA user_version = {SCHEMA_VERSION}").close()
 
 
 def init_db() -> Path:
@@ -266,7 +306,7 @@ def init_db() -> Path:
 
     # WAL 是数据库级持久设置，且必须在事务外执行，因此单独用一个连接设置一次。
     with engine.connect() as connection:
-        connection.exec_driver_sql("PRAGMA journal_mode = WAL")
+        connection.exec_driver_sql("PRAGMA journal_mode = WAL").close()
 
     with engine.begin() as connection:
         _migrate(connection)
@@ -277,22 +317,22 @@ def init_db() -> Path:
 # --------------------------------------------------------------------------
 # 会话
 # --------------------------------------------------------------------------
-def _conversation_statement(limit: int | None = None):
+def _conversation_statement(limit: int | None = None) -> Select[Any]:
     """会话列表查询：附带消息数与最后一条消息，按最近活跃排序。"""
     last_message = (
-        select(Message.content)
-        .where(Message.conversation_id == Conversation.id)
-        .order_by(Message.id.desc())
+        select(_col(Message.content))
+        .where(_col(Message.conversation_id) == _col(Conversation.id))
+        .order_by(_desc(Message.id))
         .limit(1)
         # 外层已经 JOIN 了 messages，不加 correlate 会被自动关联掉 FROM 子句。
         .correlate(Conversation)
         .scalar_subquery()
     )
     statement = (
-        select(Conversation, func.count(Message.id), last_message)
-        .outerjoin(Message, Message.conversation_id == Conversation.id)
-        .group_by(Conversation.id)
-        .order_by(Conversation.updated_at.desc())
+        select(Conversation, func.count(_col(Message.id)), last_message)
+        .outerjoin(Message, _col(Message.conversation_id) == _col(Conversation.id))
+        .group_by(_col(Conversation.id))
+        .order_by(_desc(Conversation.updated_at))
     )
     return statement.limit(limit) if limit is not None else statement
 
@@ -316,7 +356,7 @@ def list_conversations(limit: int = 50) -> list[ConversationRecord]:
 def get_conversation(conversation_id: str) -> ConversationRecord | None:
     with session_scope() as session:
         rows = session.exec(
-            _conversation_statement().where(Conversation.id == conversation_id)
+            _conversation_statement().where(_col(Conversation.id) == conversation_id)
         ).all()
         if not rows:
             return None
@@ -337,13 +377,14 @@ def delete_conversation(conversation_id: str) -> bool:
 def clear_conversations() -> int:
     """清空全部会话与消息，返回删除的会话数。"""
     with session_scope() as session:
+        deleted = session.scalar(select(func.count()).select_from(Conversation)) or 0
         # 先删子表再删父表：不依赖数据库是否开外键级联，语义也更直白。
         # synchronize_session=False：Session 随后即销毁，无需回写内存对象。
-        session.execute(delete(Message).execution_options(synchronize_session=False))
-        result = session.execute(
+        session.exec(delete(Message).execution_options(synchronize_session=False)).close()
+        session.exec(
             delete(Conversation).execution_options(synchronize_session=False)
-        )
-        return int(result.rowcount or 0)
+        ).close()
+        return int(deleted)
 
 
 # --------------------------------------------------------------------------
@@ -382,8 +423,8 @@ def list_messages(conversation_id: str, limit: int = 200) -> list[MessageRecord]
     """按时间正序返回会话内的消息（最多 limit 条）。"""
     statement = (
         select(Message)
-        .where(Message.conversation_id == conversation_id)
-        .order_by(Message.id)
+        .where(_col(Message.conversation_id) == conversation_id)
+        .order_by(_col(Message.id))
         .limit(limit)
     )
     with session_scope() as session:
@@ -448,7 +489,8 @@ def stats() -> dict[str, object]:
     with session_scope() as session:
         conversations = session.scalar(select(func.count()).select_from(Conversation)) or 0
         messages = session.scalar(select(func.count()).select_from(Message)) or 0
-        version = session.execute(text("PRAGMA user_version")).scalar_one()
+        # 裸 PRAGMA 不在 Session.exec() 的重载范围内，用 Core 的 text() 交给 session.scalar()。
+        version = session.scalar(text("PRAGMA user_version")) or 0
     return {
         "path": str(path),
         "exists": path.exists(),

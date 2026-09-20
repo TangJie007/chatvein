@@ -118,6 +118,12 @@ START → classify（判断是否为问句）
 都只需改模型。依赖已在 `backend/requirements.txt` 中声明（`sqlmodel>=0.0.22,<2.0`），
 `npm run prepare:runtime` 会一并装进打包运行时。
 
+> 类型检查（basedpyright）是经 `pyrightconfig.json` 的 `extraPaths` 从
+> `python-runtime/Lib/site-packages` 解析第三方库的，**不是**从 `backend/.venv`。
+> 所以改完 `requirements.txt` 后要跑一次 `npm run prepare:runtime`（或手动对
+> `python-runtime/python.exe` 执行 `pip install -r backend/requirements.txt`），
+> 否则 IDE 会报 `无法解析导入 "sqlmodel"` 这类错误，而程序本身却能正常运行。
+
 > ⚠️ `db.py` 中**不要**加 `from __future__ import annotations`：PEP 563 会让
 > `list["Message"]` 以字符串 `"list['Message']"` 的形式传给 SQLAlchemy 的
 > `relationship()`，导致 mapper 初始化报 `InvalidRequestError`。
