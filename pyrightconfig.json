@@ -1,6 +1,5 @@
 {
   "include": ["backend"],
-  "exclude": ["**/.venv", "**/__pycache__"],
-  "venvPath": "backend",
-  "venv": ".venv"
+  "exclude": ["**/.venv", "**/__pycache__", "**/python-runtime/**"],
+  "extraPaths": ["python-runtime/Lib/site-packages"]
 }
