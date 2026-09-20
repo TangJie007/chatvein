@@ -178,3 +178,170 @@ button.link {
   color: var(--muted);
   font-size: 13px;
 }
+
+/* ---------- SQLite 会话历史 ---------- */
+
+.head-actions {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+}
+
+.db-path {
+  margin: 0 0 12px;
+  font-size: 12px;
+  color: var(--muted);
+  word-break: break-all;
+}
+
+.db-path code {
+  background: #0d0f15;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 2px 6px;
+  font-family: "SF Mono", Menlo, Consolas, monospace;
+}
+
+.history {
+  display: grid;
+  grid-template-columns: 240px 1fr;
+  gap: 14px;
+}
+
+@media (max-width: 700px) {
+  .history {
+    grid-template-columns: 1fr;
+  }
+}
+
+.conv-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 320px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.conv-new {
+  background: transparent;
+  border: 1px dashed var(--border);
+  color: var(--muted);
+  font-size: 13px;
+  padding: 8px 10px;
+  text-align: left;
+}
+
+.conv-new.active {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.conv-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: #0d0f15;
+}
+
+.conv-item.active {
+  border-color: var(--accent);
+}
+
+.conv-main {
+  background: transparent;
+  color: var(--text);
+  padding: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  text-align: left;
+  min-width: 0;
+}
+
+.conv-title {
+  font-size: 13px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.conv-meta,
+.conv-preview {
+  font-size: 11px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+.conv-del {
+  flex: none;
+  font-size: 12px;
+}
+
+.msg-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 320px;
+  overflow-y: auto;
+  background: #0d0f15;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px;
+}
+
+.msg-list-head {
+  font-size: 12px;
+}
+
+.msg {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: #12151d;
+}
+
+.msg.user {
+  border-left: 3px solid var(--accent);
+}
+
+.msg.assistant {
+  border-left: 3px solid var(--ok);
+}
+
+.msg-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 4px;
+  font-size: 11px;
+}
+
+.role {
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.role.user {
+  color: var(--accent);
+}
+
+.role.assistant {
+  color: var(--ok);
+}
+
+.msg-body {
+  font-size: 13px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+}

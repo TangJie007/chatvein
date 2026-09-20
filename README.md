@@ -29,6 +29,8 @@ chatvein/
 │   └── src/{lib,main,backend,commands}.rs
 └── backend/             # Python 后端（FastAPI 侧车进程）
     ├── main.py
+    ├── graph.py         # LangGraph 工作流
+    ├── db.py            # SQLite 持久化层
     └── requirements.txt
 ```
 
@@ -107,6 +109,56 @@ START → classify（判断是否为问句）
   ```
 
 - **扩展**：在 `graph.py` 里增删 `add_node` / `add_conditional_edges` 即可编排多步 agent（工具调用、检索、记忆等），`/api/chat` 无需改动。
+
+## 数据持久化（SQLite）
+
+会话与消息通过 Python 标准库 `sqlite3` 落盘（`backend/db.py`），**不引入任何新依赖**
+（`requirements.txt` 未变），打包后的 standalone Python 自带该模块。
+
+**数据库位置由 Rust 消息层决定**，通过 `CHATVEIN_DATA_DIR` 注入，Python 只负责读取：
+
+| 场景 | 位置 |
+| --- | --- |
+| Tauri 运行（dev / 打包） | `app_data_dir()`：Windows `%APPDATA%\com.chatvein.app`、macOS `~/Library/Application Support/com.chatvein.app`、Linux `~/.local/share/com.chatvein.app` |
+| 直接跑后端 `python backend/main.py` | `backend/data/chatvein.db`（已在 `.gitignore` 中） |
+| 显式覆盖 | `CHATVEIN_DB_PATH`（完整文件路径）优先于 `CHATVEIN_DATA_DIR`（目录） |
+
+> 打包后的 `backend/` 位于只读的资源目录，数据库不能写在那里 —— 这正是把路径决策
+> 交给 Rust、由它注入环境变量的原因。
+
+**表结构**（用 `PRAGMA user_version` 记录 schema 版本，后续加表/改表在 `db.py::_migrate`
+中追加分支即可）：
+
+- `conversations(id TEXT PK, title, created_at, updated_at)`
+- `messages(id INTEGER PK AUTOINCREMENT, conversation_id → conversations.id
+  ON DELETE CASCADE, role CHECK(user/assistant/system), content, used_llm, route, created_at)`
+
+**接口**：
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| `POST` | `/api/chat` | 跑一遍 LangGraph，并在**同一事务**内写入「用户消息 + 助手回复」 |
+| `GET` | `/api/conversations` | 会话列表（含消息数、最后一条消息预览） |
+| `POST` | `/api/conversations` | 新建空会话 |
+| `GET` | `/api/conversations/{id}` | 单个会话 + 其消息 |
+| `GET` | `/api/conversations/{id}/messages` | 仅消息列表 |
+| `DELETE` | `/api/conversations/{id}` | 删除会话（消息级联删除） |
+| `DELETE` | `/api/conversations` | 清空全部历史 |
+| `GET` | `/api/db/info` | 数据库文件路径、schema 版本、行数统计（`/api/health` 也内嵌了该字段） |
+
+`POST /api/chat` 的 `conversation_id` 省略（或传入已失效的 id）时会自动新建会话，
+标题取首条用户消息前 30 字，无需前端额外调用建会话接口。
+
+**冒烟测试**（覆盖落库、读回、删除、清空）：
+
+```powershell
+# 终端 1：用临时数据库启动后端
+$env:CHATVEIN_DB_PATH="$env:TEMP\chatvein-test.db"
+backend/.venv/Scripts/python.exe backend/main.py --port 18794
+
+# 终端 2
+python tools/test_backend.py
+```
 
 ## 打包发布
 

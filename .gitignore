@@ -12,6 +12,9 @@ backend/.venv/
 .venv/
 python-runtime/
 
+# Local SQLite data (when the backend runs outside Tauri, e.g. `python backend/main.py`)
+backend/data/
+
 # Tauri generated
 src-tauri/gen/
 

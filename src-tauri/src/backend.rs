@@ -77,6 +77,14 @@ pub fn spawn_backend(app: &AppHandle) {
         }
     };
 
+    // Own the storage location here (message layer decides paths): the bundled
+    // `backend/` lives in a read-only resources dir, so the SQLite database
+    // must go to the per-user app data dir instead.
+    let data_dir = resolve_data_dir(app, &backend_dir);
+    if let Err(e) = std::fs::create_dir_all(&data_dir) {
+        emit_error(app, &format!("无法创建数据目录 {}: {e}", data_dir.display()));
+    }
+
     let port = backend_port();
     let mut child = match Command::new(&python)
         .arg(&main_py)
@@ -84,6 +92,7 @@ pub fn spawn_backend(app: &AppHandle) {
         .arg(port.to_string())
         .current_dir(&backend_dir)
         .env("CHATVEIN_PORT", port.to_string())
+        .env("CHATVEIN_DATA_DIR", &data_dir)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
@@ -172,6 +181,23 @@ fn find_python(backend_dir: &std::path::Path, resource_dir: &std::path::Path) ->
         }
     }
     None
+}
+
+/// Directory handed to the Python backend for its SQLite database (and any
+/// other persistent state) via `CHATVEIN_DATA_DIR`.
+///
+/// Rust owns path selection: the packaged `backend/` sits inside the read-only
+/// resources directory, so the database must live in the per-user app data
+/// directory instead. If that cannot be resolved we fall back to
+/// `<backend>/data` so the app still starts (dev / unusual sandboxing).
+fn resolve_data_dir(app: &AppHandle, backend_dir: &std::path::Path) -> std::path::PathBuf {
+    match app.path().app_data_dir() {
+        Ok(dir) => dir,
+        Err(e) => {
+            emit_error(app, &format!("无法获取应用数据目录，回退到后端目录: {e}"));
+            backend_dir.join("data")
+        }
+    }
 }
 
 /// Spawn a thread that reads a pipe to completion and emits each chunk.

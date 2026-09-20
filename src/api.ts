@@ -62,7 +62,77 @@ export async function backendRequest<T = unknown>(
 
 /** Lightweight health check against the Python backend. */
 export async function backendHealth() {
-  return backendRequest<{ status: string; service: string; python: string }>(
-    "/api/health"
+  return backendRequest<{
+    status: string;
+    service: string;
+    python: string;
+    db: DbInfo;
+  }>("/api/health");
+}
+
+/* -------------------------------------------------------------------------
+ * SQLite persistence (backend/db.py)
+ * ---------------------------------------------------------------------- */
+
+export type ChatRole = "user" | "assistant" | "system";
+
+export interface ChatMessageRecord {
+  id: number;
+  conversation_id: string;
+  role: ChatRole;
+  content: string;
+  used_llm: boolean;
+  route: string | null;
+  created_at: string;
+}
+
+export interface ConversationRecord {
+  id: string;
+  title: string;
+  created_at: string;
+  updated_at: string;
+  message_count: number;
+  last_message: string | null;
+}
+
+export interface DbInfo {
+  path: string;
+  exists: boolean;
+  schema_version: number;
+  conversations: number;
+  messages: number;
+}
+
+/** Database file location, schema version and row counts. */
+export function dbInfo() {
+  return backendRequest<DbInfo>("/api/db/info");
+}
+
+/** Conversations, newest activity first. */
+export async function listConversations(limit = 50) {
+  const data = await backendRequest<{ conversations: ConversationRecord[] }>(
+    `/api/conversations?limit=${limit}`
   );
+  return data.conversations;
+}
+
+/** A single conversation together with its persisted messages. */
+export function getConversation(conversationId: string) {
+  return backendRequest<{
+    conversation: ConversationRecord;
+    messages: ChatMessageRecord[];
+  }>(`/api/conversations/${conversationId}`);
+}
+
+/** Delete one conversation (messages cascade). */
+export function deleteConversation(conversationId: string) {
+  return backendRequest<{ deleted: number; id: string }>(
+    `/api/conversations/${conversationId}`,
+    "DELETE"
+  );
+}
+
+/** Wipe every conversation and message. */
+export function clearHistory() {
+  return backendRequest<{ deleted: number }>("/api/conversations", "DELETE");
 }
