@@ -2,5 +2,8 @@ fastapi>=0.115,<1.0
 uvicorn>=0.32,<1.0
 pydantic>=2.9,<3.0
 sqlmodel>=0.0.22,<2.0
+# BM25 全文检索。numpy 由 bm25s 自动带入，pip 会按 Python 版本挑兼容版本
+# （3.10 → numpy 2.2.x，3.14 → numpy 2.5.x），无需在此固定。
+bm25s>=0.3,<1.0
 langgraph>=1.2,<2.0
 langchain-openai>=1.6,<2.0

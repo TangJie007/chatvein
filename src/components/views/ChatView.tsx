@@ -27,7 +27,7 @@ const PLACEHOLDER_SESSIONS: SessionItem[] = [
   },
 ];
 
-export function ChatView() {
+export function ChatView({ modelName }: { modelName?: string }) {
   const [activeId, setActiveId] = useState<string | null>(PLACEHOLDER_SESSIONS[0].id);
   const [query, setQuery] = useState("");
   const [insightOpen, setInsightOpen] = useState(true);
@@ -70,6 +70,7 @@ export function ChatView() {
           messages={messages}
           insightOpen={insightOpen}
           onToggleInsight={() => setInsightOpen((v) => !v)}
+          modelName={modelName}
           onSend={(text) => {
             if (!activeId) return;
             setMessagesById((prev) => ({

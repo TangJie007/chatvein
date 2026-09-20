@@ -1,7 +1,7 @@
 """ChatVein Python backend.
 
 Rust/Tauri 侧车进程：启动后把真实 base URL 推给前端，前端直连本服务。
-当前入口仅暴露健康检查；OpenAPI / Swagger UI 默认开启。
+模型管理等业务路由在 lifespan 中挂载；OpenAPI / Swagger UI 默认开启。
 """
 import argparse
 import os
@@ -15,6 +15,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 import db  # pyright: ignore[reportImplicitRelativeImport]
+from models.module import models_router, on_module_init  # pyright: ignore[reportImplicitRelativeImport]
 
 
 @asynccontextmanager
@@ -25,6 +26,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
         f"CHATVEIN_DB path={db_path} schema=v{info['schema_version']}",
         flush=True,
     )
+    on_module_init()
     yield
 
 
@@ -44,6 +46,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.include_router(models_router)
 
 
 @app.get("/api/health", tags=["health"], summary="健康检查")

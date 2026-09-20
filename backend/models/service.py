@@ -2,8 +2,13 @@
 
 from __future__ import annotations
 
+import json
 import os
+import time
 from datetime import datetime, timezone
+from typing import Any
+from urllib.error import HTTPError
+from urllib.request import Request, urlopen
 
 from .entity import (
     CreateLlmModelDto,
@@ -132,11 +137,72 @@ class ModelsService:
         return self.to_response(saved)
 
     def delete_model(self, model_id: str) -> bool:
+        entity = self._repo.find_by_id(model_id)
+        if entity is None:
+            return False
+        if entity.is_primary:
+            raise ValueError("主对话模型不可删除")
         return self._repo.delete(model_id)
 
     def set_default(self, model_id: str) -> LlmModelResponseDto | None:
         entity = self._repo.set_default(model_id)
         return self.to_response(entity) if entity else None
+
+    def test_connection(self, model_id: str) -> dict[str, Any] | None:
+        """探测 OpenAI 兼容 ``GET {base_url}/models``。"""
+        entity = self._repo.find_by_id(model_id)
+        if entity is None:
+            return None
+
+        base = (entity.base_url or "https://api.openai.com/v1").rstrip("/")
+        url = f"{base}/models"
+        headers = {"User-Agent": "ChatVein/0.1", "Accept": "application/json"}
+        if entity.api_key:
+            headers["Authorization"] = f"Bearer {entity.api_key}"
+
+        started = time.perf_counter()
+        req = Request(url, headers=headers, method="GET")
+        try:
+            with urlopen(req, timeout=15) as resp:
+                body = resp.read(2048)
+                latency_ms = int((time.perf_counter() - started) * 1000)
+                # 粗看是否像模型列表
+                model_count: int | None = None
+                try:
+                    parsed = json.loads(body.decode("utf-8", errors="replace"))
+                    if isinstance(parsed, dict) and isinstance(parsed.get("data"), list):
+                        model_count = len(parsed["data"])
+                except (json.JSONDecodeError, UnicodeError):
+                    pass
+                return {
+                    "ok": True,
+                    "status_code": getattr(resp, "status", 200),
+                    "latency_ms": latency_ms,
+                    "message": (
+                        f"连接成功"
+                        + (f"，列出 {model_count} 个模型" if model_count is not None else "")
+                    ),
+                    "url": url,
+                }
+        except HTTPError as exc:
+            latency_ms = int((time.perf_counter() - started) * 1000)
+            detail = exc.read(512).decode("utf-8", errors="replace") if exc.fp else ""
+            return {
+                "ok": False,
+                "status_code": exc.code,
+                "latency_ms": latency_ms,
+                "message": f"HTTP {exc.code}" + (f"：{detail[:200]}" if detail else ""),
+                "url": url,
+            }
+        except Exception as exc:  # noqa: BLE001 — 探测接口需吞掉网络类异常
+            latency_ms = int((time.perf_counter() - started) * 1000)
+            return {
+                "ok": False,
+                "status_code": None,
+                "latency_ms": latency_ms,
+                "message": str(exc) or type(exc).__name__,
+                "url": url,
+            }
 
     def get_runtime_config(self) -> LlmModel | None:
         """供 agents / chat 使用：优先主模型，其次默认，再取列表第一条。"""

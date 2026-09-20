@@ -121,6 +121,7 @@ class LlmModelRepository:
         with session_scope() as session:
             entity = session.exec(statement).first()
             return self._detach(entity) if entity is not None else None
+
     @staticmethod
     def _clear_flag(
         session: Session,

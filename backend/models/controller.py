@@ -37,7 +37,11 @@ def update_model(model_id: str, payload: UpdateLlmModelDto):
 
 @models_controller.delete("/{model_id}")
 def delete_model(model_id: str):
-    if not _service.delete_model(model_id):
+    try:
+        deleted = _service.delete_model(model_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if not deleted:
         raise HTTPException(status_code=404, detail="模型不存在")
     return {"deleted": 1, "id": model_id}
 
@@ -48,3 +52,11 @@ def set_default_model(model_id: str):
     if model is None:
         raise HTTPException(status_code=404, detail="模型不存在")
     return model
+
+
+@models_controller.post("/{model_id}/test")
+def test_model_connection(model_id: str):
+    result = _service.test_connection(model_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail="模型不存在")
+    return result
