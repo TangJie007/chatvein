@@ -1,0 +1,18 @@
+# Node
+node_modules/
+dist/
+
+# Rust
+src-tauri/target/
+
+# Python
+__pycache__/
+*.pyc
+backend/.venv/
+.venv/
+
+# Tauri generated
+src-tauri/gen/
+
+# OS
+.DS_Store
