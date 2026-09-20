@@ -57,6 +57,16 @@ def version():
     return {"python": sys.version, "fastapi": __import__("fastapi").__version__}
 
 
+@app.get("/api/hello")
+def hello():
+    """Hello World endpoint — returns a greeting from the Python backend."""
+    return {
+        "message": "你好，世界！",
+        "from": "python-backend",
+        "python": sys.version.split()[0],
+    }
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="ChatVein Python backend")
     parser.add_argument(

@@ -105,6 +105,21 @@ export default function App() {
     }
   }
 
+  async function sendHello() {
+    setLoading(true);
+    setReply("");
+    try {
+      const data = await backendRequest<{ message: string; from: string }>(
+        "/api/hello"
+      );
+      setReply(`${data.message}（来自 ${data.from}）`);
+    } catch (e) {
+      setReply(`Error: ${String(e)}`);
+    } finally {
+      setLoading(false);
+    }
+  }
+
   const connected = !!health && health.status === "ok";
 
   return (
@@ -140,6 +155,9 @@ export default function App() {
           </button>
           <button onClick={sendEcho} disabled={loading || !connected}>
             发送到 /api/echo
+          </button>
+          <button onClick={sendHello} disabled={loading || !connected}>
+            调用 /api/hello
           </button>
         </div>
 
