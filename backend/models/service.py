@@ -63,6 +63,9 @@ class ModelsService:
     def list_models(self) -> list[LlmModelResponseDto]:
         return [self.to_response(m) for m in self._repo.find_all()]
 
+    def count(self) -> int:
+        return self._repo.count()
+
     def get_model(self, model_id: str) -> LlmModelResponseDto | None:
         entity = self._repo.find_by_id(model_id)
         return self.to_response(entity) if entity else None

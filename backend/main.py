@@ -6,8 +6,8 @@ frontend, which then talks to Python *directly* via fetch. Rust is the
 process / URL provider and event bridge, not a per-request proxy.
 
 The /api/chat endpoint is backed by a LangGraph workflow (see graph.py) and
-every exchange is persisted to SQLite (see db.py). The database directory is
-injected by Rust via `CHATVEIN_DATA_DIR`.
+every exchange is persisted to SQLite. The database directory is injected by
+Rust via `CHATVEIN_DATA_DIR`.
 """
 import argparse
 import os
@@ -18,16 +18,23 @@ from importlib.metadata import PackageNotFoundError, version as pkg_version
 from typing import cast
 
 import uvicorn
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 import db  # pyright: ignore[reportImplicitRelativeImport]
+from conversations.module import (  # pyright: ignore[reportImplicitRelativeImport]
+    conversations_router,
+    conversations_service,
+)
 from graph import run_chat  # pyright: ignore[reportImplicitRelativeImport]
 from models.module import (  # pyright: ignore[reportImplicitRelativeImport]
     models_router,
     on_module_init as models_on_module_init,
 )
+from models.service import ModelsService  # pyright: ignore[reportImplicitRelativeImport]
+
+_models_service = ModelsService()
 
 
 @asynccontextmanager
@@ -35,7 +42,11 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
     """Open/create the SQLite database before serving traffic."""
     db_path = db.init_db()
     models_on_module_init()
-    info = db.stats()
+    info = {
+        **db.stats(),
+        **conversations_service.counts(),
+        "llm_models": _models_service.count(),
+    }
     print(
         "CHATVEIN_DB "
         + " ".join(
@@ -54,10 +65,8 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
 
 app = FastAPI(title="ChatVein Backend", lifespan=lifespan)
 app.include_router(models_router)
+app.include_router(conversations_router)
 
-# The frontend reaches Python through Tauri's native HTTP plugin (request is
-# executed in Rust, so browser CORS never applies). This middleware is just a
-# safety net for anything else that might call the backend directly.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -66,18 +75,21 @@ app.add_middleware(
 )
 
 
-class Message(BaseModel):
+class EchoMessage(BaseModel):
     message: str
 
 
 class ChatRequest(BaseModel):
     message: str
-    # 省略则自动新建会话；传入不存在的 id 也会自动新建，避免前端拿到脏 id 报错。
     conversation_id: str | None = None
 
 
-class ConversationCreate(BaseModel):
-    title: str = ""
+def _db_overview() -> dict[str, object]:
+    return {
+        **db.stats(),
+        **conversations_service.counts(),
+        "llm_models": _models_service.count(),
+    }
 
 
 @app.get("/api/health")
@@ -86,73 +98,26 @@ def health():
         "status": "ok",
         "service": "chatvein-python",
         "python": sys.version.split()[0],
-        "db": db.stats(),
+        "db": _db_overview(),
     }
 
 
 @app.get("/api/db/info")
 def db_info():
-    """SQLite 概况：文件位置、schema 版本、会话/消息条数。"""
-    return db.stats()
-
-
-@app.get("/api/conversations")
-def list_conversations(limit: int = 50):
-    return {"conversations": db.list_conversations(limit)}
-
-
-@app.post("/api/conversations")
-def create_conversation(payload: ConversationCreate):
-    return db.create_conversation(payload.title)
-
-
-@app.delete("/api/conversations")
-def clear_conversations():
-    """清空所有会话与消息（用于“清空历史”按钮）。"""
-    return {"deleted": db.clear_conversations()}
-
-
-@app.get("/api/conversations/{conversation_id}")
-def get_conversation(conversation_id: str):
-    conversation = db.get_conversation(conversation_id)
-    if conversation is None:
-        raise HTTPException(status_code=404, detail="会话不存在")
-    return {
-        "conversation": conversation,
-        "messages": db.list_messages(conversation_id),
-    }
-
-
-@app.delete("/api/conversations/{conversation_id}")
-def delete_conversation(conversation_id: str):
-    if not db.delete_conversation(conversation_id):
-        raise HTTPException(status_code=404, detail="会话不存在")
-    return {"deleted": 1, "id": conversation_id}
-
-
-@app.get("/api/conversations/{conversation_id}/messages")
-def list_messages(conversation_id: str):
-    return {"messages": db.list_messages(conversation_id)}
+    return _db_overview()
 
 
 @app.post("/api/echo")
-def echo(msg: Message):
+def echo(msg: EchoMessage):
     return {"echo": msg.message, "length": len(msg.message)}
 
 
 @app.post("/api/chat")
 def chat(req: ChatRequest):
-    """Chat handler backed by a LangGraph workflow, persisted to SQLite.
-
-    The graph routes questions to an LLM node (or a deterministic offline
-    fallback when no API key is configured) and non-questions to an echo node.
-    Both the user message and the reply are written to SQLite in one
-    transaction; the conversation is created on the fly when needed.
-    """
     result = run_chat(req.message)
     reply = cast(str, result["reply"])
 
-    conversation_id, user_msg, assistant_msg = db.save_exchange(
+    conversation_id, user_msg, assistant_msg = conversations_service.save_exchange(
         req.conversation_id,
         req.message,
         reply,
@@ -179,7 +144,6 @@ def version():
 
 @app.get("/api/hello")
 def hello():
-    """Hello World endpoint — returns a greeting from the Python backend."""
     return {
         "message": "你好，世界！",
         "from": "python-backend",
@@ -199,11 +163,9 @@ def main() -> None:
         default=int(os.environ.get("CHATVEIN_PORT", "8420")),
     )
     args = parser.parse_args()
-    # argparse.Namespace 的属性是 Any，显式收窄以消除 reportAny。
     host = cast(str, args.host)
     port = cast(int, args.port)
 
-    # Surface a ready marker on stdout so the Rust layer can observe startup.
     print(f"CHATVEIN_BACKEND_READY host={host} port={port}", flush=True)
     uvicorn.run(app, host=host, port=port, log_level="info")
 
