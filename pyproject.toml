@@ -1,0 +1,18 @@
+[tool.ruff]
+line-length = 225
+target-version = "py312"
+src = ["backend"]
+
+[tool.ruff.lint]
+# 与历史 flake8/pycodestyle 一致：用 line-length，不再单独卡 79
+ignore = []
+
+[tool.flake8]
+max-line-length = 225
+extend-ignore = ["E203", "W503"]
+
+[tool.pylint.format]
+max-line-length = 225
+
+[tool.pycodestyle]
+max-line-length = 225

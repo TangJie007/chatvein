@@ -24,12 +24,17 @@ from pydantic import BaseModel
 
 import db  # pyright: ignore[reportImplicitRelativeImport]
 from graph import run_chat  # pyright: ignore[reportImplicitRelativeImport]
+from models.module import (  # pyright: ignore[reportImplicitRelativeImport]
+    models_router,
+    on_module_init as models_on_module_init,
+)
 
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
     """Open/create the SQLite database before serving traffic."""
     db_path = db.init_db()
+    models_on_module_init()
     info = db.stats()
     print(
         "CHATVEIN_DB "
@@ -39,6 +44,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
                 f"schema=v{info['schema_version']}",
                 f"conversations={info['conversations']}",
                 f"messages={info['messages']}",
+                f"llm_models={info['llm_models']}",
             ]
         ),
         flush=True,
@@ -47,6 +53,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
 
 
 app = FastAPI(title="ChatVein Backend", lifespan=lifespan)
+app.include_router(models_router)
 
 # The frontend reaches Python through Tauri's native HTTP plugin (request is
 # executed in Rust, so browser CORS never applies). This middleware is just a

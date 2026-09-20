@@ -1,0 +1,14 @@
+{
+  "python.defaultInterpreterPath": "${workspaceFolder}/backend/.venv/Scripts/python.exe",
+  "python.analysis.extraPaths": [
+    "${workspaceFolder}/backend/.venv/Lib/site-packages",
+    "${workspaceFolder}/python-runtime/Lib/site-packages"
+  ],
+  "python.analysis.diagnosticMode": "workspace",
+  "ruff.lineLength": 225,
+  "flake8.args": ["--max-line-length=225"],
+  "pylint.args": ["--max-line-length=225"],
+  "[python]": {
+    "editor.rulers": [225]
+  }
+}

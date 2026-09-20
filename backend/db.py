@@ -52,8 +52,8 @@ from sqlmodel.sql.expression import Select
 # 角色限定为这三种，同时用 CHECK 约束在数据库层兜底。
 Role = Literal["user", "assistant", "system"]
 
-# v1: 手写 sqlite3；v2: SQLModel（时间戳存储格式随之规范化）。
-SCHEMA_VERSION = 2
+# v1: 手写 sqlite3；v2: SQLModel（时间戳存储格式随之规范化）；v3: llm_models 表。
+SCHEMA_VERSION = 3
 DB_FILENAME = "chatvein.db"
 # 新会话自动用首条用户消息做标题，超出长度截断。
 TITLE_MAX_LEN = 30
@@ -107,6 +107,17 @@ class Message(SQLModel, table=True):
     created_at: datetime = Field(default_factory=lambda: _utc_now())
 
     conversation: Conversation | None = Relationship(back_populates="messages")
+
+
+# 注册 NestJS 风格模块里的实体，确保 create_all / metadata 能看见 llm_models。
+# 延迟导入避免 db ↔ models 循环依赖（models.repository 依赖 db.session_scope）。
+def _register_feature_entities() -> None:
+    from models.entity import LlmModel  # pyright: ignore[reportUnusedImport, reportImplicitRelativeImport]
+
+    _ = LlmModel
+
+
+_register_feature_entities()
 
 
 # --------------------------------------------------------------------------
@@ -485,10 +496,13 @@ def save_exchange(
 
 def stats() -> dict[str, object]:
     """数据库概况，供 /api/health 与调试接口展示。"""
+    from models.entity import LlmModel  # pyright: ignore[reportImplicitRelativeImport]
+
     path = resolve_db_path()
     with session_scope() as session:
         conversations = session.scalar(select(func.count()).select_from(Conversation)) or 0
         messages = session.scalar(select(func.count()).select_from(Message)) or 0
+        llm_models = session.scalar(select(func.count()).select_from(LlmModel)) or 0
         # 裸 PRAGMA 不在 Session.exec() 的重载范围内，用 Core 的 text() 交给 session.scalar()。
         version = session.scalar(text("PRAGMA user_version")) or 0
     return {
@@ -497,4 +511,5 @@ def stats() -> dict[str, object]:
         "schema_version": int(version),
         "conversations": int(conversations),
         "messages": int(messages),
+        "llm_models": int(llm_models),
     }
