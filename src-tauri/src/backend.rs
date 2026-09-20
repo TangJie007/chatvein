@@ -71,7 +71,7 @@ pub fn spawn_backend(app: &AppHandle) {
         None => {
             emit_error(
                 app,
-                "未找到 Python 解释器（已尝试打包运行时、backend/.venv 以及 python / python3）",
+                "未找到 Python 解释器（已尝试打包运行时、仓库根 .venv 以及 python / python3）",
             );
             return;
         }
@@ -147,7 +147,7 @@ pub fn kill_backend() {
 
 /// Locate a usable Python interpreter, in priority order:
 ///   1. bundled standalone runtime (shipped via `bundle.resources` as `python-runtime`)
-///   2. dev virtualenv at `backend/.venv`
+///   2. dev virtualenv at `<repo-root>/.venv`
 ///   3. `python` / `python3` found on PATH
 fn find_python(backend_dir: &std::path::Path, resource_dir: &std::path::Path) -> Option<std::path::PathBuf> {
     let runtime = if cfg!(windows) {
@@ -159,10 +159,14 @@ fn find_python(backend_dir: &std::path::Path, resource_dir: &std::path::Path) ->
         return Some(runtime);
     }
 
+    // The dev virtualenv lives at the repo root, deliberately outside `backend/`
+    // so that the whole `backend/` directory can be bundled as-is without
+    // dragging a several-hundred-MB venv into the installer.
+    let repo_root = backend_dir.parent()?;
     let venv = if cfg!(windows) {
-        backend_dir.join(".venv").join("Scripts").join("python.exe")
+        repo_root.join(".venv").join("Scripts").join("python.exe")
     } else {
-        backend_dir.join(".venv").join("bin").join("python")
+        repo_root.join(".venv").join("bin").join("python")
     };
     if venv.exists() {
         return Some(venv);

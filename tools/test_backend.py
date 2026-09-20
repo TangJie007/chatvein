@@ -6,7 +6,7 @@ Usage:
     # 1) start the backend against a throwaway database
     #    (PowerShell)
     $env:CHATVEIN_DB_PATH="$env:TEMP\chatvein-test.db"
-    backend/.venv/Scripts/python.exe backend/main.py --port 18794
+    .venv/Scripts/python.exe backend/main.py --port 18794
     # 2) run this script
     python tools/test_backend.py
 """

@@ -8,7 +8,6 @@ src-tauri/target/
 # Python
 __pycache__/
 *.pyc
-backend/.venv/
 .venv/
 python-runtime/
 

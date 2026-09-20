@@ -15,6 +15,10 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 import db  # pyright: ignore[reportImplicitRelativeImport]
+from embeddings.module import (  # pyright: ignore[reportImplicitRelativeImport]
+    embeddings_router,
+    on_module_init as on_embeddings_init,
+)
 from models.module import models_router, on_module_init  # pyright: ignore[reportImplicitRelativeImport]
 
 
@@ -27,6 +31,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
         flush=True,
     )
     on_module_init()
+    on_embeddings_init()
     yield
 
 
@@ -48,6 +53,7 @@ app.add_middleware(
 )
 
 app.include_router(models_router)
+app.include_router(embeddings_router)
 
 
 @app.get("/api/health", tags=["health"], summary="健康检查")

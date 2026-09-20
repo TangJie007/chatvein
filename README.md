@@ -48,15 +48,19 @@ npm install
 
 项目统一锁定 **Python 3.13**（dev 的 `.venv`、打包的 `python-runtime`、
 类型检查的 `pyrightconfig.json` 三处必须一致）。开发用的 venv 请直接由打包
-运行时的解释器创建，避免跟随系统版本：
+运行时的解释器创建，避免跟随系统版本。
+
+> venv 必须建在**仓库根**（`.venv/`），不要建在 `backend/` 下：`bundle.resources`
+> 会把整个 `backend/` 打进安装包，而 Tauri **不支持排除子目录**，venv 放在
+> `backend/` 里等于给安装包白送几百 MB。
 
 ```bash
 # Windows
-python-runtime/python.exe -m venv backend/.venv
-backend/.venv/Scripts/pip install -r backend/requirements.txt
+python-runtime/python.exe -m venv .venv
+.venv/Scripts/pip install -r backend/requirements.txt
 # macOS / Linux（需自行准备 3.13 的 standalone 发行物）
-python-runtime/bin/python -m venv backend/.venv
-backend/.venv/bin/pip install -r backend/requirements.txt
+python-runtime/bin/python -m venv .venv
+.venv/bin/pip install -r backend/requirements.txt
 ```
 
 > 若 `python-runtime/` 尚不存在，先执行一次 `npm run prepare:runtime`。
@@ -111,7 +115,7 @@ Rust 只负责把真实后端 URL 交给前端，新增接口无需改动 Rust �
 `npm run prepare:runtime` 会一并装进打包运行时。
 
 > 类型检查（basedpyright）是经 `pyrightconfig.json` 的 `extraPaths` 从
-> `python-runtime/Lib/site-packages` 解析第三方库的，**不是**从 `backend/.venv`。
+> `python-runtime/Lib/site-packages` 解析第三方库的，**不是**从仓库根的 `.venv`。
 > 所以改完 `requirements.txt` 后要跑一次 `npm run prepare:runtime`（或手动对
 > `python-runtime/python.exe` 执行 `pip install -r backend/requirements.txt`），
 > 否则 IDE 会报 `无法解析导入 "sqlmodel"` 这类错误，而程序本身却能正常运行。
@@ -168,7 +172,7 @@ Rust 只负责把真实后端 URL 交给前端，新增接口无需改动 Rust �
 ```powershell
 # 终端 1：用临时数据库启动后端
 $env:CHATVEIN_DB_PATH="$env:TEMP\chatvein-test.db"
-backend/.venv/Scripts/python.exe backend/main.py --port 18794
+.venv/Scripts/python.exe backend/main.py --port 18794
 
 # 终端 2
 python tools/test_backend.py
@@ -186,7 +190,7 @@ python tools/test_backend.py
 - `tauri.conf.json` 的 `bundle.resources` 把 `backend/` 和 `python-runtime/`
   复制进应用资源目录。
 - Rust 在运行时自动区分两种布局：打包后从 `资源目录/python-runtime/python.exe`
-  启动；开发时回落到 `backend/.venv` 或系统 `python`。
+  启动；开发时回落到仓库根 `.venv` 或系统 `python`。
 
 ```bash
 # 1) 准备运行时（npm run tauri build 的 beforeBuildCommand 会自动执行，也可手动跑）

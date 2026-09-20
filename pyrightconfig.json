@@ -1,10 +1,10 @@
 {
   "include": ["backend"],
   "exclude": ["**/.venv", "**/__pycache__", "**/python-runtime/**"],
-  "venvPath": "backend",
+  "venvPath": ".",
   "venv": ".venv",
   "extraPaths": [
-    "backend/.venv/Lib/site-packages",
+    ".venv/Lib/site-packages",
     "python-runtime/Lib/site-packages"
   ],
   "pythonVersion": "3.13",
