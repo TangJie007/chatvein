@@ -13,8 +13,14 @@ from typing import cast
 import uvicorn
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel, Field
 
 import db  # pyright: ignore[reportImplicitRelativeImport]
+from agents.service import run_chat  # pyright: ignore[reportImplicitRelativeImport]
+from conversations.module import (  # pyright: ignore[reportImplicitRelativeImport]
+    conversations_router,
+    conversations_service,
+)
 from embeddings.module import (  # pyright: ignore[reportImplicitRelativeImport]
     embeddings_router,
     on_module_init as on_embeddings_init,
@@ -54,6 +60,40 @@ app.add_middleware(
 
 app.include_router(models_router)
 app.include_router(embeddings_router)
+app.include_router(conversations_router)
+
+
+class ChatRequest(BaseModel):
+    message: str = Field(min_length=1, max_length=32000)
+    conversation_id: str | None = Field(default=None, max_length=64)
+
+
+@app.post("/api/chat", tags=["chat"], summary="改写 + 难度路由 + 工具选择")
+def chat(req: ChatRequest):
+    result = run_chat(req.message)
+    reply = str(result.get("reply") or "")
+    route = str(result.get("difficulty") or result.get("route") or "simple")
+    conversation_id, user_msg, assistant_msg = conversations_service.save_exchange(
+        req.conversation_id,
+        req.message,
+        reply,
+        used_llm=bool(result.get("used_llm", False)),
+        route=route,
+    )
+    return {
+        "reply": reply,
+        "from": "agents",
+        "difficulty": route,
+        "rewritten": result.get("rewritten"),
+        "route": route,
+        "route_reason": result.get("route_reason"),
+        "tool_plan_reason": result.get("tool_plan_reason"),
+        "selected_tools": list(result.get("selected_tools") or []),
+        "used_llm": bool(result.get("used_llm", False)),
+        "conversation_id": conversation_id,
+        "user_message": user_msg,
+        "assistant_message": assistant_msg,
+    }
 
 
 @app.get("/api/health", tags=["health"], summary="健康检查")

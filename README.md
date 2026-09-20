@@ -93,8 +93,7 @@ Rust 只负责把真实后端 URL 交给前端，新增接口无需改动 Rust �
 
 ## Agent 集成
 
-`/api/chat` 走 `backend/agents/`（入口 ``run_chat``）。Agent、工具与编排逻辑在该包内实现；
-`main.py` 只负责 HTTP 与会话持久化。
+`/api/chat` → 主模型 **改写 + 难度分流**（simple/medium/hard）→ 工具选择缩集 → Tool-calling。见 [docs/agents.md](docs/agents.md)。
 
 ## 数据持久化（SQLite）
 
