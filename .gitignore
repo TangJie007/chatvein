@@ -14,6 +14,11 @@ python-runtime/
 # Local SQLite data (when the backend runs outside Tauri, e.g. `python backend/main.py`)
 backend/data/
 
+# Local model cache. Must live OUTSIDE backend/: bundle.resources copies
+# ../backend verbatim and does not honour .gitignore, so anything under
+# backend/ ends up in the installer.
+.chatvein/
+
 # Tauri generated
 src-tauri/gen/
 

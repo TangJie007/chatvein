@@ -41,16 +41,57 @@ _DATA_DIR_ENV = "CHATVEIN_DATA_DIR"
 _registered: set[str] = set()
 
 
-def data_dir() -> Path:
-    """可写的数据目录。
+def _is_writable(path: Path) -> bool:
+    """探测目录是否真的可写。
 
-    Tauri 运行时由 Rust 注入 app_data_dir；直接跑 ``python backend/main.py``
-    时回落到 ``backend/data``。
+    必须提前探测：打包后 Rust 若解析 app_data_dir 失败会回退到
+    ``<backend>/data``，而该目录位于只读资源目录内。不探测的话要等下载完
+    上百 MB 才在写盘时炸掉，用户只会看到一个莫名的下载失败。
     """
+    try:
+        path.mkdir(parents=True, exist_ok=True)
+        probe = path / f".write-probe-{os.getpid()}"
+        probe.write_text("ok", encoding="utf-8")
+        probe.unlink(missing_ok=True)
+    except OSError:
+        return False
+    return True
+
+
+_data_dir_cache: Path | None = None
+
+
+def data_dir() -> Path:
+    """可写的数据目录，按优先级取第一个真正可写的候选。
+
+    1. ``CHATVEIN_DATA_DIR``（Rust 注入的 app_data_dir，打包时走这条路）
+    2. 项目根的 ``.chatvein``（dev 直跑时回落）
+
+    ⚠️ 回落目录**必须**落在 ``backend/`` 之外：tauri.conf.json 的
+    ``bundle.resources`` 会把整个 ``../backend`` 打进安装包，而打包是按文件系统
+    复制的，不看 .gitignore。模型缓存若放在 backend 下，几百 MB 权重会直接进
+    安装包（dev 数据库同理）。
+
+    结果做进程内缓存：写探测有 I/O，且环境变量在运行期不会变。
+    """
+    global _data_dir_cache
+    if _data_dir_cache is not None:
+        return _data_dir_cache
+
+    candidates: list[Path] = []
     base = os.environ.get(_DATA_DIR_ENV)
     if base:
-        return Path(base)
-    return Path(__file__).resolve().parents[1] / "data"
+        candidates.append(Path(base))
+    candidates.append(Path(__file__).resolve().parents[2] / ".chatvein")
+
+    for candidate in candidates:
+        if _is_writable(candidate):
+            _data_dir_cache = candidate
+            return candidate
+
+    # 全都不可写：仍返回最后一个候选，让后续操作抛出可定位的错误
+    _data_dir_cache = candidates[-1]
+    return candidates[-1]
 
 
 def cache_dir() -> Path:

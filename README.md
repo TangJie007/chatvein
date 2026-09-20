@@ -151,6 +151,28 @@ Rust 只负责把真实后端 URL 交给前端，新增接口无需改动 Rust �
 | v2 | 改用 SQLModel；时间戳统一按 naive UTC 存储，启动时自动把 v1 的 `T` + `+00:00` 文本时间戳规范化（只影响旧库，幂等） |
 | v1 | 手写 `sqlite3`（已被 v2 取代） |
 
+### 向量存储（sqlite-vec）
+
+向量与业务数据放在**同一个 SQLite 库**：`db.py` 在每个连接上加载
+[sqlite-vec](https://github.com/asg017/sqlite-vec) 扩展（依赖见 `requirements.txt`
+的 `sqlite-vec`，约 300KB 的纯二进制 wheel），业务侧直接建 `vec0` 虚拟表：
+
+```sql
+CREATE VIRTUAL TABLE message_vec USING vec0(embedding float[384]);
+```
+
+- 写入：`INSERT INTO message_vec(rowid, embedding) VALUES (:rid, :vec)`，`vec` 用
+  `sqlite_vec.serialize_float32(vec)` 绑成 bytes（float32 原始格式，比文本快且省空间）。
+- 检索：`SELECT rowid, distance FROM message_vec WHERE embedding MATCH :q AND k = 10
+  ORDER BY distance`。
+- 诊断：`GET /api/db/info`（`/api/health` 内嵌）返回 `vector_extension.loaded / version / error`。
+  扩展加载失败不会阻断启动（聊天等主流程不依赖向量），但会把原因打印到 stdout。
+
+> 原方案是 `lancedb`，但它会连带引入 `pyarrow` 等重型依赖，占用约 **380MB**
+> （`lancedb` ~298MB + `pyarrow` ~85MB），对桌面端安装包不可接受，故整体移除。
+> 注意 `python-runtime/` 是构建产物，删除依赖后需手动卸载旧包（或重建运行时），
+> 否则残留文件仍会被打进安装包。
+
 **接口**：
 
 | 方法 | 路径 | 说明 |

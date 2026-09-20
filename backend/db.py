@@ -1,7 +1,11 @@
-"""ChatVein SQLite 连接层：路径 / 引擎 / Session / 建库迁移。
+"""ChatVein SQLite 连接层：路径 / 引擎 / Session / 建库迁移 / 向量扩展。
 
 业务表与 CRUD 不在此文件；各 NestJS 风格模块自带 entity / repository。
 启动时 ``init_db()`` 会注册各模块实体后再 ``create_all``。
+
+向量存储用 **sqlite-vec**（SQLite 可加载扩展）而非独立向量库：向量与业务数据
+同库、同事务、同备份，且不用额外分发 pyarrow 之类的重型依赖。扩展需要逐连接
+加载，已挂在 ``connect`` 事件上，业务侧可直接 ``CREATE VIRTUAL TABLE ... USING vec0``。
 """
 # pyright: reportAny=false, reportExplicitAny=false, reportUnknownMemberType=false, reportUnknownVariableType=false, reportUnknownArgumentType=false, reportImplicitRelativeImport=false
 
@@ -12,6 +16,7 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
+import sqlite_vec
 from sqlalchemy import Connection, Engine, create_engine, event, text
 from sqlmodel import Session, SQLModel
 
@@ -23,6 +28,9 @@ _BACKEND_DIR = Path(__file__).resolve().parent
 _db_path_cache: Path | None = None
 _engine: Engine | None = None
 _entities_registered = False
+# sqlite-vec 加载失败的原因（成功时保持 None）。只用于诊断，不影响主流程可用。
+_vec_error: str | None = None
+_vec_warned = False
 
 
 def utc_now() -> datetime:
@@ -61,6 +69,28 @@ def _set_sqlite_pragmas(dbapi_connection: sqlite3.Connection, _record: object) -
     cursor.close()
 
 
+def _load_sqlite_vec(dbapi_connection: sqlite3.Connection, _record: object) -> None:
+    """把 sqlite-vec 扩展载入该连接（之后 ``vec0`` 虚拟表与 ``vec_*`` 函数可用）。
+
+    必须逐连接加载：SQLAlchemy 池化的是 DBAPI 连接，而扩展属于连接级状态。
+    ``load_extension`` 默认关闭，加载前临时打开、加载后立即关掉，避免留下可被
+    SQL 注入滥用的入口。加载失败不阻断启动 —— 会话 / 聊天等主流程不依赖向量，
+    但会把原因打印到 stdout（Rust 侧会转发给前端）并由 ``stats()`` 暴露。
+    """
+    global _vec_error, _vec_warned
+    try:
+        dbapi_connection.enable_load_extension(True)
+        try:
+            sqlite_vec.load(dbapi_connection)
+        finally:
+            dbapi_connection.enable_load_extension(False)
+    except Exception as exc:  # noqa: BLE001 — 扩展缺失要如实反馈，不能静默
+        _vec_error = f"{type(exc).__name__}: {exc}"
+        if not _vec_warned:
+            _vec_warned = True
+            print(f"CHATVEIN_VEC_UNAVAILABLE {_vec_error}", flush=True)
+
+
 def get_engine() -> Engine:
     """进程内单例引擎。"""
     global _engine
@@ -73,7 +103,13 @@ def get_engine() -> Engine:
             connect_args={"check_same_thread": False},
         )
         event.listen(_engine, "connect", _set_sqlite_pragmas)
+        event.listen(_engine, "connect", _load_sqlite_vec)
     return _engine
+
+
+def vec_available() -> bool:
+    """sqlite-vec 扩展是否可用（``vec0`` 虚拟表能否创建）。"""
+    return _vec_error is None
 
 
 @contextmanager
@@ -133,7 +169,19 @@ def init_db() -> Path:
     with engine.begin() as connection:
         _migrate(connection)
 
+    print(f"CHATVEIN_VEC loaded={vec_available()}", flush=True)
     return path
+
+
+def _vec_version(session: Session) -> str | None:
+    """sqlite-vec 版本号；扩展不可用时返回 None。"""
+    if not vec_available():
+        return None
+    try:
+        value = session.scalar(text("SELECT vec_version()"))
+    except Exception:  # noqa: BLE001 — 扩展被卸载等边缘情况只影响诊断字段
+        return None
+    return str(value) if value is not None else None
 
 
 def stats() -> dict[str, object]:
@@ -141,8 +189,14 @@ def stats() -> dict[str, object]:
     path = resolve_db_path()
     with session_scope() as session:
         version = session.scalar(text("PRAGMA user_version")) or 0
+        vec_version = _vec_version(session)
     return {
         "path": str(path),
         "exists": path.exists(),
         "schema_version": int(version),
+        "vector_extension": {
+            "loaded": vec_available(),
+            "version": vec_version,
+            "error": _vec_error,
+        },
     }
