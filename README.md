@@ -9,13 +9,16 @@
 | 后端 | Python (FastAPI) | 真正的业务逻辑 |
 
 ```
-React ──invoke()──▶ Rust(Tauri) ──HTTP──▶ Python(FastAPI)
-                         ▲                    │
-                         └──── emit 事件 ◀────┘ (stdout/stderr 日志)
+React ──fetch()──▶ Python(FastAPI, 真实端口)
+  ▲                      │
+  │  Rust 启动时推送后端 URL │
+  └──── emit 事件 ◀────────┘ (stdout/stderr 日志 / 就绪通知)
 ```
 
-前端**不直接**访问 Python，所有请求都经过 Rust 的 `backend_request` 命令代理，
-因此 Rust 既是“中间消息层”，也是 Python 进程的生命周期管理者。
+前端**直接**访问 Python：Rust 在启动时把「真实后端 URL」（含动态端口）通过
+`backend_url` 命令与 `backend-ready` 事件交给前端，之后 React 用 `fetch` 直连
+Python。Rust 不再是每条请求的代理，而是**进程生命周期管理者 + URL 提供者 + 日志/
+事件桥接层**，这正好契合“Rust 是中间消息层”的定位（负责编排，而非逐请求转发）。
 
 ## 目录结构
 
@@ -69,18 +72,18 @@ npm run tauri dev
 - **开发阶段（`tauri dev`，debug 构建）**：固定使用 `8420`，方便本地调试与抓包。
 - **生产打包（`tauri build`，release 构建）**：启动时自动探测一个 `3000+` 的空闲端口，避免与宿主机已有服务冲突。
 
-端口在进程内只解析一次并缓存，Rust 的启动、就绪探测与代理命令共用同一端口，无需手动配置。
+端口在进程内只解析一次并缓存，Rust 的启动、就绪探测与前端直连共用同一端口，无需手动配置。
 
 ## 自定义后端接口
 
-在 `backend/main.py` 中新增 FastAPI 路由，然后在前端通过：
+在 `backend/main.py` 中新增 FastAPI 路由，然后在前端通过（前端直接 `fetch` 该 URL）：
 
 ```ts
 import { backendRequest } from "./api";
 await backendRequest("/api/your-endpoint", "POST", { ... });
 ```
 
-即可经由 Rust 消息层调用，无需改动 Rust 代码。
+Rust 只负责把真实后端 URL 交给前端，新增接口无需改动 Rust 代码。
 
 ## 打包发布
 

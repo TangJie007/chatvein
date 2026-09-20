@@ -3,23 +3,17 @@ mod commands;
 
 use tauri::Emitter;
 
-/// Shared application state. The HTTP client lives here so the message-layer
-/// commands can reuse a single connection pool when proxying to Python.
-pub struct AppState {
-    pub http: reqwest::Client,
-}
-
 /// Entry point called from `main.rs`.
 pub fn run() {
     tauri::Builder::default()
         .setup(|app| {
             // 1) Launch the Python backend as a child process (sidecar).
             backend::spawn_backend(app.handle());
-            // 2) Wait for it to accept connections, then notify the UI.
-            let ready =
-                backend::wait_for_backend(backend::backend_port(), std::time::Duration::from_secs(20));
-            if ready {
-                let _ = app.emit("backend-ready", true);
+            // 2) Wait for it to accept connections, then push the real base URL
+            //    to the UI so the frontend can talk to Python directly.
+            if backend::wait_for_backend(backend::backend_port(), std::time::Duration::from_secs(20))
+            {
+                let _ = app.emit("backend-ready", backend::backend_base_url());
             } else {
                 let _ = app.emit(
                     "backend-error",
@@ -28,13 +22,7 @@ pub fn run() {
             }
             Ok(())
         })
-        .manage(AppState {
-            http: reqwest::Client::new(),
-        })
-        .invoke_handler(tauri::generate_handler![
-            commands::backend_health,
-            commands::backend_request
-        ])
+        .invoke_handler(tauri::generate_handler![commands::backend_url])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

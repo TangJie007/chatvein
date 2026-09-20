@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import { backendHealth, backendJson, backendRequest } from "./api";
+import { backendHealth, backendRequest } from "./api";
 
 type Health = { status: string; service: string; python: string } | null;
 
@@ -76,9 +76,12 @@ export default function App() {
     setLoading(true);
     setReply("");
     try {
-      const res = await backendRequest("/api/chat", "POST", { message });
-      const data = JSON.parse(res.body);
-      setReply(data.reply ?? res.body);
+      const data = await backendRequest<{ reply: string; from: string }>(
+        "/api/chat",
+        "POST",
+        { message }
+      );
+      setReply(data.reply);
     } catch (e) {
       setReply(`Error: ${String(e)}`);
     } finally {
@@ -89,7 +92,7 @@ export default function App() {
   async function sendEcho() {
     setLoading(true);
     try {
-      const data = await backendJson<{ echo: string; length: number }>(
+      const data = await backendRequest<{ echo: string; length: number }>(
         "/api/echo",
         "POST",
         { message }
