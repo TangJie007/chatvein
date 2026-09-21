@@ -7,6 +7,7 @@
 
 from .registry import (
     resolve_tools,
+    shell_runtime,
     suggest_tools_route,
     tool_catalog,
     tool_catalog_text,
@@ -17,6 +18,7 @@ from .service import run_tools
 __all__ = [
     "run_tools",
     "resolve_tools",
+    "shell_runtime",
     "suggest_tools_route",
     "tool_catalog",
     "tool_catalog_text",

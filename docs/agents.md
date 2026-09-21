@@ -34,7 +34,8 @@ ChatVein 是本机桌面 Agent（Tauri + Python），前端设置页已规划 `b
 | 知识沉淀 / 召回 | `mcp-kb` | `kb_add_note` `kb_search` `kb_search_messages` `kb_index_workspace` | 独立 `kb.sqlite`；向量模型就绪时走 sqlite-vec |
 | 时间 / 计算 / 本机概况 | `core` | `get_current_time` `calculator` `db_stats` `list_configured_models` | 无独立设置卡片 |
 | 代码沙箱 | `mcp-codesandbox` | `sandbox_info` `sandbox_create_venv` `sandbox_write_file` `sandbox_pip_install` `sandbox_run_python` | 创建对话时在主空间建 `YYYYMMDD-HHMMSS-` + 5 位随机字符目录，这是该对话的工作区。只在此目录建 `.venv`、写 `.py`、执行并读 stdout/stderr。删除会话时一并删掉该目录 |
-| Git Bash | `mcp-bash` | `bash_info` `bash_run` | 优先 `CHATVEIN_GIT_BASH`，其次资源目录或 `resources/git` 里的 Portable Git，最后本机 Git for Windows。每条命令独立进程，当前目录在会话内保留，环境变量不保留。只读命令直接执行；改文件需界面确认；`rm`、下载执行、盘符和 `..` 直接拒绝。不开放 PowerShell / cmd |
+| Git Bash | `mcp-bash` | `bash_info` `bash_run` | 对齐 WorkBuddy：不随包装 Git。`CHATVEIN_GIT_BASH` → 本机安装 / PATH；无效显式路径默认报错，`CHATVEIN_SKIP_GIT_BASH_CHECK=1` 回落自动探测。**未检测到则不注册该分组** |
+| PowerShell（仅 Windows） | `mcp-powershell` | `powershell_info` `powershell_run` | 对齐 WorkBuddy：有 Bash 时两者并存；无 Bash 时它是唯一 shell。`CHATVEIN_POWERSHELL_PATH` / `pwsh` / Windows PowerShell；`CHATVEIN_USE_POWERSHELL_TOOL=0` 关闭。命令同样限会话目录 + 确认 |
 | Browser 自动化 | — | （暂缓） | 可后续接 Playwright MCP |
 | 自定义 HTTP MCP | `mcp-http` | （配置位） | 设置页占位；后续用 LangChain `MCPAdapter` 拉远程工具 |
 
@@ -42,6 +43,6 @@ ChatVein 是本机桌面 Agent（Tauri + Python），前端设置页已规划 `b
 
 ### 刻意不做 / 延后
 
-1. **通用 Shell**：不开放 `cmd` / PowerShell。Git Bash 只在当前会话目录执行，危险命令直接拒绝，其余改动要用户在对话框里允许。
+1. **通用 cmd**：不开放 `cmd.exe`。Bash / PowerShell 只在当前会话目录执行；危险命令直接拒绝，其余改动要用户在对话框里允许。未检测到对应解释器时，该分组不会注入 Agent。
 2. **外置 MCP 子进程**（`npx @modelcontextprotocol/server-filesystem` 等）：与 `builtin://` 设计重复，体积与打包成本更高；优先内置工具。
 3. **GitHub / Notion / Slack 等 SaaS 连接器**：走用户自配 `mcp-http`，不塞进默认分发。

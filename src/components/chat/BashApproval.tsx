@@ -9,7 +9,7 @@ import {
   DialogTitle,
 } from "../ui/dialog";
 
-/** 应用打开期间轮询待确认的 Git Bash 命令。聊天请求进行中也能弹出来。 */
+/** 应用打开期间轮询待确认的 shell 命令（Bash / PowerShell）。 */
 export function BashApproval() {
   const [current, setCurrent] = useState<BashPending | null>(null);
   const [busy, setBusy] = useState(false);
@@ -61,7 +61,7 @@ export function BashApproval() {
         <DialogHeader>
           <DialogTitle>允许执行这条命令？</DialogTitle>
           <DialogDescription>
-            只在当前会话目录里运行。拒绝或关闭都不会执行。
+            Bash / PowerShell 都只在当前会话目录里运行。拒绝或关闭都不会执行。
           </DialogDescription>
         </DialogHeader>
         <pre className="select-text max-h-40 overflow-auto rounded-xl bg-page px-3 py-2 text-[12.5px] leading-5 text-ink-800">

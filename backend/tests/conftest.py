@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 import db
+import mcps.bash_runtime as bash_runtime
 import mcps.workspace as workspace
 
 
@@ -18,6 +19,10 @@ def isolated_data(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[P
     monkeypatch.setenv("CHATVEIN_DATA_DIR", str(data_dir))
     monkeypatch.setenv("CHATVEIN_DB_PATH", str(data_dir / "chatvein.db"))
     monkeypatch.delenv("CHATVEIN_WORKSPACE", raising=False)
+    monkeypatch.delenv("CHATVEIN_GIT_BASH", raising=False)
+    monkeypatch.delenv("CHATVEIN_SKIP_GIT_BASH_CHECK", raising=False)
+    monkeypatch.delenv("CHATVEIN_POWERSHELL_PATH", raising=False)
+    monkeypatch.delenv("CHATVEIN_USE_POWERSHELL_TOOL", raising=False)
     _reset_singletons()
     db.init_db()
     yield data_dir
@@ -31,3 +36,4 @@ def _reset_singletons() -> None:
     db._db_path_cache = None
     workspace._cache.loaded = False
     workspace._cache.user_root = None
+    bash_runtime.clear_runtime_cache()

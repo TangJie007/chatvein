@@ -7,22 +7,34 @@ from typing import Any
 
 from langchain_core.tools import BaseTool
 
-from .tools import ALL_TOOLS, TOOL_GROUPS, heuristic_hits
+from mcps.bash_runtime import (  # pyright: ignore[reportImplicitRelativeImport]
+    probe_bash,
+    probe_powershell,
+)
 
-_REGISTRY: dict[str, BaseTool] = {t.name: t for t in ALL_TOOLS}
+from .tools import heuristic_hits, refresh_tool_groups
+
+
+def _registry() -> dict[str, BaseTool]:
+    groups = refresh_tool_groups()
+    return {t.name: t for tools in groups.values() for t in tools}
 
 
 def all_tools() -> list[BaseTool]:
-    return list(_REGISTRY.values())
+    return list(_registry().values())
 
 
 def tool_groups() -> dict[str, list[str]]:
-    """``group_id → [tool_name, ...]``，供设置页 / catalog API。"""
-    return {gid: [t.name for t in tools] for gid, tools in TOOL_GROUPS.items()}
+    """``group_id → [tool_name, ...]``。未检测到的 shell 分组不会出现。"""
+    return {gid: [t.name for t in tools] for gid, tools in refresh_tool_groups().items()}
+
+
+def shell_runtime() -> dict[str, object]:
+    """设置页 / catalog：Bash 与 PowerShell 是否可用。"""
+    return {"bash": probe_bash(), "powershell": probe_powershell()}
 
 
 def _parameters(tool: BaseTool) -> list[dict[str, Any]]:
-    """从 LangChain 工具的 JSON Schema 抽出参数，供设置页抽屉展示。"""
     schema_model = tool.args_schema
     if schema_model is None or not hasattr(schema_model, "model_json_schema"):
         return []
@@ -59,9 +71,8 @@ def _parameters(tool: BaseTool) -> list[dict[str, Any]]:
 
 
 def tool_catalog() -> list[dict[str, Any]]:
-    """结构化工具目录。"""
     out: list[dict[str, Any]] = []
-    for gid, tools in TOOL_GROUPS.items():
+    for gid, tools in refresh_tool_groups().items():
         for t in tools:
             out.append(
                 {
@@ -79,8 +90,9 @@ def tool_catalog_text() -> str:
 
 
 def resolve_tools(names: list[str]) -> list[BaseTool]:
-    picked = [_REGISTRY[n] for n in names if n in _REGISTRY]
-    return picked or all_tools()
+    registry = _registry()
+    picked = [registry[n] for n in names if n in registry]
+    return picked or list(registry.values())
 
 
 def heuristic_tool_names(message: str) -> list[str]:
@@ -88,7 +100,6 @@ def heuristic_tool_names(message: str) -> list[str]:
 
 
 def suggest_tools_route(message: str) -> tuple[str, str]:
-    """供路由 Agent 离线回落：是否应走 tools。"""
     names = heuristic_tool_names(message)
     if names:
         return "tools", f"工具启发式命中: {', '.join(names)}"
@@ -96,7 +107,6 @@ def suggest_tools_route(message: str) -> tuple[str, str]:
 
 
 def invoke_tools(message: str, names: list[str]) -> str:
-    """不经 LLM，直接执行已选工具（仅无参或不需要参的工具可离线跑）。"""
     chunks: list[str] = []
     text = (message or "").strip()
     for t in resolve_tools(names):
@@ -118,7 +128,7 @@ def invoke_tools(message: str, names: list[str]) -> str:
                 result = t.invoke({})
             elif t.name == "sqlite_tables":
                 result = t.invoke({})
-            elif t.name in {"sandbox_info", "bash_info"}:
+            elif t.name in {"sandbox_info", "bash_info", "powershell_info"}:
                 result = t.invoke({})
             elif t.name in {"get_current_time", "db_stats", "list_configured_models"}:
                 result = t.invoke({})
@@ -129,3 +139,16 @@ def invoke_tools(message: str, names: list[str]) -> str:
         except Exception as exc:  # noqa: BLE001
             chunks.append(f"[{t.name}] 失败: {exc}")
     return "\n".join(chunks) if chunks else "未执行任何工具"
+
+
+__all__ = [
+    "all_tools",
+    "heuristic_tool_names",
+    "invoke_tools",
+    "resolve_tools",
+    "shell_runtime",
+    "suggest_tools_route",
+    "tool_catalog",
+    "tool_catalog_text",
+    "tool_groups",
+]

@@ -294,10 +294,21 @@ export interface McpToolRecord {
   parameters?: McpToolParam[];
 }
 
+export interface ShellRuntimeProbe {
+  available: boolean;
+  path: string | null;
+  error?: string;
+  message?: string;
+}
+
 export interface McpCatalog {
   groups: Record<string, string[]>;
   tools: McpToolRecord[];
   tool_count: number;
+  runtime?: {
+    bash: ShellRuntimeProbe;
+    powershell: ShellRuntimeProbe;
+  };
 }
 
 /** Grouped built-in tool list, aligned with settings MCP server ids. */

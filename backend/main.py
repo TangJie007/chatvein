@@ -21,7 +21,7 @@ from conversations.module import (  # pyright: ignore[reportImplicitRelativeImpo
     conversations_router,
     conversations_service,
 )
-from mcps import tool_catalog, tool_groups  # pyright: ignore[reportImplicitRelativeImport]
+from mcps import shell_runtime, tool_catalog, tool_groups  # pyright: ignore[reportImplicitRelativeImport]
 from mcps.bash_approval import decide, list_pending  # pyright: ignore[reportImplicitRelativeImport]
 from mcps.sandbox import (  # pyright: ignore[reportImplicitRelativeImport]
     use_conversation_sandbox,
@@ -150,6 +150,7 @@ def mcps_catalog():
         "groups": groups,
         "tools": catalog,
         "tool_count": len(catalog),
+        "runtime": shell_runtime(),
     }
 
 

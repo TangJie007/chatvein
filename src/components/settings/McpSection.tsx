@@ -11,7 +11,7 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { mcpCatalog, type McpToolRecord } from "../../api";
+import { mcpCatalog, type McpCatalog, type McpToolRecord } from "../../api";
 import { cn } from "../../lib/cn";
 import { Switch } from "../ui/switch";
 import { McpToolsDrawer } from "./McpToolsDrawer";
@@ -43,6 +43,7 @@ export function McpSection({ servers, onToggle }: McpSectionProps) {
   const [openId, setOpenId] = useState<string | null>(null);
   const closeTimer = useRef<number | null>(null);
   const [catalog, setCatalog] = useState<McpToolRecord[] | null>(null);
+  const [runtime, setRuntime] = useState<McpCatalog["runtime"] | null>(null);
   const [catalogError, setCatalogError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -52,6 +53,7 @@ export function McpSection({ servers, onToggle }: McpSectionProps) {
     try {
       const data = await mcpCatalog();
       setCatalog(data.tools);
+      setRuntime(data.runtime ?? null);
     } catch (err) {
       setCatalogError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -89,6 +91,21 @@ export function McpSection({ servers, onToggle }: McpSectionProps) {
           const toolCount = catalog
             ? catalog.filter((tool) => tool.group === s.id).length
             : s.tools;
+          const shellReady =
+            s.id === "mcp-bash"
+              ? runtime?.bash.available !== false
+              : s.id === "mcp-powershell"
+                ? runtime?.powershell.available !== false
+                : true;
+          const running = s.enabled && shellReady && (s.kind !== "shell" || toolCount > 0);
+          const statusLabel =
+            s.id === "mcp-bash" && runtime && !runtime.bash.available
+              ? "未检测到 Git Bash"
+              : s.id === "mcp-powershell" && runtime && !runtime.powershell.available
+                ? "未检测到 PowerShell"
+                : running
+                  ? "运行中"
+                  : "已停止";
           return (
             <div
               key={s.id}
@@ -111,7 +128,7 @@ export function McpSection({ servers, onToggle }: McpSectionProps) {
                 <span
                   className={cn(
                     "mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-xl",
-                    s.enabled ? "bg-tint text-brand-600" : "bg-page text-ink-400"
+                    running ? "bg-tint text-brand-600" : "bg-page text-ink-400"
                   )}
                 >
                   <Icon className="size-4" strokeWidth={1.75} />
@@ -161,11 +178,11 @@ export function McpSection({ servers, onToggle }: McpSectionProps) {
                   <span
                     className={cn(
                       "size-1.5 rounded-full",
-                      s.enabled ? "bg-ok-500" : "bg-ink-300"
+                      running ? "bg-ok-500" : "bg-ink-300"
                     )}
                   />
-                  <span className={s.enabled ? "text-ok-600" : "text-ink-400"}>
-                    {s.enabled ? "运行中" : "已停止"}
+                  <span className={running ? "text-ok-600" : "text-ink-400"}>
+                    {statusLabel}
                   </span>
                 </span>
                 <Switch checked={s.enabled} onCheckedChange={() => onToggle(s.id)} />

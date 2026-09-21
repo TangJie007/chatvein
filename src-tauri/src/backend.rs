@@ -128,11 +128,6 @@ pub fn spawn_backend(app: &AppHandle) {
         cmd.arg(arg);
     }
     cmd.env("CHATVEIN_RESOURCE_DIR", &resource_dir);
-    if std::env::var_os("CHATVEIN_GIT_BASH").is_none() {
-        if let Some(bash) = bundled_bash(&resource_dir) {
-            cmd.env("CHATVEIN_GIT_BASH", bash);
-        }
-    }
     let mut child = match cmd
         .arg("--port")
         .arg(port.to_string())
@@ -190,13 +185,6 @@ pub fn kill_backend() {
             }
         }
     }
-}
-
-/// Portable Git shipped under ``<resources>/git/bin/bash``.
-fn bundled_bash(resource_dir: &std::path::Path) -> Option<std::path::PathBuf> {
-    let name = if cfg!(windows) { "bash.exe" } else { "bash" };
-    let candidate = resource_dir.join("git").join("bin").join(name);
-    candidate.is_file().then_some(candidate)
 }
 
 /// PyInstaller onedir entry shipped via `bundle.resources` as `backend-runtime`.
