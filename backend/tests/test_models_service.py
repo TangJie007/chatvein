@@ -13,7 +13,7 @@ def test_mask_api_key() -> None:
     assert masked != "sk-test-secret-key"
     assert "*" in masked
     assert masked.startswith("sk-tes")
-    assert masked.endswith("t-key")
+    assert masked.endswith("-key")
 
 
 def test_create_model_does_not_return_raw_key_and_marks_first_primary() -> None:

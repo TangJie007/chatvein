@@ -13,10 +13,10 @@ def test_save_exchange_reuses_conversation_and_truncates_title() -> None:
 
     stored = service.get_conversation(conversation_id)
     assert stored is not None
-    assert stored.title.endswith("…")
-    assert len(stored.title) == 31
-    assert user_message.role == "user"
-    roles = [message.role for message in service.list_messages(conversation_id)]
+    assert stored["title"].endswith("…")
+    assert len(stored["title"]) == 31
+    assert user_message["role"] == "user"
+    roles = [message["role"] for message in service.list_messages(conversation_id)]
     assert roles == ["user", "assistant", "user", "assistant"]
 
 
