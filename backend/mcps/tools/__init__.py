@@ -10,7 +10,7 @@ from mcps.bash_runtime import (  # pyright: ignore[reportImplicitRelativeImport]
 )
 from mcps.browser_runtime import browser_available  # pyright: ignore[reportImplicitRelativeImport]
 
-from . import bash, browser, core, fs, ip, kb, powershell, sandbox, sqlite_tools, web
+from . import bash, browser, core, fs, ip, kb, ocr, powershell, sandbox, sqlite_tools, web
 
 
 def build_tool_groups() -> dict[str, list[BaseTool]]:
@@ -25,6 +25,7 @@ def build_tool_groups() -> dict[str, list[BaseTool]]:
         "mcp-kb": list(kb.TOOLS),
         "mcp-codesandbox": list(sandbox.TOOLS),
         "mcp-ip": list(ip.TOOLS),
+        "mcp-ocr": list(ocr.TOOLS),
     }
     if bash_available():
         groups["mcp-bash"] = list(bash.TOOLS)
@@ -51,7 +52,7 @@ def heuristic_hits(message: str) -> list[str]:
     """按关键词启发式命中工具名（离线回落）。"""
     text = (message or "").lower()
     names: list[str] = []
-    modules = [core, fs, web, sqlite_tools, kb, sandbox, ip]
+    modules = [core, fs, web, sqlite_tools, kb, sandbox, ip, ocr]
     if bash_available():
         modules.append(bash)
     if powershell_available():

@@ -8,6 +8,7 @@ import {
   MapPin,
   Plug,
   RefreshCw,
+  ScanText,
   SquareTerminal,
   Terminal,
 } from "lucide-react";
@@ -29,6 +30,7 @@ const KIND_ICON: Record<McpKind, LucideIcon> = {
   shell: SquareTerminal,
   browser: AppWindow,
   geo: MapPin,
+  ocr: ScanText,
   custom: Plug,
 };
 

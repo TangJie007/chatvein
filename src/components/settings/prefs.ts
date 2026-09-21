@@ -17,7 +17,17 @@ export const DEFAULT_PREFS: AppPrefs = {
   autoUpdate: true,
 };
 
-export type McpKind = "db" | "fs" | "web" | "kb" | "code" | "shell" | "browser" | "geo" | "custom";
+export type McpKind =
+  | "db"
+  | "fs"
+  | "web"
+  | "kb"
+  | "code"
+  | "shell"
+  | "browser"
+  | "geo"
+  | "ocr"
+  | "custom";
 
 export type McpServer = {
   id: string;
@@ -129,6 +139,17 @@ export const MCP_SERVERS: McpServer[] = [
     desc: "离线 ip2region：查本机公网出口位置，或给定 IP 的国家 / 省 / 市 / ISP。首次使用按需下载 xdb。",
     transport: "本机进程",
     cmd: "builtin://mcp-ip",
+    tools: 2,
+    enabled: true,
+  },
+  {
+    id: "mcp-ocr",
+    name: "OCR 识字",
+    kind: "ocr",
+    builtin: true,
+    desc: "先走 OCR.space（公共 key helloworld）；失败则在会话代码沙箱写 RapidOCR 脚本本地识别。",
+    transport: "HTTP",
+    cmd: "builtin://mcp-ocr",
     tools: 2,
     enabled: true,
   },

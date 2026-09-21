@@ -61,6 +61,7 @@ def test_catalog_groups_match_settings_ids() -> None:
         "mcp-kb",
         "mcp-codesandbox",
         "mcp-ip",
+        "mcp-ocr",
     }
     # Bash / PowerShell 按本机探测动态挂载，不强制出现
     assert "sqlite_query" in groups["mcp-sqlite"]
