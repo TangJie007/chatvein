@@ -130,7 +130,12 @@ def invoke_tools(message: str, names: list[str]) -> str:
                 result = t.invoke({})
             elif t.name in {"sandbox_info", "bash_info", "powershell_info"}:
                 result = t.invoke({})
-            elif t.name in {"get_current_time", "db_stats", "list_configured_models"}:
+            elif t.name in {
+                "get_current_time",
+                "get_system_info",
+                "db_stats",
+                "list_configured_models",
+            }:
                 result = t.invoke({})
             else:
                 chunks.append(f"[{t.name}] 离线模式无法自动填参，请配置 LLM")

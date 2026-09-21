@@ -9,6 +9,8 @@ bm25s>=0.3,<1.0
 # 复用主库连接、无需独立向量库进程/目录；相比 lancedb（连带 pyarrow 上百 MB）
 # 能显著压缩打包体积。db.py 在每个连接上加载该扩展，业务侧直接建 vec0 虚拟表。
 sqlite-vec>=0.1,<0.2
+# Windows 上 zoneinfo 需要 IANA 数据库（get_current_time / convert_time）。
+tzdata>=2024.1
 langgraph>=1.2,<2.0
 langchain>=1.0,<2.0
 langchain-openai>=1.6,<2.0
