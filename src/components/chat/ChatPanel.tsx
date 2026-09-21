@@ -19,7 +19,24 @@ export type ChatMessage = {
   turnId?: string | null;
   /** 助手回复仍在追加 token 时为 true，用于未闭合 Markdown。 */
   streaming?: boolean;
+  /** 本轮真实消耗的 token 数（后端采集，缺失为 null）。 */
+  tokens?: number | null;
+  /** 本轮真实耗时（毫秒）。 */
+  durationMs?: number | null;
 };
+
+function formatTokens(tokens?: number | null): string {
+  if (!tokens || tokens <= 0) return "—";
+  if (tokens < 1000) return `${tokens} tokens`;
+  const k = tokens / 1000;
+  return `${k >= 10 ? Math.round(k) : k.toFixed(1).replace(/\.0$/, "")}K tokens`;
+}
+
+function formatDuration(ms?: number | null): string {
+  if (!ms || ms <= 0) return "—";
+  if (ms < 1000) return `${ms} ms`;
+  return `${(ms / 1000).toFixed(1)} s`;
+}
 
 type ChatPanelProps = {
   session: SessionItem | null;
@@ -28,6 +45,7 @@ type ChatPanelProps = {
   onToggleInsight: () => void;
   onSend?: (text: string) => void;
   onOpenWorkspace?: () => void;
+  onOpenTrace?: () => void;
   roleName?: string;
   modelName?: string;
   modelId?: string;
@@ -55,6 +73,7 @@ export function ChatPanel({
   onToggleInsight,
   onSend,
   onOpenWorkspace,
+  onOpenTrace,
   roleName,
   modelName = "主对话模型",
   modelId = "",
@@ -117,6 +136,10 @@ export function ChatPanel({
                 type="button"
                 onClick={() => {
                   if (label === "打开工作区") onOpenWorkspace?.();
+                  if (label === "追踪") {
+                    if (!conversationId) return;
+                    onOpenTrace?.();
+                  }
                 }}
                 className="rounded-lg px-2.5 py-1.5 text-[12px] text-ink-400 transition-colors hover:bg-tint hover:text-ink-700 focus-visible:outline-2 focus-visible:outline-brand-600"
               >
@@ -176,31 +199,44 @@ export function ChatPanel({
                       </div>
                     ) : null}
                     <div
-                      onClick={
-                        canInspect
-                          ? () => onSelectMessage?.(m.turnId as string)
-                          : undefined
-                      }
                       className={cn(
-                        "max-w-[78%] rounded-2xl px-3.5 py-2.5 text-[13.5px] leading-6",
-                        !isAgent && "whitespace-pre-wrap",
-                        isAgent && "min-w-0 max-w-[min(92%,720px)]",
-                        isUser
-                          ? "bg-brand-600 text-white shadow-soft"
-                          : isSystem
-                            ? "bg-tint text-ink-500 text-[12.5px]"
-                            : "bg-tint text-ink-900",
-                        canInspect && "cursor-pointer transition-shadow",
-                        selected
-                          ? "ring-2 ring-brand-400"
-                          : canInspect && "hover:ring-1 hover:ring-brand-300"
+                        "flex min-w-0 flex-col gap-1",
+                        isAgent ? "max-w-[min(92%,720px)]" : "max-w-[78%]"
                       )}
                     >
-                      {isAgent ? (
-                        <MarkdownMessage content={m.content} streaming={m.streaming} />
-                      ) : (
-                        m.content
-                      )}
+                      {isAgent && !m.streaming ? (
+                        <div className="flex items-center gap-1.5 px-1 text-[11px] text-ink-400">
+                          <span>{formatTokens(m.tokens)}</span>
+                          <span aria-hidden="true">·</span>
+                          <span>{formatDuration(m.durationMs)}</span>
+                        </div>
+                      ) : null}
+                      <div
+                        onClick={
+                          canInspect
+                            ? () => onSelectMessage?.(m.turnId as string)
+                            : undefined
+                        }
+                        className={cn(
+                          "rounded-2xl px-3.5 py-2.5 text-[13.5px] leading-6",
+                          !isAgent && "whitespace-pre-wrap",
+                          isUser
+                            ? "bg-brand-600 text-white shadow-soft"
+                            : isSystem
+                              ? "bg-tint text-ink-500 text-[12.5px]"
+                              : "bg-tint text-ink-900",
+                          canInspect && "cursor-pointer transition-shadow",
+                          selected
+                            ? "ring-2 ring-brand-400"
+                            : canInspect && "hover:ring-1 hover:ring-brand-300"
+                        )}
+                      >
+                        {isAgent ? (
+                          <MarkdownMessage content={m.content} streaming={m.streaming} />
+                        ) : (
+                          m.content
+                        )}
+                      </div>
                     </div>
                   </div>
                 );

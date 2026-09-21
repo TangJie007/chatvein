@@ -159,6 +159,22 @@ def _ensure_workspace_dir_column(connection: Connection) -> None:
         ).close()
 
 
+def _ensure_message_metrics_columns(connection: Connection) -> None:
+    """``create_all`` 不会给已有表加列。旧库补上本轮 token 用量与耗时。"""
+    rows = connection.exec_driver_sql("PRAGMA table_info(messages)").fetchall()
+    names = {str(row[1]) for row in rows}
+    if not names:
+        return
+    for column, ddl in (
+        ("tokens", "INTEGER NOT NULL DEFAULT 0"),
+        ("duration_ms", "INTEGER NOT NULL DEFAULT 0"),
+    ):
+        if column not in names:
+            connection.exec_driver_sql(
+                f"ALTER TABLE messages ADD COLUMN {column} {ddl}"
+            ).close()
+
+
 def _ensure_messages_turn_id_column(connection: Connection) -> None:
     """``create_all`` 不会给已有表加列。旧库补上消息的 turn_id（关联会话工作区同一轮 trace）。"""
     rows = connection.exec_driver_sql("PRAGMA table_info(messages)").fetchall()
@@ -176,6 +192,7 @@ def _migrate(connection: Connection) -> None:
     SQLModel.metadata.create_all(connection)
     _ensure_workspace_dir_column(connection)
     _ensure_messages_turn_id_column(connection)
+    _ensure_message_metrics_columns(connection)
     if current != SCHEMA_VERSION:
         connection.exec_driver_sql(f"PRAGMA user_version = {SCHEMA_VERSION}").close()
 

@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 from mcps.registry import heuristic_tool_names  # pyright: ignore[reportImplicitRelativeImport]
 
 from . import llm as llm_mod
+from .trace import span
 
 Difficulty = Literal["simple", "medium", "hard"]
 
@@ -42,14 +43,15 @@ def understand(message: str) -> dict[str, Any]:
         return _offline(text)
 
     try:
-        decision = llm_mod.invoke_structured(
-            model,
-            UnderstandDecision,
-            [
-                SystemMessage(content=_SYSTEM),
-                HumanMessage(content=text or "(空消息)"),
-            ],
-        )
+        with span("understand"):
+            decision = llm_mod.invoke_structured(
+                model,
+                UnderstandDecision,
+                [
+                    SystemMessage(content=_SYSTEM),
+                    HumanMessage(content=text or "(空消息)"),
+                ],
+            )
         if not isinstance(decision, UnderstandDecision):
             decision = UnderstandDecision.model_validate(decision)
         rewritten = (decision.rewritten or "").strip() or text

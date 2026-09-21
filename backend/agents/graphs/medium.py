@@ -13,6 +13,7 @@ from mcps import resolve_tools, run_tools  # pyright: ignore[reportImplicitRelat
 from .. import llm as llm_mod
 from .. import tool_selector
 from ..memory import to_lc_messages
+from ..trace import kind_count, note, runnable_config, span
 
 from .common import last_text
 from .state import ChatState
@@ -73,9 +74,23 @@ def build_medium_graph(
     def select_tools_node(state: ChatState) -> dict[str, Any]:
         planned = tool_selector.select_tools(state.get("rewritten") or state.get("message") or "")
         used = bool(state.get("used_llm")) or bool(planned.get("used_llm"))
+        selected = list(planned.get("selected_tools") or [])
+        candidates = list(planned.get("candidate_tools") or [])
+        reason = str(planned.get("tool_plan_reason") or "")
+        note(
+            "tools",
+            name="select_tools",
+            detail={
+                "selected_tools": selected,
+                "candidate_tools": candidates,
+                "reason": reason,
+                "used_llm": bool(planned.get("used_llm")),
+            },
+        )
         return {
-            "selected_tools": list(planned.get("selected_tools") or []),
-            "tool_plan_reason": str(planned.get("tool_plan_reason") or ""),
+            "selected_tools": selected,
+            "candidate_tools": candidates,
+            "tool_plan_reason": reason,
             "used_llm": used,
         }
 
@@ -85,8 +100,16 @@ def build_medium_graph(
         tools = resolve_tools(names)
         model = llm_mod.get_chat_model(role=role)
         if model is None:
+            reply = run_tools(text, names)
+            note(
+                "llm",
+                name="react",
+                status="offline",
+                response={"content": reply, "tool_calls": []},
+                detail={"reason": "未配置模型，改为直接执行筛选出的工具"},
+            )
             return {
-                "reply": run_tools(text, names),
+                "reply": reply,
                 "used_llm": False,
                 "tool_trace": [],
             }
@@ -102,16 +125,28 @@ def build_medium_graph(
                 *prior,
                 HumanMessage(content=text or "请执行工具"),
             ]
-            out = agent.invoke(
-                {"messages": messages},
-                config={"recursion_limit": _RECURSION_LIMIT},
-            )
+            with span("react"):
+                tools_before = kind_count("tool")
+                out = agent.invoke(
+                    {"messages": messages},
+                    config=runnable_config({"recursion_limit": _RECURSION_LIMIT}),
+                )
             out_messages = out.get("messages") or []
             reply = last_text(out_messages) or "工具调用完成，但无文本回复。"
+            traced = extract_tool_trace(out_messages)
+            if kind_count("tool") == tools_before:
+                for item in traced:
+                    note(
+                        "tool",
+                        name=str(item.get("tool_name") or "unknown"),
+                        status=str(item.get("status") or "ok"),
+                        arguments=item.get("arguments"),
+                        result=str(item.get("result_text") or ""),
+                    )
             return {
                 "reply": reply,
                 "used_llm": True,
-                "tool_trace": extract_tool_trace(out_messages),
+                "tool_trace": traced,
             }
         except Exception as exc:  # noqa: BLE001
             return {
@@ -150,6 +185,7 @@ def run_medium(
     return {
         "reply": str(out.get("reply") or ""),
         "selected_tools": list(out.get("selected_tools") or []),
+        "candidate_tools": list(out.get("candidate_tools") or []),
         "tool_plan_reason": out.get("tool_plan_reason"),
         "used_llm": bool(used_llm or out.get("used_llm")),
         "tool_trace": list(out.get("tool_trace") or []),

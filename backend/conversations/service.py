@@ -67,6 +67,8 @@ class ConversationsService:
         route: str | None = None,
         title_hint: str | None = None,
         turn_id: str | None = None,
+        tokens: int = 0,
+        duration_ms: int = 0,
     ) -> tuple[str, MessageRecord, MessageRecord]:
         return self._repo.save_exchange(
             conversation_id,
@@ -76,6 +78,8 @@ class ConversationsService:
             route=route,
             title_hint=title_hint,
             turn_id=turn_id,
+            tokens=tokens,
+            duration_ms=duration_ms,
         )
 
     def counts(self) -> dict[str, int]:
@@ -123,6 +127,7 @@ class ConversationsService:
         route_reason: str | None = None,
         tool_plan: str | None = None,
         turn_id: str | None = None,
+        trace: dict[str, Any] | None = None,
     ) -> None:
         """写入会话库：消息 + 本轮工具轨迹 + 本轮推理（route_reason / tool_plan）。"""
         root = self.workspace_root_for(workspace_dir)
@@ -149,6 +154,11 @@ class ConversationsService:
                 turn_id=turn_id,
                 status=str(item.get("status") or "ok"),
             )
+        if trace is not None and turn_id:
+            try:
+                session_store.save_turn_trace(db, turn_id, trace)
+            except Exception as exc:  # noqa: BLE001
+                print(f"CHATVEIN_TRACE save failed: {exc}", flush=True)
 
     def open_workspace_folder(self, conversation_id: str) -> str | None:
         """在系统文件管理器中打开该会话工作区。不存在则返回 ``None``。"""
@@ -204,3 +214,24 @@ class ConversationsService:
             "reasoning": reasoning,
             "memory_count": len(session_store.list_messages(db, limit=200)),
         }
+
+    def list_traces(self, conversation_id: str) -> list[dict[str, Any]] | None:
+        """会话不存在时返回 ``None``。尚无追踪时返回空列表。"""
+        conversation = self._repo.get(conversation_id)
+        if conversation is None:
+            return None
+        name = (conversation.get("workspace_dir") or "").strip()
+        if not name:
+            return []
+        db = session_db_path(self.workspace_root_for(name))
+        return session_store.list_turn_traces(db)
+
+    def get_trace(self, conversation_id: str, turn_id: str) -> dict[str, Any] | None:
+        conversation = self._repo.get(conversation_id)
+        if conversation is None:
+            return None
+        name = (conversation.get("workspace_dir") or "").strip()
+        if not name:
+            return None
+        db = session_db_path(self.workspace_root_for(name))
+        return session_store.get_turn_trace(db, turn_id)

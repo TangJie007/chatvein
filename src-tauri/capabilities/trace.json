@@ -1,11 +1,10 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
-  "identifier": "default",
-  "description": "Default capability for the main window.",
-  "windows": ["main"],
+  "identifier": "trace-window",
+  "description": "Agent trace window.",
+  "windows": ["trace"],
   "permissions": [
     "core:default",
-    "dialog:allow-open",
     "core:window:allow-close",
     "core:window:allow-minimize",
     "core:window:allow-maximize",
@@ -15,11 +14,8 @@
     "core:window:allow-start-dragging",
     "core:window:allow-set-focus",
     "core:window:allow-show",
-    "core:webview:allow-create-webview-window",
-    "core:webview:allow-get-all-webviews",
-    "core:event:allow-emit",
-    "core:event:allow-emit-to",
     "core:event:allow-listen",
+    "core:event:allow-emit",
     {
       "identifier": "http:default",
       "allow": [

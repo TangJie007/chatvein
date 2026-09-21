@@ -18,6 +18,7 @@ class ChatState(TypedDict, total=False):
     used_llm: bool
     history: list[dict[str, Any]]
     tool_trace: list[dict[str, Any]]
+    candidate_tools: list[str]
     # 角色运行时配置（RolesService.get_runtime），为空表示不套用角色
     role: dict[str, Any] | None
     extras: dict[str, Any]

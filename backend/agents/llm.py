@@ -10,6 +10,8 @@ from pydantic import SecretStr
 
 from models.service import ModelsService  # pyright: ignore[reportImplicitRelativeImport]
 
+from .trace import active_callbacks
+
 
 def get_chat_model(
     *,
@@ -61,6 +63,9 @@ def get_chat_model(
     }
     if cfg.base_url:
         kwargs["base_url"] = cfg.base_url
+    callbacks = active_callbacks()
+    if callbacks:
+        kwargs["callbacks"] = callbacks
     return ChatOpenAI(**kwargs)
 
 

@@ -21,6 +21,7 @@ import {
 import { ChatPanel, type ChatMessage } from "../chat/ChatPanel";
 import type { InsightArtifact, InsightThreadItem } from "../chat/InsightPanel";
 import { SessionList, type SessionItem } from "../chat/SessionList";
+import { openTraceWindow } from "../../lib/openTrace";
 
 dayjs.extend(relativeTime);
 dayjs.locale("zh-cn");
@@ -85,6 +86,8 @@ function toChatMessages(rows: ChatMessageRecord[]): ChatMessage[] {
     role: m.role === "assistant" ? "agent" : m.role === "system" ? "system" : "user",
     content: m.content,
     turnId: m.turn_id ?? null,
+    tokens: m.tokens ?? null,
+    durationMs: m.duration_ms ?? null,
   }));
 }
 
@@ -361,6 +364,12 @@ export function ChatView({
           onOpenWorkspace={() => {
             if (!activeId) return;
             void openConversationWorkspace(activeId).catch((err: unknown) => {
+              setError(err instanceof Error ? err.message : String(err));
+            });
+          }}
+          onOpenTrace={() => {
+            if (!activeId) return;
+            void openTraceWindow(activeId, selectedTurnId).catch((err: unknown) => {
               setError(err instanceof Error ? err.message : String(err));
             });
           }}

@@ -11,9 +11,31 @@ import { RolesView } from "./components/views/RolesView";
 import { SettingsView } from "./components/views/SettingsView";
 import { SkillsView } from "./components/views/SkillsView";
 import { TooltipProvider } from "./components/ui/tooltip";
+import { TraceShell } from "./components/trace/TraceWindow";
 import type { AppView, NavCounts } from "./types/view";
 
+function traceLaunch(): { conversationId: string; turnId: string | null } | null {
+  const params = new URLSearchParams(window.location.search);
+  if (params.get("view") !== "trace") return null;
+  return {
+    conversationId: params.get("conversation") ?? "",
+    turnId: params.get("turn"),
+  };
+}
+
 export default function App() {
+  const trace = traceLaunch();
+  if (trace) {
+    return (
+      <TooltipProvider delayDuration={300}>
+        <TraceShell conversationId={trace.conversationId} turnId={trace.turnId} />
+      </TooltipProvider>
+    );
+  }
+  return <MainApp />;
+}
+
+function MainApp() {
   const [view, setView] = useState<AppView>("chat");
   const [counts, setCounts] = useState<NavCounts>({
     chat: 1,

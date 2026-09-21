@@ -10,11 +10,12 @@ import re
 import secrets
 import shutil
 import sys
+import time
 import uuid
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
 import uvicorn
 from fastapi import FastAPI, HTTPException
@@ -91,6 +92,28 @@ class ChatRequest(BaseModel):
     role_id: str | None = Field(default=None, max_length=64)
 
 
+try:  # langchain-core 版本差异：拿不到用量回调就退化为不统计
+    from langchain_core.callbacks import (  # pyright: ignore[reportMissingImports]
+        get_usage_metadata_callback,
+    )
+except Exception:  # noqa: BLE001
+    get_usage_metadata_callback = None  # type: ignore[assignment]
+
+_usage_callback = get_usage_metadata_callback
+
+
+def _collect_tokens(usage: Any) -> int:
+    """累加本轮所有 LLM 调用的 ``total_tokens``。"""
+    meta = getattr(usage, "usage_metadata", None) or {}
+    total = 0
+    for item in meta.values():
+        if isinstance(item, dict):
+            total += int(item.get("total_tokens") or 0)
+        else:
+            total += int(getattr(item, "total_tokens", 0) or 0)
+    return total
+
+
 @app.post("/api/chat", tags=["chat"], summary="改写 + 难度路由 + 工具选择")
 def chat(req: ChatRequest):
     prepared = conversations_service.open_for_chat(req.conversation_id, req.message)
@@ -101,8 +124,16 @@ def chat(req: ChatRequest):
     from roles.service import RolesService  # pyright: ignore[reportImplicitRelativeImport]
 
     role_runtime = RolesService().resolve_for_chat(req.role_id)
+    started = time.perf_counter()
     with use_conversation_sandbox(prepared["workspace_dir"]):
-        result = run_chat(req.message, history=history, role=role_runtime)
+        if _usage_callback is not None:
+            with _usage_callback() as usage_cb:
+                result = run_chat(req.message, history=history, role=role_runtime)
+            tokens = _collect_tokens(usage_cb)
+        else:
+            result = run_chat(req.message, history=history, role=role_runtime)
+            tokens = 0
+    duration_ms = int((time.perf_counter() - started) * 1000)
     reply = str(result.get("reply") or "")
     route = str(result.get("difficulty") or result.get("route") or "simple")
     tool_trace = list(result.get("tool_trace") or [])
@@ -114,6 +145,8 @@ def chat(req: ChatRequest):
         used_llm=bool(result.get("used_llm", False)),
         route=route,
         turn_id=turn_id,
+        tokens=tokens,
+        duration_ms=duration_ms,
     )
     conversations_service.record_turn(
         prepared["workspace_dir"],
@@ -125,6 +158,7 @@ def chat(req: ChatRequest):
         route_reason=result.get("route_reason"),
         tool_plan=result.get("tool_plan_reason"),
         turn_id=turn_id,
+        trace=result.get("trace") if isinstance(result.get("trace"), dict) else None,
     )
     insight = conversations_service.workspace_insight(conversation_id)
     return {
@@ -139,6 +173,8 @@ def chat(req: ChatRequest):
         "tool_trace": tool_trace,
         "used_llm": bool(result.get("used_llm", False)),
         "turn_id": turn_id,
+        "tokens": tokens,
+        "duration_ms": duration_ms,
         "conversation_id": conversation_id,
         "user_message": user_msg,
         "assistant_message": assistant_msg,

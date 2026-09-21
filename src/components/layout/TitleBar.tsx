@@ -89,7 +89,7 @@ export function WindowControls() {
   );
 }
 
-export function TitleBar() {
+export function TitleBar({ title = "ChatVein" }: { title?: string }) {
   return (
     <header className="flex h-9 shrink-0 items-stretch bg-page">
       <div className="flex min-w-0 flex-1 items-center pl-3" data-tauri-drag-region>
@@ -101,7 +101,7 @@ export function TitleBar() {
             C
           </span>
           <span className="text-[11.5px] font-medium text-ink-500" data-tauri-drag-region>
-            ChatVein
+            {title}
           </span>
         </span>
         <span className="min-w-0 flex-1" data-tauri-drag-region />

@@ -40,6 +40,8 @@ def _message_dict(message: Message) -> MessageRecord:
         route=message.route,
         created_at=iso(message.created_at),
         turn_id=message.turn_id,
+        tokens=int(message.tokens or 0),
+        duration_ms=int(message.duration_ms or 0),
     )
 
 
@@ -221,6 +223,8 @@ class ConversationsRepository:
         route: str | None = None,
         title_hint: str | None = None,
         turn_id: str | None = None,
+        tokens: int = 0,
+        duration_ms: int = 0,
     ) -> tuple[str, MessageRecord, MessageRecord]:
         now = utc_now()
         hint = _derive_title(title_hint or user_text)
@@ -255,6 +259,8 @@ class ConversationsRepository:
                 used_llm=used_llm,
                 route=route,
                 turn_id=turn_id or "",
+                tokens=int(tokens or 0),
+                duration_ms=int(duration_ms or 0),
                 created_at=now,
             )
             session.add(user_message)

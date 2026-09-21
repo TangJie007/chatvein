@@ -9,6 +9,7 @@ from langgraph.graph import END, START, MessagesState, StateGraph
 
 from .. import llm as llm_mod
 from ..memory import to_lc_messages
+from ..trace import note, runnable_config, span
 
 from .common import last_text
 
@@ -41,13 +42,23 @@ def run_simple(
     """跑 simple 图；无主模型时离线回落。"""
     model = llm_mod.get_chat_model(role=role)
     if model is None:
-        return (f"（离线）{text}" if text else "（离线）未配置 LLM。"), False
+        reply = f"（离线）{text}" if text else "（离线）未配置 LLM。"
+        note(
+            "llm",
+            name="simple",
+            status="offline",
+            response={"content": reply, "tool_calls": []},
+            detail={"reason": "未配置模型"},
+        )
+        return reply, False
     try:
         prior = to_lc_messages(history)
         messages: list[BaseMessage] = [*prior, HumanMessage(content=text or "你好")]
-        out = build_simple_graph(model, system_prompt=system_prompt).invoke(
-            {"messages": messages}
-        )
+        with span("simple"):
+            out = build_simple_graph(model, system_prompt=system_prompt).invoke(
+                {"messages": messages},
+                config=runnable_config(),
+            )
         reply = last_text(out.get("messages"))
         if reply:
             return reply, True

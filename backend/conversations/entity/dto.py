@@ -16,6 +16,8 @@ class MessageRecord(TypedDict):
     route: str | None
     created_at: str
     turn_id: str
+    tokens: int
+    duration_ms: int
 
 
 class ConversationRecord(TypedDict):
