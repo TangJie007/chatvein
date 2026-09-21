@@ -84,7 +84,7 @@ def ensure_session_db(db_path: Path) -> Path:
         }
         if cols.get("turn_id", "").upper() != "TEXT":
             conn.execute("DROP TABLE IF EXISTS tool_calls")
-            conn.execute(_TOOL_CALLS_DDL)
+            conn.executescript(_TOOL_CALLS_DDL)
     return db_path
 
 

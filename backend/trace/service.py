@@ -79,7 +79,10 @@ class TraceService:
 
     def _session_db(self, conversation_id: str) -> Path | None:
         from conversations.service import ConversationsService  # pyright: ignore[reportMissingImports]
-        from mcps.sandbox import session_db_path  # pyright: ignore[reportMissingImports]
+        from mcps.sandbox import (  # pyright: ignore[reportMissingImports]
+            conversation_root,
+            session_db_path,
+        )
 
         conversation = ConversationsService().get_conversation(conversation_id)
         if conversation is None:
@@ -87,8 +90,8 @@ class TraceService:
         name = str(conversation.get("workspace_dir") or "").strip()
         if not name:
             return None
-        root = ConversationsService().workspace_root_for(name)
-        return session_db_path(root)
+        # 只解析路径，不跑布局升级；避免读追踪时被旧 schema 迁移绊倒。
+        return session_db_path(conversation_root(name))
 
 
 trace_service = TraceService()
