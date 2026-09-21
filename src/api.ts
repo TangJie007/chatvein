@@ -147,10 +147,12 @@ export interface UploadResultFile {
 /** 把本机文件（拖入/选择的绝对路径，或 base64 内容）落盘到主空间 uploads/，
  *  返回工作区内相对路径，供 OCR / 文件工具解析（沙箱外绝对路径无法被 Agent 读取）。 */
 export function uploadFiles(
-  files: Array<{ source_path: string } | { content_base64: string; name: string }>
+  files: Array<{ source_path: string } | { content_base64: string; name: string }>,
+  conversationId?: string | null
 ) {
   return backendRequest<{ files: UploadResultFile[] }>("/api/uploads", "POST", {
     files,
+    conversation_id: conversationId ?? null,
   });
 }
 

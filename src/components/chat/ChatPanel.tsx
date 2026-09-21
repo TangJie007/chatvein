@@ -31,6 +31,7 @@ type ChatPanelProps = {
   sending?: boolean;
   error?: string | null;
   workspaceDir?: string;
+  conversationId?: string | null;
   insightThread?: InsightThreadItem[];
   artifacts?: InsightArtifact[];
   meta?: {
@@ -55,6 +56,7 @@ export function ChatPanel({
   sending = false,
   error = null,
   workspaceDir,
+  conversationId,
   insightThread = [],
   artifacts = [],
   meta,
@@ -155,6 +157,7 @@ export function ChatPanel({
           contextTitle={contextTitle}
           sending={sending}
           onSend={(text) => onSend?.(text)}
+          conversationId={session?.id}
         />
       </div>
       {insightOpen ? (

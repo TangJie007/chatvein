@@ -28,6 +28,7 @@ type ComposerProps = {
   contextTitle: string;
   sending?: boolean;
   onSend: (text: string) => void;
+  conversationId?: string | null;
 };
 
 type UploadItemInput =
@@ -67,6 +68,7 @@ export function Composer({
   contextTitle,
   sending = false,
   onSend,
+  conversationId = null,
 }: ComposerProps) {
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -181,11 +183,12 @@ export function Composer({
     resetInput();
   };
 
-  const uploadAndAdd = useCallback(async (items: UploadItemInput[]) => {
-    if (items.length === 0) return;
-    setUploadError(null);
-    try {
-      const res = await uploadFiles(items);
+  const uploadAndAdd = useCallback(
+    async (items: UploadItemInput[]) => {
+      if (items.length === 0) return;
+      setUploadError(null);
+      try {
+        const res = await uploadFiles(items, conversationId);
       const results = res?.files ?? [];
       const accepted = results.filter(
         (f): f is { name: string; path: string } => !!f && !f.error && !!f.path
@@ -211,7 +214,7 @@ export function Composer({
     } catch (err) {
       setUploadError(err instanceof Error ? err.message : "文件上传失败");
     }
-  }, []);
+  }, [conversationId]);
 
   const pickFiles = async () => {
     setSkillOpen(false);

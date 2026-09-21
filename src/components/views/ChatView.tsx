@@ -340,6 +340,7 @@ export function ChatView({
           error={error}
           meta={lastMeta}
           workspaceDir={workspace?.workspace_dir}
+          conversationId={activeId}
           insightThread={insightThread}
           artifacts={artifacts}
           onOpenWorkspace={() => {

@@ -228,6 +228,25 @@ class UploadItem(BaseModel):
 
 class UploadRequest(BaseModel):
     files: list[UploadItem] = Field(min_length=1, max_length=20)
+    conversation_id: str | None = Field(default=None, max_length=64)
+
+
+def _resolve_upload_root(conversation_id: str | None) -> Path:
+    """把上传落盘到会话工作区（优先）或主空间（无会话时回落）。"""
+    cid = (conversation_id or "").strip()
+    if cid:
+        try:
+            conv = conversations_service.get_conversation(cid)
+        except Exception:  # noqa: BLE001
+            conv = None
+        if conv:
+            ws = (conv.get("workspace_dir") or "").strip()
+            if ws:
+                try:
+                    return conversations_service.workspace_root_for(ws)
+                except Exception:  # noqa: BLE001
+                    pass
+    return workspace_root()
 
 
 def _safe_upload_dest(root: Path, original: str) -> Path:
@@ -247,8 +266,7 @@ def _safe_upload_dest(root: Path, original: str) -> Path:
     return uploads / f"{safe_stem}_{secrets.token_hex(8)}{suffix}"
 
 
-def _handle_upload_item(item: UploadItem) -> dict[str, object]:
-    root = workspace_root()
+def _handle_upload_item(item: UploadItem, root: Path) -> dict[str, object]:
     try:
         if item.source_path:
             src = Path(item.source_path.strip())
@@ -282,9 +300,10 @@ def _handle_upload_item(item: UploadItem) -> dict[str, object]:
     summary="把用户提供的文件落盘到主空间 uploads/，返回可解析的相对路径",
 )
 def upload_files(req: UploadRequest):
-    """输入框拖入/选择的本机文件会被复制到主空间 ``uploads/``，返回相对路径，
-    供 OCR / 文件工具按工作区内路径解析（沙箱外的绝对路径无法被 Agent 读取）。"""
-    return {"files": [_handle_upload_item(item) for item in req.files]}
+    """输入框拖入/选择的本机文件会被复制到会话工作区 ``uploads/``（无会话时回落主空间），
+    返回相对路径，供 OCR / 文件工具按工作区内路径解析（沙箱外的绝对路径无法被 Agent 读取）。"""
+    root = _resolve_upload_root(req.conversation_id)
+    return {"files": [_handle_upload_item(item, root) for item in req.files]}
 
 
 @app.get("/api/db/info", tags=["db"], summary="数据库概况")
