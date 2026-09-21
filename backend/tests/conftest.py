@@ -9,6 +9,8 @@ import pytest
 
 import db
 import mcps.bash_runtime as bash_runtime
+import mcps.browser_runtime as browser_runtime
+import mcps.browser_session as browser_session
 import mcps.workspace as workspace
 
 
@@ -23,6 +25,10 @@ def isolated_data(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[P
     monkeypatch.delenv("CHATVEIN_SKIP_GIT_BASH_CHECK", raising=False)
     monkeypatch.delenv("CHATVEIN_POWERSHELL_PATH", raising=False)
     monkeypatch.delenv("CHATVEIN_USE_POWERSHELL_TOOL", raising=False)
+    monkeypatch.delenv("CHATVEIN_BROWSER", raising=False)
+    monkeypatch.delenv("CHATVEIN_BROWSER_EXECUTABLE", raising=False)
+    monkeypatch.delenv("CHATVEIN_BROWSER_HEADLESS", raising=False)
+    monkeypatch.delenv("CHATVEIN_USE_BROWSER_TOOL", raising=False)
     _reset_singletons()
     db.init_db()
     yield data_dir
@@ -37,3 +43,5 @@ def _reset_singletons() -> None:
     workspace._cache.loaded = False
     workspace._cache.user_root = None
     bash_runtime.clear_runtime_cache()
+    browser_runtime.clear_runtime_cache()
+    browser_session.reset_session()

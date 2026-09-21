@@ -11,6 +11,7 @@ from mcps.bash_runtime import (  # pyright: ignore[reportImplicitRelativeImport]
     probe_bash,
     probe_powershell,
 )
+from mcps.browser_runtime import probe_browser  # pyright: ignore[reportImplicitRelativeImport]
 
 from .tools import heuristic_hits, refresh_tool_groups
 
@@ -30,8 +31,12 @@ def tool_groups() -> dict[str, list[str]]:
 
 
 def shell_runtime() -> dict[str, object]:
-    """设置页 / catalog：Bash 与 PowerShell 是否可用。"""
-    return {"bash": probe_bash(), "powershell": probe_powershell()}
+    """设置页 / catalog：Bash、PowerShell、Browser 是否可用。"""
+    return {
+        "bash": probe_bash(),
+        "powershell": probe_powershell(),
+        "browser": probe_browser(),
+    }
 
 
 def _parameters(tool: BaseTool) -> list[dict[str, Any]]:
@@ -128,13 +133,14 @@ def invoke_tools(message: str, names: list[str]) -> str:
                 result = t.invoke({})
             elif t.name == "sqlite_tables":
                 result = t.invoke({})
-            elif t.name in {"sandbox_info", "bash_info", "powershell_info"}:
+            elif t.name in {"sandbox_info", "bash_info", "powershell_info", "browser_info"}:
                 result = t.invoke({})
             elif t.name in {
                 "get_current_time",
                 "get_system_info",
                 "db_stats",
                 "list_configured_models",
+                "get_my_location",
             }:
                 result = t.invoke({})
             else:

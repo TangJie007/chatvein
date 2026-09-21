@@ -308,6 +308,7 @@ export interface McpCatalog {
   runtime?: {
     bash: ShellRuntimeProbe;
     powershell: ShellRuntimeProbe;
+    browser?: ShellRuntimeProbe;
   };
 }
 

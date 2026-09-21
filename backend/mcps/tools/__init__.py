@@ -1,4 +1,4 @@
-"""内置工具包：按本机运行时动态挂载 Bash / PowerShell（对齐 WorkBuddy）。"""
+"""内置工具包：按本机运行时动态挂载 Bash / PowerShell / Browser。"""
 
 from __future__ import annotations
 
@@ -8,12 +8,15 @@ from mcps.bash_runtime import (  # pyright: ignore[reportImplicitRelativeImport]
     bash_available,
     powershell_available,
 )
+from mcps.browser_runtime import browser_available  # pyright: ignore[reportImplicitRelativeImport]
 
-from . import bash, core, fs, kb, powershell, sandbox, sqlite_tools, web
+from . import bash, browser, core, fs, ip, kb, powershell, sandbox, sqlite_tools, web
 
 
 def build_tool_groups() -> dict[str, list[BaseTool]]:
-    """有 Git Bash 才挂 ``mcp-bash``；Windows 有 PowerShell 才挂 ``mcp-powershell``。"""
+    """有 Git Bash 才挂 ``mcp-bash``；Windows 有 PowerShell 才挂 ``mcp-powershell``；
+    Playwright 浏览器就绪才挂 ``mcp-browser``。
+    """
     groups: dict[str, list[BaseTool]] = {
         "core": list(core.TOOLS),
         "mcp-fs": list(fs.TOOLS),
@@ -21,11 +24,14 @@ def build_tool_groups() -> dict[str, list[BaseTool]]:
         "mcp-sqlite": list(sqlite_tools.TOOLS),
         "mcp-kb": list(kb.TOOLS),
         "mcp-codesandbox": list(sandbox.TOOLS),
+        "mcp-ip": list(ip.TOOLS),
     }
     if bash_available():
         groups["mcp-bash"] = list(bash.TOOLS)
     if powershell_available():
         groups["mcp-powershell"] = list(powershell.TOOLS)
+    if browser_available():
+        groups["mcp-browser"] = list(browser.TOOLS)
     return groups
 
 
@@ -45,11 +51,13 @@ def heuristic_hits(message: str) -> list[str]:
     """按关键词启发式命中工具名（离线回落）。"""
     text = (message or "").lower()
     names: list[str] = []
-    modules = [core, fs, web, sqlite_tools, kb, sandbox]
+    modules = [core, fs, web, sqlite_tools, kb, sandbox, ip]
     if bash_available():
         modules.append(bash)
     if powershell_available():
         modules.append(powershell)
+    if browser_available():
+        modules.append(browser)
     for group in modules:
         names.extend(group.heuristic(text))
     seen: set[str] = set()

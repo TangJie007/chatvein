@@ -17,7 +17,7 @@ export const DEFAULT_PREFS: AppPrefs = {
   autoUpdate: true,
 };
 
-export type McpKind = "db" | "fs" | "web" | "kb" | "code" | "shell" | "custom";
+export type McpKind = "db" | "fs" | "web" | "kb" | "code" | "shell" | "browser" | "geo" | "custom";
 
 export type McpServer = {
   id: string;
@@ -107,6 +107,28 @@ export const MCP_SERVERS: McpServer[] = [
     desc: "仅 Windows。有 Git Bash 时并存；没有时作为唯一 shell。需本机 pwsh 或 Windows PowerShell。",
     transport: "本机进程",
     cmd: "builtin://mcp-powershell",
+    tools: 2,
+    enabled: true,
+  },
+  {
+    id: "mcp-browser",
+    name: "浏览器自动化",
+    kind: "browser",
+    builtin: true,
+    desc: "进程内 Playwright，工具对齐 @playwright/mcp（快照 + ref 交互）。需本机 playwright install chromium；不随包装浏览器。",
+    transport: "本机进程",
+    cmd: "builtin://mcp-browser",
+    tools: 26,
+    enabled: true,
+  },
+  {
+    id: "mcp-ip",
+    name: "IP 归属地",
+    kind: "geo",
+    builtin: true,
+    desc: "离线 ip2region：查本机公网出口位置，或给定 IP 的国家 / 省 / 市 / ISP。首次使用按需下载 xdb。",
+    transport: "本机进程",
+    cmd: "builtin://mcp-ip",
     tools: 2,
     enabled: true,
   },

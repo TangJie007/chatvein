@@ -24,3 +24,9 @@ firecrawl-py>=4,<5
 ddgs>=9.0,<10
 beautifulsoup4>=4.12,<5
 lxml>=5.0,<7
+# Browser 自动化（mcp-browser）：进程内 Playwright，工具对齐 @playwright/mcp。
+# 浏览器二进制不随包装；需本机 `playwright install chromium`（见 docs/agents.md）。
+# aria_snapshot(mode="ai") 需较新版本（约 >=1.59）。
+playwright>=1.59,<2
+# IP 归属地（mcp-ip）：官方 py-ip2region；xdb 首次查询时下载到 CHATVEIN_DATA_DIR/ip2region。
+py-ip2region>=3.0,<4

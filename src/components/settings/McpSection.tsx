@@ -1,9 +1,11 @@
 import {
+  AppWindow,
   ChevronRight,
   Database,
   FolderClosed,
   Globe,
   Layers,
+  MapPin,
   Plug,
   RefreshCw,
   SquareTerminal,
@@ -25,6 +27,8 @@ const KIND_ICON: Record<McpKind, LucideIcon> = {
   kb: Layers,
   code: Terminal,
   shell: SquareTerminal,
+  browser: AppWindow,
+  geo: MapPin,
   custom: Plug,
 };
 
@@ -91,21 +95,28 @@ export function McpSection({ servers, onToggle }: McpSectionProps) {
           const toolCount = catalog
             ? catalog.filter((tool) => tool.group === s.id).length
             : s.tools;
-          const shellReady =
+          const runtimeReady =
             s.id === "mcp-bash"
               ? runtime?.bash.available !== false
               : s.id === "mcp-powershell"
                 ? runtime?.powershell.available !== false
-                : true;
-          const running = s.enabled && shellReady && (s.kind !== "shell" || toolCount > 0);
+                : s.id === "mcp-browser"
+                  ? runtime?.browser?.available !== false
+                  : true;
+          const needsProbe =
+            s.id === "mcp-bash" || s.id === "mcp-powershell" || s.id === "mcp-browser";
+          const running =
+            s.enabled && runtimeReady && (!needsProbe || toolCount > 0);
           const statusLabel =
             s.id === "mcp-bash" && runtime && !runtime.bash.available
               ? "未检测到 Git Bash"
               : s.id === "mcp-powershell" && runtime && !runtime.powershell.available
                 ? "未检测到 PowerShell"
-                : running
-                  ? "运行中"
-                  : "已停止";
+                : s.id === "mcp-browser" && runtime && runtime.browser?.available === false
+                  ? "未安装 Playwright 浏览器"
+                  : running
+                    ? "运行中"
+                    : "已停止";
           return (
             <div
               key={s.id}

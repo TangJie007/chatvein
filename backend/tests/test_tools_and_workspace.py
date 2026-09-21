@@ -53,7 +53,15 @@ def test_sqlite_query_is_read_only() -> None:
 
 def test_catalog_groups_match_settings_ids() -> None:
     groups = tool_groups()
-    assert set(groups) >= {"core", "mcp-fs", "mcp-web", "mcp-sqlite", "mcp-kb", "mcp-codesandbox"}
+    assert set(groups) >= {
+        "core",
+        "mcp-fs",
+        "mcp-web",
+        "mcp-sqlite",
+        "mcp-kb",
+        "mcp-codesandbox",
+        "mcp-ip",
+    }
     # Bash / PowerShell 按本机探测动态挂载，不强制出现
     assert "sqlite_query" in groups["mcp-sqlite"]
     listed = sqlite_tables.invoke({})
