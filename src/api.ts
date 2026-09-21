@@ -225,6 +225,14 @@ export interface ConversationWorkspace {
   memory_count: number;
 }
 
+/** 在系统文件管理器中打开该会话工作区。 */
+export function openConversationWorkspace(conversationId: string) {
+  return backendRequest<{ ok: boolean; path: string }>(
+    `/api/conversations/${conversationId}/open-workspace`,
+    "POST"
+  );
+}
+
 /** Per-conversation workspace insight (output / logs / runs). */
 export function getConversationWorkspace(conversationId: string) {
   return backendRequest<ConversationWorkspace>(

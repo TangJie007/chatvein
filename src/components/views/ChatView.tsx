@@ -7,13 +7,14 @@ import {
   getConversation,
   getConversationWorkspace,
   listConversations,
+  openConversationWorkspace,
   sendChat,
   type ConversationRecord,
   type ConversationWorkspace,
   type ChatMessageRecord,
 } from "../../api";
 import { ChatPanel, type ChatMessage } from "../chat/ChatPanel";
-import { InsightPanel } from "../chat/InsightPanel";
+import type { InsightArtifact, InsightThreadItem } from "../chat/InsightPanel";
 import { SessionList, type SessionItem } from "../chat/SessionList";
 
 dayjs.extend(relativeTime);
@@ -45,6 +46,19 @@ function toSessionItem(c: ConversationRecord): SessionItem {
   };
 }
 
+function artifactType(name: string): InsightArtifact["type"] {
+  const ext = name.split(".").pop()?.toLowerCase() ?? "";
+  if (["png", "jpg", "jpeg", "gif", "webp", "svg"].includes(ext)) return "image";
+  if (["csv", "tsv", "xlsx", "xls"].includes(ext)) return "table";
+  return "file";
+}
+
+function artifactMeta(size: number): string {
+  if (size < 1024) return `${size} B`;
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1).replace(/\.0$/, "")} KB`;
+  return `${(size / 1024 / 1024).toFixed(1).replace(/\.0$/, "")} MB`;
+}
+
 function toChatMessages(rows: ChatMessageRecord[]): ChatMessage[] {
   return rows.map((m) => ({
     id: String(m.id),
@@ -72,11 +86,17 @@ export function ChatView({
   const [workspace, setWorkspace] = useState<ConversationWorkspace | null>(null);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [lastMeta, setLastMeta] = useState<{
-    difficulty?: string;
-    selectedTools?: string[];
-    routeReason?: string;
-  }>({});
+  const [metaById, setMetaById] = useState<
+    Record<
+      string,
+      {
+        difficulty?: string;
+        selectedTools?: string[];
+        routeReason?: string;
+        toolPlan?: string;
+      }
+    >
+  >({});
 
   const refreshList = useCallback(async () => {
     const rows = await listConversations(80);
@@ -152,7 +172,7 @@ export function ChatView({
           if (cancelled) return;
           setActiveId(created.id);
           setMessages([]);
-          setLastMeta({});
+          setMetaById((prev) => ({ ...prev, [created.id]: {} }));
           setError(null);
         } catch (err) {
           if (!cancelled) {
@@ -177,6 +197,42 @@ export function ChatView({
   }, [query, sessions]);
 
   const session = sessions.find((s) => s.id === activeId) ?? null;
+  const lastMeta = (activeId && metaById[activeId]) || {};
+
+  const insightThread = useMemo<InsightThreadItem[]>(() => {
+    const steps: Extract<InsightThreadItem, { role: "trace" }>["trace"]["steps"] = [];
+    if (lastMeta.routeReason) {
+      steps.push({ kind: "thought", text: lastMeta.routeReason });
+    }
+    if (lastMeta.toolPlan) {
+      steps.push({ kind: "thought", text: lastMeta.toolPlan });
+    }
+    for (const call of workspace?.tool_calls ?? []) {
+      const blocked = call.status === "blocked" || call.status === "denied";
+      steps.push({
+        kind: "tool",
+        tool: call.tool_name,
+        args: call.arguments_json?.trim() || "{}",
+        status: blocked ? "blocked" : "ok",
+        result: call.result_text.trim() || (blocked ? "已拦截" : "已返回"),
+      });
+    }
+    if (steps.length === 0) return [];
+    const goal =
+      lastMeta.routeReason ||
+      steps.find((s) => s.kind === "thought")?.text ||
+      "完成本轮请求";
+    return [{ role: "trace", trace: { goal, steps } }];
+  }, [lastMeta.routeReason, lastMeta.toolPlan, workspace?.tool_calls]);
+
+  const artifacts = useMemo<InsightArtifact[]>(() => {
+    return (workspace?.artifacts ?? []).map((item) => ({
+      type: artifactType(item.name),
+      name: item.name,
+      meta: artifactMeta(item.size_bytes),
+      time: item.modified_at ? dayjs(item.modified_at).format("HH:mm") : "",
+    }));
+  }, [workspace?.artifacts]);
 
   const handleSend = async (text: string) => {
     if (sending) return;
@@ -187,11 +243,15 @@ export function ChatView({
     try {
       const result = await sendChat(text, activeId);
       setActiveId(result.conversation_id);
-      setLastMeta({
-        difficulty: result.difficulty,
-        selectedTools: result.selected_tools,
-        routeReason: result.route_reason,
-      });
+      setMetaById((prev) => ({
+        ...prev,
+        [result.conversation_id]: {
+          difficulty: result.difficulty,
+          selectedTools: result.selected_tools,
+          routeReason: result.route_reason,
+          toolPlan: result.tool_plan_reason,
+        },
+      }));
       if (result.workspace) setWorkspace(result.workspace);
       await refreshList();
       await loadConversation(result.conversation_id);
@@ -223,11 +283,18 @@ export function ChatView({
           error={error}
           meta={lastMeta}
           workspaceDir={workspace?.workspace_dir}
+          insightThread={insightThread}
+          artifacts={artifacts}
+          onOpenWorkspace={() => {
+            if (!activeId) return;
+            void openConversationWorkspace(activeId).catch((err: unknown) => {
+              setError(err instanceof Error ? err.message : String(err));
+            });
+          }}
           onSend={(text) => {
             void handleSend(text);
           }}
         />
-        <InsightPanel open={insightOpen} workspace={workspace} meta={lastMeta} />
       </div>
     </>
   );

@@ -47,6 +47,14 @@ def list_messages(conversation_id: str):
     return {"messages": _service.list_messages(conversation_id)}
 
 
+@conversations_controller.post("/{conversation_id}/open-workspace")
+def open_conversation_workspace(conversation_id: str):
+    path = _service.open_workspace_folder(conversation_id)
+    if path is None:
+        raise HTTPException(status_code=404, detail="会话不存在")
+    return {"ok": True, "path": path}
+
+
 @conversations_controller.get("/{conversation_id}/workspace")
 def conversation_workspace(conversation_id: str):
     insight = _service.workspace_insight(conversation_id)

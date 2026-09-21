@@ -139,6 +139,20 @@ class ConversationsService:
                 status=str(item.get("status") or "ok"),
             )
 
+    def open_workspace_folder(self, conversation_id: str) -> str | None:
+        """在系统文件管理器中打开该会话工作区。不存在则返回 ``None``。"""
+        conversation = self._repo.get(conversation_id)
+        if conversation is None:
+            return None
+        name = (conversation.get("workspace_dir") or "").strip()
+        if not name:
+            return None
+        root = self.workspace_root_for(name)
+        from mcps.tools.fs import _open_in_file_manager  # pyright: ignore[reportImplicitRelativeImport]
+
+        _open_in_file_manager(str(root))
+        return str(root)
+
     def workspace_insight(self, conversation_id: str) -> dict[str, Any] | None:
         """工作区路径、产物、最近工具调用（给洞察面板）。"""
         conversation = self._repo.get(conversation_id)

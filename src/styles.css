@@ -12,6 +12,8 @@
   --color-ink-700: #3d4c5f;
   --color-ink-500: #64748b;
   --color-ink-400: #8fa1b3;
+  --color-ink-300: #b7c6d4;
+  --color-ink-200: #d5dee8;
 
   /* ---- 主强调色 ---- */
   --color-brand-50: #eaf3fe;
@@ -33,8 +35,12 @@
   --color-amber-400: #f7b856;
 
   /* ---- 头像 / 装饰 ---- */
+  --color-teal-50: #e8f7f7;
   --color-teal-400: #62bbbc;
+  --color-teal-600: #2f8f90;
+  --color-violet-50: #f6eefb;
   --color-violet-400: #ba8cdd;
+  --color-violet-600: #8a5cb8;
   --color-peach-400: #f9b499;
 
   /* ---- 分层阴影（替代 border）---- */

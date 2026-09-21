@@ -3,13 +3,13 @@ import { useState } from "react";
 import { Button } from "../ui/button";
 import { Badge } from "../ui/badge";
 import { ScrollArea } from "../ui/scroll-area";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "../ui/tooltip";
 import { cn } from "../../lib/cn";
 import type { SessionItem } from "./SessionList";
+import {
+  InsightPanel,
+  type InsightArtifact,
+  type InsightThreadItem,
+} from "./InsightPanel";
 
 export type ChatMessage = {
   id: string;
@@ -23,10 +23,13 @@ type ChatPanelProps = {
   insightOpen: boolean;
   onToggleInsight: () => void;
   onSend?: (text: string) => void;
+  onOpenWorkspace?: () => void;
   modelName?: string;
   sending?: boolean;
   error?: string | null;
   workspaceDir?: string;
+  insightThread?: InsightThreadItem[];
+  artifacts?: InsightArtifact[];
   meta?: {
     difficulty?: string;
     selectedTools?: string[];
@@ -40,10 +43,13 @@ export function ChatPanel({
   insightOpen,
   onToggleInsight,
   onSend,
+  onOpenWorkspace,
   modelName = "主对话模型",
   sending = false,
   error = null,
   workspaceDir,
+  insightThread = [],
+  artifacts = [],
   meta,
 }: ChatPanelProps) {
   const [draft, setDraft] = useState("");
@@ -72,7 +78,7 @@ export function ChatPanel({
   return (
     <section className="flex min-h-0 min-w-0 flex-1 flex-row bg-surface">
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-        <header className="flex items-center gap-3 px-6 pb-4 pt-5">
+        <header className="flex items-center gap-3 px-6 pt-5 pb-4">
           <div className="min-w-0 flex-1">
             <div className="flex min-w-0 items-center gap-2.5">
               <h1 className="truncate text-[16px] font-semibold text-ink-900">
@@ -84,26 +90,33 @@ export function ChatPanel({
               {subtitleParts.join(" · ")}
             </p>
           </div>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={onToggleInsight}
-                className={cn(
-                  insightOpen
-                    ? "bg-brand-50 text-brand-600"
-                    : "text-ink-400 hover:text-ink-700"
-                )}
-                aria-label={insightOpen ? "收起执行洞察" : "展开执行洞察"}
+          <div className="ml-auto flex shrink-0 items-center gap-1">
+            {["追踪", "归档", "打开工作区"].map((label) => (
+              <button
+                key={label}
+                type="button"
+                onClick={() => {
+                  if (label === "打开工作区") onOpenWorkspace?.();
+                }}
+                className="rounded-lg px-2.5 py-1.5 text-[12px] text-ink-400 transition-colors hover:bg-tint hover:text-ink-700 focus-visible:outline-2 focus-visible:outline-brand-600"
               >
-                <PanelRight className="size-4" strokeWidth={1.75} />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>
-              {insightOpen ? "收起执行洞察" : "展开执行洞察"}
-            </TooltipContent>
-          </Tooltip>
+                {label}
+              </button>
+            ))}
+            <button
+              type="button"
+              onClick={onToggleInsight}
+              title={insightOpen ? "收起执行洞察" : "展开执行洞察"}
+              className={cn(
+                "ml-1 flex size-8 items-center justify-center rounded-lg transition-colors focus-visible:outline-2 focus-visible:outline-brand-600",
+                insightOpen
+                  ? "bg-brand-50 text-brand-600"
+                  : "text-ink-400 hover:bg-tint hover:text-ink-700"
+              )}
+            >
+              <PanelRight className="size-4" strokeWidth={1.75} />
+            </button>
+          </div>
         </header>
 
         <ScrollArea className="flex-1 px-6 pb-2">
@@ -169,6 +182,13 @@ export function ChatPanel({
           </div>
         </footer>
       </div>
+      {insightOpen ? (
+        <InsightPanel
+          thread={insightThread}
+          artifacts={artifacts}
+          onClose={onToggleInsight}
+        />
+      ) : null}
     </section>
   );
 }
