@@ -1,12 +1,14 @@
 """SkillHub 公开目录代理。
 
 浏览用 ``GET https://api.skillhub.cn/api/skills``（无需鉴权）。
-安装 / 下载留到后续版本，本模块只做列表与搜索转发。
+详情用 ``GET https://api.skillhub.cn/api/v1/skills/{slug}``，并可选拉取 ``SKILL.md``。
+安装 / 下载留到后续版本。
 """
 
 from __future__ import annotations
 
 import os
+import re
 from typing import Any
 
 import httpx
@@ -30,8 +32,10 @@ CATEGORY_LABELS: dict[str, str] = {
     "professional": "专业服务",
     "life-service": "生活服务",
     "business-ops": "商业运营",
+    "education": "教育学习",
 }
 
+_SLUG_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$")
 _DEFAULT_TIMEOUT = httpx.Timeout(20.0, connect=8.0)
 _USER_AGENT = "ChatVein/0.1 (+https://github.com/chatvein; SkillHub browse)"
 
@@ -65,6 +69,12 @@ def _publisher_name(raw: dict[str, Any]) -> str:
     return _prefer_text(raw.get("ownerName"), raw.get("claimed_user_handle"))
 
 
+def _homepage_for(slug: str, homepage: str = "") -> str:
+    if slug and (not homepage.startswith("http") or "api.skillhub.cn" in homepage):
+        return f"{SKILLHUB_SITE}/skills/{slug}"
+    return homepage
+
+
 def _normalize_skill(raw: dict[str, Any]) -> dict[str, Any]:
     slug = _prefer_text(raw.get("slug"))
     category = _prefer_text(raw.get("category"))
@@ -74,12 +84,7 @@ def _normalize_skill(raw: dict[str, Any]) -> dict[str, Any]:
             label = _prefer_text(item.get("name"))
             if label:
                 sub_names.append(label)
-    homepage = _prefer_text(raw.get("homepage"))
-    if slug and not homepage.startswith("http"):
-        homepage = f"{SKILLHUB_SITE}/skills/{slug}"
-    elif slug and "api.skillhub.cn" in homepage:
-        # 列表里的 homepage 常指向 api 路径，浏览页改成官网详情
-        homepage = f"{SKILLHUB_SITE}/skills/{slug}"
+    homepage = _homepage_for(slug, _prefer_text(raw.get("homepage")))
 
     return {
         "slug": slug,
@@ -98,6 +103,122 @@ def _normalize_skill(raw: dict[str, Any]) -> dict[str, Any]:
         "source": _prefer_text(raw.get("source"), "community"),
         "verified": bool(raw.get("verified")),
         "updated_at": raw.get("updated_at"),
+    }
+
+
+def _http_client() -> httpx.Client:
+    return httpx.Client(
+        timeout=_DEFAULT_TIMEOUT,
+        headers={"User-Agent": _USER_AGENT, "Accept": "application/json"},
+        follow_redirects=True,
+    )
+
+
+def _raise_http(exc: Exception) -> None:
+    if isinstance(exc, httpx.TimeoutException):
+        raise RuntimeError("SkillHub 请求超时，请稍后重试") from exc
+    if isinstance(exc, httpx.HTTPStatusError):
+        status = exc.response.status_code
+        if status == 404:
+            raise RuntimeError("SkillHub 未找到该技能") from exc
+        raise RuntimeError(f"SkillHub 返回 HTTP {status}") from exc
+    if isinstance(exc, httpx.HTTPError):
+        raise RuntimeError(f"无法连接 SkillHub：{exc}") from exc
+    if isinstance(exc, ValueError):
+        raise RuntimeError("SkillHub 返回了无法解析的响应") from exc
+    raise RuntimeError(f"SkillHub 请求失败：{exc}") from exc
+
+
+def _security_reports(raw: dict[str, Any] | None) -> list[dict[str, str]]:
+    if not isinstance(raw, dict):
+        return []
+    reports: list[dict[str, str]] = []
+    for key, item in raw.items():
+        if not isinstance(item, dict):
+            continue
+        status = _prefer_text(item.get("status"))
+        status_text = _prefer_text(item.get("statusText"), status)
+        report_url = _prefer_text(item.get("reportUrl"))
+        if not (status or status_text or report_url):
+            continue
+        reports.append(
+            {
+                "provider": str(key),
+                "status": status,
+                "status_text": status_text,
+                "report_url": report_url,
+            }
+        )
+    return reports
+
+
+def _normalize_detail(
+    payload: dict[str, Any], *, skill_md: str | None = None
+) -> dict[str, Any]:
+    skill = payload.get("skill") if isinstance(payload.get("skill"), dict) else {}
+    slug = _prefer_text(payload.get("slug"), skill.get("slug"))
+    if not slug:
+        raise RuntimeError("SkillHub 详情缺少 slug")
+
+    stats = skill.get("stats") if isinstance(skill.get("stats"), dict) else {}
+    latest = (
+        payload.get("latestVersion")
+        if isinstance(payload.get("latestVersion"), dict)
+        else {}
+    )
+    owner = payload.get("owner") if isinstance(payload.get("owner"), dict) else {}
+    namespace = (
+        payload.get("namespace") if isinstance(payload.get("namespace"), dict) else {}
+    )
+    category = _prefer_text(skill.get("category"))
+    sub_names: list[str] = []
+    for item in skill.get("subCategories") or []:
+        if isinstance(item, dict):
+            label = _prefer_text(item.get("name"))
+            if label:
+                sub_names.append(label)
+
+    publisher = _prefer_text(
+        owner.get("displayName"),
+        owner.get("handle"),
+        namespace.get("displayName"),
+        namespace.get("handle"),
+    )
+    tags = skill.get("tags") if isinstance(skill.get("tags"), dict) else {}
+    version = _prefer_text(latest.get("version"), tags.get("latest"))
+    updated_at = skill.get("updatedAt")
+    if updated_at is None:
+        updated_at = skill.get("updated_at")
+
+    return {
+        "slug": slug,
+        "name": _prefer_text(skill.get("displayName"), slug),
+        "description": _prefer_text(skill.get("summary_zh"), skill.get("summary")),
+        "overview_md": _prefer_text(skill.get("overviewMd")),
+        "skill_md": skill_md,
+        "category": category,
+        "category_label": CATEGORY_LABELS.get(category, category or "其他"),
+        "sub_categories": sub_names,
+        "downloads": int(stats.get("downloads") or 0),
+        "installs": int(stats.get("installs") or 0),
+        "stars": int(stats.get("stars") or 0),
+        "version_count": int(stats.get("versions") or 0),
+        "version": version,
+        "changelog": _prefer_text(latest.get("changelog")),
+        "icon_url": skill.get("iconUrl")
+        if isinstance(skill.get("iconUrl"), str)
+        else None,
+        "homepage": _homepage_for(slug),
+        "publisher": publisher,
+        "source": _prefer_text(skill.get("source"), "community"),
+        "verified": bool(skill.get("verified")),
+        "updated_at": updated_at,
+        "security_reports": _security_reports(
+            payload.get("securityReports")
+            if isinstance(payload.get("securityReports"), dict)
+            else None
+        ),
+        "website": SKILLHUB_SITE,
     }
 
 
@@ -124,24 +245,13 @@ def list_skills(
 
     url = f"{SKILLHUB_API}/api/skills"
     try:
-        with httpx.Client(
-            timeout=_DEFAULT_TIMEOUT,
-            headers={"User-Agent": _USER_AGENT, "Accept": "application/json"},
-            follow_redirects=True,
-        ) as client:
+        with _http_client() as client:
             response = client.get(url, params=params)
             response.raise_for_status()
             payload = response.json()
-    except httpx.TimeoutException as exc:
-        raise RuntimeError("SkillHub 请求超时，请稍后重试") from exc
-    except httpx.HTTPStatusError as exc:
-        raise RuntimeError(
-            f"SkillHub 返回 HTTP {exc.response.status_code}"
-        ) from exc
-    except httpx.HTTPError as exc:
-        raise RuntimeError(f"无法连接 SkillHub：{exc}") from exc
-    except ValueError as exc:
-        raise RuntimeError("SkillHub 返回了无法解析的响应") from exc
+    except Exception as exc:
+        _raise_http(exc)
+        raise  # pragma: no cover
 
     if not isinstance(payload, dict):
         raise RuntimeError("SkillHub 响应格式异常")
@@ -172,3 +282,42 @@ def list_skills(
         "page_size": page_size,
         "categories": category_catalog(),
     }
+
+
+def _fetch_skill_md(client: httpx.Client, slug: str) -> str | None:
+    """尽力拉取 SKILL.md；失败时不影响详情页。"""
+    try:
+        response = client.get(
+            f"{SKILLHUB_API}/api/v1/skills/{slug}/file",
+            params={"path": "SKILL.md"},
+            headers={"Accept": "text/plain, */*"},
+        )
+        if response.status_code >= 400:
+            return None
+        text = response.text
+        return text if text.strip() else None
+    except httpx.HTTPError:
+        return None
+
+
+def get_skill(slug: str) -> dict[str, Any]:
+    """拉取单个技能详情（含可选 SKILL.md 正文）。"""
+    cleaned = (slug or "").strip()
+    if not _SLUG_RE.match(cleaned):
+        raise ValueError("无效的 skill slug")
+
+    url = f"{SKILLHUB_API}/api/v1/skills/{cleaned}"
+    try:
+        with _http_client() as client:
+            response = client.get(url)
+            response.raise_for_status()
+            payload = response.json()
+            skill_md = _fetch_skill_md(client, cleaned)
+    except Exception as exc:
+        _raise_http(exc)
+        raise  # pragma: no cover
+
+    if not isinstance(payload, dict):
+        raise RuntimeError("SkillHub 详情格式异常")
+
+    return _normalize_detail(payload, skill_md=skill_md)

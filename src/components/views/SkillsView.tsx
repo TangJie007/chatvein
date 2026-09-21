@@ -12,6 +12,7 @@ import {
   type SkillHubItem,
 } from "../../api";
 import { cn } from "../../lib/cn";
+import { SkillDetailDrawer } from "../skills/SkillDetailDrawer";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { ScrollArea } from "../ui/scroll-area";
@@ -32,9 +33,26 @@ function formatCount(n: number): string {
   return String(n);
 }
 
-function SkillCard({ skill }: { skill: SkillHubItem }) {
+function SkillCard({
+  skill,
+  onOpen,
+}: {
+  skill: SkillHubItem;
+  onOpen: (skill: SkillHubItem) => void;
+}) {
   return (
-    <article className="flex flex-col gap-2.5 rounded-2xl bg-tint/50 p-3.5 shadow-soft transition-colors hover:bg-tint">
+    <article
+      role="button"
+      tabIndex={0}
+      onClick={() => onOpen(skill)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onOpen(skill);
+        }
+      }}
+      className="flex cursor-pointer flex-col gap-2.5 rounded-2xl bg-tint/50 p-3.5 shadow-soft transition-colors hover:bg-tint focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/40"
+    >
       <div className="flex items-start gap-3">
         <div className="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-surface shadow-soft">
           {skill.icon_url ? (
@@ -79,7 +97,11 @@ function SkillCard({ skill }: { skill: SkillHubItem }) {
       <div className="mt-auto flex items-center gap-2 pt-0.5">
         <Tooltip>
           <TooltipTrigger asChild>
-            <span className="flex-1">
+            <span
+              className="flex-1"
+              onClick={(e) => e.stopPropagation()}
+              onKeyDown={(e) => e.stopPropagation()}
+            >
               <Button variant="tint" size="sm" className="w-full" disabled>
                 安装
               </Button>
@@ -93,7 +115,10 @@ function SkillCard({ skill }: { skill: SkillHubItem }) {
             size="icon"
             className="shrink-0"
             title="在 SkillHub 打开"
-            onClick={() => window.open(skill.homepage, "_blank", "noopener,noreferrer")}
+            onClick={(e) => {
+              e.stopPropagation();
+              window.open(skill.homepage, "_blank", "noopener,noreferrer");
+            }}
           >
             <ExternalLink className="size-3.5" strokeWidth={1.75} />
           </Button>
@@ -116,6 +141,8 @@ export function SkillsView() {
   const [error, setError] = useState<string | null>(null);
   const [website, setWebsite] = useState("https://skillhub.cn");
   const [refreshKey, setRefreshKey] = useState(0);
+  const [selected, setSelected] = useState<SkillHubItem | null>(null);
+  const [detailOpen, setDetailOpen] = useState(false);
 
   const applyKeyword = useMemo(
     () =>
@@ -135,8 +162,14 @@ export function SkillsView() {
   useEffect(() => {
     let cancelled = false;
     const append = page > 1;
-    if (append) setLoadingMore(true);
-    else setLoading(true);
+    if (append) {
+      setLoadingMore(true);
+    } else {
+      // 分类 / 搜索切换：先清空再出 loading，避免旧列表挡住加载态
+      setLoading(true);
+      setSkills([]);
+      setTotal(0);
+    }
     setError(null);
 
     void listSkills({
@@ -176,6 +209,11 @@ export function SkillsView() {
 
   const hasMore = skills.length < total;
 
+  const openDetail = (skill: SkillHubItem) => {
+    setSelected(skill);
+    setDetailOpen(true);
+  };
+
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       <header className="flex shrink-0 flex-col gap-3 border-b border-tint px-5 py-4">
@@ -188,7 +226,7 @@ export function SkillsView() {
               </span>
             </div>
             <p className="mt-0.5 text-[12.5px] text-ink-400">
-              浏览腾讯 SkillHub 公开技能；安装与使用后续接入
+              浏览腾讯 SkillHub 公开技能；点击卡片查看详情，安装与使用后续接入
             </p>
           </div>
           <Button
@@ -221,34 +259,44 @@ export function SkillsView() {
         <div className="flex flex-wrap gap-1.5">
           <button
             type="button"
+            disabled={loading}
             onClick={() => {
+              if (category === null) return;
               setCategory(null);
               setPage(1);
             }}
             className={cn(
-              "rounded-lg px-2.5 py-1 text-[12px] transition-colors",
+              "inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-[12px] transition-colors disabled:opacity-70",
               category === null
                 ? "bg-brand-600 text-white shadow-soft"
                 : "bg-tint text-ink-500 hover:bg-tint-deep hover:text-ink-700"
             )}
           >
+            {loading && category === null && (
+              <Loader2 className="size-3 animate-spin" strokeWidth={1.75} />
+            )}
             全部
           </button>
           {categories.map((c) => (
             <button
               key={c.id}
               type="button"
+              disabled={loading}
               onClick={() => {
+                if (category === c.id) return;
                 setCategory(c.id);
                 setPage(1);
               }}
               className={cn(
-                "rounded-lg px-2.5 py-1 text-[12px] transition-colors",
+                "inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-[12px] transition-colors disabled:opacity-70",
                 category === c.id
                   ? "bg-brand-600 text-white shadow-soft"
                   : "bg-tint text-ink-500 hover:bg-tint-deep hover:text-ink-700"
               )}
             >
+              {loading && category === c.id && (
+                <Loader2 className="size-3 animate-spin" strokeWidth={1.75} />
+              )}
               {c.label}
             </button>
           ))}
@@ -257,7 +305,7 @@ export function SkillsView() {
 
       <ScrollArea className="min-h-0 flex-1">
         <div className="px-5 py-4">
-          {loading && skills.length === 0 ? (
+          {loading ? (
             <div className="flex items-center justify-center gap-2 py-24 text-[13px] text-ink-400">
               <Loader2 className="size-4 animate-spin" strokeWidth={1.75} />
               正在从 SkillHub 加载…
@@ -291,6 +339,7 @@ export function SkillsView() {
                   <SkillCard
                     key={`${skill.slug}-${skill.version}-${index}`}
                     skill={skill}
+                    onOpen={openDetail}
                   />
                 ))}
               </div>
@@ -319,6 +368,12 @@ export function SkillsView() {
           )}
         </div>
       </ScrollArea>
+
+      <SkillDetailDrawer
+        skill={selected}
+        open={detailOpen}
+        onOpenChange={setDetailOpen}
+      />
     </div>
   );
 }

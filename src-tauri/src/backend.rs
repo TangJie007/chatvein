@@ -163,6 +163,10 @@ pub fn spawn_backend(app: &AppHandle) {
         cmd.arg(arg);
     }
     cmd.env("CHATVEIN_RESOURCE_DIR", &resource_dir);
+    // Dev: uvicorn --reload so edits under backend/*.py pick up without
+    // restarting `tauri dev`. Release / frozen builds never set this.
+    #[cfg(debug_assertions)]
+    cmd.env("CHATVEIN_RELOAD", "1");
     let mut child = match cmd
         .arg("--port")
         .arg(port.to_string())

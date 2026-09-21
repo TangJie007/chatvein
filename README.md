@@ -71,6 +71,10 @@ npm run tauri icon src-tauri/icons/icon-source.png   # 见下方说明
 npm run tauri dev
 ```
 
+开发态 Rust 会拉起仓库里的 `backend/main.py`（不是打包后的 `backend.exe`），并设置
+`CHATVEIN_RELOAD=1`：改 `backend/**/*.py` 后 uvicorn 会自动重启，一般不用整应用重启。
+前端仍走 Vite HMR。若要关热重载，可在启动前设 `CHATVEIN_RELOAD=0`。
+
 ## 后端端口策略
 
 端口完全由 Rust 消息层内部管理（Rust 启动时把真实 URL 推给前端，前端直接 `fetch` 连 Python，不经代理）：

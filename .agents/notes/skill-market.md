@@ -2,8 +2,12 @@
 
 ## 现状
 
-侧边栏「技能」→ 浏览腾讯 SkillHub 公开目录。后端 `GET /api/skills/` 代理
-`https://api.skillhub.cn/api/skills`（关键词 / 分类 / 分页）；安装按钮禁用。
+侧边栏「技能」→ 浏览腾讯 SkillHub 公开目录。后端：
+
+- `GET /api/skills/` 代理列表 `https://api.skillhub.cn/api/skills`
+- `GET /api/skills/{slug}` 代理详情 `https://api.skillhub.cn/api/v1/skills/{slug}`，并尽力拉取 `SKILL.md`
+
+前端点击卡片打开右侧详情抽屉（简介 / 统计 / 安全扫描 / 正文）；安装按钮仍禁用。
 
 ## 后期需要补
 

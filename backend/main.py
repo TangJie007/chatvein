@@ -216,13 +216,32 @@ def main() -> None:
         type=int,
         default=int(os.environ.get("CHATVEIN_PORT", "8420")),
     )
+    parser.add_argument(  # pyright: ignore[reportUnusedCallResult]
+        "--reload",
+        action="store_true",
+        default=os.environ.get("CHATVEIN_RELOAD", "").strip().lower()
+        in {"1", "true", "yes"},
+        help="开发热重载（改 .py 自动重启；也可设 CHATVEIN_RELOAD=1）",
+    )
     args = parser.parse_args()
     host = cast(str, args.host)
     port = cast(int, args.port)
+    reload = bool(args.reload)
 
     print(f"CHATVEIN_BACKEND_READY host={host} port={port}", flush=True)
     print(f"CHATVEIN_SWAGGER http://{host}:{port}/docs", flush=True)
-    uvicorn.run(app, host=host, port=port, log_level="info")
+    if reload:
+        # reload 必须传 import 字符串，传 app 实例不会监视文件
+        print("CHATVEIN_BACKEND_RELOAD=1", flush=True)
+        uvicorn.run(
+            "main:app",
+            host=host,
+            port=port,
+            log_level="info",
+            reload=True,
+        )
+    else:
+        uvicorn.run(app, host=host, port=port, log_level="info")
 
 
 if __name__ == "__main__":

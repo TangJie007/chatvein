@@ -58,7 +58,7 @@ ChatVein 是本机桌面 Agent（Tauri + Python），前端设置页已规划 `b
 | --- | --- | --- | --- |
 | **Browser `--caps`** | 只对齐 Core + Tabs | 按需对齐上游可选能力：`vision`（坐标鼠标）、`pdf`（`browser_pdf_save`）、`devtools`、`storage`、`network`、`testing` | 官方用 `--caps=` / `PLAYWRIGHT_MCP_CAPS` opt-in；补时需设置页开关、依赖探测、落盘与权限说明。细节见 `.agents/notes/mcp-browser.md` |
 | **自定义 HTTP MCP（`mcp-http`）** | 设置页占位 | LangChain `MCPAdapter` 拉远程工具；用户自配 URL / headers | 承接 SaaS 连接器，不进默认分发 |
-| **Skill 市场：安装 / 使用** | 侧边栏可浏览 SkillHub 目录（`GET /api/skills/`） | 下载到本机 skills 目录、发现 `SKILL.md`、注入 Agent；更新 / 卸载 | 浏览已接；registry URL 宜可配置。与 MCP 工具轨分离 |
+| **Skill 市场：安装 / 使用** | 侧边栏可浏览 SkillHub 目录与详情（`GET /api/skills/`、`GET /api/skills/{slug}`） | 下载到本机 skills 目录、发现 `SKILL.md`、注入 Agent；更新 / 卸载 | 浏览与详情已接；registry URL 宜可配置。与 MCP 工具轨分离 |
 | **Filesystem `read_media_file`** | 未对齐上游 | 若产品需要读图/音视频元数据再补 | 首版刻意省略 |
 | **Browser caps 之外的体验** | headed 默认、截图进 `browser-output/` | 无头策略、多 profile、下载目录策略等按需打磨 | 不阻塞主路径 |
 

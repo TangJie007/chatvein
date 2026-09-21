@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter, HTTPException, Query
 
-from .service import category_catalog, list_skills
+from .service import category_catalog, get_skill, list_skills
 
 skills_controller = APIRouter()
 
@@ -32,3 +32,16 @@ def get_skills(
         )
     except RuntimeError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@skills_controller.get("/{slug}")
+def get_skill_detail(slug: str):
+    """代理 SkillHub 技能详情（含可选 SKILL.md）。"""
+    try:
+        return get_skill(slug)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        detail = str(exc)
+        status = 404 if "未找到" in detail else 502
+        raise HTTPException(status_code=status, detail=detail) from exc

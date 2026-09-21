@@ -106,3 +106,115 @@ def test_list_skills_http_error(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(skills_service.httpx, "Client", lambda **_kwargs: fake)
     with pytest.raises(RuntimeError, match="HTTP 503"):
         skills_service.list_skills()
+
+
+class _DetailFakeClient:
+    def __init__(
+        self,
+        payload: dict[str, Any],
+        *,
+        skill_md: str = "# Hello\n\nbody",
+        status_code: int = 200,
+    ) -> None:
+        self._payload = payload
+        self._skill_md = skill_md
+        self._status_code = status_code
+        self.urls: list[str] = []
+
+    def __enter__(self) -> _DetailFakeClient:
+        return self
+
+    def __exit__(self, *_args: object) -> None:
+        return None
+
+    def get(
+        self,
+        url: str,
+        params: dict[str, Any] | None = None,
+        headers: dict[str, str] | None = None,
+    ) -> Any:
+        self.urls.append(url)
+        if url.endswith("/file"):
+            return _FakeTextResponse(self._skill_md)
+        return _FakeResponse(self._payload, self._status_code)
+
+
+class _FakeTextResponse:
+    def __init__(self, text: str, status_code: int = 200) -> None:
+        self.text = text
+        self.status_code = status_code
+
+    def raise_for_status(self) -> None:
+        if self.status_code >= 400:
+            raise httpx.HTTPStatusError(
+                "error",
+                request=httpx.Request("GET", "https://api.skillhub.cn/api/v1/skills/x"),
+                response=httpx.Response(self.status_code),
+            )
+
+
+def test_get_skill_normalizes(monkeypatch: pytest.MonkeyPatch) -> None:
+    payload = {
+        "slug": "tencent-docs",
+        "latestVersion": {
+            "version": "2.0.0",
+            "changelog": "bugfix",
+            "createdAt": 2,
+        },
+        "owner": {"displayName": "腾讯文档团队", "handle": "tencent-adm"},
+        "namespace": {
+            "handle": "tencent-adm",
+            "displayName": "tencent-adm",
+        },
+        "securityReports": {
+            "keen": {
+                "status": "benign",
+                "statusText": "安全且无风险",
+                "reportUrl": "https://example.com/report",
+            }
+        },
+        "skill": {
+            "slug": "tencent-docs",
+            "displayName": "腾讯文档",
+            "summary": "EN",
+            "summary_zh": "中文简介",
+            "overviewMd": "## 概览",
+            "category": "office-efficiency",
+            "iconUrl": "https://example.com/icon.png",
+            "source": "enterprise",
+            "verified": True,
+            "updatedAt": 99,
+            "stats": {
+                "downloads": 10,
+                "installs": 2,
+                "stars": 1,
+                "versions": 4,
+            },
+            "subCategories": [{"key": "office-doc", "name": "文档协作"}],
+            "tags": {"latest": "2.0.0"},
+        },
+    }
+    fake = _DetailFakeClient(payload, skill_md="# SKILL\n\n内容")
+    monkeypatch.setattr(
+        skills_service.httpx,
+        "Client",
+        lambda **_kwargs: fake,
+    )
+
+    result = skills_service.get_skill("tencent-docs")
+    assert result["slug"] == "tencent-docs"
+    assert result["name"] == "腾讯文档"
+    assert result["description"] == "中文简介"
+    assert result["overview_md"] == "## 概览"
+    assert result["skill_md"] == "# SKILL\n\n内容"
+    assert result["version"] == "2.0.0"
+    assert result["changelog"] == "bugfix"
+    assert result["publisher"] == "腾讯文档团队"
+    assert result["homepage"] == "https://skillhub.cn/skills/tencent-docs"
+    assert result["security_reports"][0]["status"] == "benign"
+    assert any(u.endswith("/api/v1/skills/tencent-docs") for u in fake.urls)
+
+
+def test_get_skill_rejects_bad_slug() -> None:
+    with pytest.raises(ValueError, match="无效"):
+        skills_service.get_skill("../etc/passwd")

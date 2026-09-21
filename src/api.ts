@@ -409,3 +409,26 @@ export function listSkills(params: ListSkillsParams = {}) {
     qs ? `/api/skills/?${qs}` : "/api/skills/"
   );
 }
+
+export interface SkillSecurityReport {
+  provider: string;
+  status: string;
+  status_text: string;
+  report_url: string;
+}
+
+export interface SkillHubDetail extends SkillHubItem {
+  overview_md: string;
+  skill_md: string | null;
+  version_count: number;
+  changelog: string;
+  security_reports: SkillSecurityReport[];
+  website: string;
+}
+
+/** 拉取单个技能详情（含可选 SKILL.md）。 */
+export function getSkill(slug: string) {
+  return backendRequest<SkillHubDetail>(
+    `/api/skills/${encodeURIComponent(slug)}`
+  );
+}
