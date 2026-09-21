@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import threading
+from pathlib import Path
 
 import pytest
 
@@ -55,7 +56,67 @@ def test_bash_tools_only_registered_when_available(monkeypatch: pytest.MonkeyPat
     assert runtime["bash"]["available"] is False
 
 
-def test_bash_runs_inside_conversation_and_waits_for_approval(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_skip_bash_download_does_not_fetch(monkeypatch: pytest.MonkeyPatch) -> None:
+    """测试默认 SKIP_BASH_DOWNLOAD=1：无本机 bash 时不触发网络。"""
+    monkeypatch.delenv("CHATVEIN_GIT_BASH", raising=False)
+    monkeypatch.setenv("CHATVEIN_SKIP_BASH_DOWNLOAD", "1")
+
+    def boom(*_a: object, **_k: object) -> None:
+        raise AssertionError("不应下载")
+
+    monkeypatch.setattr("mcps.bash_download._download_zip", boom)
+    monkeypatch.setattr("mcps.bash_runtime._bash_candidates", lambda: [])
+    monkeypatch.setattr("mcps.bash_runtime.find_installed_bash", lambda: None)
+    clear_runtime_cache()
+    status = probe_bash()
+    assert status["available"] is False
+    assert "message" in status
+
+
+def test_mingit_cache_is_used_without_download(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    data = Path(str(tmp_path / "data"))
+    bash = data / "git-bash" / "usr" / "bin" / "bash.exe"
+    bash.parent.mkdir(parents=True)
+    bash.write_bytes(b"MZ")
+    monkeypatch.setenv("CHATVEIN_DATA_DIR", str(data))
+    monkeypatch.delenv("CHATVEIN_GIT_BASH", raising=False)
+    monkeypatch.setenv("CHATVEIN_SKIP_BASH_DOWNLOAD", "1")
+    monkeypatch.setattr("mcps.bash_runtime._bash_candidates", lambda: [])
+
+    def boom(*_a: object, **_k: object) -> None:
+        raise AssertionError("已有缓存不应再下载")
+
+    monkeypatch.setattr("mcps.bash_download._download_zip", boom)
+    clear_runtime_cache()
+    status = probe_bash()
+    assert status["available"] is True
+    assert status.get("source") == "mingit"
+    assert Path(str(status["path"])) == bash.resolve()
+    assert "mcp-bash" in tool_groups()
+
+
+def test_download_failure_degrades_message(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("CHATVEIN_GIT_BASH", raising=False)
+    monkeypatch.delenv("CHATVEIN_SKIP_BASH_DOWNLOAD", raising=False)
+    monkeypatch.setenv("CHATVEIN_FORCE_BASH_DOWNLOAD", "1")
+    monkeypatch.setattr("mcps.bash_runtime._bash_candidates", lambda: [])
+    monkeypatch.setattr("mcps.bash_runtime.find_installed_bash", lambda: None)
+    monkeypatch.setattr(
+        "mcps.bash_runtime.try_ensure_mingit_bash",
+        lambda: (None, "network down"),
+    )
+    clear_runtime_cache()
+    status = probe_bash()
+    assert status["available"] is False
+    assert "PowerShell" in str(status.get("message") or "")
+    assert "mcp-bash" not in tool_groups()
+
+
+def test_bash_runs_inside_conversation_and_waits_for_approval(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     if resolve_bash() is None:
         pytest.skip("未安装 Git Bash")
     assert "mcp-bash" in tool_groups()

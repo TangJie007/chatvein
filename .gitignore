@@ -9,6 +9,8 @@ src-tauri/target/
 __pycache__/
 *.pyc
 .venv*/
+.pytest_cache/
+.ruff_cache/
 python-runtime/
 dist-backend/
 build/pyinstaller/

@@ -39,14 +39,62 @@ const TRANSPORT_TONE: Record<string, string> = {
 
 type McpSectionProps = {
   servers: McpServer[];
-  onToggle: (id: string) => void;
 };
 
-export function McpSection({ servers, onToggle }: McpSectionProps) {
+/** 本机是否具备该内置服务（探测类看 runtime；其余默认可用；自定义 HTTP 占位不可用）。 */
+function isAvailable(
+  id: string,
+  runtime: McpCatalog["runtime"] | null,
+  groups: Record<string, string[]> | null
+): boolean {
+  if (id === "mcp-http") return false;
+  if (id === "mcp-bash") return runtime?.bash.available === true;
+  if (id === "mcp-powershell") return runtime?.powershell.available === true;
+  if (id === "mcp-browser") {
+    // 以探测为准；分组已注册则更可信（避免 toolCount 误判）
+    if (runtime?.browser?.available === true) return true;
+    if (groups && id in groups) return true;
+    return false;
+  }
+  return true;
+}
+
+function unavailableLabel(id: string, runtime: McpCatalog["runtime"] | null): string {
+  if (id === "mcp-http") return "尚未接入";
+  if (id === "mcp-bash") {
+    if (runtime && !runtime.bash.available) {
+      return typeof runtime.bash.message === "string" && runtime.bash.message.includes("降级")
+        ? "MinGit 不可用，已降级"
+        : "未检测到 Git Bash";
+    }
+  }
+  if (id === "mcp-powershell" && runtime && !runtime.powershell.available) {
+    return "未检测到 PowerShell";
+  }
+  if (id === "mcp-browser") {
+    const probe = runtime?.browser;
+    if (probe && probe.available === false) {
+      const detail =
+        (typeof probe.message === "string" && probe.message) ||
+        (typeof probe.error === "string" && probe.error) ||
+        "";
+      if (detail.includes("CHATVEIN_USE_BROWSER_TOOL")) return "已关闭浏览器工具";
+      if (detail.includes("playwright") || detail.includes("未找到") || detail.includes("未安装")) {
+        return "未安装 Playwright 浏览器";
+      }
+      return "浏览器不可用";
+    }
+    return "未安装 Playwright 浏览器";
+  }
+  return "不可用";
+}
+
+export function McpSection({ servers }: McpSectionProps) {
   const [open, setOpen] = useState(false);
   const [openId, setOpenId] = useState<string | null>(null);
   const closeTimer = useRef<number | null>(null);
   const [catalog, setCatalog] = useState<McpToolRecord[] | null>(null);
+  const [groups, setGroups] = useState<Record<string, string[]> | null>(null);
   const [runtime, setRuntime] = useState<McpCatalog["runtime"] | null>(null);
   const [catalogError, setCatalogError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -57,6 +105,7 @@ export function McpSection({ servers, onToggle }: McpSectionProps) {
     try {
       const data = await mcpCatalog();
       setCatalog(data.tools);
+      setGroups(data.groups ?? null);
       setRuntime(data.runtime ?? null);
     } catch (err) {
       setCatalogError(err instanceof Error ? err.message : String(err));
@@ -74,11 +123,12 @@ export function McpSection({ servers, onToggle }: McpSectionProps) {
 
   const selected = servers.find((s) => s.id === openId) ?? null;
   const selectedTools = catalog?.filter((tool) => tool.group === openId) ?? [];
+  const selectedAvailable = selected ? isAvailable(selected.id, runtime, groups) : true;
 
   return (
     <Card
       title="协议服务"
-      desc="随应用分发的模型上下文协议服务，开箱即用；关闭后工具不再注入上下文"
+      desc="随应用分发的模型上下文协议服务；状态由本机环境自动决定，开关仅作展示"
       icon={<Plug className="size-3.5 text-brand-600" strokeWidth={1.75} />}
       action={
         <CardAction
@@ -95,28 +145,10 @@ export function McpSection({ servers, onToggle }: McpSectionProps) {
           const toolCount = catalog
             ? catalog.filter((tool) => tool.group === s.id).length
             : s.tools;
-          const runtimeReady =
-            s.id === "mcp-bash"
-              ? runtime?.bash.available !== false
-              : s.id === "mcp-powershell"
-                ? runtime?.powershell.available !== false
-                : s.id === "mcp-browser"
-                  ? runtime?.browser?.available !== false
-                  : true;
-          const needsProbe =
-            s.id === "mcp-bash" || s.id === "mcp-powershell" || s.id === "mcp-browser";
-          const running =
-            s.enabled && runtimeReady && (!needsProbe || toolCount > 0);
-          const statusLabel =
-            s.id === "mcp-bash" && runtime && !runtime.bash.available
-              ? "未检测到 Git Bash"
-              : s.id === "mcp-powershell" && runtime && !runtime.powershell.available
-                ? "未检测到 PowerShell"
-                : s.id === "mcp-browser" && runtime && runtime.browser?.available === false
-                  ? "未安装 Playwright 浏览器"
-                  : running
-                    ? "运行中"
-                    : "已停止";
+          const available = isAvailable(s.id, runtime, groups);
+          const running = available;
+          const statusLabel = running ? "运行中" : unavailableLabel(s.id, runtime);
+
           return (
             <div
               key={s.id}
@@ -196,25 +228,29 @@ export function McpSection({ servers, onToggle }: McpSectionProps) {
                     {statusLabel}
                   </span>
                 </span>
-                <Switch checked={s.enabled} onCheckedChange={() => onToggle(s.id)} />
+                {/* 内置 MCP：开关只读，与运行状态对齐，不接受用户切换 */}
+                <Switch checked={running} disabled aria-readonly />
               </div>
             </div>
           );
         })}
       </div>
 
-      <Note tone={servers.every((s) => !s.enabled) ? "warn" : "ok"}>
-        {servers.every((s) => !s.enabled)
-          ? "全部服务已停止，Agent 将只能使用纯文本推理，无法调用工具"
-          : "启用状态保存在本机，重启后保持不变；点击服务可查看工具清单"}
+      <Note tone="ok">
+        内置服务随本机环境自动启停，开关仅表示状态；点击条目可查看工具清单
       </Note>
 
       <McpToolsDrawer
-        server={selected}
+        server={
+          selected
+            ? { ...selected, enabled: selectedAvailable }
+            : null
+        }
         open={open}
         tools={selectedTools}
         loading={loading && catalog === null}
         error={catalog ? null : catalogError}
+        available={selectedAvailable}
         onOpenChange={(next) => {
           setOpen(next);
           if (closeTimer.current !== null) {

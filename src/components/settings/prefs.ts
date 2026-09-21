@@ -93,7 +93,7 @@ export const MCP_SERVERS: McpServer[] = [
     name: "Git Bash",
     kind: "shell",
     builtin: true,
-    desc: "探测本机 Git Bash（不随包装）。找到才注入工具；Windows 上也可与 PowerShell 并存。",
+    desc: "优先本机 Git Bash；Windows 未安装时按需下载 MinGit 到数据目录。下载失败则不注入，降级用 PowerShell。",
     transport: "本机进程",
     cmd: "builtin://mcp-bash",
     tools: 2,

@@ -16,6 +16,7 @@ type McpToolsDrawerProps = {
   tools: McpToolRecord[];
   loading: boolean;
   error: string | null;
+  available?: boolean;
   onOpenChange: (open: boolean) => void;
   onRetry: () => void;
 };
@@ -26,9 +27,13 @@ export function McpToolsDrawer({
   tools,
   loading,
   error,
+  available = true,
   onOpenChange,
   onRetry,
 }: McpToolsDrawerProps) {
+  const status =
+    !available ? "不可用" : server?.enabled ? "运行中" : "已停止";
+
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent>
@@ -45,7 +50,7 @@ export function McpToolsDrawer({
                 {server.transport}
                 {server.builtin ? " · 内置" : ""}
                 {" · "}
-                {server.enabled ? "运行中" : "已停止"}
+                {status}
                 {!loading && !error ? ` · ${tools.length} 个工具` : ""}
               </p>
             </SheetHeader>
@@ -94,9 +99,14 @@ export function McpToolsDrawer({
                 </ul>
               )}
 
-              {!server.enabled && (
+              {available && server.enabled && (
                 <p className="mt-3 px-1 text-[11.5px] leading-4 text-ink-400">
-                  服务已停止，这些工具不会注入到对话上下文。
+                  服务运行中，相关工具会注入到对话上下文。
+                </p>
+              )}
+              {!available && (
+                <p className="mt-3 px-1 text-[11.5px] leading-4 text-ink-400">
+                  本机未就绪：内置开关只读，安装依赖并重新扫描后会自动变为运行中。
                 </p>
               )}
             </div>

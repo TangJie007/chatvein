@@ -1,6 +1,8 @@
 """Shell 解释器探测：对齐 WorkBuddy / CodeBuddy。
 
 - 不随包装 Git；``CHATVEIN_GIT_BASH`` 优先，否则探测本机安装与 PATH。
+- Windows 且未找到本机 bash 时，按需下载 MinGit 到 ``CHATVEIN_DATA_DIR/git-bash/``；
+  ``CHATVEIN_SKIP_BASH_DOWNLOAD=1`` 关闭下载。下载失败则不注册 ``mcp-bash``，降级依赖 PowerShell。
 - 显式路径无效时默认报错；``CHATVEIN_SKIP_GIT_BASH_CHECK=1`` 时告警并回落自动探测。
 - Windows 另探测 PowerShell（``pwsh`` 优先，其次 Windows PowerShell 5.1）。
 - ``CHATVEIN_USE_POWERSHELL_TOOL=0`` 时不启用 PowerShell 工具。
@@ -13,13 +15,18 @@ import shutil
 from functools import lru_cache
 from pathlib import Path
 
+from mcps.bash_download import (  # pyright: ignore[reportImplicitRelativeImport]
+    find_installed_bash,
+    try_ensure_mingit_bash,
+)
+
 
 def bash_available() -> bool:
-    return probe_bash()["available"]
+    return bool(probe_bash()["available"])
 
 
 def powershell_available() -> bool:
-    return probe_powershell()["available"]
+    return bool(probe_powershell()["available"])
 
 
 def resolve_bash() -> Path | None:
@@ -38,7 +45,7 @@ def resolve_powershell() -> Path | None:
 
 
 def probe_bash() -> dict[str, object]:
-    """``{available, path, error?}``。供注册表与设置页。"""
+    """``{available, path, source?, error?, message?}``。供注册表与设置页。"""
     return dict(_probe_bash_cached(_env_fingerprint()))
 
 
@@ -55,8 +62,11 @@ def _env_fingerprint() -> tuple[str, ...]:
     return (
         (os.environ.get("CHATVEIN_GIT_BASH") or "").strip(),
         (os.environ.get("CHATVEIN_SKIP_GIT_BASH_CHECK") or "").strip(),
+        (os.environ.get("CHATVEIN_SKIP_BASH_DOWNLOAD") or "").strip(),
+        (os.environ.get("CHATVEIN_FORCE_BASH_DOWNLOAD") or "").strip(),
         (os.environ.get("CHATVEIN_POWERSHELL_PATH") or "").strip(),
         (os.environ.get("CHATVEIN_USE_POWERSHELL_TOOL") or "").strip(),
+        (os.environ.get("CHATVEIN_DATA_DIR") or "").strip(),
         (os.environ.get("PATH") or "").strip(),
     )
 
@@ -67,7 +77,7 @@ def _probe_bash_cached(_fingerprint: tuple[str, ...]) -> dict[str, object]:
     if explicit:
         path = Path(explicit).expanduser()
         if path.is_file():
-            return {"available": True, "path": str(path.resolve())}
+            return {"available": True, "path": str(path.resolve()), "source": "env"}
         if (os.environ.get("CHATVEIN_SKIP_GIT_BASH_CHECK") or "").strip() == "1":
             print(f"CHATVEIN_GIT_BASH 无效，已回落自动探测: {explicit}", flush=True)
         else:
@@ -79,7 +89,38 @@ def _probe_bash_cached(_fingerprint: tuple[str, ...]) -> dict[str, object]:
 
     for candidate in _bash_candidates():
         if candidate.is_file():
-            return {"available": True, "path": str(candidate.resolve())}
+            return {
+                "available": True,
+                "path": str(candidate.resolve()),
+                "source": "system",
+            }
+
+    bundled = find_installed_bash()
+    if bundled is not None:
+        return {
+            "available": True,
+            "path": str(bundled),
+            "source": "mingit",
+        }
+
+    if os.name == "nt":
+        path, err = try_ensure_mingit_bash()
+        if path is not None:
+            return {
+                "available": True,
+                "path": str(path),
+                "source": "mingit",
+            }
+        return {
+            "available": False,
+            "path": None,
+            "message": (
+                f"MinGit 下载失败，已降级到 PowerShell（若可用）: {err}"
+                if err
+                else "未找到 Git Bash，已降级到 PowerShell（若可用）"
+            ),
+        }
+
     return {"available": False, "path": None}
 
 
@@ -88,7 +129,11 @@ def _probe_powershell_cached(_fingerprint: tuple[str, ...]) -> dict[str, object]
     if os.name != "nt":
         return {"available": False, "path": None, "message": "仅 Windows"}
     if (os.environ.get("CHATVEIN_USE_POWERSHELL_TOOL") or "").strip() == "0":
-        return {"available": False, "path": None, "message": "已用 CHATVEIN_USE_POWERSHELL_TOOL=0 关闭"}
+        return {
+            "available": False,
+            "path": None,
+            "message": "已用 CHATVEIN_USE_POWERSHELL_TOOL=0 关闭",
+        }
 
     explicit = (os.environ.get("CHATVEIN_POWERSHELL_PATH") or "").strip()
     if explicit:

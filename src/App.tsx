@@ -8,6 +8,7 @@ import { GroupView } from "./components/views/GroupView";
 import { KnowledgeView } from "./components/views/KnowledgeView";
 import { ModelsView } from "./components/views/ModelsView";
 import { SettingsView } from "./components/views/SettingsView";
+import { SkillsView } from "./components/views/SkillsView";
 import { TooltipProvider } from "./components/ui/tooltip";
 import type { AppView, NavCounts } from "./types/view";
 
@@ -17,6 +18,7 @@ export default function App() {
     chat: 1,
     group: 0,
     kb: 0,
+    skills: 0,
     models: 0,
   });
   const [defaultModelName, setDefaultModelName] = useState<string | null>(null);
@@ -68,6 +70,7 @@ export default function App() {
               )}
               {view === "group" && <GroupView />}
               {view === "kb" && <KnowledgeView />}
+              {view === "skills" && <SkillsView />}
               {view === "models" && (
                 <ModelsView
                   addRequestId={addModelRequestId}

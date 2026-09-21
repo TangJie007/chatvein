@@ -26,7 +26,7 @@ def all_tools() -> list[BaseTool]:
 
 
 def tool_groups() -> dict[str, list[str]]:
-    """``group_id → [tool_name, ...]``。未检测到的 shell 分组不会出现。"""
+    """``group_id → [tool_name, ...]``。未检测到的 shell / browser 分组不会出现。"""
     return {gid: [t.name for t in tools] for gid, tools in refresh_tool_groups().items()}
 
 

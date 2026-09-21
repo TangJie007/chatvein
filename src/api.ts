@@ -297,6 +297,7 @@ export interface McpToolRecord {
 export interface ShellRuntimeProbe {
   available: boolean;
   path: string | null;
+  source?: string;
   error?: string;
   message?: string;
 }
@@ -345,5 +346,66 @@ export function pickActiveModel(models: LlmModelRecord[]): LlmModelRecord | null
     models.find((m) => m.enabled) ??
     models[0] ??
     null
+  );
+}
+
+/* -------------------------------------------------------------------------
+ * Skills market (SkillHub browse proxy)
+ * ---------------------------------------------------------------------- */
+
+export interface SkillCategory {
+  id: string;
+  label: string;
+}
+
+export interface SkillHubItem {
+  slug: string;
+  name: string;
+  description: string;
+  category: string;
+  category_label: string;
+  sub_categories: string[];
+  downloads: number;
+  installs: number;
+  stars: number;
+  version: string;
+  icon_url: string | null;
+  homepage: string;
+  publisher: string;
+  source: string;
+  verified: boolean;
+  updated_at: number | null;
+}
+
+export interface SkillHubCatalog {
+  source: string;
+  source_label: string;
+  website: string;
+  skills: SkillHubItem[];
+  total: number;
+  page: number;
+  page_size: number;
+  categories: SkillCategory[];
+}
+
+export type ListSkillsParams = {
+  page?: number;
+  pageSize?: number;
+  keyword?: string;
+  category?: string;
+  sortBy?: "score" | "downloads" | "updated_at";
+};
+
+/** 浏览 SkillHub 公开技能目录（安装后续再接）。 */
+export function listSkills(params: ListSkillsParams = {}) {
+  const q = new URLSearchParams();
+  if (params.page) q.set("page", String(params.page));
+  if (params.pageSize) q.set("pageSize", String(params.pageSize));
+  if (params.keyword?.trim()) q.set("keyword", params.keyword.trim());
+  if (params.category?.trim()) q.set("category", params.category.trim());
+  if (params.sortBy) q.set("sortBy", params.sortBy);
+  const qs = q.toString();
+  return backendRequest<SkillHubCatalog>(
+    qs ? `/api/skills/?${qs}` : "/api/skills/"
   );
 }

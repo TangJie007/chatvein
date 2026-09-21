@@ -23,6 +23,8 @@ def isolated_data(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[P
     monkeypatch.delenv("CHATVEIN_WORKSPACE", raising=False)
     monkeypatch.delenv("CHATVEIN_GIT_BASH", raising=False)
     monkeypatch.delenv("CHATVEIN_SKIP_GIT_BASH_CHECK", raising=False)
+    monkeypatch.setenv("CHATVEIN_SKIP_BASH_DOWNLOAD", "1")
+    monkeypatch.delenv("CHATVEIN_FORCE_BASH_DOWNLOAD", raising=False)
     monkeypatch.delenv("CHATVEIN_POWERSHELL_PATH", raising=False)
     monkeypatch.delenv("CHATVEIN_USE_POWERSHELL_TOOL", raising=False)
     monkeypatch.delenv("CHATVEIN_BROWSER", raising=False)

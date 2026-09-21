@@ -4,6 +4,7 @@ import {
   MessagesSquare,
   Plus,
   Settings,
+  Sparkles,
   Users,
 } from "lucide-react";
 import { Button } from "../ui/button";
@@ -19,6 +20,7 @@ const NAV: {
   { key: "chat", label: "对话", icon: MessagesSquare, badgeKey: "chat" },
   { key: "group", label: "群组", icon: Users, badgeKey: "group" },
   { key: "kb", label: "知识库", icon: BookOpen, badgeKey: "kb" },
+  { key: "skills", label: "技能", icon: Sparkles, badgeKey: "skills" },
   { key: "models", label: "模型", icon: Bot, badgeKey: "models" },
 ];
 

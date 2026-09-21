@@ -61,7 +61,7 @@ def _lookup_bash() -> tuple[Path, None] | tuple[None, str]:
     except ValueError as exc:
         return None, str(exc)
     if bash is None:
-        return None, "未找到 Git Bash。请安装 Git for Windows，或设置 CHATVEIN_GIT_BASH 指向 bash.exe"
+        return None, "未找到 Git Bash。可安装 Git for Windows，或等待应用下载 MinGit；也可设置 CHATVEIN_GIT_BASH。Windows 上可改用 powershell_run。"
     return bash, None
 
 

@@ -8,7 +8,6 @@ import { SqliteSection, formatBytes } from "../settings/SqliteSection";
 import {
   hydrateMcpServers,
   loadPrefs,
-  saveMcpState,
   savePrefs,
   type AppPrefs,
   type McpServer,
@@ -64,14 +63,6 @@ export function SettingsView() {
     []
   );
 
-  const toggleServer = useCallback((id: string) => {
-    setServers((prev) => {
-      const next = prev.map((s) => (s.id === id ? { ...s, enabled: !s.enabled } : s));
-      saveMcpState(Object.fromEntries(next.map((s) => [s.id, s.enabled])));
-      return next;
-    });
-  }, []);
-
   const handleVacuum = useCallback(async () => {
     setBusy(true);
     setBanner(null);
@@ -108,8 +99,11 @@ export function SettingsView() {
     }
   }, [info]);
 
-  const activeCount = servers.filter((s) => s.enabled).length;
-  const toolCount = servers.reduce((n, s) => n + (s.enabled ? s.tools : 0), 0);
+  const activeCount = servers.filter((s) => s.enabled && s.id !== "mcp-http").length;
+  const toolCount = servers.reduce(
+    (n, s) => n + (s.enabled && s.id !== "mcp-http" ? s.tools : 0),
+    0
+  );
   const totalRows = info ? info.conversations + info.messages : 0;
 
   const meta = SECTIONS.find((s) => s.key === section) ?? SECTIONS[0];
@@ -182,9 +176,7 @@ export function SettingsView() {
         <div className="flex-1 overflow-y-auto px-6 pb-6">
           <div className="mx-auto flex max-w-[720px] flex-col gap-3">
             {section === "app" && <AppSection prefs={prefs} onSet={setPref} />}
-            {section === "mcp" && (
-              <McpSection servers={servers} onToggle={toggleServer} />
-            )}
+            {section === "mcp" && <McpSection servers={servers} />}
             {section === "sqlite" && (
               <SqliteSection
                 info={info}

@@ -36,6 +36,7 @@ from embeddings.module import (  # pyright: ignore[reportImplicitRelativeImport]
     on_module_init as on_embeddings_init,
 )
 from models.module import models_router, on_module_init  # pyright: ignore[reportImplicitRelativeImport]
+from skills.module import skills_router  # pyright: ignore[reportImplicitRelativeImport]
 
 
 @asynccontextmanager
@@ -71,6 +72,7 @@ app.add_middleware(
 app.include_router(models_router)
 app.include_router(embeddings_router)
 app.include_router(conversations_router)
+app.include_router(skills_router)
 
 
 class ChatRequest(BaseModel):
