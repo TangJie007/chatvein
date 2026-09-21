@@ -40,6 +40,38 @@ fn find_free_port(start: u16) -> u16 {
 /// Global handle to the spawned Python process so we can terminate it on exit.
 static BACKEND_CHILD: OnceLock<Mutex<Option<Child>>> = OnceLock::new();
 
+/// Dev 固定端口时：先清掉残留的旧 Python，避免新路由（如 /api/skills）仍 404。
+#[cfg(debug_assertions)]
+fn free_dev_backend_port(port: u16) {
+    kill_backend();
+    #[cfg(windows)]
+    {
+        let _ = Command::new("powershell")
+            .args([
+                "-NoProfile",
+                "-Command",
+                &format!(
+                    "$c = Get-NetTCPConnection -LocalPort {port} -State Listen -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess -Unique; if ($c) {{ $c | ForEach-Object {{ Stop-Process -Id $_ -Force -ErrorAction SilentlyContinue }} }}"
+                ),
+            ])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = Command::new("sh")
+            .args([
+                "-c",
+                &format!("fuser -k {port}/tcp 2>/dev/null || true"),
+            ])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
+    }
+    std::thread::sleep(std::time::Duration::from_millis(200));
+}
+
 /// Spawn the Python backend next to the app and forward its output to the UI.
 pub fn spawn_backend(app: &AppHandle) {
     let resource_dir = match app.path().resource_dir() {
@@ -123,6 +155,9 @@ pub fn spawn_backend(app: &AppHandle) {
     }
 
     let port = backend_port();
+    #[cfg(debug_assertions)]
+    free_dev_backend_port(port);
+
     let mut cmd = Command::new(&program);
     for arg in &args {
         cmd.arg(arg);

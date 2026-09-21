@@ -156,7 +156,12 @@ export function SkillsView() {
       .catch((err) => {
         if (cancelled) return;
         if (!append) setSkills([]);
-        setError(err instanceof Error ? err.message : String(err));
+        const raw = err instanceof Error ? err.message : String(err);
+        setError(
+          /Backend 404/i.test(raw)
+            ? "后端没有 Skill 接口（多半是旧进程还在跑）。请重启应用后再试。"
+            : raw
+        );
       })
       .finally(() => {
         if (cancelled) return;

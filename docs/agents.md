@@ -44,9 +44,21 @@ ChatVein 是本机桌面 Agent（Tauri + Python），前端设置页已规划 `b
 目录 API：`GET /api/mcps/catalog`。内置 MCP 开关只读：由本机探测决定「运行中 / 不可用」，
 用户不能切换；未探测到的 Bash / PowerShell / Browser 不注册工具分组。
 
-### 刻意不做 / 延后
+### 刻意不做（长期）
 
 1. **通用 cmd**：不开放 `cmd.exe`。Bash / PowerShell 只在当前会话目录执行；危险命令直接拒绝，其余改动要用户在对话框里允许。未检测到对应解释器时，该分组不会注入 Agent。
 2. **外置 MCP 子进程**（`npx @modelcontextprotocol/server-filesystem`、`npx @playwright/mcp` 等）：与 `builtin://` 设计重复，体积与打包成本更高；优先内置工具。Browser 以进程内 Playwright 对齐上游工具面，不另起 Node MCP。
 3. **GitHub / Notion / Slack 等 SaaS 连接器**：走用户自配 `mcp-http`，不塞进默认分发。
-4. **Browser caps / RCE**：首版不对齐上游 `--caps`（vision/pdf/devtools/storage/network/testing）；不暴露 `browser_run_code_unsafe`。Chromium 等浏览器二进制不打进安装包。
+4. **`browser_run_code_unsafe`**：上游 `@playwright/mcp` 标明 RCE-equivalent（在 Playwright **服务端进程**执行任意 JS）。桌面 Agent 进程内工具面**不暴露**；复杂逻辑只用页面内 `browser_evaluate` 或拆成 Core 工具。Chromium 等浏览器二进制不打进安装包。
+
+### 当前不做、后期需要补
+
+| 项 | 现状 | 后期补什么 | 备注 |
+| --- | --- | --- | --- |
+| **Browser `--caps`** | 只对齐 Core + Tabs | 按需对齐上游可选能力：`vision`（坐标鼠标）、`pdf`（`browser_pdf_save`）、`devtools`、`storage`、`network`、`testing` | 官方用 `--caps=` / `PLAYWRIGHT_MCP_CAPS` opt-in；补时需设置页开关、依赖探测、落盘与权限说明。细节见 `.agents/notes/mcp-browser.md` |
+| **自定义 HTTP MCP（`mcp-http`）** | 设置页占位 | LangChain `MCPAdapter` 拉远程工具；用户自配 URL / headers | 承接 SaaS 连接器，不进默认分发 |
+| **Skill 市场：安装 / 使用** | 侧边栏可浏览 SkillHub 目录（`GET /api/skills/`） | 下载到本机 skills 目录、发现 `SKILL.md`、注入 Agent；更新 / 卸载 | 浏览已接；registry URL 宜可配置。与 MCP 工具轨分离 |
+| **Filesystem `read_media_file`** | 未对齐上游 | 若产品需要读图/音视频元数据再补 | 首版刻意省略 |
+| **Browser caps 之外的体验** | headed 默认、截图进 `browser-output/` | 无头策略、多 profile、下载目录策略等按需打磨 | 不阻塞主路径 |
+
+优先级建议：`mcp-http` 与 Skill 安装/使用按产品节奏；Browser caps 按真实场景缺口（PDF / 坐标点击）逐项开，不要一次全开。
