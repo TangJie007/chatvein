@@ -1,7 +1,8 @@
 import { open } from "@tauri-apps/plugin-dialog";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Paperclip, Plus, SendHorizontal, X } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
-import { listSkills, type SkillHubItem } from "../../api";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { listSkills, uploadFiles, type SkillHubItem } from "../../api";
 import { cn } from "../../lib/cn";
 
 const LINE_HEIGHT = 20;
@@ -29,9 +30,17 @@ type ComposerProps = {
   onSend: (text: string) => void;
 };
 
-function fileNameOf(path: string): string {
-  const parts = path.split(/[/\\]/);
-  return parts[parts.length - 1] || path;
+type UploadItemInput =
+  | { source_path: string }
+  | { content_base64: string; name: string };
+
+function toBase64(bytes: Uint8Array): string {
+  let binary = "";
+  const chunkSize = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+  }
+  return btoa(binary);
 }
 
 function composeOutgoing(
@@ -62,14 +71,17 @@ export function Composer({
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const barRef = useRef<HTMLDivElement>(null);
+  const dropRef = useRef<HTMLDivElement>(null);
   const [draft, setDraft] = useState("");
   const [skillOpen, setSkillOpen] = useState(false);
   const [skills, setSkills] = useState<ComposerSkill[]>([]);
   const [files, setFiles] = useState<ComposerFile[]>([]);
+  const [uploadError, setUploadError] = useState<string | null>(null);
   const [keyword, setKeyword] = useState("");
   const [catalog, setCatalog] = useState<SkillHubItem[]>([]);
   const [skillError, setSkillError] = useState<string | null>(null);
   const [skillLoading, setSkillLoading] = useState(false);
+  const [dragActive, setDragActive] = useState(false);
 
   useEffect(() => {
     if (!skillOpen) return;
@@ -106,6 +118,36 @@ export function Composer({
     return () => window.removeEventListener("mousedown", onPointer);
   }, [skillOpen]);
 
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    const isOverDropZone = (pos: { x: number; y: number }) => {
+      const el = dropRef.current;
+      if (!el) return false;
+      const r = el.getBoundingClientRect();
+      return pos.x >= r.left && pos.x <= r.right && pos.y >= r.top && pos.y <= r.bottom;
+    };
+    void (async () => {
+      try {
+        const win = getCurrentWindow();
+        unlisten = await win.onDragDropEvent((event) => {
+          const { payload } = event;
+          if (payload.type === "drop") {
+            if (isOverDropZone(payload.position))
+              void uploadAndAdd(payload.paths.map((p) => ({ source_path: p })));
+            setDragActive(false);
+          } else if (payload.type === "enter" || payload.type === "over") {
+            setDragActive(isOverDropZone(payload.position));
+          } else {
+            setDragActive(false);
+          }
+        });
+      } catch {
+        // Browser preview without Tauri — drag-drop is unavailable.
+      }
+    })();
+    return () => unlisten?.();
+  }, []);
+
   const autoGrow = (el: HTMLTextAreaElement) => {
     el.style.height = "auto";
     const next = Math.min(el.scrollHeight, MAX_H);
@@ -131,25 +173,45 @@ export function Composer({
     resetInput();
   };
 
-  const addFiles = (paths: string[]) => {
-    setFiles((prev) => {
-      const seen = new Set(prev.map((f) => f.path));
-      const next = [...prev];
-      for (const path of paths) {
-        if (!path || seen.has(path)) continue;
-        seen.add(path);
-        next.push({ path, name: fileNameOf(path) });
+  const uploadAndAdd = useCallback(async (items: UploadItemInput[]) => {
+    if (items.length === 0) return;
+    setUploadError(null);
+    try {
+      const res = await uploadFiles(items);
+      const results = res?.files ?? [];
+      const accepted = results.filter(
+        (f): f is { name: string; path: string } => !!f && !f.error && !!f.path
+      );
+      if (accepted.length > 0) {
+        setFiles((prev) => {
+          const seen = new Set(prev.map((f) => f.path));
+          const next = [...prev];
+          for (const f of accepted) {
+            if (seen.has(f.path)) continue;
+            seen.add(f.path);
+            next.push({ path: f.path, name: f.name });
+          }
+          return next;
+        });
       }
-      return next;
-    });
-  };
+      const failed = results.filter((f) => !!f && !!f.error);
+      if (failed.length > 0) {
+        setUploadError(
+          failed.map((f) => (f as { error: string }).error).join("；")
+        );
+      }
+    } catch (err) {
+      setUploadError(err instanceof Error ? err.message : "文件上传失败");
+    }
+  }, []);
 
   const pickFiles = async () => {
     setSkillOpen(false);
     try {
       const selected = await open({ multiple: true, title: "添加文件" });
       if (!selected) return;
-      addFiles(Array.isArray(selected) ? selected : [selected]);
+      const paths = Array.isArray(selected) ? selected : [selected];
+      await uploadAndAdd(paths.map((p) => ({ source_path: p })));
     } catch {
       fileInputRef.current?.click();
     }
@@ -255,11 +317,26 @@ export function Composer({
             multiple
             className="hidden"
             onChange={(e) => {
-              const picked = Array.from(e.target.files ?? []).map(
-                (file) => file.name
-              );
-              addFiles(picked);
+              const fileList = Array.from(e.target.files ?? []);
               e.target.value = "";
+              if (fileList.length === 0) return;
+              void (async () => {
+                try {
+                  const items = await Promise.all(
+                    fileList.map(async (file) => ({
+                      content_base64: toBase64(
+                        new Uint8Array(await file.arrayBuffer())
+                      ),
+                      name: file.name,
+                    }))
+                  );
+                  await uploadAndAdd(items);
+                } catch (err) {
+                  setUploadError(
+                    err instanceof Error ? err.message : "文件读取失败"
+                  );
+                }
+              })();
             }}
           />
         </div>
@@ -288,7 +365,30 @@ export function Composer({
           </div>
         ) : null}
 
-        <div className="flex items-end gap-2 rounded-2xl bg-page p-2.5 pl-4 shadow-soft transition-shadow focus-within:shadow-lift">
+        {uploadError ? (
+          <p className="pb-1 text-[12px] text-danger-600">{uploadError}</p>
+        ) : null}
+
+        <div
+          ref={dropRef}
+          onDragOver={(e) => {
+            e.preventDefault();
+            if (!dragActive) setDragActive(true);
+          }}
+          onDragLeave={(e) => {
+            if (!e.currentTarget.contains(e.relatedTarget as Node | null))
+              setDragActive(false);
+          }}
+          onDrop={(e) => {
+            e.preventDefault();
+            setDragActive(false);
+          }}
+          className={cn(
+            "flex items-end gap-2 rounded-2xl bg-page p-2.5 pl-4 shadow-soft transition-shadow focus-within:shadow-lift",
+            dragActive &&
+              "outline-2 outline-dashed outline-brand-500 bg-tint"
+          )}
+        >
           <textarea
             ref={inputRef}
             rows={1}

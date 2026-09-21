@@ -4,10 +4,15 @@ Rust/Tauri 侧车进程：启动后把真实 base URL 推给前端，前端直�
 模型管理等业务路由在 lifespan 中挂载；OpenAPI / Swagger UI 默认开启。
 """
 import argparse
+import base64
 import os
+import re
+import secrets
+import shutil
 import sys
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import cast
 
 import uvicorn
@@ -29,6 +34,7 @@ from mcps.sandbox import (  # pyright: ignore[reportImplicitRelativeImport]
 from mcps.workspace import (  # pyright: ignore[reportImplicitRelativeImport]
     reset_workspace,
     set_workspace,
+    workspace_root,
     workspace_view,
 )
 from embeddings.module import (  # pyright: ignore[reportImplicitRelativeImport]
@@ -205,6 +211,80 @@ def delete_workspace():
         return reset_workspace()
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+# --- 用户文件上传：把输入框拖入/选择的本机文件落盘到主空间 uploads/ -------
+
+_UPLOAD_SUBDIR = "uploads"
+_UPLOAD_MAX_BYTES = 50 * 1024 * 1024
+_UPLOAD_NAME_RE = re.compile(r"[^A-Za-z0-9._\-\u4e00-\u9fff]+")
+
+
+class UploadItem(BaseModel):
+    source_path: str | None = Field(default=None)
+    content_base64: str | None = Field(default=None)
+    name: str | None = Field(default=None)
+
+
+class UploadRequest(BaseModel):
+    files: list[UploadItem] = Field(min_length=1, max_length=20)
+
+
+def _safe_upload_dest(root: Path, original: str) -> Path:
+    original = (original or "file").strip() or "file"
+    stem = Path(original).stem or "file"
+    suffix = Path(original).suffix.lower()
+    if len(suffix) > 12:
+        suffix = suffix[:12]
+    safe_stem = _UPLOAD_NAME_RE.sub("_", stem)[:60] or "file"
+    uploads = root / _UPLOAD_SUBDIR
+    uploads.mkdir(parents=True, exist_ok=True)
+    for _ in range(8):
+        token = secrets.token_hex(4)
+        cand = uploads / f"{safe_stem}_{token}{suffix}"
+        if not cand.exists():
+            return cand
+    return uploads / f"{safe_stem}_{secrets.token_hex(8)}{suffix}"
+
+
+def _handle_upload_item(item: UploadItem) -> dict[str, object]:
+    root = workspace_root()
+    try:
+        if item.source_path:
+            src = Path(item.source_path.strip())
+            if not src.is_file():
+                return {"error": f"文件不存在: {item.source_path}"}
+            size = src.stat().st_size
+            if size > _UPLOAD_MAX_BYTES:
+                return {"error": f"文件过大（{size} 字节，上限 {_UPLOAD_MAX_BYTES}）"}
+            dest = _safe_upload_dest(root, src.name)
+            shutil.copy2(src, dest)
+            return {"name": src.name, "path": dest.relative_to(root).as_posix()}
+        if item.content_base64:
+            raw = (item.content_base64 or "").strip()
+            if "," in raw and raw.lower().startswith("data:"):
+                raw = raw.split(",", 1)[1]
+            data = base64.b64decode(raw, validate=False)
+            if len(data) > _UPLOAD_MAX_BYTES:
+                return {"error": "文件过大"}
+            name = (item.name or "upload.bin").strip() or "upload.bin"
+            dest = _safe_upload_dest(root, name)
+            dest.write_bytes(data)
+            return {"name": name, "path": dest.relative_to(root).as_posix()}
+        return {"error": "需要 source_path 或 content_base64"}
+    except Exception as exc:  # noqa: BLE001
+        return {"error": f"上传失败: {exc}"}
+
+
+@app.post(
+    "/api/uploads",
+    tags=["workspace"],
+    summary="把用户提供的文件落盘到主空间 uploads/，返回可解析的相对路径",
+)
+def upload_files(req: UploadRequest):
+    """输入框拖入/选择的本机文件会被复制到主空间 ``uploads/``，返回相对路径，
+    供 OCR / 文件工具按工作区内路径解析（沙箱外的绝对路径无法被 Agent 读取）。"""
+    return {"files": [_handle_upload_item(item) for item in req.files]}
 
 
 @app.get("/api/db/info", tags=["db"], summary="数据库概况")
