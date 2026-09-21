@@ -112,9 +112,9 @@ def invoke_tools(message: str, names: list[str]) -> str:
                 result = t.invoke({"query": text})
             elif t.name == "kb_search_messages":
                 result = t.invoke({"query": text})
-            elif t.name == "fs_list_dir":
+            elif t.name == "list_directory":
                 result = t.invoke({"path": "."})
-            elif t.name == "fs_workspace_root":
+            elif t.name == "list_allowed_directories":
                 result = t.invoke({})
             elif t.name == "sqlite_tables":
                 result = t.invoke({})

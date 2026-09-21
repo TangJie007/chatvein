@@ -22,7 +22,7 @@ const SECTIONS: {
   icon: LucideIcon;
   hint: string;
 }[] = [
-  { key: "app", label: "应用设置", icon: Settings2, hint: "外观、启动与隐私" },
+  { key: "app", label: "应用设置", icon: Settings2, hint: "工作区与启动" },
   { key: "mcp", label: "内置 MCP", icon: Plug, hint: "随应用分发的协议服务" },
   { key: "sqlite", label: "SQLite", icon: Database, hint: "本地库连接与维护" },
 ];
@@ -181,9 +181,7 @@ export function SettingsView() {
 
         <div className="flex-1 overflow-y-auto px-6 pb-6">
           <div className="mx-auto flex max-w-[720px] flex-col gap-3">
-            {section === "app" && (
-              <AppSection prefs={prefs} onSet={setPref} dataDir={dirOf(info?.path)} />
-            )}
+            {section === "app" && <AppSection prefs={prefs} onSet={setPref} />}
             {section === "mcp" && (
               <McpSection servers={servers} onToggle={toggleServer} />
             )}
@@ -215,7 +213,7 @@ const SUBTITLE: Record<
     totalRows: number;
   }) => string
 > = {
-  app: () => "外观、启动行为与隐私 · 偏好即时生效 · 全部保存在本机",
+  app: () => "主空间与启动行为 · 工作区立即生效 · 全部保存在本机",
   mcp: ({ activeCount, total, toolCount }) =>
     `${activeCount}/${total} 已启用 · ${toolCount} 个工具可用 · 数据全部存放在本机`,
   sqlite: ({ info, totalRows }) =>
@@ -225,9 +223,3 @@ const SUBTITLE: Record<
         ).toUpperCase()} 模式 · schema v${info.schema_version}`
       : "后端未连接，无法读取数据库概况",
 };
-
-function dirOf(path: string | undefined): string | null {
-  if (!path) return null;
-  const index = Math.max(path.lastIndexOf("\\"), path.lastIndexOf("/"));
-  return index > 0 ? path.slice(0, index) : path;
-}

@@ -10,7 +10,8 @@
     "tauri": "tauri",
     "app:dev": "tauri dev",
     "prepare:runtime": "powershell -ExecutionPolicy Bypass -File tools/build_backend.ps1",
-    "prepare:backend": "powershell -ExecutionPolicy Bypass -File tools/build_backend.ps1"
+    "prepare:backend": "powershell -ExecutionPolicy Bypass -File tools/build_backend.ps1",
+    "test:backend": ".venv/Scripts/python.exe -m pytest"
   },
   "dependencies": {
     "@radix-ui/react-dialog": "^1.1.23",
@@ -23,6 +24,7 @@
     "@radix-ui/react-tabs": "^1.1.21",
     "@radix-ui/react-tooltip": "^1.2.16",
     "@tauri-apps/api": "^2.1.1",
+    "@tauri-apps/plugin-dialog": "^2.7.3",
     "@tauri-apps/plugin-http": "^2.6.1",
     "clsx": "^2.1.1",
     "dayjs": "^1.11.23",

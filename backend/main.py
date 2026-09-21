@@ -22,6 +22,11 @@ from conversations.module import (  # pyright: ignore[reportImplicitRelativeImpo
     conversations_service,
 )
 from mcps import tool_catalog, tool_groups  # pyright: ignore[reportImplicitRelativeImport]
+from mcps.workspace import (  # pyright: ignore[reportImplicitRelativeImport]
+    reset_workspace,
+    set_workspace,
+    workspace_view,
+)
 from embeddings.module import (  # pyright: ignore[reportImplicitRelativeImport]
     embeddings_router,
     on_module_init as on_embeddings_init,
@@ -117,6 +122,34 @@ def mcps_catalog():
         "tools": catalog,
         "tool_count": len(catalog),
     }
+
+
+class WorkspaceUpdate(BaseModel):
+    path: str = Field(min_length=1, max_length=1024)
+
+
+@app.get("/api/workspace", tags=["workspace"], summary="当前主空间")
+def get_workspace():
+    """设置页：文件工具的沙箱根目录。"""
+    return workspace_view()
+
+
+@app.put("/api/workspace", tags=["workspace"], summary="设置主空间")
+def put_workspace(body: WorkspaceUpdate):
+    """把主空间切到用户选择的本机文件夹。"""
+    try:
+        return set_workspace(body.path)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.delete("/api/workspace", tags=["workspace"], summary="恢复默认主空间")
+def delete_workspace():
+    """清除用户选择，回到环境变量或 ~/ChatVeinWorkspace。"""
+    try:
+        return reset_workspace()
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.get("/api/db/info", tags=["db"], summary="数据库概况")

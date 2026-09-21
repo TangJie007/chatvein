@@ -116,6 +116,27 @@ export interface DbInfo {
   vector_extension: DbVectorInfo;
 }
 
+export interface WorkspaceInfo {
+  path: string;
+  label: string;
+  custom: boolean;
+}
+
+/** 当前主空间（文件工具沙箱根）。 */
+export function getWorkspace() {
+  return backendRequest<WorkspaceInfo>("/api/workspace");
+}
+
+/** 把主空间切到用户选择的本机文件夹。 */
+export function setWorkspace(path: string) {
+  return backendRequest<WorkspaceInfo>("/api/workspace", "PUT", { path });
+}
+
+/** 清除自选目录，回到默认主空间。 */
+export function resetWorkspace() {
+  return backendRequest<WorkspaceInfo>("/api/workspace", "DELETE");
+}
+
 /** Database file location, schema version and row counts. */
 export function dbInfo() {
   return backendRequest<DbInfo>("/api/db/info");

@@ -7,6 +7,7 @@ use tauri::Emitter;
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_http::init())
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             // 1) Launch the Python backend as a child process (sidecar).
             backend::spawn_backend(app.handle());

@@ -4,35 +4,17 @@ const PREFS_KEY = "chatvein.settings.app.v1";
 const MCP_KEY = "chatvein.settings.mcp.v1";
 
 export type AppPrefs = {
-  theme: string;
-  lang: string;
-  fontScale: string;
   launchAtLogin: boolean;
   closeToTray: boolean;
   restoreWindow: boolean;
   autoUpdate: boolean;
-  sound: boolean;
-  notifyOnDone: boolean;
-  telemetry: boolean;
-  logs: boolean;
 };
 
-export const THEME_OPTIONS = ["跟随系统", "浅色", "深色"] as const;
-export const LANG_OPTIONS = ["简体中文", "English", "日本語"] as const;
-export const FONT_SCALE_OPTIONS = ["紧凑", "标准", "宽松"] as const;
-
 export const DEFAULT_PREFS: AppPrefs = {
-  theme: "跟随系统",
-  lang: "简体中文",
-  fontScale: "标准",
   launchAtLogin: true,
   closeToTray: true,
   restoreWindow: true,
   autoUpdate: true,
-  sound: true,
-  notifyOnDone: true,
-  telemetry: false,
-  logs: true,
 };
 
 export type McpKind = "db" | "fs" | "web" | "kb" | "custom";
@@ -67,10 +49,10 @@ export const MCP_SERVERS: McpServer[] = [
     name: "文件系统",
     kind: "fs",
     builtin: true,
-    desc: "工作区沙箱内的列表 / 读写 / glob / grep（默认 ~/ChatVeinWorkspace）。",
+    desc: "主空间内的读写、编辑、移动、删除、搜索与目录树，并可在文件管理器中打开文件夹。不含媒体文件读取。根目录在应用设置里选择。",
     transport: "本机进程",
-    cmd: "builtin://mcp-fs --root ~/ChatVeinWorkspace",
-    tools: 6,
+    cmd: "builtin://mcp-fs",
+    tools: 15,
     enabled: true,
   },
   {
@@ -125,21 +107,19 @@ function writeJson(key: string, value: unknown): void {
   }
 }
 
-/** 读取应用偏好，缺失或损坏时回落到默认值。 */
+function asBool(value: unknown, fallback: boolean): boolean {
+  return typeof value === "boolean" ? value : fallback;
+}
+
+/** 读取应用偏好，缺失或损坏时回落到默认值。旧版外观 / 隐私字段会被丢掉。 */
 export function loadPrefs(): AppPrefs {
-  const stored = readJson<AppPrefs>(PREFS_KEY);
-  const merged: AppPrefs = { ...DEFAULT_PREFS, ...(stored ?? {}) };
-  // 下拉框选项可能随版本变化，落库的旧值要收敛回当前选项
-  if (!(THEME_OPTIONS as readonly string[]).includes(merged.theme)) {
-    merged.theme = DEFAULT_PREFS.theme;
-  }
-  if (!(LANG_OPTIONS as readonly string[]).includes(merged.lang)) {
-    merged.lang = DEFAULT_PREFS.lang;
-  }
-  if (!(FONT_SCALE_OPTIONS as readonly string[]).includes(merged.fontScale)) {
-    merged.fontScale = DEFAULT_PREFS.fontScale;
-  }
-  return merged;
+  const stored = readJson<Partial<AppPrefs>>(PREFS_KEY) ?? {};
+  return {
+    launchAtLogin: asBool(stored.launchAtLogin, DEFAULT_PREFS.launchAtLogin),
+    closeToTray: asBool(stored.closeToTray, DEFAULT_PREFS.closeToTray),
+    restoreWindow: asBool(stored.restoreWindow, DEFAULT_PREFS.restoreWindow),
+    autoUpdate: asBool(stored.autoUpdate, DEFAULT_PREFS.autoUpdate),
+  };
 }
 
 export function savePrefs(prefs: AppPrefs): void {

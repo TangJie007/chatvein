@@ -1,65 +1,148 @@
-import { Copy, Rocket, ShieldCheck, Sparkles } from "lucide-react";
-import { useState } from "react";
+import { open } from "@tauri-apps/plugin-dialog";
+import { Copy, FolderInput, FolderOpen, Rocket, RotateCcw } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import {
+  getWorkspace,
+  resetWorkspace,
+  setWorkspace,
+  type WorkspaceInfo,
+} from "../../api";
 import { Button } from "../ui/button";
 import { Switch } from "../ui/switch";
-import {
-  FONT_SCALE_OPTIONS,
-  LANG_OPTIONS,
-  THEME_OPTIONS,
-  type AppPrefs,
-} from "./prefs";
-import { Card, Note, Row, Select } from "./primitives";
+import type { AppPrefs } from "./prefs";
+import { Card, IconButton, Note, Row } from "./primitives";
 
 type AppSectionProps = {
   prefs: AppPrefs;
   onSet: <K extends keyof AppPrefs>(key: K, value: AppPrefs[K]) => void;
-  dataDir: string | null;
 };
 
-export function AppSection({ prefs, onSet, dataDir }: AppSectionProps) {
+export function AppSection({ prefs, onSet }: AppSectionProps) {
+  const [workspace, setWorkspaceInfo] = useState<WorkspaceInfo | null>(null);
+  const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [banner, setBanner] = useState<string | null>(null);
+
+  const refresh = useCallback(async () => {
+    try {
+      setWorkspaceInfo(await getWorkspace());
+    } catch (err) {
+      setWorkspaceInfo(null);
+      setBanner(messageOf(err));
+    }
+  }, []);
+
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  const handlePick = async () => {
+    setBanner(null);
+    let selected: string | null;
+    try {
+      selected = await open({
+        directory: true,
+        multiple: false,
+        title: "选择主空间",
+        defaultPath: workspace?.path,
+      });
+    } catch {
+      setBanner("无法打开文件夹选择器，请在桌面应用里重试");
+      return;
+    }
+    if (!selected?.trim()) return;
+
+    setBusy(true);
+    try {
+      setWorkspaceInfo(await setWorkspace(selected));
+      setBanner("主空间已更新，文件工具会立刻使用这个目录");
+    } catch (err) {
+      setBanner(messageOf(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleReset = async () => {
+    setBusy(true);
+    setBanner(null);
+    try {
+      setWorkspaceInfo(await resetWorkspace());
+      setBanner("已恢复默认主空间");
+    } catch (err) {
+      setBanner(messageOf(err));
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const handleCopy = async () => {
-    if (!dataDir) return;
+    if (!workspace) return;
     try {
-      await navigator.clipboard.writeText(dataDir);
+      await navigator.clipboard.writeText(workspace.path);
       setCopied(true);
       window.setTimeout(() => setCopied(false), 1600);
     } catch {
-      /* 无剪贴板权限时保持原状 */
+      setBanner("复制失败：当前环境不允许访问剪贴板");
     }
   };
 
   return (
     <>
       <Card
-        title="外观"
-        desc="主题、语言与界面密度"
-        icon={<Sparkles className="size-3.5 text-brand-600" strokeWidth={1.75} />}
+        title="工作区"
+        desc="文件读写、搜索和知识库索引都限制在主空间里"
+        icon={<FolderOpen className="size-3.5 text-brand-600" strokeWidth={1.75} />}
       >
-        <div className="flex flex-col pb-2">
-          <Row label="主题" hint="跟随系统会随操作系统深浅色切换">
-            <Select
-              value={prefs.theme}
-              onChange={(v) => onSet("theme", v)}
-              options={THEME_OPTIONS}
-            />
-          </Row>
-          <Row label="界面语言">
-            <Select
-              value={prefs.lang}
-              onChange={(v) => onSet("lang", v)}
-              options={LANG_OPTIONS}
-            />
-          </Row>
-          <Row label="字号" hint="影响正文与列表的显示密度">
-            <Select
-              value={prefs.fontScale}
-              onChange={(v) => onSet("fontScale", v)}
-              options={FONT_SCALE_OPTIONS}
-            />
-          </Row>
+        <div className="flex items-center gap-3 rounded-xl px-3.5 py-3 transition-colors hover:bg-tint/50">
+          <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-tint text-brand-600">
+            <FolderOpen className="size-4" strokeWidth={1.75} />
+          </span>
+          <div className="min-w-0 flex-1">
+            <div className="flex min-w-0 items-center gap-2">
+              <span className="truncate text-[12.5px] font-medium text-ink-900">主空间</span>
+              <span className="shrink-0 rounded-full bg-page px-1.5 py-px text-[10px] text-ink-500">
+                {workspace ? (workspace.custom ? "自定义" : "默认") : "读取中"}
+              </span>
+            </div>
+            <p className="mt-1 truncate font-mono text-[10.5px] text-ink-400">
+              {workspace?.path ?? "正在读取后端…"}
+            </p>
+          </div>
+          <div className="flex shrink-0 items-center gap-1">
+            <IconButton
+              title={copied ? "已复制" : "复制路径"}
+              onClick={() => void handleCopy()}
+              disabled={!workspace}
+            >
+              <Copy className="size-3.5" strokeWidth={1.75} />
+            </IconButton>
+            {workspace?.custom && (
+              <IconButton title="恢复默认" onClick={() => void handleReset()} disabled={busy}>
+                <RotateCcw className="size-3.5" strokeWidth={1.75} />
+              </IconButton>
+            )}
+          </div>
         </div>
+        {banner && (
+          <div className="px-3.5 pb-2">
+            <p className="rounded-xl bg-page px-3 py-2 text-[11.5px] leading-4 text-ink-500">
+              {banner}
+            </p>
+          </div>
+        )}
+        <div className="px-3.5 pb-3">
+          <Button
+            variant="secondary"
+            size="sm"
+            disabled={busy}
+            onClick={() => void handlePick()}
+          >
+            <FolderInput className="size-3.5" strokeWidth={1.75} />
+            {busy ? "保存中…" : "选择文件夹"}
+          </Button>
+        </div>
+        <Note>Agent 不能读写主空间以外的路径</Note>
       </Card>
 
       <Card
@@ -94,49 +177,20 @@ export function AppSection({ prefs, onSet, dataDir }: AppSectionProps) {
           </Row>
         </div>
       </Card>
-
-      <Card
-        title="通知与隐私"
-        desc="提示方式与诊断数据的处理"
-        icon={<ShieldCheck className="size-3.5 text-brand-600" strokeWidth={1.75} />}
-      >
-        <div className="flex flex-col">
-          <Row label="提示音" hint="任务完成或需人工确认时播放">
-            <Switch checked={prefs.sound} onCheckedChange={(v) => onSet("sound", v)} />
-          </Row>
-          <Row label="任务完成通知" hint="窗口不在前台时推送系统通知">
-            <Switch
-              checked={prefs.notifyOnDone}
-              onCheckedChange={(v) => onSet("notifyOnDone", v)}
-            />
-          </Row>
-          <Row label="保留本地运行日志" hint="仅存于本机，用于排查异常">
-            <Switch checked={prefs.logs} onCheckedChange={(v) => onSet("logs", v)} />
-          </Row>
-          <Row label="发送匿名使用统计" hint="不包含会话内容与文件，可随时关闭">
-            <Switch
-              checked={prefs.telemetry}
-              onCheckedChange={(v) => onSet("telemetry", v)}
-            />
-          </Row>
-        </div>
-        <Note
-          action={
-            <Button
-              variant="secondary"
-              size="sm"
-              className="shrink-0"
-              disabled={!dataDir}
-              onClick={() => void handleCopy()}
-            >
-              <Copy className="size-3.5" strokeWidth={1.75} />
-              {copied ? "已复制" : "复制数据目录"}
-            </Button>
-          }
-        >
-          所有会话、知识与数据库文件均保存在本机，不会上传
-        </Note>
-      </Card>
     </>
   );
+}
+
+function messageOf(err: unknown): string {
+  const text = err instanceof Error ? err.message : String(err);
+  const start = text.indexOf("{");
+  if (start >= 0) {
+    try {
+      const body = JSON.parse(text.slice(start)) as { detail?: unknown };
+      if (typeof body.detail === "string" && body.detail) return body.detail;
+    } catch {
+      /* 非 JSON 时沿用原文 */
+    }
+  }
+  return text;
 }
