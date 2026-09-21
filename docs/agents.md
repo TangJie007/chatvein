@@ -24,6 +24,9 @@
 
 ### 会话工作区布局
 
+> 两层工作区（主工作区 vs 会话工作区）的权威说明、路径关系与「上传文件必须进会话工作区」的
+> 硬性规则见 [`docs/workspace.md`](./workspace.md)，改动上传 / 文件落盘逻辑前务必通读。
+
 ```text
 <main workspace>/YYYYMMDD-HHMMSS-xxxxx/
   output/              # 产物：用户需要的文件

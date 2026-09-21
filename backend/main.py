@@ -213,7 +213,10 @@ def delete_workspace():
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
-# --- 用户文件上传：把输入框拖入/选择的本机文件落盘到主空间 uploads/ -------
+# --- 用户文件上传：把输入框拖入/选择的本机文件落盘到「会话工作区」uploads/ -------
+#     优先写入 conversation_id 对应的会话工作区（见 _resolve_upload_root），
+#     无会话时回落主空间。返回相对会话根的路径，供 Agent 在会话沙箱内解析。
+#     两层工作区模型详见 docs/workspace.md。
 
 _UPLOAD_SUBDIR = "uploads"
 _UPLOAD_MAX_BYTES = 50 * 1024 * 1024
