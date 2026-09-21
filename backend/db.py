@@ -20,8 +20,8 @@ import sqlite_vec
 from sqlalchemy import Connection, Engine, create_engine, event, text
 from sqlmodel import Session, SQLModel
 
-# v1: 手写 sqlite3；v2: SQLModel；v3: llm_models。
-SCHEMA_VERSION = 3
+# v1: 手写 sqlite3；v2: SQLModel；v3: llm_models；v4: conversations.workspace_dir。
+SCHEMA_VERSION = 4
 DB_FILENAME = "chatvein.db"
 
 _BACKEND_DIR = Path(__file__).resolve().parent
@@ -148,11 +148,22 @@ def _normalise_v1_timestamps(connection: Connection) -> None:
             connection.exec_driver_sql(statement).close()
 
 
+def _ensure_workspace_dir_column(connection: Connection) -> None:
+    """``create_all`` 不会给已有表加列。旧库补上会话工作区目录名。"""
+    rows = connection.exec_driver_sql("PRAGMA table_info(conversations)").fetchall()
+    names = {str(row[1]) for row in rows}
+    if names and "workspace_dir" not in names:
+        connection.exec_driver_sql(
+            "ALTER TABLE conversations ADD COLUMN workspace_dir VARCHAR(64) NOT NULL DEFAULT ''"
+        ).close()
+
+
 def _migrate(connection: Connection) -> None:
     current = int(connection.exec_driver_sql("PRAGMA user_version").scalar_one())
     if current == 1:
         _normalise_v1_timestamps(connection)
     SQLModel.metadata.create_all(connection)
+    _ensure_workspace_dir_column(connection)
     if current != SCHEMA_VERSION:
         connection.exec_driver_sql(f"PRAGMA user_version = {SCHEMA_VERSION}").close()
 

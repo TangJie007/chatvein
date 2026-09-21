@@ -17,7 +17,7 @@ export const DEFAULT_PREFS: AppPrefs = {
   autoUpdate: true,
 };
 
-export type McpKind = "db" | "fs" | "web" | "kb" | "custom";
+export type McpKind = "db" | "fs" | "web" | "kb" | "code" | "custom";
 
 export type McpServer = {
   id: string;
@@ -75,6 +75,17 @@ export const MCP_SERVERS: McpServer[] = [
     transport: "本机进程",
     cmd: "builtin://mcp-kb --index ./data/kb.sqlite",
     tools: 4,
+    enabled: true,
+  },
+  {
+    id: "mcp-codesandbox",
+    name: "代码沙箱",
+    kind: "code",
+    builtin: true,
+    desc: "每个对话在主空间下有独立目录。在该目录创建 Python 虚拟环境、编写并执行代码，根据输出继续改到问题解决。",
+    transport: "本机进程",
+    cmd: "builtin://mcp-codesandbox",
+    tools: 5,
     enabled: true,
   },
   {

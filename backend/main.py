@@ -22,6 +22,9 @@ from conversations.module import (  # pyright: ignore[reportImplicitRelativeImpo
     conversations_service,
 )
 from mcps import tool_catalog, tool_groups  # pyright: ignore[reportImplicitRelativeImport]
+from mcps.sandbox import (  # pyright: ignore[reportImplicitRelativeImport]
+    use_conversation_sandbox,
+)
 from mcps.workspace import (  # pyright: ignore[reportImplicitRelativeImport]
     reset_workspace,
     set_workspace,
@@ -76,11 +79,13 @@ class ChatRequest(BaseModel):
 
 @app.post("/api/chat", tags=["chat"], summary="改写 + 难度路由 + 工具选择")
 def chat(req: ChatRequest):
-    result = run_chat(req.message)
+    prepared = conversations_service.open_for_chat(req.conversation_id, req.message)
+    with use_conversation_sandbox(prepared["workspace_dir"]):
+        result = run_chat(req.message)
     reply = str(result.get("reply") or "")
     route = str(result.get("difficulty") or result.get("route") or "simple")
     conversation_id, user_msg, assistant_msg = conversations_service.save_exchange(
-        req.conversation_id,
+        prepared["id"],
         req.message,
         reply,
         used_llm=bool(result.get("used_llm", False)),

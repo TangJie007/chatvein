@@ -33,7 +33,8 @@ ChatVein 是本机桌面 Agent（Tauri + Python），前端设置页已规划 `b
 | 本地库 / 数据 | `mcp-sqlite` | `sqlite_tables` `sqlite_schema` `sqlite_query` | **只读**打开 ChatVein SQLite |
 | 知识沉淀 / 召回 | `mcp-kb` | `kb_add_note` `kb_search` `kb_search_messages` `kb_index_workspace` | 独立 `kb.sqlite`；向量模型就绪时走 sqlite-vec |
 | 时间 / 计算 / 本机概况 | `core` | `get_current_time` `calculator` `db_stats` `list_configured_models` | 无独立设置卡片 |
-| Bash / PowerShell | — | （暂缓） | 需 HITL 确认；桌面端风险高 |
+| 代码沙箱 | `mcp-codesandbox` | `sandbox_info` `sandbox_create_venv` `sandbox_write_file` `sandbox_pip_install` `sandbox_run_python` | 创建对话时在主空间建 `YYYYMMDD-HHMMSS-` + 5 位随机字符目录，这是该对话的工作区。只在此目录建 `.venv`、写 `.py`、执行并读 stdout/stderr。删除会话时一并删掉该目录 |
+| Bash / PowerShell | — | （暂缓） | 需 HITL 确认；桌面端风险高。跑 Python 走代码沙箱，不开放通用 shell |
 | Browser 自动化 | — | （暂缓） | 可后续接 Playwright MCP |
 | 自定义 HTTP MCP | `mcp-http` | （配置位） | 设置页占位；后续用 LangChain `MCPAdapter` 拉远程工具 |
 
@@ -41,6 +42,6 @@ ChatVein 是本机桌面 Agent（Tauri + Python），前端设置页已规划 `b
 
 ### 刻意不做 / 延后
 
-1. **Shell**：WorkBuddy 有沙箱 + 确认流；ChatVein 尚未接 human-in-the-loop，先不开放。
+1. **通用 Shell**：WorkBuddy 有沙箱 + 确认流；ChatVein 尚未接 human-in-the-loop，不开放任意命令。Python 只通过 `mcp-codesandbox` 在当前会话目录的虚拟环境里执行。
 2. **外置 MCP 子进程**（`npx @modelcontextprotocol/server-filesystem` 等）：与 `builtin://` 设计重复，体积与打包成本更高；优先内置工具。
 3. **GitHub / Notion / Slack 等 SaaS 连接器**：走用户自配 `mcp-http`，不塞进默认分发。

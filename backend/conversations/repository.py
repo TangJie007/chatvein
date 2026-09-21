@@ -10,6 +10,11 @@ from sqlmodel import Session, select
 from sqlmodel.sql.expression import Select
 
 from db import iso, session_scope, utc_now  # pyright: ignore[reportImplicitRelativeImport]
+from mcps.sandbox import (  # pyright: ignore[reportImplicitRelativeImport]
+    conversation_root,
+    create_conversation_dir,
+    remove_conversation_dir,
+)
 
 from .entity import Conversation, ConversationRecord, Message, MessageRecord, Role
 
@@ -44,6 +49,7 @@ def _conversation_dict(
     return ConversationRecord(
         id=conversation.id,
         title=conversation.title,
+        workspace_dir=conversation.workspace_dir,
         created_at=iso(conversation.created_at),
         updated_at=iso(conversation.updated_at),
         message_count=message_count,
@@ -56,6 +62,18 @@ def _derive_title(value: str) -> str:
     if len(title) > TITLE_MAX_LEN:
         return title[:TITLE_MAX_LEN] + "…"
     return title or "新会话"
+
+
+def _ensure_workspace(conversation: Conversation) -> None:
+    """保证会话目录已分配且仍在主空间里。旧数据或非法名称会重新分配。"""
+    name = (conversation.workspace_dir or "").strip()
+    if name:
+        try:
+            conversation_root(name).mkdir(parents=True, exist_ok=True)
+            return
+        except ValueError:
+            pass
+    conversation.workspace_dir = create_conversation_dir()
 
 
 class ConversationsRepository:
@@ -78,7 +96,10 @@ class ConversationsRepository:
 
     def create(self, title: str = "") -> ConversationRecord:
         with session_scope() as session:
-            conversation = Conversation(title=title.strip())
+            conversation = Conversation(
+                title=title.strip(),
+                workspace_dir=create_conversation_dir(),
+            )
             session.add(conversation)
             session.flush()
             return _conversation_dict(conversation)
@@ -102,21 +123,54 @@ class ConversationsRepository:
             return _conversation_dict(conversation, count, last)
 
     def delete(self, conversation_id: str) -> bool:
+        name = ""
         with session_scope() as session:
             conversation = session.get(Conversation, conversation_id)
             if conversation is None:
                 return False
+            name = conversation.workspace_dir
             session.delete(conversation)
-            return True
+        remove_conversation_dir(name)
+        return True
 
     def clear(self) -> int:
+        names: list[str] = []
         with session_scope() as session:
+            names = [
+                conversation.workspace_dir
+                for conversation in session.exec(select(Conversation)).all()
+                if conversation.workspace_dir
+            ]
             deleted = session.scalar(select(func.count()).select_from(Conversation)) or 0
             session.exec(delete(Message).execution_options(synchronize_session=False)).close()
             session.exec(
                 delete(Conversation).execution_options(synchronize_session=False)
             ).close()
-            return int(deleted)
+            removed = int(deleted)
+        for name in names:
+            remove_conversation_dir(name)
+        return removed
+
+    def open_for_chat(self, conversation_id: str | None, title_hint: str) -> ConversationRecord:
+        """聊天开始前确保会话和它的工作区目录都存在。未知 id 会新建。"""
+        hint = _derive_title(title_hint)
+        now = utc_now()
+        with session_scope() as session:
+            conversation = (
+                session.get(Conversation, conversation_id) if conversation_id else None
+            )
+            if conversation is None:
+                conversation = Conversation(
+                    title=hint,
+                    workspace_dir=create_conversation_dir(),
+                    created_at=now,
+                    updated_at=now,
+                )
+                session.add(conversation)
+            else:
+                _ensure_workspace(conversation)
+            session.flush()
+            return _conversation_dict(conversation)
 
     def add_message(
         self,
@@ -172,10 +226,17 @@ class ConversationsRepository:
                 session.get(Conversation, conversation_id) if conversation_id else None
             )
             if conversation is None:
-                conversation = Conversation(title=hint, created_at=now, updated_at=now)
+                conversation = Conversation(
+                    title=hint,
+                    workspace_dir=create_conversation_dir(),
+                    created_at=now,
+                    updated_at=now,
+                )
                 session.add(conversation)
-            elif not conversation.title:
-                conversation.title = hint
+            else:
+                _ensure_workspace(conversation)
+                if not conversation.title:
+                    conversation.title = hint
 
             user_message = Message(
                 conversation_id=conversation.id,

@@ -89,6 +89,7 @@ export interface ChatMessageRecord {
 export interface ConversationRecord {
   id: string;
   title: string;
+  workspace_dir: string;
   created_at: string;
   updated_at: string;
   message_count: number;

@@ -39,6 +39,9 @@ class ConversationsService:
             conversation_id, role, content, used_llm=used_llm, route=route
         )
 
+    def open_for_chat(self, conversation_id: str | None, title_hint: str) -> ConversationRecord:
+        return self._repo.open_for_chat(conversation_id, title_hint)
+
     def save_exchange(
         self,
         conversation_id: str | None,

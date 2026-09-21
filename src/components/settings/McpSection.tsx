@@ -22,6 +22,7 @@ const KIND_ICON: Record<McpKind, LucideIcon> = {
   fs: FolderClosed,
   web: Globe,
   kb: Layers,
+  code: Terminal,
   custom: Plug,
 };
 

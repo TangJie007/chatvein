@@ -16,6 +16,8 @@ class Conversation(SQLModel, table=True):
 
     id: str = Field(default_factory=lambda: uuid.uuid4().hex, primary_key=True, max_length=64)
     title: str = Field(default="", max_length=200)
+    # 主空间内的会话目录名：YYYYMMDD-HHMMSS-xxxxx。空字符串表示旧数据尚未分配。
+    workspace_dir: str = Field(default="", max_length=64)
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
 

@@ -20,6 +20,7 @@ class MessageRecord(TypedDict):
 class ConversationRecord(TypedDict):
     id: str
     title: str
+    workspace_dir: str
     created_at: str
     updated_at: str
     message_count: int
