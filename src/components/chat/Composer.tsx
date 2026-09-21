@@ -119,6 +119,7 @@ export function Composer({
   }, [skillOpen]);
 
   useEffect(() => {
+    let cancelled = false;
     let unlisten: (() => void) | undefined;
     const isOverDropZone = (pos: { x: number; y: number }) => {
       const el = dropRef.current;
@@ -129,7 +130,7 @@ export function Composer({
     void (async () => {
       try {
         const win = getCurrentWindow();
-        unlisten = await win.onDragDropEvent((event) => {
+        const fn = await win.onDragDropEvent((event) => {
           const { payload } = event;
           if (payload.type === "drop") {
             if (isOverDropZone(payload.position))
@@ -141,11 +142,18 @@ export function Composer({
             setDragActive(false);
           }
         });
+        // 若组件在异步注册完成前已卸载（StrictMode 双重挂载），立即反注册，
+        // 避免重复注册导致一次拖放触发多次上传。
+        if (cancelled) fn();
+        else unlisten = fn;
       } catch {
         // Browser preview without Tauri — drag-drop is unavailable.
       }
     })();
-    return () => unlisten?.();
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
   }, []);
 
   const autoGrow = (el: HTMLTextAreaElement) => {
