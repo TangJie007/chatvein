@@ -145,7 +145,7 @@ def put_workspace(body: WorkspaceUpdate):
 
 @app.delete("/api/workspace", tags=["workspace"], summary="恢复默认主空间")
 def delete_workspace():
-    """清除用户选择，回到环境变量或 ~/ChatVeinWorkspace。"""
+    """清除用户选择，回到数据目录下的 workspace。"""
     try:
         return reset_workspace()
     except ValueError as exc:

@@ -2,7 +2,7 @@
 
 行为对齐 ``@modelcontextprotocol/server-filesystem``，不包含 ``read_media_file``。
 另加 ``open_folder``（在文件管理器中打开目录）和 ``delete_path``（删除文件或文件夹）。
-允许目录只有一个：设置页里的主空间，否则 ``CHATVEIN_WORKSPACE`` 或 ``~/ChatVeinWorkspace``。
+允许目录只有一个：设置页里的主空间，否则数据目录下的 ``workspace``。
 """
 
 from __future__ import annotations

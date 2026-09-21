@@ -11,6 +11,10 @@ ignore = []
 max-line-length = 225
 extend-ignore = ["E203", "W503"]
 
+[tool.pylint.main]
+# 与 pytest 的 pythonpath 一致：包都在 backend/ 下，而不是仓库根。
+source-roots = ["backend"]
+
 [tool.pylint.format]
 max-line-length = 225
 

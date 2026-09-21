@@ -3,7 +3,7 @@
   "exclude": ["**/.venv", "**/__pycache__", "**/dist-backend/**", "**/build/**"],
   "venvPath": ".",
   "venv": ".venv",
-  "extraPaths": [".venv/Lib/site-packages"],
+  "extraPaths": ["backend", ".venv/Lib/site-packages"],
   "pythonVersion": "3.13",
   "typeCheckingMode": "basic"
 }

@@ -1,7 +1,7 @@
 """Agent 工作区：所有文件类工具的沙箱根目录。
 
-用户在应用设置里选定的「主空间」优先于环境变量；未设置时回落到
-``CHATVEIN_WORKSPACE`` 或 ``~/ChatVeinWorkspace``。
+用户在应用设置里选定的「主空间」优先；未设置时用应用数据目录下的
+``workspace``（``CHATVEIN_DATA_DIR/workspace``）。``CHATVEIN_WORKSPACE`` 可覆盖该默认值。
 """
 
 from __future__ import annotations
@@ -24,14 +24,15 @@ class _Cache:
 _cache = _Cache()
 
 
+def _data_dir() -> Path:
+    raw = (os.environ.get("CHATVEIN_DATA_DIR") or "").strip()
+    if raw:
+        return Path(raw).expanduser()
+    return Path(__file__).resolve().parents[1] / "data"
+
+
 def _config_file() -> Path:
-    data_dir = (os.environ.get("CHATVEIN_DATA_DIR") or "").strip()
-    base = (
-        Path(data_dir).expanduser()
-        if data_dir
-        else Path(__file__).resolve().parents[1] / "data"
-    )
-    return base / "workspace.json"
+    return _data_dir() / "workspace.json"
 
 
 def _read_saved() -> Path | None:
@@ -52,8 +53,9 @@ def _read_saved() -> Path | None:
 
 
 def _default_root() -> Path:
+    """未自选时：``CHATVEIN_WORKSPACE``，否则 ``<data>/workspace``。"""
     raw = (os.environ.get(_ENV) or "").strip()
-    root = Path(raw).expanduser() if raw else Path.home() / "ChatVeinWorkspace"
+    root = Path(raw).expanduser() if raw else _data_dir() / "workspace"
     root.mkdir(parents=True, exist_ok=True)
     return root.resolve()
 
@@ -66,7 +68,7 @@ def _ensure_loaded() -> Path | None:
 
 
 def workspace_root() -> Path:
-    """用户主空间 > ``CHATVEIN_WORKSPACE`` > ``~/ChatVeinWorkspace``。"""
+    """用户主空间 > ``CHATVEIN_WORKSPACE`` > ``<data>/workspace``。"""
     with _lock:
         user = _ensure_loaded()
     if user is not None:

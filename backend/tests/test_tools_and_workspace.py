@@ -1,5 +1,7 @@
 """内置工具与工作区沙箱。不联网、不加载向量模型。"""
 
+from pathlib import Path
+
 import pytest
 
 from mcps.registry import tool_catalog, tool_groups
@@ -44,4 +46,4 @@ def test_workspace_rejects_escape_and_remembers_custom_root(tmp_path) -> None:
 
     reset = reset_workspace()
     assert reset["custom"] is False
-    assert reset["path"] != str(chosen.resolve())
+    assert Path(str(reset["path"])) == (tmp_path / "data" / "workspace").resolve()
