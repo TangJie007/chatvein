@@ -21,6 +21,7 @@ from conversations.module import (  # pyright: ignore[reportImplicitRelativeImpo
     conversations_router,
     conversations_service,
 )
+from mcps import tool_catalog, tool_groups  # pyright: ignore[reportImplicitRelativeImport]
 from embeddings.module import (  # pyright: ignore[reportImplicitRelativeImport]
     embeddings_router,
     on_module_init as on_embeddings_init,
@@ -103,6 +104,18 @@ def health():
         "service": "chatvein-python",
         "python": sys.version.split()[0],
         "db": db.stats(),
+    }
+
+
+@app.get("/api/mcps/catalog", tags=["mcps"], summary="内置 MCP 工具目录")
+def mcps_catalog():
+    """设置页 / Agent 调试：分组工具清单（与前端 MCP_SERVERS id 对齐）。"""
+    groups = tool_groups()
+    catalog = tool_catalog()
+    return {
+        "groups": groups,
+        "tools": catalog,
+        "tool_count": len(catalog),
     }
 
 

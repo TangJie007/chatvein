@@ -93,7 +93,10 @@ Rust 只负责把真实后端 URL 交给前端，新增接口无需改动 Rust �
 
 ## Agent 集成
 
-`/api/chat` → 主模型 **改写 + 难度分流**（simple/medium/hard）→ 工具选择缩集 → Tool-calling。见 [docs/agents.md](docs/agents.md)。
+`/api/chat` → 主模型 **改写 + 难度分流**（simple/medium/hard）→ 工具选择缩集 → Tool-calling。
+
+内置 MCP（进程内工具，对齐设置页）：文件系统沙箱 / 联网搜索 / 只读 SQLite / 本地知识库。
+详见 [docs/agents.md](docs/agents.md)。
 
 ## 数据持久化（SQLite）
 
