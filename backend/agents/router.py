@@ -52,8 +52,6 @@ def understand(message: str) -> dict[str, Any]:
                     HumanMessage(content=text or "(空消息)"),
                 ],
             )
-        if not isinstance(decision, UnderstandDecision):
-            decision = UnderstandDecision.model_validate(decision)
         rewritten = (decision.rewritten or "").strip() or text
         return {
             "rewritten": rewritten,
@@ -83,8 +81,3 @@ def _offline(text: str) -> dict[str, Any]:
         "reason": "离线启发式: 按 simple 处理",
         "used_llm": False,
     }
-
-
-# 兼容旧名
-def route(message: str) -> dict[str, Any]:
-    return understand(message)

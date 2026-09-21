@@ -34,7 +34,7 @@ from mcps.sandbox import (  # pyright: ignore[reportImplicitRelativeImport]
     session_db_path,
     use_conversation_sandbox,
 )
-from trace import trace_router, trace_service  # pyright: ignore[reportImplicitRelativeImport]
+from trace.module import trace_router, trace_service  # pyright: ignore[reportImplicitRelativeImport]
 from mcps.workspace import (  # pyright: ignore[reportImplicitRelativeImport]
     reset_workspace,
     set_workspace,

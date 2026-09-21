@@ -89,3 +89,6 @@ class TraceService:
             return None
         root = ConversationsService().workspace_root_for(name)
         return session_db_path(root)
+
+
+trace_service = TraceService()

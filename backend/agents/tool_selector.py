@@ -50,8 +50,6 @@ def select_tools(message: str) -> dict[str, Any]:
                     HumanMessage(content=text or "(空)"),
                 ],
             )
-        if not isinstance(plan, ToolPlan):
-            plan = ToolPlan.model_validate(plan)
         names = [n for n in plan.tool_names if n] or heuristic_tool_names(text) or [
             "get_current_time"
         ]

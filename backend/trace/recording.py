@@ -354,9 +354,6 @@ class TraceRecorder:
             break
         self.flush()
 
-    def count_kind(self, kind: str) -> int:
-        return sum(1 for step in self.steps if step.get("kind") == kind)
-
     def tools_since(self, mark: int) -> int:
         return sum(1 for step in self.steps[mark:] if step.get("kind") == "tool")
 
@@ -379,9 +376,9 @@ class TraceRecorder:
         self.tool_plan_reason = tool_plan_reason
         self.reply = reply
 
-    def finish(self) -> None:
+    def finish(self) -> dict[str, Any]:
         self.status = "done"
-        self.flush()
+        return self.flush()
 
     def snapshot(self) -> dict[str, Any]:
         self.finished_at = _iso_now()
@@ -448,13 +445,14 @@ class TraceRecorder:
             "totals": totals,
         }
 
-    def flush(self) -> None:
-        if self.on_change is None:
-            return
-        try:
-            self.on_change(self.snapshot())
-        except Exception:
-            return
+    def flush(self) -> dict[str, Any]:
+        payload = self.snapshot()
+        if self.on_change is not None:
+            try:
+                self.on_change(payload)
+            except Exception:
+                return payload
+        return payload
 
     def _offset_ms(self) -> int:
         return int((time.perf_counter() - self.started) * 1000)
@@ -481,7 +479,7 @@ class TraceHandler(BaseCallbackHandler):
         **kwargs: Any,
     ) -> Any:
         key = str(run_id)
-        if key in self._seen or key in self._pending:
+        if key in self._seen:
             return
         self._seen.add(key)
         params = kwargs.get("invocation_params") or {}
@@ -575,7 +573,7 @@ class TraceHandler(BaseCallbackHandler):
         **kwargs: Any,
     ) -> Any:
         key = str(run_id)
-        if key in self._seen or key in self._pending:
+        if key in self._seen:
             return
         self._seen.add(key)
         name = str(serialized.get("name") or kwargs.get("name") or "tool")
@@ -700,8 +698,7 @@ def complete(
         tool_plan_reason=tool_plan_reason,
         reply=reply,
     )
-    recorder.finish()
-    return recorder.snapshot()
+    return recorder.finish()
 
 
 @contextmanager

@@ -3,9 +3,9 @@
 from fastapi import APIRouter
 
 from .controller import trace_controller
-from .service import TraceService
+from .service import trace_service
 
 trace_router = APIRouter(prefix="/api/conversations", tags=["trace"])
 trace_router.include_router(trace_controller)
 
-trace_service = TraceService()
+__all__ = ["trace_router", "trace_service"]

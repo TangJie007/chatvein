@@ -1,6 +1,5 @@
-"""对话追踪。其它模块只从这里调用。"""
+"""对话追踪的记录接口。落库和 HTTP 在 ``trace.module``。"""
 
-from .module import trace_router, trace_service
 from .recording import (
     active_callbacks,
     complete,
@@ -20,7 +19,5 @@ __all__ = [
     "runnable_config",
     "span",
     "trace_checkpoint",
-    "trace_router",
-    "trace_service",
     "tracing",
 ]
