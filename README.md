@@ -97,7 +97,7 @@ Rust 只负责把真实后端 URL 交给前端，新增接口无需改动 Rust �
 
 ## Agent 集成
 
-`/api/chat` → 主模型 **改写 + 难度分流**（simple/medium/hard）→ 工具选择缩集 → Tool-calling。
+`/api/chat` → 主模型 **改写 + 难度分流**（LangGraph：simple 直答 / medium·hard ReAct）→ 工具选择缩集 → agent⇄tools。
 
 内置 MCP（进程内工具，对齐设置页）：文件系统沙箱 / 联网搜索 / 只读 SQLite / 本地知识库 / 代码沙箱 / Git Bash·PowerShell / 浏览器自动化（Playwright，需本机安装浏览器）/ IP 归属地（ip2region，xdb 按需下载）。
 详见 [docs/agents.md](docs/agents.md)。

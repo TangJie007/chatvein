@@ -6,15 +6,16 @@
 | --- | --- |
 | `agents/router.py` | 一次 structured：`rewritten` + `difficulty` |
 | `agents/tool_selector.py` | 只缩工具集（吃改写后文本） |
-| `agents/service.py` | 按难度进不同图 |
+| `agents/service.py` | 入口 `run_chat` → 总图 |
+| `agents/graphs/` | LangGraph：总图路由 + simple / medium ReAct 子图 |
 | `mcps/` | 工具注册 + 按名 invoke（实现见 `mcps/tools/`） |
 
 ```text
 原文
-  → understand（改写 + simple|medium|hard）
-       ├─ simple  → 直接对话（主模型）
-       ├─ medium  → tool_selector → create_agent（简洁 system）
-       └─ hard    → tool_selector → create_agent（多步/核对 system）
+  → [pipeline] understand（改写 + simple|medium|hard）
+       ├─ simple  → 单节点直答图（主模型，无工具）
+       ├─ medium  → [子图] tool_selector → ReAct（create_agent：agent⇄tools）
+       └─ hard    → [子图] tool_selector → ReAct（多步/核对 system；结构同 medium）
 ```
 
 落库 `Message.route` 写入难度档位；HTTP 额外返回 `rewritten` / `difficulty`。
