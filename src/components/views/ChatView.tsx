@@ -1,7 +1,7 @@
 import dayjs from "dayjs";
 import relativeTime from "dayjs/plugin/relativeTime";
 import "dayjs/locale/zh-cn";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   createConversation,
   getConversation,
@@ -85,6 +85,9 @@ export function ChatView({
     return rows;
   }, [onConversationCount]);
 
+  const refreshListRef = useRef(refreshList);
+  refreshListRef.current = refreshList;
+
   const loadConversation = useCallback(async (id: string) => {
     const data = await getConversation(id);
     setMessages(toChatMessages(data.messages));
@@ -138,25 +141,31 @@ export function ChatView({
   useEffect(() => {
     if (!newRequestId) return;
     let cancelled = false;
-    void (async () => {
-      try {
-        const created = await createConversation("");
+    // StrictMode 会立刻清理再执行一次；推迟到清理之后再请求，避免点一次建两个。
+    const timer = window.setTimeout(() => {
+      void (async () => {
         if (cancelled) return;
-        await refreshList();
-        setActiveId(created.id);
-        setMessages([]);
-        setLastMeta({});
-        setError(null);
-      } catch (err) {
-        if (!cancelled) {
-          setError(err instanceof Error ? err.message : String(err));
+        try {
+          const created = await createConversation("");
+          if (cancelled) return;
+          await refreshListRef.current();
+          if (cancelled) return;
+          setActiveId(created.id);
+          setMessages([]);
+          setLastMeta({});
+          setError(null);
+        } catch (err) {
+          if (!cancelled) {
+            setError(err instanceof Error ? err.message : String(err));
+          }
         }
-      }
-    })();
+      })();
+    }, 0);
     return () => {
       cancelled = true;
+      window.clearTimeout(timer);
     };
-  }, [newRequestId, refreshList]);
+  }, [newRequestId]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();

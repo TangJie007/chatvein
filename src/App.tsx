@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { listModels, pickActiveModel } from "./api";
 import { TitleBar } from "./components/layout/TitleBar";
 import { Sidebar } from "./components/layout/Sidebar";
@@ -42,6 +42,10 @@ export default function App() {
     };
   }, []);
 
+  const handleConversationCount = useCallback((n: number) => {
+    setCounts((c) => (c.chat === n ? c : { ...c, chat: n }));
+  }, []);
+
   const handleNew = () => {
     if (view === "models") {
       setAddModelRequestId((n) => n + 1);
@@ -72,9 +76,7 @@ export default function App() {
                 <ChatView
                   modelName={defaultModelName ?? undefined}
                   newRequestId={newChatRequestId}
-                  onConversationCount={(n) =>
-                    setCounts((c) => ({ ...c, chat: n }))
-                  }
+                  onConversationCount={handleConversationCount}
                 />
               )}
               {view === "group" && <GroupView />}
