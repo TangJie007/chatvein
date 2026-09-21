@@ -84,6 +84,7 @@ export interface ChatMessageRecord {
   used_llm: boolean;
   route: string | null;
   created_at: string;
+  turn_id?: string | null;
 }
 
 export interface ConversationRecord {
@@ -204,6 +205,7 @@ export function sendChat(
       status?: string;
     }>;
     used_llm: boolean;
+    turn_id: string;
     conversation_id: string;
     user_message: ChatMessageRecord;
     assistant_message: ChatMessageRecord;
@@ -224,7 +226,7 @@ export interface ConversationArtifact {
 
 export interface ConversationToolCall {
   id: number;
-  turn_id: number | null;
+  turn_id: string | null;
   tool_name: string;
   tool_call_id: string | null;
   arguments_json: string | null;
@@ -245,6 +247,7 @@ export interface ConversationWorkspace {
   };
   artifacts: ConversationArtifact[];
   tool_calls: ConversationToolCall[];
+  reasoning: Record<string, { route_reason?: string; tool_plan?: string }>;
   memory_count: number;
 }
 

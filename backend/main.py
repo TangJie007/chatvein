@@ -10,6 +10,7 @@ import re
 import secrets
 import shutil
 import sys
+import uuid
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -105,12 +106,14 @@ def chat(req: ChatRequest):
     reply = str(result.get("reply") or "")
     route = str(result.get("difficulty") or result.get("route") or "simple")
     tool_trace = list(result.get("tool_trace") or [])
+    turn_id = uuid.uuid4().hex
     conversation_id, user_msg, assistant_msg = conversations_service.save_exchange(
         prepared["id"],
         req.message,
         reply,
         used_llm=bool(result.get("used_llm", False)),
         route=route,
+        turn_id=turn_id,
     )
     conversations_service.record_turn(
         prepared["workspace_dir"],
@@ -119,6 +122,9 @@ def chat(req: ChatRequest):
         route=route,
         used_llm=bool(result.get("used_llm", False)),
         tool_trace=tool_trace,
+        route_reason=result.get("route_reason"),
+        tool_plan=result.get("tool_plan_reason"),
+        turn_id=turn_id,
     )
     insight = conversations_service.workspace_insight(conversation_id)
     return {
@@ -132,6 +138,7 @@ def chat(req: ChatRequest):
         "selected_tools": list(result.get("selected_tools") or []),
         "tool_trace": tool_trace,
         "used_llm": bool(result.get("used_llm", False)),
+        "turn_id": turn_id,
         "conversation_id": conversation_id,
         "user_message": user_msg,
         "assistant_message": assistant_msg,

@@ -84,6 +84,7 @@ function toChatMessages(rows: ChatMessageRecord[]): ChatMessage[] {
     id: String(m.id),
     role: m.role === "assistant" ? "agent" : m.role === "system" ? "system" : "user",
     content: m.content,
+    turnId: m.turn_id ?? null,
   }));
 }
 
@@ -104,6 +105,7 @@ export function ChatView({
   const [insightOpen, setInsightOpen] = useState(true);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [workspace, setWorkspace] = useState<ConversationWorkspace | null>(null);
+  const [selectedTurnId, setSelectedTurnId] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [roles, setRoles] = useState<RoleRecord[]>([]);
@@ -133,7 +135,10 @@ export function ChatView({
 
   const loadConversation = useCallback(async (id: string) => {
     const data = await getConversation(id);
-    setMessages(toChatMessages(data.messages));
+    const msgs = toChatMessages(data.messages);
+    setMessages(msgs);
+    const lastAgent = [...msgs].reverse().find((m) => m.role === "agent" && m.turnId);
+    setSelectedTurnId(lastAgent?.turnId ?? null);
     try {
       setWorkspace(await getConversationWorkspace(id));
     } catch {
@@ -253,14 +258,16 @@ export function ChatView({
   const contextTitle = `上下文已用 ${contextPct}% · ${formatTokenCount(contextUsed)} / ${formatTokenCount(contextTotal)} tokens`;
 
   const insightThread = useMemo<InsightThreadItem[]>(() => {
+    const turnId = selectedTurnId;
+    const reasoning = turnId ? workspace?.reasoning?.[turnId] : undefined;
     const steps: Extract<InsightThreadItem, { role: "trace" }>["trace"]["steps"] = [];
-    if (lastMeta.routeReason) {
-      steps.push({ kind: "thought", text: lastMeta.routeReason });
+    if (reasoning?.route_reason) {
+      steps.push({ kind: "thought", text: reasoning.route_reason });
     }
-    if (lastMeta.toolPlan) {
-      steps.push({ kind: "thought", text: lastMeta.toolPlan });
+    if (reasoning?.tool_plan) {
+      steps.push({ kind: "thought", text: reasoning.tool_plan });
     }
-    for (const call of workspace?.tool_calls ?? []) {
+    for (const call of (workspace?.tool_calls ?? []).filter((tc) => tc.turn_id === turnId)) {
       const blocked = call.status === "blocked" || call.status === "denied";
       steps.push({
         kind: "tool",
@@ -272,11 +279,11 @@ export function ChatView({
     }
     if (steps.length === 0) return [];
     const goal =
-      lastMeta.routeReason ||
+      reasoning?.route_reason ||
       steps.find((s) => s.kind === "thought")?.text ||
       "完成本轮请求";
     return [{ role: "trace", trace: { goal, steps } }];
-  }, [lastMeta.routeReason, lastMeta.toolPlan, workspace?.tool_calls]);
+  }, [selectedTurnId, workspace]);
 
   const artifacts = useMemo<InsightArtifact[]>(() => {
     return (workspace?.artifacts ?? []).map((item) => ({
@@ -306,6 +313,7 @@ export function ChatView({
         },
       }));
       if (result.workspace) setWorkspace(result.workspace);
+      setSelectedTurnId(result.turn_id);
       await refreshList();
       await loadConversation(result.conversation_id);
     } catch (err) {
@@ -343,6 +351,8 @@ export function ChatView({
           conversationId={activeId}
           insightThread={insightThread}
           artifacts={artifacts}
+          selectedTurnId={selectedTurnId}
+          onSelectMessage={(tid) => setSelectedTurnId(tid)}
           onOpenWorkspace={() => {
             if (!activeId) return;
             void openConversationWorkspace(activeId).catch((err: unknown) => {

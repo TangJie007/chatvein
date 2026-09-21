@@ -15,6 +15,7 @@ class MessageRecord(TypedDict):
     used_llm: bool
     route: str | None
     created_at: str
+    turn_id: str
 
 
 class ConversationRecord(TypedDict):

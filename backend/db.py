@@ -159,12 +159,23 @@ def _ensure_workspace_dir_column(connection: Connection) -> None:
         ).close()
 
 
+def _ensure_messages_turn_id_column(connection: Connection) -> None:
+    """``create_all`` 不会给已有表加列。旧库补上消息的 turn_id（关联会话工作区同一轮 trace）。"""
+    rows = connection.exec_driver_sql("PRAGMA table_info(messages)").fetchall()
+    names = {str(row[1]) for row in rows}
+    if names and "turn_id" not in names:
+        connection.exec_driver_sql(
+            "ALTER TABLE messages ADD COLUMN turn_id VARCHAR(64) NOT NULL DEFAULT ''"
+        ).close()
+
+
 def _migrate(connection: Connection) -> None:
     current = int(connection.exec_driver_sql("PRAGMA user_version").scalar_one())
     if current == 1:
         _normalise_v1_timestamps(connection)
     SQLModel.metadata.create_all(connection)
     _ensure_workspace_dir_column(connection)
+    _ensure_messages_turn_id_column(connection)
     if current != SCHEMA_VERSION:
         connection.exec_driver_sql(f"PRAGMA user_version = {SCHEMA_VERSION}").close()
 

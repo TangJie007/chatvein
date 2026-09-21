@@ -1,4 +1,4 @@
-import { PanelRight } from "lucide-react";
+import { Bot, PanelRight, User } from "lucide-react";
 import { Badge } from "../ui/badge";
 import { ScrollArea } from "../ui/scroll-area";
 import { cn } from "../../lib/cn";
@@ -14,6 +14,7 @@ export type ChatMessage = {
   id: string;
   role: "user" | "agent" | "system";
   content: string;
+  turnId?: string | null;
 };
 
 type ChatPanelProps = {
@@ -34,6 +35,8 @@ type ChatPanelProps = {
   conversationId?: string | null;
   insightThread?: InsightThreadItem[];
   artifacts?: InsightArtifact[];
+  selectedTurnId?: string | null;
+  onSelectMessage?: (turnId: string) => void;
   meta?: {
     difficulty?: string;
     selectedTools?: string[];
@@ -59,6 +62,8 @@ export function ChatPanel({
   conversationId,
   insightThread = [],
   artifacts = [],
+  selectedTurnId,
+  onSelectMessage,
   meta,
 }: ChatPanelProps) {
   if (!session) {
@@ -120,27 +125,65 @@ export function ChatPanel({
         </header>
 
         <ScrollArea className="flex-1 px-6 pb-2">
-          <div className="mx-auto flex max-w-[760px] flex-col gap-4 pb-4">
+          <div className="mx-auto flex max-w-[760px] flex-col gap-5 pb-4">
             {messages.length === 0 ? (
               <p className="py-16 text-center text-[13px] text-ink-400">
                 还没有消息。输入内容后发送即可开始。
               </p>
             ) : (
-              messages.map((m) => (
-                <div
-                  key={m.id}
-                  className={cn(
-                    "max-w-[85%] rounded-2xl px-3.5 py-2.5 text-[13.5px] leading-6 whitespace-pre-wrap",
-                    m.role === "user"
-                      ? "ml-auto bg-brand-600 text-white shadow-soft"
-                      : m.role === "system"
-                        ? "mx-auto bg-tint text-ink-500"
-                        : "bg-tint text-ink-900"
-                  )}
-                >
-                  {m.content}
-                </div>
-              ))
+              messages.map((m) => {
+                const isUser = m.role === "user";
+                const isSystem = m.role === "system";
+                const isAgent = m.role === "agent";
+                const canInspect = isAgent && !!m.turnId;
+                const selected = canInspect && m.turnId === selectedTurnId;
+                return (
+                  <div
+                    key={m.id}
+                    className={cn(
+                      "flex items-start gap-2.5",
+                      isUser ? "flex-row-reverse" : "flex-row",
+                      isSystem && "justify-center"
+                    )}
+                  >
+                    {!isSystem ? (
+                      <div
+                        className={cn(
+                          "mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full",
+                          isUser ? "bg-brand-600 text-white" : "bg-violet-500 text-white"
+                        )}
+                      >
+                        {isUser ? (
+                          <User className="size-4" strokeWidth={2} />
+                        ) : (
+                          <Bot className="size-4" strokeWidth={2} />
+                        )}
+                      </div>
+                    ) : null}
+                    <div
+                      onClick={
+                        canInspect
+                          ? () => onSelectMessage?.(m.turnId as string)
+                          : undefined
+                      }
+                      className={cn(
+                        "max-w-[78%] rounded-2xl px-3.5 py-2.5 text-[13.5px] leading-6 whitespace-pre-wrap",
+                        isUser
+                          ? "bg-brand-600 text-white shadow-soft"
+                          : isSystem
+                            ? "bg-tint text-ink-500 text-[12.5px]"
+                            : "bg-tint text-ink-900",
+                        canInspect && "cursor-pointer transition-shadow",
+                        selected
+                          ? "ring-2 ring-brand-400"
+                          : canInspect && "hover:ring-1 hover:ring-brand-300"
+                      )}
+                    >
+                      {m.content}
+                    </div>
+                  </div>
+                );
+              })
             )}
             {error ? (
               <p className="rounded-xl bg-red-50 px-3 py-2 text-[12.5px] text-red-700">

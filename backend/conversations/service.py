@@ -5,6 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+import uuid
+
 from mcps.sandbox import (  # pyright: ignore[reportImplicitRelativeImport]
     conversation_root,
     init_conversation_layout,
@@ -64,6 +66,7 @@ class ConversationsService:
         used_llm: bool = False,
         route: str | None = None,
         title_hint: str | None = None,
+        turn_id: str | None = None,
     ) -> tuple[str, MessageRecord, MessageRecord]:
         return self._repo.save_exchange(
             conversation_id,
@@ -72,6 +75,7 @@ class ConversationsService:
             used_llm=used_llm,
             route=route,
             title_hint=title_hint,
+            turn_id=turn_id,
         )
 
     def counts(self) -> dict[str, int]:
@@ -116,17 +120,24 @@ class ConversationsService:
         route: str | None = None,
         used_llm: bool = False,
         tool_trace: list[dict[str, Any]] | None = None,
+        route_reason: str | None = None,
+        tool_plan: str | None = None,
+        turn_id: str | None = None,
     ) -> None:
-        """写入会话库：消息 + 本轮工具轨迹。"""
+        """写入会话库：消息 + 本轮工具轨迹 + 本轮推理（route_reason / tool_plan）。"""
         root = self.workspace_root_for(workspace_dir)
         db = session_db_path(root)
         session_store.append_message(db, "user", user_text, route=route)
-        turn_id = session_store.append_message(
+        turn_id = turn_id or uuid.uuid4().hex
+        session_store.append_message(
             db,
             "assistant",
             reply_text,
             route=route,
             used_llm=used_llm,
+            turn_id=turn_id,
+            route_reason=route_reason,
+            tool_plan=tool_plan,
         )
         for item in tool_trace or []:
             session_store.append_tool_call(
@@ -170,6 +181,14 @@ class ConversationsService:
             }
         root = self.workspace_root_for(name)
         db = session_db_path(root)
+        reasoning_rows = session_store.list_reasoning(db)
+        reasoning: dict[str, dict[str, str]] = {
+            r["turn_id"]: {
+                "route_reason": r["route_reason"],
+                "tool_plan": r["tool_plan"],
+            }
+            for r in reasoning_rows
+        }
         return {
             "conversation_id": conversation_id,
             "workspace_dir": name,
@@ -182,5 +201,6 @@ class ConversationsService:
             },
             "artifacts": session_store.list_artifacts(output_dir(root)),
             "tool_calls": session_store.list_tool_calls(db, limit=30),
+            "reasoning": reasoning,
             "memory_count": len(session_store.list_messages(db, limit=200)),
         }

@@ -9,6 +9,20 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator
 
+_TOOL_CALLS_DDL = """
+CREATE TABLE tool_calls (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    turn_id TEXT,
+    tool_name TEXT NOT NULL,
+    tool_call_id TEXT,
+    arguments_json TEXT,
+    result_text TEXT,
+    status TEXT NOT NULL DEFAULT 'ok',
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_tool_calls_turn ON tool_calls(turn_id);
+"""
+
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta (
     key TEXT PRIMARY KEY,
@@ -20,20 +34,13 @@ CREATE TABLE IF NOT EXISTS messages (
     content TEXT NOT NULL,
     route TEXT,
     used_llm INTEGER NOT NULL DEFAULT 0,
+    turn_id TEXT,
+    route_reason TEXT,
+    tool_plan TEXT,
     created_at TEXT NOT NULL
 );
-CREATE TABLE IF NOT EXISTS tool_calls (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    turn_id INTEGER,
-    tool_name TEXT NOT NULL,
-    tool_call_id TEXT,
-    arguments_json TEXT,
-    result_text TEXT,
-    status TEXT NOT NULL DEFAULT 'ok',
-    created_at TEXT NOT NULL
-);
+""" + _TOOL_CALLS_DDL.replace("CREATE TABLE", "CREATE TABLE IF NOT EXISTS", 1) + """
 CREATE INDEX IF NOT EXISTS idx_messages_id ON messages(id);
-CREATE INDEX IF NOT EXISTS idx_tool_calls_turn ON tool_calls(turn_id);
 """
 
 
@@ -57,13 +64,37 @@ def _connect(db_path: Path) -> Iterator[sqlite3.Connection]:
 
 
 def ensure_session_db(db_path: Path) -> Path:
-    """创建或升级会话库 schema。"""
+    """创建或升级会话库 schema。
+
+    ``messages`` 表增量加列（幂等）；``tool_calls.turn_id`` 需为 TEXT 以存放 turn uuid，
+    旧版本（INTEGER）直接重建该表（仅丢失历史工具轨迹，会随对话重新生成）。
+    """
+    db_path.parent.mkdir(parents=True, exist_ok=True)
     with _connect(db_path) as conn:
         conn.executescript(_SCHEMA)
         conn.execute(
             "INSERT OR IGNORE INTO meta(key, value) VALUES ('schema_version', '1')"
         )
+        _add_column(conn, "messages", "turn_id", "TEXT")
+        _add_column(conn, "messages", "route_reason", "TEXT")
+        _add_column(conn, "messages", "tool_plan", "TEXT")
+        cols = {
+            str(r[1]): str(r[2])
+            for r in conn.execute("PRAGMA table_info(tool_calls)").fetchall()
+        }
+        if cols.get("turn_id", "").upper() != "TEXT":
+            conn.execute("DROP TABLE IF EXISTS tool_calls")
+            conn.execute(_TOOL_CALLS_DDL)
     return db_path
+
+
+def _add_column(conn: sqlite3.Connection, table: str, column: str, ctype: str) -> None:
+    try:
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {ctype}")
+    except sqlite3.OperationalError as exc:
+        if "duplicate column" in str(exc).lower():
+            return
+        raise
 
 
 def set_meta(db_path: Path, key: str, value: str) -> None:
@@ -88,12 +119,24 @@ def append_message(
     *,
     route: str | None = None,
     used_llm: bool = False,
+    turn_id: str | None = None,
+    route_reason: str | None = None,
+    tool_plan: str | None = None,
 ) -> int:
     with _connect(db_path) as conn:
         cur = conn.execute(
-            "INSERT INTO messages(role, content, route, used_llm, created_at) "
-            "VALUES (?, ?, ?, ?, ?)",
-            (role, content, route, 1 if used_llm else 0, _iso_now()),
+            "INSERT INTO messages(role, content, route, used_llm, turn_id, "
+            "route_reason, tool_plan, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                role,
+                content,
+                route,
+                1 if used_llm else 0,
+                turn_id or None,
+                route_reason,
+                tool_plan,
+                _iso_now(),
+            ),
         )
         return int(cur.lastrowid or 0)
 
@@ -128,7 +171,7 @@ def append_tool_call(
     result_text: str = "",
     arguments: Any = None,
     tool_call_id: str | None = None,
-    turn_id: int | None = None,
+    turn_id: str | None = None,
     status: str = "ok",
 ) -> int:
     args_json = None
@@ -160,7 +203,7 @@ def list_tool_calls(db_path: Path, *, limit: int = 50) -> list[dict[str, Any]]:
     return [
         {
             "id": int(r["id"]),
-            "turn_id": r["turn_id"],
+            "turn_id": str(r["turn_id"]) if r["turn_id"] is not None else None,
             "tool_name": str(r["tool_name"]),
             "tool_call_id": r["tool_call_id"],
             "arguments_json": r["arguments_json"],
@@ -169,6 +212,23 @@ def list_tool_calls(db_path: Path, *, limit: int = 50) -> list[dict[str, Any]]:
             "created_at": str(r["created_at"]),
         }
         for r in reversed(rows)
+    ]
+
+
+def list_reasoning(db_path: Path) -> list[dict[str, Any]]:
+    """返回每个有 turn_id 的助手消息的推理文本（route_reason / tool_plan）。"""
+    with _connect(db_path) as conn:
+        rows = conn.execute(
+            "SELECT turn_id, route_reason, tool_plan FROM messages "
+            "WHERE role = 'assistant' AND turn_id IS NOT NULL AND turn_id != ''"
+        ).fetchall()
+    return [
+        {
+            "turn_id": str(r["turn_id"]),
+            "route_reason": str(r["route_reason"] or ""),
+            "tool_plan": str(r["tool_plan"] or ""),
+        }
+        for r in rows
     ]
 
 

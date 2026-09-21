@@ -46,6 +46,7 @@ class Message(SQLModel, table=True):
     content: str = Field()
     used_llm: bool = Field(default=False)
     route: str | None = Field(default=None, max_length=32)
+    turn_id: str = Field(default="", max_length=64)
     created_at: datetime = Field(default_factory=utc_now)
 
     conversation: Conversation | None = Relationship(back_populates="messages")
