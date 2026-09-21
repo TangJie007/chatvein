@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 from mcps.registry import heuristic_tool_names  # pyright: ignore[reportImplicitRelativeImport]
 
 from . import llm as llm_mod
-from .trace import span
+from trace import span  # pyright: ignore[reportMissingImports]
 
 Difficulty = Literal["simple", "medium", "hard"]
 

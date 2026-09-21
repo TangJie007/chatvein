@@ -7,7 +7,7 @@ from typing import Any, Literal
 from langgraph.graph import END, START, StateGraph
 
 from .. import router
-from ..trace import note, tracing
+from trace import complete, note, tracing  # pyright: ignore[reportMissingImports]
 from . import medium as medium_mod
 from . import simple as simple_mod
 from .state import ChatState
@@ -136,7 +136,7 @@ def run_pipeline(
 ) -> dict[str, Any]:
     """入口：跑总图，返回 ``run_chat`` 所需字段，并附上 ``trace``。"""
     text = (message or "").strip()
-    with tracing(text) as recorder:
+    with tracing(text):
         out = build_pipeline().invoke(
             {
                 "message": text,
@@ -157,7 +157,7 @@ def run_pipeline(
             "tool_trace": list(out.get("tool_trace") or []),
             "used_llm": bool(out.get("used_llm")),
         }
-        recorder.apply_outcome(
+        result["trace"] = complete(
             difficulty=difficulty,
             rewritten=str(result["rewritten"]),
             route_reason=str(result.get("route_reason") or ""),
@@ -165,6 +165,5 @@ def run_pipeline(
             candidate_tools=list(result["candidate_tools"]),
             tool_plan_reason=str(result.get("tool_plan_reason") or ""),
             reply=str(result["reply"]),
-        )
-        result["trace"] = recorder.snapshot()
+        ) or {}
         return result

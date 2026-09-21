@@ -10,7 +10,7 @@ from pydantic import SecretStr
 
 from models.service import ModelsService  # pyright: ignore[reportImplicitRelativeImport]
 
-from .trace import active_callbacks
+from trace import active_callbacks  # pyright: ignore[reportMissingImports]
 
 
 def get_chat_model(

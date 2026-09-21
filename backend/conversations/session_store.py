@@ -41,11 +41,6 @@ CREATE TABLE IF NOT EXISTS messages (
 );
 """ + _TOOL_CALLS_DDL.replace("CREATE TABLE", "CREATE TABLE IF NOT EXISTS", 1) + """
 CREATE INDEX IF NOT EXISTS idx_messages_id ON messages(id);
-CREATE TABLE IF NOT EXISTS turn_traces (
-    turn_id TEXT PRIMARY KEY,
-    payload_json TEXT NOT NULL,
-    created_at TEXT NOT NULL
-);
 """
 
 
@@ -235,77 +230,6 @@ def list_reasoning(db_path: Path) -> list[dict[str, Any]]:
         }
         for r in rows
     ]
-
-
-def save_turn_trace(db_path: Path, turn_id: str, payload: dict[str, Any]) -> None:
-    """按 turn 覆盖写入完整追踪 JSON。"""
-    body = dict(payload)
-    body["turn_id"] = turn_id
-    encoded = json.dumps(body, ensure_ascii=False, default=str)
-    with _connect(db_path) as conn:
-        conn.execute(
-            "INSERT INTO turn_traces(turn_id, payload_json, created_at) VALUES (?, ?, ?) "
-            "ON CONFLICT(turn_id) DO UPDATE SET payload_json = excluded.payload_json, "
-            "created_at = excluded.created_at",
-            (turn_id, encoded, _iso_now()),
-        )
-
-
-def _summary(payload: dict[str, Any], created_at: str) -> dict[str, Any]:
-    totals = payload.get("totals") if isinstance(payload.get("totals"), dict) else {}
-    return {
-        "turn_id": str(payload.get("turn_id") or ""),
-        "created_at": created_at,
-        "input": str(payload.get("input") or "")[:120],
-        "difficulty": str(payload.get("difficulty") or ""),
-        "elapsed_ms": int(payload.get("elapsed_ms") or 0),
-        "selected_tools": list(payload.get("selected_tools") or []),
-        "totals": {
-            "input_tokens": int(totals.get("input_tokens") or 0),
-            "output_tokens": int(totals.get("output_tokens") or 0),
-            "total_tokens": int(totals.get("total_tokens") or 0),
-            "llm_calls": int(totals.get("llm_calls") or 0),
-            "tool_calls": int(totals.get("tool_calls") or 0),
-        },
-    }
-
-
-def list_turn_traces(db_path: Path) -> list[dict[str, Any]]:
-    """最新的一轮在前。只返回列表摘要，正文走 ``get_turn_trace``。"""
-    if not db_path.is_file():
-        return []
-    with _connect(db_path) as conn:
-        rows = conn.execute(
-            "SELECT turn_id, payload_json, created_at FROM turn_traces ORDER BY created_at DESC"
-        ).fetchall()
-    items: list[dict[str, Any]] = []
-    for row in rows:
-        try:
-            payload = json.loads(str(row["payload_json"]))
-        except json.JSONDecodeError:
-            continue
-        if not isinstance(payload, dict):
-            continue
-        payload.setdefault("turn_id", str(row["turn_id"]))
-        items.append(_summary(payload, str(row["created_at"])))
-    return items
-
-
-def get_turn_trace(db_path: Path, turn_id: str) -> dict[str, Any] | None:
-    if not db_path.is_file():
-        return None
-    with _connect(db_path) as conn:
-        row = conn.execute(
-            "SELECT payload_json FROM turn_traces WHERE turn_id = ?",
-            (turn_id,),
-        ).fetchone()
-    if row is None:
-        return None
-    try:
-        payload = json.loads(str(row["payload_json"]))
-    except json.JSONDecodeError:
-        return None
-    return payload if isinstance(payload, dict) else None
 
 
 def list_artifacts(output_path: Path) -> list[dict[str, Any]]:

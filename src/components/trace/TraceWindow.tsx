@@ -59,7 +59,28 @@ function statusText(status: string): string {
   if (status === "error") return "失败";
   if (status === "offline") return "离线";
   if (status === "running") return "进行中";
+  if (status === "done") return "完成";
   return status;
+}
+
+function stepRows(steps: TraceStep[]): Array<{ step: TraceStep; depth: number }> {
+  const ids = new Set(steps.map((step) => step.id));
+  const children = new Map<string | null, TraceStep[]>();
+  for (const step of steps) {
+    const parent = step.parent_id && ids.has(step.parent_id) ? step.parent_id : null;
+    const list = children.get(parent) ?? [];
+    list.push(step);
+    children.set(parent, list);
+  }
+  const rows: Array<{ step: TraceStep; depth: number }> = [];
+  const walk = (parent: string | null, depth: number) => {
+    for (const step of children.get(parent) ?? []) {
+      rows.push({ step, depth });
+      walk(step.id, depth + 1);
+    }
+  };
+  walk(null, 0);
+  return rows;
 }
 
 function pretty(value: unknown): string {
@@ -127,12 +148,49 @@ function StepDetail({ step }: { step: TraceStep }) {
             输入 {formatTokens(step.usage.input_tokens)} · 输出{" "}
             {formatTokens(step.usage.output_tokens)} · 合计{" "}
             {formatTokens(step.usage.total_tokens)}
+            {step.usage.cached_tokens
+              ? ` · 缓存 ${formatTokens(step.usage.cached_tokens)}`
+              : ""}
+            {step.usage.reasoning_tokens
+              ? ` · 推理 ${formatTokens(step.usage.reasoning_tokens)}`
+              : ""}
+            {step.usage.context_pct != null ? ` · 上下文 ${step.usage.context_pct}%` : ""}
           </span>
         ) : null}
       </div>
 
       {step.error ? (
-        <p className="rounded-xl bg-danger-50 px-3 py-2 text-[12.5px] text-danger-600">{step.error}</p>
+        <p className="rounded-xl bg-danger-50 px-3 py-2 text-[12.5px] text-danger-600">
+          {step.error_detail?.status_code ? `HTTP ${step.error_detail.status_code} ` : ""}
+          {step.error}
+          {step.error_detail?.request_id ? ` · ${step.error_detail.request_id}` : ""}
+        </p>
+      ) : null}
+
+      {step.invocation && Object.keys(step.invocation).length > 0 ? (
+        <section className="flex flex-col gap-2">
+          <h3 className="text-[12px] font-medium text-ink-500">调用参数</h3>
+          <p className="text-[12.5px] leading-6 text-ink-700">
+            {[
+              step.invocation.temperature != null ? `temperature ${step.invocation.temperature}` : "",
+              step.invocation.max_tokens != null ? `max_tokens ${step.invocation.max_tokens}` : "",
+              step.invocation.top_p != null ? `top_p ${step.invocation.top_p}` : "",
+              step.invocation.response_format ? `format ${step.invocation.response_format}` : "",
+              step.invocation.max_retries != null ? `retries ${step.invocation.max_retries}` : "",
+            ]
+              .filter(Boolean)
+              .join(" · ") || "已记录"}
+          </p>
+          {Array.isArray(step.invocation.tools) && step.invocation.tools.length > 0 ? (
+            <div className="flex flex-wrap gap-1.5">
+              {step.invocation.tools.map((tool) => (
+                <Badge key={tool.name} tone="neutral">
+                  {tool.name}
+                </Badge>
+              ))}
+            </div>
+          ) : null}
+        </section>
       ) : null}
 
       {step.kind === "route" ? (
@@ -227,7 +285,7 @@ export function TraceWindow({
       return;
     }
     let cancelled = false;
-    setLoading(true);
+    if (reloadKey === 0) setLoading(true);
     setError(null);
     void listTraces(conversationId)
       .then((rows) => {
@@ -235,7 +293,10 @@ export function TraceWindow({
         setSummaries(rows);
         const requested = turnId && rows.some((row) => row.turn_id === turnId) ? turnId : null;
         setHint(turnId && !requested ? "这一轮还没有追踪，已打开最近一轮。" : null);
-        setActiveTurn(requested ?? rows[0]?.turn_id ?? null);
+        setActiveTurn((current) => {
+          if (current && rows.some((row) => row.turn_id === current)) return current;
+          return requested ?? rows[0]?.turn_id ?? null;
+        });
       })
       .catch((err: unknown) => {
         if (!cancelled) setError(err instanceof Error ? err.message : String(err));
@@ -259,9 +320,12 @@ export function TraceWindow({
       .then((detail) => {
         if (cancelled) return;
         setTrace(detail);
-        const preferred =
-          [...detail.steps].reverse().find((step) => step.kind === "llm") ?? detail.steps[0];
-        setStepId(preferred?.id ?? null);
+        setStepId((current) => {
+          if (current && detail.steps.some((step) => step.id === current)) return current;
+          const preferred =
+            [...detail.steps].reverse().find((step) => step.kind === "llm") ?? detail.steps[0];
+          return preferred?.id ?? null;
+        });
       })
       .catch((err: unknown) => {
         if (!cancelled) setError(err instanceof Error ? err.message : String(err));
@@ -269,7 +333,15 @@ export function TraceWindow({
     return () => {
       cancelled = true;
     };
-  }, [conversationId, activeTurn]);
+  }, [conversationId, activeTurn, reloadKey]);
+
+  useEffect(() => {
+    const live =
+      trace?.status === "running" || summaries.some((item) => item.status === "running");
+    if (!live) return;
+    const timer = window.setInterval(() => setReloadKey((n) => n + 1), 1500);
+    return () => window.clearInterval(timer);
+  }, [trace?.status, summaries]);
 
   const step = trace?.steps.find((item) => item.id === stepId) ?? null;
 
@@ -307,7 +379,7 @@ export function TraceWindow({
               >
                 <div className="truncate text-[12.5px] text-ink-800">{item.input || "（空）"}</div>
                 <div className="mt-1 flex items-center gap-1.5 text-[11px] text-ink-400">
-                  <span>{item.difficulty || "—"}</span>
+                  <span>{item.status === "running" ? "进行中" : item.difficulty || "—"}</span>
                   <span>·</span>
                   <span>{formatTokens(item.totals.total_tokens)} tok</span>
                   <span className="ml-auto">
@@ -331,14 +403,30 @@ export function TraceWindow({
           <>
             <div className="border-b border-ink-200/70 px-4 py-3">
               <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px] text-ink-500">
-                <Badge tone="brand">{trace.difficulty || "—"}</Badge>
+                <Badge tone={trace.status === "running" ? "warn" : "brand"}>
+                  {trace.status === "running" ? "进行中" : trace.difficulty || "—"}
+                </Badge>
                 <span>{formatElapsed(trace.elapsed_ms)}</span>
                 <span>输入 {formatTokens(trace.totals.input_tokens)}</span>
                 <span>输出 {formatTokens(trace.totals.output_tokens)}</span>
                 <span>合计 {formatTokens(trace.totals.total_tokens)}</span>
+                {trace.totals.cached_tokens ? (
+                  <span>缓存 {formatTokens(trace.totals.cached_tokens)}</span>
+                ) : null}
+                {trace.totals.reasoning_tokens ? (
+                  <span>推理 {formatTokens(trace.totals.reasoning_tokens)}</span>
+                ) : null}
                 <span>LLM {trace.totals.llm_calls}</span>
                 <span>工具 {trace.totals.tool_calls}</span>
+                {trace.totals.llm_ms ? <span>模型 {formatElapsed(trace.totals.llm_ms)}</span> : null}
+                {trace.totals.tool_ms ? <span>工具耗时 {formatElapsed(trace.totals.tool_ms)}</span> : null}
               </div>
+              {trace.role_name || trace.model_name || trace.config_name || trace.context_window ? (
+                <p className="mt-1 text-[12px] text-ink-400">
+                  {[trace.role_name, trace.config_name || trace.model_name].filter(Boolean).join(" · ")}
+                  {trace.context_window ? ` · 窗口 ${formatTokens(trace.context_window)}` : ""}
+                </p>
+              ) : null}
               <div className="mt-3 flex flex-wrap items-center gap-1.5">
                 {trace.path.map((node, index) => (
                   <span key={node.id} className="flex items-center gap-1.5">
@@ -363,46 +451,61 @@ export function TraceWindow({
                 <p className="px-1 py-6 text-[13px] text-ink-400">这一轮没有步骤。</p>
               ) : (
                 <ol className="flex flex-col">
-                  {trace.steps.map((item, index) => (
-                    <li key={item.id} className="flex gap-3">
-                      <div className="flex w-4 flex-col items-center">
-                        <span
-                          className={cn(
-                            "mt-3 size-2.5 rounded-full",
-                            item.id === stepId ? "bg-brand-600" : "bg-ink-300"
-                          )}
-                        />
-                        {index < trace.steps.length - 1 ? (
-                          <span className="w-px flex-1 bg-ink-200" />
-                        ) : null}
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => setStepId(item.id)}
-                        className={cn(
-                          "mb-1.5 min-w-0 flex-1 rounded-xl px-3 py-2 text-left",
-                          item.id === stepId ? "bg-brand-50" : "hover:bg-tint"
-                        )}
-                      >
-                        <div className="flex items-center gap-2">
-                          <span className="text-[13px] font-medium text-ink-900">
-                            {stepLabel(item.name)}
-                          </span>
-                          <Badge tone={statusTone(item.status)}>{statusText(item.status)}</Badge>
-                          <span className="ml-auto text-[11px] text-ink-400">
-                            {item.kind === "llm" && item.usage
-                              ? `${formatTokens(item.usage.input_tokens)} → ${formatTokens(item.usage.output_tokens)}`
-                              : item.elapsed_ms != null
-                                ? formatElapsed(item.elapsed_ms)
-                                : item.kind}
-                          </span>
+                  {stepRows(trace.steps).map(({ step: item, depth }, index, rows) => {
+                    const total = Math.max(trace.elapsed_ms, 1);
+                    const start = Math.max(0, item.start_ms ?? 0);
+                    const width = Math.max(
+                      2,
+                      Math.min(100, ((item.elapsed_ms ?? 0) / total) * 100)
+                    );
+                    const left = Math.min(100 - width, (start / total) * 100);
+                    return (
+                      <li key={item.id} className="flex gap-3" style={{ paddingLeft: depth * 16 }}>
+                        <div className="flex w-4 flex-col items-center">
+                          <span
+                            className={cn(
+                              "mt-3 size-2.5 rounded-full",
+                              item.id === stepId ? "bg-brand-600" : "bg-ink-300"
+                            )}
+                          />
+                          {index < rows.length - 1 ? <span className="w-px flex-1 bg-ink-200" /> : null}
                         </div>
-                        {item.model ? (
-                          <div className="mt-0.5 truncate text-[11.5px] text-ink-400">{item.model}</div>
-                        ) : null}
-                      </button>
-                    </li>
-                  ))}
+                        <button
+                          type="button"
+                          onClick={() => setStepId(item.id)}
+                          className={cn(
+                            "mb-1.5 min-w-0 flex-1 rounded-xl px-3 py-2 text-left",
+                            item.id === stepId ? "bg-brand-50" : "hover:bg-tint"
+                          )}
+                        >
+                          <div className="flex items-center gap-2">
+                            <span className="text-[13px] font-medium text-ink-900">
+                              {stepLabel(item.name)}
+                            </span>
+                            <Badge tone={statusTone(item.status)}>{statusText(item.status)}</Badge>
+                            <span className="ml-auto text-[11px] text-ink-400">
+                              {item.kind === "llm" && item.usage
+                                ? `${formatTokens(item.usage.input_tokens)} → ${formatTokens(item.usage.output_tokens)}`
+                                : item.elapsed_ms != null
+                                  ? formatElapsed(item.elapsed_ms)
+                                  : item.kind}
+                            </span>
+                          </div>
+                          {item.elapsed_ms != null ? (
+                            <span className="mt-1.5 block h-1.5 rounded-full bg-tint">
+                              <span
+                                className="block h-full rounded-full bg-brand-500"
+                                style={{ marginLeft: `${left}%`, width: `${width}%` }}
+                              />
+                            </span>
+                          ) : null}
+                          {item.model ? (
+                            <div className="mt-0.5 truncate text-[11.5px] text-ink-400">{item.model}</div>
+                          ) : null}
+                        </button>
+                      </li>
+                    );
+                  })}
                 </ol>
               )}
             </div>

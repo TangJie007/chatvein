@@ -31,8 +31,10 @@ from conversations.module import (  # pyright: ignore[reportImplicitRelativeImpo
 from mcps import shell_runtime, tool_catalog, tool_groups  # pyright: ignore[reportImplicitRelativeImport]
 from mcps.bash_approval import decide, list_pending  # pyright: ignore[reportImplicitRelativeImport]
 from mcps.sandbox import (  # pyright: ignore[reportImplicitRelativeImport]
+    session_db_path,
     use_conversation_sandbox,
 )
+from trace import trace_router, trace_service  # pyright: ignore[reportImplicitRelativeImport]
 from mcps.workspace import (  # pyright: ignore[reportImplicitRelativeImport]
     reset_workspace,
     set_workspace,
@@ -83,6 +85,7 @@ app.include_router(models_router)
 app.include_router(roles_router)
 app.include_router(embeddings_router)
 app.include_router(conversations_router)
+app.include_router(trace_router)
 app.include_router(skills_router)
 
 
@@ -124,20 +127,29 @@ def chat(req: ChatRequest):
     from roles.service import RolesService  # pyright: ignore[reportImplicitRelativeImport]
 
     role_runtime = RolesService().resolve_for_chat(req.role_id)
+    turn_id = uuid.uuid4().hex
+    db_path = session_db_path(
+        conversations_service.workspace_root_for(prepared["workspace_dir"])
+    )
     started = time.perf_counter()
-    with use_conversation_sandbox(prepared["workspace_dir"]):
-        if _usage_callback is not None:
-            with _usage_callback() as usage_cb:
+    with trace_service.recording(
+        req.message,
+        db_path=db_path,
+        turn_id=turn_id,
+        role=role_runtime,
+    ):
+        with use_conversation_sandbox(prepared["workspace_dir"]):
+            if _usage_callback is not None:
+                with _usage_callback() as usage_cb:
+                    result = run_chat(req.message, history=history, role=role_runtime)
+                tokens = _collect_tokens(usage_cb)
+            else:
                 result = run_chat(req.message, history=history, role=role_runtime)
-            tokens = _collect_tokens(usage_cb)
-        else:
-            result = run_chat(req.message, history=history, role=role_runtime)
-            tokens = 0
+                tokens = 0
     duration_ms = int((time.perf_counter() - started) * 1000)
     reply = str(result.get("reply") or "")
     route = str(result.get("difficulty") or result.get("route") or "simple")
     tool_trace = list(result.get("tool_trace") or [])
-    turn_id = uuid.uuid4().hex
     conversation_id, user_msg, assistant_msg = conversations_service.save_exchange(
         prepared["id"],
         req.message,
@@ -158,7 +170,6 @@ def chat(req: ChatRequest):
         route_reason=result.get("route_reason"),
         tool_plan=result.get("tool_plan_reason"),
         turn_id=turn_id,
-        trace=result.get("trace") if isinstance(result.get("trace"), dict) else None,
     )
     insight = conversations_service.workspace_insight(conversation_id)
     return {

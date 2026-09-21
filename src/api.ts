@@ -290,11 +290,34 @@ export interface TraceUsage {
   input_tokens: number;
   output_tokens: number;
   total_tokens: number;
+  cached_tokens?: number;
+  reasoning_tokens?: number;
+  context_pct?: number;
 }
 
 export interface TraceTotals extends TraceUsage {
   llm_calls: number;
   tool_calls: number;
+  llm_ms?: number;
+  tool_ms?: number;
+}
+
+export interface TraceInvocation {
+  temperature?: number;
+  max_tokens?: number;
+  top_p?: number;
+  presence_penalty?: number;
+  frequency_penalty?: number;
+  stop?: unknown;
+  response_format?: string;
+  max_retries?: number;
+  tools?: Array<{ name: string; description?: string }>;
+}
+
+export interface TraceErrorDetail {
+  message?: string;
+  status_code?: number;
+  request_id?: string;
 }
 
 export interface TraceMessage {
@@ -306,17 +329,21 @@ export interface TraceMessage {
 
 export interface TraceStep {
   id: string;
-  kind: "llm" | "tool" | "route" | "tools" | string;
+  parent_id?: string | null;
+  kind: "llm" | "tool" | "route" | "tools" | "span" | string;
   name: string;
   status: string;
   model?: string | null;
+  start_ms?: number | null;
   elapsed_ms?: number | null;
   usage?: TraceUsage | null;
+  invocation?: TraceInvocation | null;
   request?: { messages: TraceMessage[] } | null;
   response?: { content: string; tool_calls?: TraceMessage["tool_calls"] } | null;
   arguments?: unknown;
   result?: string | null;
   error?: string | null;
+  error_detail?: TraceErrorDetail | null;
   detail?: Record<string, unknown> | null;
 }
 
@@ -329,9 +356,12 @@ export interface TracePathNode {
 export interface TraceSummary {
   turn_id: string;
   created_at: string;
+  status?: string;
   input: string;
   difficulty: string;
   elapsed_ms: number;
+  role_name?: string | null;
+  model_name?: string | null;
   selected_tools: string[];
   totals: TraceTotals;
 }
@@ -342,6 +372,10 @@ export interface TurnTrace extends TraceSummary {
   finished_at: string;
   rewritten: string;
   route_reason: string;
+  role_id?: string | null;
+  config_name?: string | null;
+  model_config_id?: string | null;
+  context_window?: number | null;
   candidate_tools: string[];
   tool_plan_reason: string;
   reply: string;

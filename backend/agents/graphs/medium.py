@@ -13,7 +13,13 @@ from mcps import resolve_tools, run_tools  # pyright: ignore[reportImplicitRelat
 from .. import llm as llm_mod
 from .. import tool_selector
 from ..memory import to_lc_messages
-from ..trace import kind_count, note, runnable_config, span
+from trace import (  # pyright: ignore[reportMissingImports]
+    note,
+    record_tools_if_absent,
+    runnable_config,
+    span,
+    trace_checkpoint,
+)
 
 from .common import last_text
 from .state import ChatState
@@ -126,23 +132,15 @@ def build_medium_graph(
                 HumanMessage(content=text or "请执行工具"),
             ]
             with span("react"):
-                tools_before = kind_count("tool")
+                mark = trace_checkpoint()
                 out = agent.invoke(
                     {"messages": messages},
                     config=runnable_config({"recursion_limit": _RECURSION_LIMIT}),
                 )
-            out_messages = out.get("messages") or []
-            reply = last_text(out_messages) or "工具调用完成，但无文本回复。"
-            traced = extract_tool_trace(out_messages)
-            if kind_count("tool") == tools_before:
-                for item in traced:
-                    note(
-                        "tool",
-                        name=str(item.get("tool_name") or "unknown"),
-                        status=str(item.get("status") or "ok"),
-                        arguments=item.get("arguments"),
-                        result=str(item.get("result_text") or ""),
-                    )
+                out_messages = out.get("messages") or []
+                reply = last_text(out_messages) or "工具调用完成，但无文本回复。"
+                traced = extract_tool_trace(out_messages)
+                record_tools_if_absent(mark, traced)
             return {
                 "reply": reply,
                 "used_llm": True,
