@@ -1,5 +1,4 @@
 import {
-  ChevronRight,
   Cloud,
   Loader2,
   Play,
@@ -44,13 +43,6 @@ type ModelForm = {
   baseUrl: string;
   modelId: string;
   apiKey: string;
-  temperature: number;
-  maxTokens: number;
-  presence: number;
-  frequency: number;
-  stream: boolean;
-  jsonMode: boolean;
-  retries: number;
   isDefault: boolean;
 };
 
@@ -60,13 +52,6 @@ function toForm(model: LlmModelRecord): ModelForm {
     baseUrl: model.base_url ?? "",
     modelId: model.model_id,
     apiKey: model.key_mask ?? "",
-    temperature: model.temperature,
-    maxTokens: model.max_tokens,
-    presence: model.presence_penalty,
-    frequency: model.frequency_penalty,
-    stream: model.stream,
-    jsonMode: model.json_mode,
-    retries: model.retries,
     isDefault: model.is_default,
   };
 }
@@ -76,13 +61,6 @@ function formToPayload(form: ModelForm): UpdateLlmModelPayload {
     name: form.name.trim(),
     model_id: form.modelId.trim(),
     base_url: form.baseUrl.trim() || null,
-    temperature: form.temperature,
-    max_tokens: form.maxTokens,
-    presence_penalty: form.presence,
-    frequency_penalty: form.frequency,
-    stream: form.stream,
-    json_mode: form.jsonMode,
-    retries: form.retries,
     is_default: form.isDefault,
   };
   // 仅当用户改过密钥（不含脱敏星号）时才提交
@@ -416,11 +394,6 @@ function ModelConfig({
     }
   };
 
-  const advancedCount =
-    [form.presence, form.frequency].filter(Boolean).length +
-    (form.jsonMode ? 1 : 0) +
-    (form.retries !== 2 ? 1 : 0);
-
   return (
     <>
       <header className="flex items-center gap-3 px-6 pb-3 pt-4">
@@ -543,77 +516,12 @@ function ModelConfig({
             </Field>
           </Card>
 
-          <Card title="生成参数" desc="影响回复的随机性与长度">
-            <Slider
-              label="温度 Temperature"
-              hint="越低越稳定，越高越发散"
-              value={form.temperature}
-              min={0}
-              max={2}
-              step={0.1}
-              onChange={(v) => set("temperature", v)}
+          <Row label="设为默认模型" hint="新会话优先使用该模型">
+            <Switch
+              checked={form.isDefault}
+              onCheckedChange={(v) => set("isDefault", v)}
             />
-            <Slider
-              label="最大输出 Max Tokens"
-              hint="单次回复的长度上限"
-              value={form.maxTokens}
-              min={256}
-              max={16384}
-              step={256}
-              format={(v) => v.toLocaleString()}
-              onChange={(v) => set("maxTokens", v)}
-            />
-          </Card>
-
-          <Collapsible
-            title="高级"
-            desc="不常用，保持默认一般即可"
-            badge={`${advancedCount} 项已调整`}
-          >
-            <Slider
-              label="存在惩罚 Presence Penalty"
-              hint="鼓励引入新话题"
-              value={form.presence}
-              min={-2}
-              max={2}
-              step={0.1}
-              onChange={(v) => set("presence", v)}
-            />
-            <Slider
-              label="频率惩罚 Frequency Penalty"
-              hint="抑制重复用词"
-              value={form.frequency}
-              min={-2}
-              max={2}
-              step={0.1}
-              onChange={(v) => set("frequency", v)}
-            />
-            <Row label="流式输出" hint="逐字返回，响应体感更快">
-              <Switch
-                checked={form.stream}
-                onCheckedChange={(v) => set("stream", v)}
-              />
-            </Row>
-            <Row label="强制 JSON 输出" hint="以 response_format 约束返回结构">
-              <Switch
-                checked={form.jsonMode}
-                onCheckedChange={(v) => set("jsonMode", v)}
-              />
-            </Row>
-            <Row label="失败重试次数" hint="网络或限流错误时自动重试">
-              <Select
-                value={String(form.retries)}
-                onChange={(v) => set("retries", Number(v))}
-                options={["0", "1", "2", "3", "5"]}
-              />
-            </Row>
-            <Row label="设为默认模型" hint="新会话优先使用该模型">
-              <Switch
-                checked={form.isDefault}
-                onCheckedChange={(v) => set("isDefault", v)}
-              />
-            </Row>
-          </Collapsible>
+          </Row>
         </div>
       </div>
 
@@ -681,55 +589,6 @@ function Card({
   );
 }
 
-function Collapsible({
-  title,
-  desc,
-  badge,
-  children,
-}: {
-  title: string;
-  desc?: string;
-  badge?: string;
-  children: ReactNode;
-}) {
-  const [open, setOpen] = useState(false);
-  return (
-    <div className="rounded-2xl bg-page p-1.5 shadow-soft">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center gap-2.5 rounded-xl px-3.5 py-2 text-left transition-colors hover:bg-tint/50 focus-visible:outline-2 focus-visible:outline-brand-600"
-      >
-        <div className="min-w-0 flex-1">
-          <div className="flex min-w-0 items-center gap-2">
-            <h2 className="shrink-0 text-[12.5px] font-semibold text-ink-900">
-              {title}
-            </h2>
-            {badge && (
-              <span className="shrink-0 rounded-full bg-tint px-1.5 py-px text-[10px] text-ink-500">
-                {badge}
-              </span>
-            )}
-          </div>
-          {desc && (
-            <p className="mt-0.5 truncate text-[11px] text-ink-400">{desc}</p>
-          )}
-        </div>
-        <ChevronRight
-          className={cn(
-            "size-3.5 shrink-0 text-ink-400 transition-transform",
-            open && "rotate-90"
-          )}
-          strokeWidth={1.75}
-        />
-      </button>
-      {open && (
-        <div className="mt-0.5 flex flex-col gap-2 px-3 pb-2.5">{children}</div>
-      )}
-    </div>
-  );
-}
-
 function Field({
   label,
   hint,
@@ -774,51 +633,6 @@ function Row({
   );
 }
 
-function Slider({
-  label,
-  hint,
-  value,
-  min,
-  max,
-  step,
-  onChange,
-  format,
-}: {
-  label: string;
-  hint?: string;
-  value: number;
-  min: number;
-  max: number;
-  step: number;
-  onChange: (v: number) => void;
-  format?: (v: number) => string;
-}) {
-  return (
-    <div className="rounded-xl px-3 py-1.5 transition-colors hover:bg-tint/40">
-      <div className="flex min-w-0 items-baseline gap-2">
-        <p className="shrink-0 text-[12.5px] font-medium text-ink-900">{label}</p>
-        {hint && (
-          <p className="min-w-0 flex-1 truncate text-[11px] text-ink-400">
-            {hint}
-          </p>
-        )}
-        <span className="shrink-0 rounded-lg bg-surface px-1.5 py-0.5 font-mono text-[11px] font-medium text-brand-700 shadow-soft">
-          {format ? format(value) : value}
-        </span>
-      </div>
-      <input
-        type="range"
-        min={min}
-        max={max}
-        step={step}
-        value={value}
-        onChange={(e) => onChange(Number(e.target.value))}
-        className="mt-1 h-1.5 w-full cursor-pointer appearance-none rounded-full bg-tint accent-brand-600 focus-visible:outline-2 focus-visible:outline-brand-600"
-      />
-    </div>
-  );
-}
-
 function TextInput({
   value,
   onChange,
@@ -847,29 +661,3 @@ function TextInput({
   );
 }
 
-function Select({
-  value,
-  onChange,
-  options,
-}: {
-  value: string;
-  onChange: (v: string) => void;
-  options: string[];
-}) {
-  return (
-    <div className="relative">
-      <select
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="appearance-none rounded-xl bg-surface py-1.5 pl-3 pr-7 text-[12.5px] text-ink-900 shadow-soft transition-shadow hover:shadow-lift focus:outline-none focus-visible:outline-2 focus-visible:outline-brand-600"
-      >
-        {options.map((o) => (
-          <option key={o} value={o}>
-            {o}
-          </option>
-        ))}
-      </select>
-      <ChevronRight className="pointer-events-none absolute right-2 top-1/2 size-3.5 -translate-y-1/2 rotate-90 text-ink-400" strokeWidth={1.75} />
-    </div>
-  );
-}

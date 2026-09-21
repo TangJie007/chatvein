@@ -6,6 +6,7 @@ import {
   Settings,
   Sparkles,
   Users,
+  UserCog,
 } from "lucide-react";
 import { Button } from "../ui/button";
 import { cn } from "../../lib/cn";
@@ -21,6 +22,7 @@ const NAV: {
   { key: "group", label: "群组", icon: Users, badgeKey: "group" },
   { key: "kb", label: "知识库", icon: BookOpen, badgeKey: "kb" },
   { key: "skills", label: "技能", icon: Sparkles, badgeKey: "skills" },
+  { key: "roles", label: "角色", icon: UserCog, badgeKey: "roles" },
   { key: "models", label: "模型", icon: Bot, badgeKey: "models" },
 ];
 

@@ -131,8 +131,9 @@ def register_entities() -> None:
         return
     from conversations.entity import Conversation, Message  # noqa: F401
     from models.entity import LlmModel  # noqa: F401
+    from roles.entity import Role  # noqa: F401
 
-    _ = (Conversation, Message, LlmModel)
+    _ = (Conversation, Message, LlmModel, Role)
     _entities_registered = True
 
 

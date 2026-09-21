@@ -212,6 +212,10 @@ class ModelsService:
             or (self._repo.find_all()[:1] or [None])[0]
         )
 
+    def get_entity(self, model_id: str) -> LlmModel | None:
+        """按 id 取模型实体（含 ``api_key``），供角色绑定模型时使用。"""
+        return self._repo.find_by_id(model_id)
+
     def seed_from_env_if_empty(self) -> LlmModelResponseDto | None:
         """库为空且环境有 OPENAI_API_KEY 时，写入一条默认配置。"""
         if self._repo.count() > 0:

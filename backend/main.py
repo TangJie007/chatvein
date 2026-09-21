@@ -36,6 +36,7 @@ from embeddings.module import (  # pyright: ignore[reportImplicitRelativeImport]
     on_module_init as on_embeddings_init,
 )
 from models.module import models_router, on_module_init  # pyright: ignore[reportImplicitRelativeImport]
+from roles.module import roles_router, on_module_init as on_roles_init  # pyright: ignore[reportImplicitRelativeImport]
 from skills.module import skills_router  # pyright: ignore[reportImplicitRelativeImport]
 
 
@@ -48,6 +49,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
         flush=True,
     )
     on_module_init()
+    on_roles_init()
     on_embeddings_init()
     yield
 
@@ -70,6 +72,7 @@ app.add_middleware(
 )
 
 app.include_router(models_router)
+app.include_router(roles_router)
 app.include_router(embeddings_router)
 app.include_router(conversations_router)
 app.include_router(skills_router)
@@ -78,6 +81,7 @@ app.include_router(skills_router)
 class ChatRequest(BaseModel):
     message: str = Field(min_length=1, max_length=32000)
     conversation_id: str | None = Field(default=None, max_length=64)
+    role_id: str | None = Field(default=None, max_length=64)
 
 
 @app.post("/api/chat", tags=["chat"], summary="改写 + 难度路由 + 工具选择")
@@ -87,8 +91,13 @@ def chat(req: ChatRequest):
         prepared["workspace_dir"],
         conversation_id=prepared["id"],
     )
+    role_runtime = None
+    if req.role_id:
+        from roles.service import RolesService  # pyright: ignore[reportImplicitRelativeImport]
+
+        role_runtime = RolesService().get_runtime(req.role_id)
     with use_conversation_sandbox(prepared["workspace_dir"]):
-        result = run_chat(req.message, history=history)
+        result = run_chat(req.message, history=history, role=role_runtime)
     reply = str(result.get("reply") or "")
     route = str(result.get("difficulty") or result.get("route") or "simple")
     tool_trace = list(result.get("tool_trace") or [])

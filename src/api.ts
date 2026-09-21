@@ -164,7 +164,11 @@ export function createConversation(title = "") {
 }
 
 /** Run one chat turn against the agent pipeline. */
-export function sendChat(message: string, conversationId?: string | null) {
+export function sendChat(
+  message: string,
+  conversationId?: string | null,
+  roleId?: string | null
+) {
   return backendRequest<{
     reply: string;
     from: string;
@@ -189,6 +193,7 @@ export function sendChat(message: string, conversationId?: string | null) {
   }>("/api/chat", "POST", {
     message,
     conversation_id: conversationId ?? null,
+    role_id: roleId ?? null,
   });
 }
 
@@ -514,5 +519,90 @@ export interface SkillHubDetail extends SkillHubItem {
 export function getSkill(slug: string) {
   return backendRequest<SkillHubDetail>(
     `/api/skills/${encodeURIComponent(slug)}`
+  );
+}
+
+/* -------------------------------------------------------------------------
+ * Roles（用户可配置角色：人格 / 模型 / 工具 / 生成参数）
+ * 后端 roles 模块（SQLite），与 models 同样走直接 fetch。
+ * ---------------------------------------------------------------------- */
+
+export type RoleTone = "brand" | "violet" | "teal" | "amber" | "peach";
+
+export interface RoleRecord {
+  id: string;
+  name: string;
+  /** 列表头像上的单字。 */
+  initial: string;
+  /** 系统提示词（人格与行为边界）。 */
+  prompt: string;
+  /** 绑定模型 id；空串表示「主对话模型（自动）」。 */
+  model_id: string;
+  tone: RoleTone;
+  temperature: number;
+  max_tokens: number;
+  presence_penalty: number;
+  frequency_penalty: number;
+  stream: boolean;
+  json_mode: boolean;
+  retries: number;
+  /** 带入上下文的最近对话轮数。 */
+  memory: number;
+  enabled: boolean;
+  /** 已勾选的 MCP 工具 id。 */
+  tools: string[];
+  /** 挂载的知识库名称。 */
+  kb: string[];
+  /** 在用会话数（后端统计，本地只读）。 */
+  sessions: number;
+  /** 内置主角色，可改人格与工具，不可删除。 */
+  primary: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export type CreateRolePayload = {
+  name: string;
+  initial?: string;
+  prompt?: string;
+  model_id?: string;
+  tone?: RoleTone;
+  temperature?: number;
+  max_tokens?: number;
+  presence_penalty?: number;
+  frequency_penalty?: number;
+  stream?: boolean;
+  json_mode?: boolean;
+  retries?: number;
+  memory?: number;
+  enabled?: boolean;
+  tools?: string[];
+  kb?: string[];
+  primary?: boolean;
+};
+
+export type UpdateRolePayload = Partial<CreateRolePayload>;
+
+export async function listRoles() {
+  const data = await backendRequest<{ roles: RoleRecord[] }>("/api/roles/");
+  return data.roles;
+}
+
+export function getRole(roleId: string) {
+  return backendRequest<RoleRecord>(`/api/roles/${roleId}`);
+}
+
+export function createRole(payload: CreateRolePayload) {
+  return backendRequest<RoleRecord>("/api/roles/", "POST", payload);
+}
+
+export function updateRole(roleId: string, payload: UpdateRolePayload) {
+  return backendRequest<RoleRecord>(`/api/roles/${roleId}`, "PATCH", payload);
+}
+
+export function deleteRole(roleId: string) {
+  return backendRequest<{ deleted: number; id: string }>(
+    `/api/roles/${roleId}`,
+    "DELETE"
   );
 }

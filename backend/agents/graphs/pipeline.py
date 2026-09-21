@@ -35,9 +35,13 @@ def _route(state: ChatState) -> DifficultyRoute:
 
 
 def _simple_node(state: ChatState) -> dict[str, Any]:
+    role = state.get("role")
+    system_prompt = (role or {}).get("prompt") or simple_mod.SIMPLE_SYSTEM
     reply, ran = simple_mod.run_simple(
         str(state.get("rewritten") or ""),
         history=list(state.get("history") or []),
+        system_prompt=system_prompt,
+        role=role,
     )
     return {
         "reply": reply,
@@ -49,12 +53,15 @@ def _simple_node(state: ChatState) -> dict[str, Any]:
 
 
 def _medium_node(state: ChatState) -> dict[str, Any]:
+    role = state.get("role")
+    system_prompt = (role or {}).get("prompt") or medium_mod.MEDIUM_SYSTEM
     result = medium_mod.run_medium(
         str(state.get("rewritten") or ""),
         used_llm=bool(state.get("used_llm")),
         history=list(state.get("history") or []),
-        system_prompt=medium_mod.MEDIUM_SYSTEM,
+        system_prompt=system_prompt,
         name="medium_react",
+        role=role,
     )
     return {
         "reply": result["reply"],
@@ -66,12 +73,15 @@ def _medium_node(state: ChatState) -> dict[str, Any]:
 
 
 def _hard_node(state: ChatState) -> dict[str, Any]:
+    role = state.get("role")
+    system_prompt = (role or {}).get("prompt") or medium_mod.HARD_SYSTEM
     result = medium_mod.run_medium(
         str(state.get("rewritten") or ""),
         used_llm=bool(state.get("used_llm")),
         history=list(state.get("history") or []),
-        system_prompt=medium_mod.HARD_SYSTEM,
+        system_prompt=system_prompt,
         name="hard_react",
+        role=role,
     )
     return {
         "reply": result["reply"],
@@ -109,6 +119,7 @@ def run_pipeline(
     message: str,
     *,
     history: list[dict[str, Any]] | None = None,
+    role: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """入口：跑总图，返回 ``run_chat`` 所需字段。"""
     text = (message or "").strip()
@@ -116,6 +127,7 @@ def run_pipeline(
         {
             "message": text,
             "history": list(history or []),
+            "role": role,
         }
     )
     difficulty = str(out.get("difficulty") or "simple")

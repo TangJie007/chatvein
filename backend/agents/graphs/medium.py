@@ -62,7 +62,12 @@ def build_react_graph(model: Any, tools: list[Any], *, system_prompt: str, name:
     )
 
 
-def build_medium_graph(*, system_prompt: str = _MEDIUM_SYSTEM, name: str = "medium_react"):
+def build_medium_graph(
+    *,
+    system_prompt: str = _MEDIUM_SYSTEM,
+    name: str = "medium_react",
+    role: dict[str, Any] | None = None,
+):
     """选型 → ReAct 的 medium 子图。"""
 
     def select_tools_node(state: ChatState) -> dict[str, Any]:
@@ -78,7 +83,7 @@ def build_medium_graph(*, system_prompt: str = _MEDIUM_SYSTEM, name: str = "medi
         text = (state.get("rewritten") or state.get("message") or "").strip()
         names = list(state.get("selected_tools") or [])
         tools = resolve_tools(names)
-        model = llm_mod.get_chat_model()
+        model = llm_mod.get_chat_model(role=role)
         if model is None:
             return {
                 "reply": run_tools(text, names),
@@ -131,9 +136,10 @@ def run_medium(
     history: list[dict[str, Any]] | None = None,
     system_prompt: str = _MEDIUM_SYSTEM,
     name: str = "medium_react",
+    role: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """跑 medium 子图，返回 reply / selected_tools / used_llm / tool_trace 等。"""
-    out = build_medium_graph(system_prompt=system_prompt, name=name).invoke(
+    out = build_medium_graph(system_prompt=system_prompt, name=name, role=role).invoke(
         {
             "message": rewritten,
             "rewritten": rewritten,

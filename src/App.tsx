@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { listModels, pickActiveModel } from "./api";
+import { listModels, listRoles, pickActiveModel } from "./api";
 import { TitleBar } from "./components/layout/TitleBar";
 import { Sidebar } from "./components/layout/Sidebar";
 import { BashApproval } from "./components/chat/BashApproval";
@@ -7,6 +7,7 @@ import { ChatView } from "./components/views/ChatView";
 import { GroupView } from "./components/views/GroupView";
 import { KnowledgeView } from "./components/views/KnowledgeView";
 import { ModelsView } from "./components/views/ModelsView";
+import { RolesView } from "./components/views/RolesView";
 import { SettingsView } from "./components/views/SettingsView";
 import { SkillsView } from "./components/views/SkillsView";
 import { TooltipProvider } from "./components/ui/tooltip";
@@ -19,11 +20,21 @@ export default function App() {
     group: 0,
     kb: 0,
     skills: 0,
+    roles: 0,
     models: 0,
   });
   const [defaultModelName, setDefaultModelName] = useState<string | null>(null);
   const [addModelRequestId, setAddModelRequestId] = useState(0);
   const [newChatRequestId, setNewChatRequestId] = useState(0);
+
+  useEffect(() => {
+    // 角色数量来自后端 /api/roles，启动即读一次（后端未就绪时静默）。
+    void listRoles()
+      .then((roles) => setCounts((c) => ({ ...c, roles: roles.length })))
+      .catch(() => {
+        /* backend may still be starting */
+      });
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -82,6 +93,7 @@ export default function App() {
               {view === "group" && <GroupView />}
               {view === "kb" && <KnowledgeView />}
               {view === "skills" && <SkillsView />}
+              {view === "roles" && <RolesView />}
               {view === "models" && (
                 <ModelsView
                   addRequestId={addModelRequestId}

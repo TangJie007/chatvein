@@ -14,12 +14,14 @@ from .common import last_text
 
 _SYSTEM = "你是 ChatVein 助手，用中文简洁回答。可参考上文对话上下文。"
 
+SIMPLE_SYSTEM = _SYSTEM
 
-def build_simple_graph(model: Any):
+
+def build_simple_graph(model: Any, *, system_prompt: str = _SYSTEM):
     """编译一张仅含 ``chat`` 节点的图。"""
 
     def chat(state: MessagesState) -> dict[str, Any]:
-        resp = model.invoke([SystemMessage(content=_SYSTEM), *state["messages"]])
+        resp = model.invoke([SystemMessage(content=system_prompt), *state["messages"]])
         return {"messages": [resp]}
 
     graph = StateGraph(MessagesState)
@@ -33,15 +35,19 @@ def run_simple(
     text: str,
     *,
     history: list[dict[str, Any]] | None = None,
+    system_prompt: str = _SYSTEM,
+    role: dict[str, Any] | None = None,
 ) -> tuple[str, bool]:
     """跑 simple 图；无主模型时离线回落。"""
-    model = llm_mod.get_chat_model()
+    model = llm_mod.get_chat_model(role=role)
     if model is None:
         return (f"（离线）{text}" if text else "（离线）未配置 LLM。"), False
     try:
         prior = to_lc_messages(history)
         messages: list[BaseMessage] = [*prior, HumanMessage(content=text or "你好")]
-        out = build_simple_graph(model).invoke({"messages": messages})
+        out = build_simple_graph(model, system_prompt=system_prompt).invoke(
+            {"messages": messages}
+        )
         reply = last_text(out.get("messages"))
         if reply:
             return reply, True

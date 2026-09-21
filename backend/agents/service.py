@@ -19,6 +19,11 @@ def run_chat(
     message: str,
     *,
     history: list[dict[str, Any]] | None = None,
+    role: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """``{reply, used_llm, difficulty, rewritten, tool_trace, ...}``。"""
-    return run_pipeline(message, history=history)
+    """``{reply, used_llm, difficulty, rewritten, tool_trace, ...}``。
+
+    ``role`` 为 ``RolesService.get_runtime`` 返回的角色运行时配置（可为空）：
+    提供系统提示词与生成参数 / 绑定模型的覆盖。
+    """
+    return run_pipeline(message, history=history, role=role)
