@@ -51,8 +51,14 @@ pub fn spawn_backend(app: &AppHandle) {
     };
 
     // Release: PyInstaller onedir at <resources>/backend-runtime/backend(.exe)
-    // Dev:     <repo>/backend/main.py via .venv / PATH python
-    let frozen = frozen_backend_exe(&resource_dir);
+    // Dev:     <repo>/backend/main.py via .venv / PATH python.
+    // A stale backend.exe left in target/debug must not win in dev, or new
+    // routes such as /api/mcps/catalog stay 404 until the runtime is rebuilt.
+    let frozen = if cfg!(debug_assertions) {
+        None
+    } else {
+        frozen_backend_exe(&resource_dir)
+    };
     let (program, args, cwd, fallback_dir) = if let Some(exe) = frozen {
         let cwd = exe
             .parent()
@@ -60,7 +66,17 @@ pub fn spawn_backend(app: &AppHandle) {
             .unwrap_or_else(|| resource_dir.join("backend-runtime"));
         (exe, Vec::<String>::new(), cwd.clone(), cwd)
     } else {
-        let backend_dir = {
+        // Dev resource dir is `src-tauri/target/debug`. A leftover `backend/`
+        // copy there must not shadow the repo source, or the UI keeps calling
+        // routes that only exist in `backend/main.py` (404).
+        let backend_dir = if cfg!(debug_assertions) {
+            let dev = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../backend");
+            if dev.join("main.py").exists() {
+                dev.canonicalize().unwrap_or(dev)
+            } else {
+                resource_dir.join("backend")
+            }
+        } else {
             let bundled = resource_dir.join("backend");
             if bundled.join("main.py").exists() {
                 bundled

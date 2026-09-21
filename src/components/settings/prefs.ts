@@ -78,7 +78,7 @@ export const MCP_SERVERS: McpServer[] = [
     name: "联网搜索",
     kind: "web",
     builtin: true,
-    desc: "DuckDuckGo 检索与网页正文抽取，为问答补充实时信息。",
+    desc: "先走 Firecrawl 搜索与正文抽取；额度用尽或失败时降级到 DuckDuckGo + 本地抓取。",
     transport: "HTTP",
     cmd: "builtin://mcp-web",
     tools: 2,

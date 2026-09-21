@@ -253,6 +253,36 @@ export function testModelConnection(modelId: string) {
   return backendRequest<ModelTestResult>(`/api/models/${modelId}/test`, "POST");
 }
 
+/* -------------------------------------------------------------------------
+ * Built-in MCP catalog (backend/mcps)
+ * ---------------------------------------------------------------------- */
+
+export interface McpToolParam {
+  name: string;
+  type: string;
+  required: boolean;
+  description?: string;
+  default?: string | number | boolean | null;
+}
+
+export interface McpToolRecord {
+  name: string;
+  description: string;
+  group: string;
+  parameters?: McpToolParam[];
+}
+
+export interface McpCatalog {
+  groups: Record<string, string[]>;
+  tools: McpToolRecord[];
+  tool_count: number;
+}
+
+/** Grouped built-in tool list, aligned with settings MCP server ids. */
+export function mcpCatalog() {
+  return backendRequest<McpCatalog>("/api/mcps/catalog");
+}
+
 /** Resolve display model: primary → default → first enabled → first. */
 export function pickActiveModel(models: LlmModelRecord[]): LlmModelRecord | null {
   if (models.length === 0) return null;

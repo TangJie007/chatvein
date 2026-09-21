@@ -21,6 +21,43 @@ def tool_groups() -> dict[str, list[str]]:
     return {gid: [t.name for t in tools] for gid, tools in TOOL_GROUPS.items()}
 
 
+def _parameters(tool: BaseTool) -> list[dict[str, Any]]:
+    """从 LangChain 工具的 JSON Schema 抽出参数，供设置页抽屉展示。"""
+    schema_model = tool.args_schema
+    if schema_model is None or not hasattr(schema_model, "model_json_schema"):
+        return []
+    schema = schema_model.model_json_schema()
+    properties = schema.get("properties")
+    if not isinstance(properties, dict):
+        return []
+    required = {name for name in schema.get("required") or [] if isinstance(name, str)}
+    params: list[dict[str, Any]] = []
+    for name, spec in properties.items():
+        if not isinstance(name, str) or not isinstance(spec, dict):
+            continue
+        raw_type = spec.get("type", "any")
+        if isinstance(raw_type, list):
+            type_name = " | ".join(str(part) for part in raw_type)
+        elif isinstance(raw_type, str):
+            type_name = raw_type
+        else:
+            type_name = "any"
+        item: dict[str, Any] = {
+            "name": name,
+            "type": type_name,
+            "required": name in required,
+        }
+        description = spec.get("description")
+        if isinstance(description, str) and description.strip():
+            item["description"] = description.strip()
+        if "default" in spec:
+            default = spec["default"]
+            if default is None or isinstance(default, (str, int, float, bool)):
+                item["default"] = default
+        params.append(item)
+    return params
+
+
 def tool_catalog() -> list[dict[str, Any]]:
     """结构化工具目录。"""
     out: list[dict[str, Any]] = []
@@ -31,6 +68,7 @@ def tool_catalog() -> list[dict[str, Any]]:
                     "name": t.name,
                     "description": t.description or "",
                     "group": gid,
+                    "parameters": _parameters(t),
                 }
             )
     return out

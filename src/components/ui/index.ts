@@ -14,6 +14,7 @@ export {
   DialogDescription,
   DialogClose,
 } from "./dialog";
+export { Sheet, SheetClose, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "./sheet";
 export {
   Tooltip,
   TooltipTrigger,

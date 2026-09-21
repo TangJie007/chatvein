@@ -29,7 +29,7 @@ ChatVein 是本机桌面 Agent（Tauri + Python），前端设置页已规划 `b
 | 能力（WorkBuddy） | ChatVein 分组 | 工具 | 说明 |
 | --- | --- | --- | --- |
 | Read / Write / Glob / Grep | `mcp-fs` | `fs_workspace_root` `fs_list_dir` `fs_read_file` `fs_write_file` `fs_glob` `fs_grep` | 沙箱根：`CHATVEIN_WORKSPACE` 或 `~/ChatVeinWorkspace` |
-| WebSearch / WebFetch | `mcp-web` | `web_search` `web_fetch` | DuckDuckGo（`ddgs`）+ `httpx`/`bs4` 抽正文 |
+| WebSearch / WebFetch | `mcp-web` | `web_search` `web_fetch` | 先 Firecrawl（`FIRECRAWL_API_KEY`，无 key 走免费档）；402/失败降级 `ddgs` + `httpx`/`bs4` |
 | 本地库 / 数据 | `mcp-sqlite` | `sqlite_tables` `sqlite_schema` `sqlite_query` | **只读**打开 ChatVein SQLite |
 | 知识沉淀 / 召回 | `mcp-kb` | `kb_add_note` `kb_search` `kb_search_messages` `kb_index_workspace` | 独立 `kb.sqlite`；向量模型就绪时走 sqlite-vec |
 | 时间 / 计算 / 本机概况 | `core` | `get_current_time` `calculator` `db_stats` `list_configured_models` | 无独立设置卡片 |
