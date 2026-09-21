@@ -3,14 +3,13 @@
 与 medium 的差异：
 - 先结构化规划（目标 / 步骤 / 成功标准）
 - ReAct 递归上限更高，并把计划注入 system
-- 结束后用结构化核对决定是否再跑一轮
+- 结束后用结构化核对决定是否再跑一轮；回环累计 tool_trace
 """
 
 from __future__ import annotations
 
 from typing import Any, Literal
 
-from langchain.agents import create_agent
 from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
 from langgraph.graph import END, START, StateGraph
 from pydantic import BaseModel, Field
@@ -28,7 +27,12 @@ from trace import (  # pyright: ignore[reportMissingImports]
     trace_checkpoint,
 )
 
-from .common import last_text
+from .common import (
+    allowed_from_role,
+    build_react_graph,
+    last_text,
+    merge_tool_traces,
+)
 from .state import ChatState
 from .tool_trace import extract_tool_trace
 
@@ -43,7 +47,6 @@ _HARD_SYSTEM = (
     "操作网页时先 snapshot 再按 ref 交互。"
 )
 
-# hard：允许多轮工具与核对回环
 _RECURSION_LIMIT = 28
 _MAX_VERIFY_ROUNDS = 2
 
@@ -77,15 +80,6 @@ class VerifyDecision(BaseModel):
     )
 
 
-def build_react_graph(model: Any, tools: list[Any], *, system_prompt: str, name: str):
-    return create_agent(
-        model,
-        tools,
-        system_prompt=system_prompt,
-        name=name,
-    )
-
-
 def _format_plan(plan: dict[str, Any] | None) -> str:
     if not plan:
         return ""
@@ -110,13 +104,14 @@ def _format_plan(plan: dict[str, Any] | None) -> str:
     return "\n".join(lines)
 
 
-def _allowed_from_role(role: dict[str, Any] | None) -> list[str] | None:
-    if not role:
-        return None
-    tools = role.get("tools")
-    if not isinstance(tools, list) or not tools:
-        return None
-    return [str(t) for t in tools if str(t).strip()]
+def _default_plan(text: str, *, risk: str | None = None) -> dict[str, Any]:
+    plan: dict[str, Any] = {
+        "goal": text or "完成用户请求",
+        "steps": ["按需调用工具", "汇总结果"],
+        "success_criteria": ["给出可核对的中文结论"],
+        "risks": [risk] if risk else [],
+    }
+    return plan
 
 
 def build_hard_graph(
@@ -131,12 +126,7 @@ def build_hard_graph(
         text = (state.get("rewritten") or state.get("message") or "").strip()
         model = llm_mod.get_chat_model(temperature=0, role=role)
         if model is None:
-            plan = {
-                "goal": text or "完成用户请求",
-                "steps": ["按需调用工具", "汇总结果"],
-                "success_criteria": ["给出可核对的中文结论"],
-                "risks": [],
-            }
+            plan = _default_plan(text)
             note(
                 "llm",
                 name="plan",
@@ -188,16 +178,11 @@ def build_hard_graph(
                 "used_llm": True,
             }
         except Exception as exc:  # noqa: BLE001
-            plan = {
-                "goal": text or "完成用户请求",
-                "steps": ["按需调用工具", "汇总结果"],
-                "success_criteria": ["给出可核对的中文结论"],
-                "risks": [f"规划失败: {exc}"],
-            }
+            plan = _default_plan(text, risk=f"规划失败: {exc}")
             return {
                 "plan": plan,
                 "plan_text": _format_plan(plan),
-                "verify_round": int(state.get("verify_round") or 0),
+                "verify_round": 0,
                 "used_llm": bool(state.get("used_llm")),
             }
 
@@ -212,7 +197,7 @@ def build_hard_graph(
             query = f"{query}\n\n上一轮核对未通过，请优先补：{focus}"
         planned = tool_selector.select_tools(
             query,
-            allowed=_allowed_from_role(role),
+            allowed=allowed_from_role(role),
         )
         used = bool(state.get("used_llm")) or bool(planned.get("used_llm"))
         selected = list(planned.get("selected_tools") or [])
@@ -251,20 +236,30 @@ def build_hard_graph(
         prompt = system_prompt
         if plan_text:
             prompt = f"{system_prompt}\n\n{plan_text}"
+        prior_trace = list(state.get("tool_trace") or [])
 
         if model is None:
-            reply = run_tools(user_blob, names)
+            if not names:
+                reply = f"（离线）{user_blob}" if user_blob else "（离线）未配置 LLM。"
+            else:
+                reply = run_tools(user_blob, names)
             note(
                 "llm",
                 name="react",
                 status="offline",
                 response={"content": reply, "tool_calls": []},
-                detail={"reason": "未配置模型，改为直接执行筛选出的工具"},
+                detail={
+                    "reason": (
+                        "未配置模型且无需工具"
+                        if not names
+                        else "未配置模型，改为直接执行筛选出的工具"
+                    )
+                },
             )
             return {
                 "reply": reply,
                 "used_llm": False,
-                "tool_trace": [],
+                "tool_trace": prior_trace,
             }
         try:
             agent = build_react_graph(
@@ -291,13 +286,15 @@ def build_hard_graph(
             return {
                 "reply": reply,
                 "used_llm": True,
-                "tool_trace": traced,
+                "tool_trace": merge_tool_traces(prior_trace, traced),
             }
         except Exception as exc:  # noqa: BLE001
+            fallback = run_tools(user_blob, names) if names else ""
+            suffix = f"\n{fallback}" if fallback else ""
             return {
-                "reply": f"工具调用失败({exc})\n{run_tools(user_blob, names)}",
+                "reply": f"工具调用失败({exc}){suffix}",
                 "used_llm": False,
-                "tool_trace": [],
+                "tool_trace": prior_trace,
             }
 
     def verify_node(state: ChatState) -> dict[str, Any]:
@@ -448,6 +445,7 @@ def run_hard(
             "used_llm": used_llm,
             "history": list(history or []),
             "verify_round": 0,
+            "tool_trace": [],
         }
     )
     return {

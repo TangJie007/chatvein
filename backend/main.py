@@ -143,7 +143,8 @@ def chat(req: ChatRequest):
             "prompt": f"{(role_runtime.get('prompt') or '').strip()}\n\n{skill_block}".strip(),
         }
     elif skill_block:
-        role_runtime = {"prompt": skill_block, "tools": []}
+        # 无角色时只注入技能说明；tools 省略表示不限制
+        role_runtime = {"prompt": skill_block}
     turn_id = uuid.uuid4().hex
     db_path = session_db_path(
         conversations_service.workspace_root_for(prepared["workspace_dir"])

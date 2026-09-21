@@ -51,9 +51,10 @@ HTTP 落库 + 会话 workspace 洞察
 | simple | `agents/graphs/simple.py` | 无工具直答 |
 | medium | `agents/graphs/medium.py` | 选型 → ReAct |
 | hard | `agents/graphs/hard.py` | plan → 选型 → ReAct → verify |
-| 选型 | `agents/tool_selector.py` | 候选工具缩集 + 角色白名单展开 |
+| 选型 | `agents/tool_selector.py` | 候选工具缩集 + 角色白名单展开；允许空工具集（直答） |
 | 状态 | `agents/graphs/state.py` | `ChatState` TypedDict |
 | 记忆 | `agents/memory.py` | 历史 → LangChain messages |
+| 共用 | `agents/graphs/common.py` | `last_text` / `allowed_from_role` / `build_react_graph` / `merge_tool_traces` |
 
 ---
 
@@ -153,6 +154,10 @@ START → select_tools → react → END
 2. `allowed` 经 `expand_allowlist`：分组 id（如 `mcp-web`）展开为组内全部工具名；也可直接写工具名。
 3. 空 `allowed` / 无角色 → **不限制**，候选 = 当前已注册全部工具。
 4. 主模型 structured 选出子集；失败或离线走 `heuristic_tool_names`。
+5. **允许空名单**：模型或启发式认为无需工具时，不强制塞默认工具；`react` 以无工具 Agent 直答。
+6. 旧角色勾选（如 WorkBuddy 演示 id）无法匹配注册表时，回落为全部可用工具并在 reason 中注明。
+
+`resolve_tools([])` 返回空列表，**不再**静默展开为全量工具。
 
 ### 6.2 `react`
 
@@ -186,7 +191,7 @@ START → plan → select_tools → react → verify
 | 规划 | 无 | 结构化 `TaskPlan` |
 | 选型输入 | 仅改写文本 | 改写 + 计划文本（+ 核对缺口） |
 | ReAct 递归 | 12 | 28 |
-| 结束后 | 直接 END | `VerifyDecision`；可回环再选型/执行 |
+| 结束后 | 直接 END | `VerifyDecision`；可回环再选型/执行；`tool_trace` **跨轮累计** |
 | 回环上限 | — | `_MAX_VERIFY_ROUNDS = 2` |
 
 ### 7.1 `plan`（结构化）

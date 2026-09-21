@@ -95,9 +95,15 @@ def tool_catalog_text() -> str:
 
 
 def resolve_tools(names: list[str]) -> list[BaseTool]:
+    """按名解析工具。
+
+    - 空名单 → 空列表（表示本轮不挂工具，由模型直答）
+    - 有名但无一命中 → 空列表（不再静默回落全量，避免误调用）
+    """
     registry = _registry()
-    picked = [registry[n] for n in names if n in registry]
-    return picked or list(registry.values())
+    if not names:
+        return []
+    return [registry[n] for n in names if n in registry]
 
 
 def heuristic_tool_names(message: str) -> list[str]:

@@ -28,9 +28,8 @@ class ToolPlan(BaseModel):
 def expand_allowlist(allowed: list[str] | None) -> set[str] | None:
     """把角色勾选的分组 id / 工具名展开为具体工具名集合。
 
-    - 空 / None → 不限制
-    - ``mcp-web`` 等分组 id → 该组全部工具
-    - 具体工具名 → 原样保留
+    - ``None`` / 空列表 → 不限制（返回 ``None``）
+    - 非空勾选 → 返回 ``set``（可能为空：例如只勾了当前未注册的 ``mcp-bash``）
     """
     if not allowed:
         return None
@@ -42,9 +41,37 @@ def expand_allowlist(allowed: list[str] | None) -> set[str] | None:
             continue
         if key in groups:
             names.update(groups[key])
+        elif key == "core" or key.startswith("mcp-"):
+            # 已知分组家族但本机未挂载：不写成伪工具名
+            continue
         else:
             names.add(key)
-    return names or None
+    return names
+
+
+def _apply_allowlist(
+    tools: list[Any],
+    allowed: list[str] | None,
+) -> tuple[list[Any], str | None]:
+    allow_set = expand_allowlist(allowed)
+    if allow_set is None:
+        return tools, None
+
+    filtered = [t for t in tools if t.name in allow_set]
+    if filtered:
+        return filtered, None
+
+    raw = [str(x).strip() for x in (allowed or []) if str(x).strip()]
+    groups = tool_groups()
+    registered = {t.name for t in tools}
+    touches_real = any(
+        a in groups or a in registered or a == "core" or a.startswith("mcp-")
+        for a in raw
+    )
+    if touches_real:
+        return [], "角色勾选的工具当前均不可用"
+    # 旧 WorkBuddy 演示 id（order.get 等）→ 不锁死角色
+    return tools, "角色工具勾选无法匹配注册表（旧配置），已按全部可用工具处理"
 
 
 def select_tools(
@@ -54,32 +81,34 @@ def select_tools(
 ) -> dict[str, Any]:
     """返回 ``{selected_tools, candidate_tools, tool_plan_reason, used_llm}``。
 
-    ``allowed`` 为角色勾选的分组或工具名；空表示不限制。
+    模型明确表示无需工具时，``selected_tools`` 可为空白（不再强行塞一个工具）。
     """
     text = (message or "").strip()
-    tools = all_tools()
-    allow_set = expand_allowlist(allowed)
-    if allow_set is not None:
-        tools = [t for t in tools if t.name in allow_set]
+    tools, filter_note = _apply_allowlist(all_tools(), allowed)
     candidates = [tool.name for tool in tools]
     if not candidates:
         return {
             "selected_tools": [],
             "candidate_tools": [],
-            "tool_plan_reason": "角色未开放任何可用工具",
+            "tool_plan_reason": filter_note or "角色未开放任何可用工具",
             "used_llm": False,
         }
 
     catalog = "\n".join(f"- {tool.name}: {tool.description}" for tool in tools)
     model = llm_mod.get_chat_model(temperature=0)
+
+    def _with_note(reason: str) -> str:
+        if filter_note:
+            return f"{filter_note}；{reason}"
+        return reason
+
     if model is None:
         names = [n for n in heuristic_tool_names(text) if n in candidates]
-        if not names:
-            names = [candidates[0]]
+        reason = "启发式工具选择" if names else "启发式：无需工具"
         return {
             "selected_tools": names,
             "candidate_tools": candidates,
-            "tool_plan_reason": "启发式工具选择",
+            "tool_plan_reason": _with_note(reason),
             "used_llm": False,
         }
 
@@ -96,21 +125,18 @@ def select_tools(
         names = [n for n in plan.tool_names if n in candidates]
         if not names:
             names = [n for n in heuristic_tool_names(text) if n in candidates]
-        if not names:
-            names = [candidates[0]]
+        reason = (plan.reason or "").strip() or ("已选工具" if names else "无需工具")
         return {
             "selected_tools": names,
             "candidate_tools": candidates,
-            "tool_plan_reason": plan.reason,
+            "tool_plan_reason": _with_note(reason),
             "used_llm": True,
         }
     except Exception as exc:  # noqa: BLE001
         names = [n for n in heuristic_tool_names(text) if n in candidates]
-        if not names:
-            names = [candidates[0]]
         return {
             "selected_tools": names,
             "candidate_tools": candidates,
-            "tool_plan_reason": f"选择失败({exc}); 已回落启发式",
+            "tool_plan_reason": _with_note(f"选择失败({exc}); 已回落启发式"),
             "used_llm": False,
         }

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from typing import Any
 
-from langchain.agents import create_agent
 from langchain_core.messages import BaseMessage, HumanMessage
 from langgraph.graph import END, START, StateGraph
 
@@ -21,7 +20,7 @@ from trace import (  # pyright: ignore[reportMissingImports]
     trace_checkpoint,
 )
 
-from .common import last_text
+from .common import allowed_from_role, build_react_graph, last_text
 from .state import ChatState
 from .tool_trace import extract_tool_trace
 
@@ -48,25 +47,6 @@ _MEDIUM_SYSTEM = (
 _RECURSION_LIMIT = 12
 
 
-def _allowed_from_role(role: dict[str, Any] | None) -> list[str] | None:
-    if not role:
-        return None
-    tools = role.get("tools")
-    if not isinstance(tools, list) or not tools:
-        return None
-    return [str(t) for t in tools if str(t).strip()]
-
-
-def build_react_graph(model: Any, tools: list[Any], *, system_prompt: str, name: str):
-    """用 ``create_agent`` 得到 ReAct 编译图（model ↔ tools 直到无 tool_calls）。"""
-    return create_agent(
-        model,
-        tools,
-        system_prompt=system_prompt,
-        name=name,
-    )
-
-
 def build_medium_graph(
     *,
     system_prompt: str = _MEDIUM_SYSTEM,
@@ -78,7 +58,7 @@ def build_medium_graph(
     def select_tools_node(state: ChatState) -> dict[str, Any]:
         planned = tool_selector.select_tools(
             state.get("rewritten") or state.get("message") or "",
-            allowed=_allowed_from_role(role),
+            allowed=allowed_from_role(role),
         )
         used = bool(state.get("used_llm")) or bool(planned.get("used_llm"))
         selected = list(planned.get("selected_tools") or [])
@@ -107,13 +87,22 @@ def build_medium_graph(
         tools = resolve_tools(names)
         model = llm_mod.get_chat_model(role=role)
         if model is None:
-            reply = run_tools(text, names)
+            if not names:
+                reply = f"（离线）{text}" if text else "（离线）未配置 LLM。"
+            else:
+                reply = run_tools(text, names)
             note(
                 "llm",
                 name="react",
                 status="offline",
                 response={"content": reply, "tool_calls": []},
-                detail={"reason": "未配置模型，改为直接执行筛选出的工具"},
+                detail={
+                    "reason": (
+                        "未配置模型且无需工具"
+                        if not names
+                        else "未配置模型，改为直接执行筛选出的工具"
+                    )
+                },
             )
             return {
                 "reply": reply,
@@ -148,8 +137,10 @@ def build_medium_graph(
                 "tool_trace": traced,
             }
         except Exception as exc:  # noqa: BLE001
+            fallback = run_tools(text, names) if names else ""
+            suffix = f"\n{fallback}" if fallback else ""
             return {
-                "reply": f"工具调用失败({exc})\n{run_tools(text, names)}",
+                "reply": f"工具调用失败({exc}){suffix}",
                 "used_llm": False,
                 "tool_trace": [],
             }

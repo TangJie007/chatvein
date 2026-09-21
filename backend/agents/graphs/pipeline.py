@@ -15,6 +15,8 @@ from .state import ChatState
 
 DifficultyRoute = Literal["simple", "medium", "hard"]
 
+_compiled_pipeline = None
+
 
 def _merged_system(role: dict[str, Any] | None, base: str) -> str:
     """角色提示叠在能力说明之上，避免丢掉工作区 / 工具约定。"""
@@ -122,7 +124,10 @@ def _hard_node(state: ChatState) -> dict[str, Any]:
 
 
 def build_pipeline():
-    """编译总图。"""
+    """编译总图（进程内缓存；节点在 invoke 时读模块引用，测试 monkeypatch 仍生效）。"""
+    global _compiled_pipeline
+    if _compiled_pipeline is not None:
+        return _compiled_pipeline
     graph = StateGraph(ChatState)
     graph.add_node("understand", _understand)
     graph.add_node("simple", _simple_node)
@@ -141,7 +146,14 @@ def build_pipeline():
     graph.add_edge("simple", END)
     graph.add_edge("medium", END)
     graph.add_edge("hard", END)
-    return graph.compile(name="chat_pipeline")
+    _compiled_pipeline = graph.compile(name="chat_pipeline")
+    return _compiled_pipeline
+
+
+def reset_pipeline_cache() -> None:
+    """测试用：清空总图缓存。"""
+    global _compiled_pipeline
+    _compiled_pipeline = None
 
 
 def run_pipeline(

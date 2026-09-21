@@ -121,11 +121,18 @@ def test_run_chat_offline_hard_plan_verify(monkeypatch) -> None:
     monkeypatch.setattr("agents.tool_selector.llm_mod.get_chat_model", lambda **_kwargs: None)
     monkeypatch.setattr("agents.graphs.hard.llm_mod.get_chat_model", lambda **_kwargs: None)
     monkeypatch.setattr(
+        "agents.graphs.hard.tool_selector.select_tools",
+        lambda _text, **_kwargs: {
+            "selected_tools": ["sandbox_run_python"],
+            "candidate_tools": ["sandbox_run_python"],
+            "tool_plan_reason": "测试选型",
+            "used_llm": False,
+        },
+    )
+    monkeypatch.setattr(
         "agents.graphs.hard.run_tools",
         lambda _text, names: f"HARD:{','.join(names)}",
     )
-    # force hard via understand offline heuristic won't work for greeting;
-    # monkeypatch understand through router used by pipeline
     monkeypatch.setattr(
         "agents.graphs.pipeline.router.understand",
         lambda _msg: {
@@ -139,11 +146,16 @@ def test_run_chat_offline_hard_plan_verify(monkeypatch) -> None:
     assert out["difficulty"] == "hard"
     assert out["used_llm"] is False
     assert out["reply"].startswith("HARD:")
+    assert "sandbox_run_python" in out["selected_tools"]
 
 
 def test_build_pipeline_compiles() -> None:
+    from agents.graphs.pipeline import reset_pipeline_cache
+
+    reset_pipeline_cache()
     g = build_pipeline()
     assert g is not None
+    assert build_pipeline() is g
 
 
 def test_expand_allowlist_groups() -> None:
@@ -153,3 +165,36 @@ def test_expand_allowlist_groups() -> None:
     assert names is not None
     assert "get_current_time" in names
     assert "calculator" in names
+
+
+def test_expand_allowlist_unavailable_group_is_empty_set() -> None:
+    from agents.tool_selector import expand_allowlist
+
+    # mcp-http 永不注册：勾选后应得到空 set，而不是把 id 当成工具名
+    names = expand_allowlist(["mcp-http"])
+    assert names == set()
+
+
+def test_select_tools_legacy_ids_fallback(monkeypatch) -> None:
+    from agents import tool_selector
+
+    monkeypatch.setattr(tool_selector.llm_mod, "get_chat_model", lambda **_kwargs: None)
+    out = tool_selector.select_tools("随便", allowed=["order.get", "policy.guard"])
+    assert out["candidate_tools"]
+    assert "旧配置" in out["tool_plan_reason"]
+
+
+def test_resolve_tools_empty_does_not_expand() -> None:
+    from mcps.registry import resolve_tools
+
+    assert resolve_tools([]) == []
+
+
+def test_merge_tool_traces() -> None:
+    from agents.graphs.common import merge_tool_traces
+
+    merged = merge_tool_traces(
+        [{"tool_name": "a"}],
+        [{"tool_name": "b"}],
+    )
+    assert [r["tool_name"] for r in merged] == ["a", "b"]

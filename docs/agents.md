@@ -87,4 +87,4 @@ ChatVein 是本机桌面 Agent（Tauri + Python），前端设置页已规划 `b
 | **Filesystem `read_media_file`** | 未对齐上游 | 若产品需要读图/音视频元数据再补 | 首版刻意省略 |
 | **Browser caps 之外的体验** | headed 默认、截图进 `browser-output/` | 无头策略、多 profile、下载目录策略等按需打磨 | 不阻塞主路径 |
 
-优先级建议：`mcp-http` 与 Skill 安装/使用按产品节奏；Browser caps 按真实场景缺口（PDF / 坐标点击）逐项开，不要一次全开。
+优先级建议：`mcp-http` 按产品节奏；Browser caps 按真实场景缺口（PDF / 坐标点击）逐项开，不要一次全开。Skill 安装/注入已接，后续重点是自动发现与更新检测。
