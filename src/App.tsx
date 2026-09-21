@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { listModels, pickActiveModel } from "./api";
 import { TitleBar } from "./components/layout/TitleBar";
 import { Sidebar } from "./components/layout/Sidebar";
+import { BashApproval } from "./components/chat/BashApproval";
 import { ChatView } from "./components/views/ChatView";
 import { GroupView } from "./components/views/GroupView";
 import { KnowledgeView } from "./components/views/KnowledgeView";
@@ -81,6 +82,7 @@ export default function App() {
           </div>
         </div>
       </div>
+      <BashApproval />
     </TooltipProvider>
   );
 }

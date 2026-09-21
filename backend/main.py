@@ -22,6 +22,7 @@ from conversations.module import (  # pyright: ignore[reportImplicitRelativeImpo
     conversations_service,
 )
 from mcps import tool_catalog, tool_groups  # pyright: ignore[reportImplicitRelativeImport]
+from mcps.bash_approval import decide, list_pending  # pyright: ignore[reportImplicitRelativeImport]
 from mcps.sandbox import (  # pyright: ignore[reportImplicitRelativeImport]
     use_conversation_sandbox,
 )
@@ -105,6 +106,29 @@ def chat(req: ChatRequest):
         "user_message": user_msg,
         "assistant_message": assistant_msg,
     }
+
+
+class BashDecision(BaseModel):
+    id: str = Field(min_length=1, max_length=64)
+
+
+@app.get("/api/bash/pending", tags=["bash"], summary="待确认的 Git Bash 命令")
+def bash_pending():
+    return {"pending": list_pending()}
+
+
+@app.post("/api/bash/approve", tags=["bash"], summary="允许一条 Git Bash 命令")
+def bash_approve(body: BashDecision):
+    if not decide(body.id, allow=True):
+        raise HTTPException(status_code=404, detail="没有这条待确认命令")
+    return {"ok": True}
+
+
+@app.post("/api/bash/deny", tags=["bash"], summary="拒绝一条 Git Bash 命令")
+def bash_deny(body: BashDecision):
+    if not decide(body.id, allow=False):
+        raise HTTPException(status_code=404, detail="没有这条待确认命令")
+    return {"ok": True}
 
 
 @app.get("/api/health", tags=["health"], summary="健康检查")

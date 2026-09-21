@@ -118,7 +118,7 @@ def invoke_tools(message: str, names: list[str]) -> str:
                 result = t.invoke({})
             elif t.name == "sqlite_tables":
                 result = t.invoke({})
-            elif t.name == "sandbox_info":
+            elif t.name in {"sandbox_info", "bash_info"}:
                 result = t.invoke({})
             elif t.name in {"get_current_time", "db_stats", "list_configured_models"}:
                 result = t.invoke({})

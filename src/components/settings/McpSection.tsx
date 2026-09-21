@@ -6,6 +6,7 @@ import {
   Layers,
   Plug,
   RefreshCw,
+  SquareTerminal,
   Terminal,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
@@ -23,6 +24,7 @@ const KIND_ICON: Record<McpKind, LucideIcon> = {
   web: Globe,
   kb: Layers,
   code: Terminal,
+  shell: SquareTerminal,
   custom: Plug,
 };
 

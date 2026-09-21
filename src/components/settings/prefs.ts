@@ -17,7 +17,7 @@ export const DEFAULT_PREFS: AppPrefs = {
   autoUpdate: true,
 };
 
-export type McpKind = "db" | "fs" | "web" | "kb" | "code" | "custom";
+export type McpKind = "db" | "fs" | "web" | "kb" | "code" | "shell" | "custom";
 
 export type McpServer = {
   id: string;
@@ -86,6 +86,17 @@ export const MCP_SERVERS: McpServer[] = [
     transport: "本机进程",
     cmd: "builtin://mcp-codesandbox",
     tools: 5,
+    enabled: true,
+  },
+  {
+    id: "mcp-bash",
+    name: "Git Bash",
+    kind: "shell",
+    builtin: true,
+    desc: "在当前会话目录里执行 Git Bash。只读命令直接跑；会改文件的命令需你确认；rm、下载执行和跳出目录会被拒绝。",
+    transport: "本机进程",
+    cmd: "builtin://mcp-bash",
+    tools: 2,
     enabled: true,
   },
   {

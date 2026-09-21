@@ -305,6 +305,25 @@ export function mcpCatalog() {
   return backendRequest<McpCatalog>("/api/mcps/catalog");
 }
 
+export interface BashPending {
+  id: string;
+  command: string;
+  cwd: string;
+  created_at: number;
+}
+
+export function listBashPending() {
+  return backendRequest<{ pending: BashPending[] }>("/api/bash/pending");
+}
+
+export function approveBash(id: string) {
+  return backendRequest<{ ok: boolean }>("/api/bash/approve", "POST", { id });
+}
+
+export function denyBash(id: string) {
+  return backendRequest<{ ok: boolean }>("/api/bash/deny", "POST", { id });
+}
+
 /** Resolve display model: primary → default → first enabled → first. */
 export function pickActiveModel(models: LlmModelRecord[]): LlmModelRecord | null {
   if (models.length === 0) return null;
