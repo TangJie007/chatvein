@@ -91,11 +91,9 @@ def chat(req: ChatRequest):
         prepared["workspace_dir"],
         conversation_id=prepared["id"],
     )
-    role_runtime = None
-    if req.role_id:
-        from roles.service import RolesService  # pyright: ignore[reportImplicitRelativeImport]
+    from roles.service import RolesService  # pyright: ignore[reportImplicitRelativeImport]
 
-        role_runtime = RolesService().get_runtime(req.role_id)
+    role_runtime = RolesService().resolve_for_chat(req.role_id)
     with use_conversation_sandbox(prepared["workspace_dir"]):
         result = run_chat(req.message, history=history, role=role_runtime)
     reply = str(result.get("reply") or "")

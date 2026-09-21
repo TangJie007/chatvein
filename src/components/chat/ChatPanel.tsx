@@ -1,9 +1,8 @@
-import { PanelRight, SendHorizontal } from "lucide-react";
-import { useState } from "react";
-import { Button } from "../ui/button";
+import { PanelRight } from "lucide-react";
 import { Badge } from "../ui/badge";
 import { ScrollArea } from "../ui/scroll-area";
 import { cn } from "../../lib/cn";
+import { Composer } from "./Composer";
 import type { SessionItem } from "./SessionList";
 import {
   InsightPanel,
@@ -24,7 +23,11 @@ type ChatPanelProps = {
   onToggleInsight: () => void;
   onSend?: (text: string) => void;
   onOpenWorkspace?: () => void;
+  roleName?: string;
   modelName?: string;
+  modelId?: string;
+  contextPct?: number;
+  contextTitle?: string;
   sending?: boolean;
   error?: string | null;
   workspaceDir?: string;
@@ -44,7 +47,11 @@ export function ChatPanel({
   onToggleInsight,
   onSend,
   onOpenWorkspace,
+  roleName,
   modelName = "主对话模型",
+  modelId = "",
+  contextPct = 0,
+  contextTitle = "上下文已用 0%",
   sending = false,
   error = null,
   workspaceDir,
@@ -52,8 +59,6 @@ export function ChatPanel({
   artifacts = [],
   meta,
 }: ChatPanelProps) {
-  const [draft, setDraft] = useState("");
-
   if (!session) {
     return (
       <section className="flex min-h-0 min-w-0 flex-1 items-center justify-center bg-surface">
@@ -62,15 +67,8 @@ export function ChatPanel({
     );
   }
 
-  const submit = () => {
-    const text = draft.trim();
-    if (!text || sending) return;
-    onSend?.(text);
-    setDraft("");
-  };
-
   const subtitleParts = [
-    `使用 ${modelName}`,
+    roleName ?? null,
     workspaceDir ? `工作区 ${workspaceDir}` : null,
     meta?.difficulty ? `难度 ${meta.difficulty}` : null,
   ].filter(Boolean);
@@ -150,37 +148,14 @@ export function ChatPanel({
           </div>
         </ScrollArea>
 
-        <footer className="px-6 pb-5 pt-2">
-          <div className="mx-auto flex max-w-[760px] items-end gap-2 rounded-2xl bg-tint/80 p-2 shadow-soft focus-within:bg-surface">
-            <textarea
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) {
-                  e.preventDefault();
-                  submit();
-                }
-              }}
-              rows={1}
-              disabled={sending}
-              placeholder={
-                sending
-                  ? "Agent 处理中…"
-                  : "输入消息，Enter 发送，Shift+Enter 换行"
-              }
-              className="max-h-[212px] min-h-8 flex-1 resize-none bg-transparent px-2 py-1.5 text-[13.5px] leading-5 text-ink-900 placeholder:text-ink-400 focus:outline-none disabled:opacity-60"
-            />
-            <Button
-              variant="primary"
-              size="icon"
-              onClick={submit}
-              disabled={!draft.trim() || sending}
-              aria-label="发送"
-            >
-              <SendHorizontal className="size-4" strokeWidth={1.75} />
-            </Button>
-          </div>
-        </footer>
+        <Composer
+          modelName={modelName}
+          modelId={modelId}
+          contextPct={contextPct}
+          contextTitle={contextTitle}
+          sending={sending}
+          onSend={(text) => onSend?.(text)}
+        />
       </div>
       {insightOpen ? (
         <InsightPanel

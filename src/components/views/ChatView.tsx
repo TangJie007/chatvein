@@ -7,11 +7,16 @@ import {
   getConversation,
   getConversationWorkspace,
   listConversations,
+  listModels,
+  listRoles,
   openConversationWorkspace,
+  pickActiveModel,
   sendChat,
   type ConversationRecord,
   type ConversationWorkspace,
   type ChatMessageRecord,
+  type LlmModelRecord,
+  type RoleRecord,
 } from "../../api";
 import { ChatPanel, type ChatMessage } from "../chat/ChatPanel";
 import type { InsightArtifact, InsightThreadItem } from "../chat/InsightPanel";
@@ -59,6 +64,21 @@ function artifactMeta(size: number): string {
   return `${(size / 1024 / 1024).toFixed(1).replace(/\.0$/, "")} MB`;
 }
 
+function estimateTokens(text: string): number {
+  let tokens = 0;
+  for (const ch of text) {
+    const code = ch.codePointAt(0) ?? 0;
+    tokens += code > 0xff ? 1 : 0.25;
+  }
+  return Math.ceil(tokens);
+}
+
+function formatTokenCount(tokens: number): string {
+  if (tokens < 1000) return String(tokens);
+  const k = tokens / 1000;
+  return `${k >= 10 ? Math.round(k) : k.toFixed(1).replace(/\.0$/, "")}K`;
+}
+
 function toChatMessages(rows: ChatMessageRecord[]): ChatMessage[] {
   return rows.map((m) => ({
     id: String(m.id),
@@ -86,6 +106,9 @@ export function ChatView({
   const [workspace, setWorkspace] = useState<ConversationWorkspace | null>(null);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [roles, setRoles] = useState<RoleRecord[]>([]);
+  const [models, setModels] = useState<LlmModelRecord[]>([]);
+  const [roleId, setRoleId] = useState<string | null>(null);
   const [metaById, setMetaById] = useState<
     Record<
       string,
@@ -116,6 +139,26 @@ export function ChatView({
     } catch {
       setWorkspace(null);
     }
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    void Promise.all([listRoles(), listModels()])
+      .then(([roleRows, modelRows]) => {
+        if (cancelled) return;
+        setRoles(roleRows);
+        setModels(modelRows);
+        setRoleId((prev) => {
+          if (prev && roleRows.some((role) => role.id === prev)) return prev;
+          return roleRows.find((role) => role.primary)?.id ?? roleRows[0]?.id ?? null;
+        });
+      })
+      .catch(() => {
+        /* backend may still be starting */
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -198,6 +241,16 @@ export function ChatView({
 
   const session = sessions.find((s) => s.id === activeId) ?? null;
   const lastMeta = (activeId && metaById[activeId]) || {};
+  const activeRole = roles.find((role) => role.id === roleId) ?? roles.find((role) => role.primary) ?? null;
+  const boundModel = activeRole?.model_id
+    ? models.find((model) => model.id === activeRole.model_id) ?? null
+    : null;
+  const displayModel = boundModel ?? pickActiveModel(models);
+  const resolvedModelName = displayModel?.name ?? modelName ?? "主对话模型";
+  const contextTotal = Math.max(1, (displayModel?.context_window_k ?? 128) * 1000);
+  const contextUsed = messages.reduce((sum, message) => sum + estimateTokens(message.content), 0);
+  const contextPct = Math.min(100, Math.round((contextUsed / contextTotal) * 100));
+  const contextTitle = `上下文已用 ${contextPct}% · ${formatTokenCount(contextUsed)} / ${formatTokenCount(contextTotal)} tokens`;
 
   const insightThread = useMemo<InsightThreadItem[]>(() => {
     const steps: Extract<InsightThreadItem, { role: "trace" }>["trace"]["steps"] = [];
@@ -241,7 +294,7 @@ export function ChatView({
     const optimisticId = crypto.randomUUID();
     setMessages((prev) => [...prev, { id: optimisticId, role: "user", content: text }]);
     try {
-      const result = await sendChat(text, activeId);
+      const result = await sendChat(text, activeId, roleId);
       setActiveId(result.conversation_id);
       setMetaById((prev) => ({
         ...prev,
@@ -278,7 +331,11 @@ export function ChatView({
           messages={messages}
           insightOpen={insightOpen}
           onToggleInsight={() => setInsightOpen((v) => !v)}
-          modelName={modelName}
+          modelName={resolvedModelName}
+          modelId={displayModel?.model_id ?? ""}
+          roleName={activeRole?.name}
+          contextPct={contextPct}
+          contextTitle={contextTitle}
           sending={sending}
           error={error}
           meta={lastMeta}

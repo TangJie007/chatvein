@@ -172,6 +172,21 @@ class RolesService:
 
     # ---- 聊天运行时 ----
 
+    def resolve_for_chat(self, role_id: str | None) -> dict[str, Any] | None:
+        """聊天默认用主对话角色；显式传入且存在的 id 优先。"""
+        wanted = (role_id or "").strip()
+        if wanted:
+            runtime = self.get_runtime(wanted)
+            if runtime is not None:
+                return runtime
+        rows = self._repo.find_all()
+        chosen = next((row for row in rows if row.primary), None)
+        if chosen is None and rows:
+            chosen = rows[0]
+        if chosen is None:
+            return None
+        return self.get_runtime(chosen.id)
+
     def get_runtime(self, role_id: str) -> dict[str, Any] | None:
         """供 ``/api/chat`` 使用：角色解析后的模型与生成参数。"""
         entity = self._repo.find_by_id(role_id)
