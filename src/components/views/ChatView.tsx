@@ -299,7 +299,12 @@ export function ChatView({
     setSending(true);
     setError(null);
     const optimisticId = crypto.randomUUID();
-    setMessages((prev) => [...prev, { id: optimisticId, role: "user", content: text }]);
+    const pendingId = crypto.randomUUID();
+    setMessages((prev) => [
+      ...prev,
+      { id: optimisticId, role: "user", content: text },
+      { id: pendingId, role: "agent", content: "", streaming: true },
+    ]);
     try {
       const result = await sendChat(text, activeId, roleId);
       setActiveId(result.conversation_id);
@@ -317,7 +322,7 @@ export function ChatView({
       await refreshList();
       await loadConversation(result.conversation_id);
     } catch (err) {
-      setMessages((prev) => prev.filter((m) => m.id !== optimisticId));
+      setMessages((prev) => prev.filter((m) => m.id !== optimisticId && m.id !== pendingId));
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setSending(false);

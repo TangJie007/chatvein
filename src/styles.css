@@ -1,4 +1,7 @@
 @import "tailwindcss";
+@source "../node_modules/streamdown/dist/*.js";
+@source "../node_modules/@streamdown/code/dist/*.js";
+@source "../node_modules/@streamdown/cjk/dist/*.js";
 
 @theme {
   /* ---- 中性色：冷灰蓝 H≈212 ---- */
@@ -48,6 +51,15 @@
   --shadow-lift: 0 2px 4px rgba(16, 24, 40, 0.05), 0 12px 32px rgba(16, 24, 40, 0.1);
 
   --font-sans: "PingFang SC", "Microsoft YaHei UI", "Segoe UI", system-ui, sans-serif;
+
+  /* Streamdown 沿用 shadcn 色名，映射到本应用色板 */
+  --color-background: #ffffff;
+  --color-foreground: #1b2430;
+  --color-border: #d5dee8;
+  --color-muted: #e8f0f8;
+  --color-muted-foreground: #64748b;
+  --color-sidebar: #f7fafd;
+  --color-primary: #2e7fe6;
 
   --animate-view: view-in 0.18s ease-out;
   --animate-sheet-in: sheet-in 0.22s ease-out;
@@ -110,6 +122,45 @@
     animation-duration: 0.001ms !important;
     transition-duration: 0.001ms !important;
   }
+}
+
+/* 对话气泡里的 Markdown：压过 Streamdown 默认的大标题间距 */
+.chat-md h1,
+.chat-md h2,
+.chat-md h3,
+.chat-md h4,
+.chat-md h5,
+.chat-md h6 {
+  margin-top: 0.65rem;
+  margin-bottom: 0.25rem;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.chat-md p,
+.chat-md ul,
+.chat-md ol,
+.chat-md blockquote,
+.chat-md pre {
+  margin-top: 0.35rem;
+  margin-bottom: 0.35rem;
+}
+
+.chat-md ul {
+  list-style: disc;
+  padding-inline-start: 1.25rem;
+}
+
+.chat-md ol {
+  list-style: decimal;
+  padding-inline-start: 1.25rem;
+}
+
+.chat-md :not(pre) > code {
+  border-radius: 0.25rem;
+  background: #dce8f4;
+  padding: 0.05rem 0.3rem;
+  font-size: 12.5px;
 }
 
 html,

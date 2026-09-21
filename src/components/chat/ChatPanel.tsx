@@ -4,6 +4,7 @@ import { Badge } from "../ui/badge";
 import { ScrollArea } from "../ui/scroll-area";
 import { cn } from "../../lib/cn";
 import { Composer } from "./Composer";
+import { MarkdownMessage } from "./MarkdownMessage";
 import type { SessionItem } from "./SessionList";
 import {
   InsightPanel,
@@ -16,6 +17,8 @@ export type ChatMessage = {
   role: "user" | "agent" | "system";
   content: string;
   turnId?: string | null;
+  /** 助手回复仍在追加 token 时为 true，用于未闭合 Markdown。 */
+  streaming?: boolean;
 };
 
 type ChatPanelProps = {
@@ -179,7 +182,9 @@ export function ChatPanel({
                           : undefined
                       }
                       className={cn(
-                        "max-w-[78%] rounded-2xl px-3.5 py-2.5 text-[13.5px] leading-6 whitespace-pre-wrap",
+                        "max-w-[78%] rounded-2xl px-3.5 py-2.5 text-[13.5px] leading-6",
+                        !isAgent && "whitespace-pre-wrap",
+                        isAgent && "min-w-0 max-w-[min(92%,720px)]",
                         isUser
                           ? "bg-brand-600 text-white shadow-soft"
                           : isSystem
@@ -191,7 +196,11 @@ export function ChatPanel({
                           : canInspect && "hover:ring-1 hover:ring-brand-300"
                       )}
                     >
-                      {m.content}
+                      {isAgent ? (
+                        <MarkdownMessage content={m.content} streaming={m.streaming} />
+                      ) : (
+                        m.content
+                      )}
                     </div>
                   </div>
                 );
