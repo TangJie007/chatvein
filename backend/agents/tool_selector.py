@@ -37,11 +37,13 @@ def select_tools(message: str) -> dict[str, Any]:
         }
 
     try:
-        plan = model.with_structured_output(ToolPlan).invoke(
+        plan = llm_mod.invoke_structured(
+            model,
+            ToolPlan,
             [
                 SystemMessage(content=f"{_SYSTEM}\n\n可用工具:\n{catalog}"),
                 HumanMessage(content=text or "(空)"),
-            ]
+            ],
         )
         if not isinstance(plan, ToolPlan):
             plan = ToolPlan.model_validate(plan)

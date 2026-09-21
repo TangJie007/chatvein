@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from langchain_core.messages import SystemMessage
 from langchain_openai import ChatOpenAI
 from pydantic import SecretStr
 
@@ -61,3 +62,55 @@ def get_chat_model(
     if cfg.base_url:
         kwargs["base_url"] = cfg.base_url
     return ChatOpenAI(**kwargs)
+
+
+def invoke_structured(model: ChatOpenAI, schema: type, messages: list[Any]) -> Any:
+    """按结构化结果调用模型。
+
+    ``ChatOpenAI.with_structured_output`` 默认 ``method="json_schema"``，会发送
+    ``response_format.type=json_schema``。DeepSeek 等兼容接口只接受 ``json_object``
+    或工具调用，否则返回 400：``This response_format type is unavailable now``。
+    """
+    last: BaseException | None = None
+    for method in ("function_calling", "json_mode"):
+        payload = messages
+        if method == "json_mode":
+            payload = _with_json_hint(schema, messages)
+        try:
+            return model.with_structured_output(schema, method=method).invoke(payload)
+        except Exception as exc:
+            last = exc
+            if method == "json_mode" or not _structured_method_rejected(exc):
+                raise
+    if last is not None:
+        raise last
+    raise RuntimeError("结构化调用未执行")
+
+
+def _with_json_hint(schema: type, messages: list[Any]) -> list[Any]:
+    from langchain_core.output_parsers import PydanticOutputParser
+
+    hint = SystemMessage(
+        content=(
+            "请只输出 JSON。\n"
+            + PydanticOutputParser(pydantic_object=schema).get_format_instructions()
+        )
+    )
+    return [*messages, hint]
+
+
+def _structured_method_rejected(exc: BaseException) -> bool:
+    text = str(exc).lower()
+    markers = (
+        "response_format",
+        "json_schema",
+        "unavailable now",
+        "tool_choice",
+        "parallel_tool_calls",
+        "does not support tools",
+        "tools is not supported",
+        "function calling is not supported",
+        "invalid_request_error",
+        "error code: 400",
+    )
+    return any(marker in text for marker in markers)

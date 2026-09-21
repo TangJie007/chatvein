@@ -42,11 +42,13 @@ def understand(message: str) -> dict[str, Any]:
         return _offline(text)
 
     try:
-        decision = model.with_structured_output(UnderstandDecision).invoke(
+        decision = llm_mod.invoke_structured(
+            model,
+            UnderstandDecision,
             [
                 SystemMessage(content=_SYSTEM),
                 HumanMessage(content=text or "(空消息)"),
-            ]
+            ],
         )
         if not isinstance(decision, UnderstandDecision):
             decision = UnderstandDecision.model_validate(decision)
