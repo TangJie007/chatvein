@@ -1,4 +1,4 @@
-import { Search } from "lucide-react";
+import { Search, Trash2 } from "lucide-react";
 import { cn } from "../../lib/cn";
 
 export type SessionItem = {
@@ -26,6 +26,7 @@ type SessionListProps = {
   sessions: SessionItem[];
   activeId: string | null;
   onSelect: (id: string) => void;
+  onDelete?: (id: string) => void;
   query: string;
   onQueryChange: (q: string) => void;
 };
@@ -34,6 +35,7 @@ export function SessionList({
   sessions,
   activeId,
   onSelect,
+  onDelete,
   query,
   onQueryChange,
 }: SessionListProps) {
@@ -58,12 +60,19 @@ export function SessionList({
           sessions.map((s) => {
             const active = s.id === activeId;
             return (
-              <button
+              <div
                 key={s.id}
-                type="button"
+                role="button"
+                tabIndex={0}
                 onClick={() => onSelect(s.id)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    onSelect(s.id);
+                  }
+                }}
                 className={cn(
-                  "group mb-1 flex w-full min-w-0 items-start gap-3 rounded-2xl px-3 py-3 text-left transition-colors",
+                  "group mb-1 flex w-full min-w-0 cursor-pointer items-start gap-3 rounded-2xl px-3 py-3 text-left transition-colors",
                   "focus-visible:outline-2 focus-visible:outline-brand-600",
                   active ? "bg-surface shadow-soft" : "hover:bg-tint/60"
                 )}
@@ -77,13 +86,32 @@ export function SessionList({
                   {s.avatar}
                 </span>
                 <span className="min-w-0 flex-1">
-                  <span className="flex min-w-0 items-center gap-2">
+                  <span className="flex min-w-0 items-center gap-1.5">
                     <span className="min-w-0 flex-1 truncate text-[13.5px] font-medium text-ink-900">
                       {s.title}
                     </span>
+                    {onDelete ? (
+                      <button
+                        type="button"
+                        title="删除会话"
+                        aria-label={`删除会话 ${s.title}`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onDelete(s.id);
+                        }}
+                        className={cn(
+                          "flex size-6 shrink-0 items-center justify-center rounded-md text-ink-300",
+                          "opacity-0 transition-opacity hover:bg-danger-50 hover:text-danger-600",
+                          "group-hover:opacity-100 focus-visible:opacity-100",
+                          active && "opacity-100"
+                        )}
+                      >
+                        <Trash2 className="size-3.5" strokeWidth={1.75} />
+                      </button>
+                    ) : null}
                     <span
                       className={cn(
-                        "ml-auto shrink-0 rounded-full px-2 py-0.5 text-[10.5px] font-medium",
+                        "shrink-0 rounded-full px-2 py-0.5 text-[10.5px] font-medium",
                         CHIP[s.tagTone ?? "neutral"]
                       )}
                     >
@@ -110,7 +138,7 @@ export function SessionList({
                 {s.unread && !active ? (
                   <span className="mt-4 size-2 shrink-0 rounded-full bg-brand-500" />
                 ) : null}
-              </button>
+              </div>
             );
           })
         )}

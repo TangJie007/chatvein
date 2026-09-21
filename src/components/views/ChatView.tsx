@@ -4,6 +4,7 @@ import "dayjs/locale/zh-cn";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   createConversation,
+  deleteConversation,
   getConversation,
   getConversationWorkspace,
   listConversations,
@@ -332,12 +333,41 @@ export function ChatView({
     }
   };
 
+  const handleDelete = useCallback(
+    async (id: string) => {
+      const target = sessions.find((s) => s.id === id);
+      if (!window.confirm(`确定删除会话「${target?.title ?? ""}」？工作区文件也会一并清除。`)) {
+        return;
+      }
+      try {
+        await deleteConversation(id);
+        const rows = await refreshList();
+        if (activeId === id) {
+          const next = rows[0]?.id ?? null;
+          setActiveId(next);
+          if (!next) {
+            setMessages([]);
+            setWorkspace(null);
+            setSelectedTurnId(null);
+          }
+        }
+        setError(null);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : String(err));
+      }
+    },
+    [activeId, refreshList, sessions]
+  );
+
   return (
     <>
       <SessionList
         sessions={filtered}
         activeId={activeId}
         onSelect={setActiveId}
+        onDelete={(id) => {
+          void handleDelete(id);
+        }}
         query={query}
         onQueryChange={setQuery}
       />
