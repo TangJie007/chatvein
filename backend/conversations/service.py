@@ -1,5 +1,18 @@
 """会话业务逻辑。"""
 
+from __future__ import annotations
+
+from pathlib import Path
+from typing import Any
+
+from mcps.sandbox import (  # pyright: ignore[reportImplicitRelativeImport]
+    conversation_root,
+    init_conversation_layout,
+    output_dir,
+    session_db_path,
+)
+
+from . import session_store
 from .entity import ConversationRecord, CreateConversationDto, MessageRecord, Role
 from .repository import ConversationsRepository
 
@@ -63,3 +76,97 @@ class ConversationsService:
 
     def counts(self) -> dict[str, int]:
         return self._repo.counts()
+
+    def workspace_root_for(self, workspace_dir: str) -> Path:
+        return init_conversation_layout(conversation_root(workspace_dir))
+
+    def short_term_memory(
+        self,
+        workspace_dir: str,
+        *,
+        conversation_id: str | None = None,
+        limit: int = 24,
+    ) -> list[dict[str, Any]]:
+        """从会话 ``logs/session.sqlite`` 读取短期记忆；空则回落主库消息。"""
+        db = session_db_path(self.workspace_root_for(workspace_dir))
+        rows = session_store.list_messages(db, limit=limit)
+        if rows:
+            return rows
+        if not conversation_id:
+            return []
+        fallback = self._repo.list_messages(conversation_id, limit=limit)
+        return [
+            {
+                "id": int(m["id"]),
+                "role": m["role"],
+                "content": m["content"],
+                "route": m.get("route"),
+                "used_llm": bool(m.get("used_llm")),
+                "created_at": m.get("created_at") or "",
+            }
+            for m in fallback
+        ]
+
+    def record_turn(
+        self,
+        workspace_dir: str,
+        *,
+        user_text: str,
+        reply_text: str,
+        route: str | None = None,
+        used_llm: bool = False,
+        tool_trace: list[dict[str, Any]] | None = None,
+    ) -> None:
+        """写入会话库：消息 + 本轮工具轨迹。"""
+        root = self.workspace_root_for(workspace_dir)
+        db = session_db_path(root)
+        session_store.append_message(db, "user", user_text, route=route)
+        turn_id = session_store.append_message(
+            db,
+            "assistant",
+            reply_text,
+            route=route,
+            used_llm=used_llm,
+        )
+        for item in tool_trace or []:
+            session_store.append_tool_call(
+                db,
+                tool_name=str(item.get("tool_name") or "unknown"),
+                result_text=str(item.get("result_text") or ""),
+                arguments=item.get("arguments"),
+                tool_call_id=item.get("tool_call_id"),
+                turn_id=turn_id,
+                status=str(item.get("status") or "ok"),
+            )
+
+    def workspace_insight(self, conversation_id: str) -> dict[str, Any] | None:
+        """工作区路径、产物、最近工具调用（给洞察面板）。"""
+        conversation = self._repo.get(conversation_id)
+        if conversation is None:
+            return None
+        name = (conversation.get("workspace_dir") or "").strip()
+        if not name:
+            return {
+                "conversation_id": conversation_id,
+                "workspace_dir": "",
+                "paths": {},
+                "artifacts": [],
+                "tool_calls": [],
+                "memory_count": 0,
+            }
+        root = self.workspace_root_for(name)
+        db = session_db_path(root)
+        return {
+            "conversation_id": conversation_id,
+            "workspace_dir": name,
+            "paths": {
+                "root": str(root),
+                "output": str(output_dir(root)),
+                "logs": str(root / "logs"),
+                "runs": str(root / "runs"),
+                "session_db": str(db),
+            },
+            "artifacts": session_store.list_artifacts(output_dir(root)),
+            "tool_calls": session_store.list_tool_calls(db, limit=30),
+            "memory_count": len(session_store.list_messages(db, limit=200)),
+        }

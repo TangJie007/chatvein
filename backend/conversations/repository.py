@@ -13,6 +13,7 @@ from db import iso, session_scope, utc_now  # pyright: ignore[reportImplicitRela
 from mcps.sandbox import (  # pyright: ignore[reportImplicitRelativeImport]
     conversation_root,
     create_conversation_dir,
+    init_conversation_layout,
     remove_conversation_dir,
 )
 
@@ -65,11 +66,11 @@ def _derive_title(value: str) -> str:
 
 
 def _ensure_workspace(conversation: Conversation) -> None:
-    """保证会话目录已分配且仍在主空间里。旧数据或非法名称会重新分配。"""
+    """保证会话目录已分配、布局齐全。旧数据或非法名称会重新分配。"""
     name = (conversation.workspace_dir or "").strip()
     if name:
         try:
-            conversation_root(name).mkdir(parents=True, exist_ok=True)
+            init_conversation_layout(conversation_root(name))
             return
         except ValueError:
             pass

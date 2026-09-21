@@ -1,64 +1,203 @@
-import { useMemo, useState } from "react";
+import dayjs from "dayjs";
+import relativeTime from "dayjs/plugin/relativeTime";
+import "dayjs/locale/zh-cn";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  createConversation,
+  getConversation,
+  getConversationWorkspace,
+  listConversations,
+  sendChat,
+  type ConversationRecord,
+  type ConversationWorkspace,
+  type ChatMessageRecord,
+} from "../../api";
 import { ChatPanel, type ChatMessage } from "../chat/ChatPanel";
 import { InsightPanel } from "../chat/InsightPanel";
 import { SessionList, type SessionItem } from "../chat/SessionList";
 
-const PLACEHOLDER_SESSIONS: SessionItem[] = [
-  {
-    id: "s1",
-    title: "欢迎使用 ChatVein",
-    preview: "三栏布局架子已就绪，后续接入会话 API。",
-    time: "刚刚",
-    avatar: "C",
-    colorClass: "bg-brand-600",
-    tagLabel: "空闲",
-    tagTone: "ok",
-  },
-  {
-    id: "s2",
-    title: "示例任务",
-    preview: "演示会话列表与消息气泡样式。",
-    time: "昨天",
-    avatar: "示",
-    colorClass: "bg-violet-400",
-    tagLabel: "完成",
-    tagTone: "neutral",
-    unread: true,
-  },
+dayjs.extend(relativeTime);
+dayjs.locale("zh-cn");
+
+const AVATAR_COLORS = [
+  "bg-brand-600",
+  "bg-violet-400",
+  "bg-sky-500",
+  "bg-emerald-500",
+  "bg-amber-500",
 ];
 
-export function ChatView({ modelName }: { modelName?: string }) {
-  const [activeId, setActiveId] = useState<string | null>(PLACEHOLDER_SESSIONS[0].id);
+function toSessionItem(c: ConversationRecord): SessionItem {
+  const title = c.title.trim() || "新会话";
+  const idx =
+    Math.abs(
+      [...c.id].reduce((acc, ch) => acc + ch.charCodeAt(0), 0)
+    ) % AVATAR_COLORS.length;
+  return {
+    id: c.id,
+    title,
+    preview: c.last_message?.trim() || c.workspace_dir || "尚无消息",
+    time: c.updated_at ? dayjs(c.updated_at).fromNow() : "",
+    avatar: title.slice(0, 1).toUpperCase(),
+    colorClass: AVATAR_COLORS[idx] ?? "bg-brand-600",
+    tagLabel: c.message_count > 0 ? "进行中" : "空闲",
+    tagTone: c.message_count > 0 ? "brand" : "ok",
+  };
+}
+
+function toChatMessages(rows: ChatMessageRecord[]): ChatMessage[] {
+  return rows.map((m) => ({
+    id: String(m.id),
+    role: m.role === "assistant" ? "agent" : m.role === "system" ? "system" : "user",
+    content: m.content,
+  }));
+}
+
+type ChatViewProps = {
+  modelName?: string;
+  newRequestId?: number;
+  onConversationCount?: (n: number) => void;
+};
+
+export function ChatView({
+  modelName,
+  newRequestId = 0,
+  onConversationCount,
+}: ChatViewProps) {
+  const [sessions, setSessions] = useState<SessionItem[]>([]);
+  const [activeId, setActiveId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [insightOpen, setInsightOpen] = useState(true);
-  const [messagesById, setMessagesById] = useState<Record<string, ChatMessage[]>>({
-    s1: [
-      {
-        id: "m1",
-        role: "agent",
-        content:
-          "UI 架子已搭好：侧栏导航、会话列表、聊天区与执行洞察。交互控件基于 Radix 无头组件。",
-      },
-    ],
-    s2: [],
-  });
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [workspace, setWorkspace] = useState<ConversationWorkspace | null>(null);
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [lastMeta, setLastMeta] = useState<{
+    difficulty?: string;
+    selectedTools?: string[];
+    routeReason?: string;
+  }>({});
 
-  const sessions = useMemo(() => {
+  const refreshList = useCallback(async () => {
+    const rows = await listConversations(80);
+    setSessions(rows.map(toSessionItem));
+    onConversationCount?.(rows.length);
+    return rows;
+  }, [onConversationCount]);
+
+  const loadConversation = useCallback(async (id: string) => {
+    const data = await getConversation(id);
+    setMessages(toChatMessages(data.messages));
+    try {
+      setWorkspace(await getConversationWorkspace(id));
+    } catch {
+      setWorkspace(null);
+    }
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const rows = await refreshList();
+        if (cancelled) return;
+        if (rows.length > 0) {
+          const first = rows[0]!.id;
+          setActiveId((prev) => prev ?? first);
+        }
+      } catch {
+        /* backend may still be starting */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [refreshList]);
+
+  useEffect(() => {
+    if (!activeId) {
+      setMessages([]);
+      setWorkspace(null);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        await loadConversation(activeId);
+      } catch (err) {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : String(err));
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeId, loadConversation]);
+
+  useEffect(() => {
+    if (!newRequestId) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const created = await createConversation("");
+        if (cancelled) return;
+        await refreshList();
+        setActiveId(created.id);
+        setMessages([]);
+        setLastMeta({});
+        setError(null);
+      } catch (err) {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : String(err));
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [newRequestId, refreshList]);
+
+  const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return PLACEHOLDER_SESSIONS;
-    return PLACEHOLDER_SESSIONS.filter(
+    if (!q) return sessions;
+    return sessions.filter(
       (s) =>
         s.title.toLowerCase().includes(q) || s.preview.toLowerCase().includes(q)
     );
-  }, [query]);
+  }, [query, sessions]);
 
-  const session = PLACEHOLDER_SESSIONS.find((s) => s.id === activeId) ?? null;
-  const messages = (activeId && messagesById[activeId]) || [];
+  const session = sessions.find((s) => s.id === activeId) ?? null;
+
+  const handleSend = async (text: string) => {
+    if (sending) return;
+    setSending(true);
+    setError(null);
+    const optimisticId = crypto.randomUUID();
+    setMessages((prev) => [...prev, { id: optimisticId, role: "user", content: text }]);
+    try {
+      const result = await sendChat(text, activeId);
+      setActiveId(result.conversation_id);
+      setLastMeta({
+        difficulty: result.difficulty,
+        selectedTools: result.selected_tools,
+        routeReason: result.route_reason,
+      });
+      if (result.workspace) setWorkspace(result.workspace);
+      await refreshList();
+      await loadConversation(result.conversation_id);
+    } catch (err) {
+      setMessages((prev) => prev.filter((m) => m.id !== optimisticId));
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSending(false);
+    }
+  };
 
   return (
     <>
       <SessionList
-        sessions={sessions}
+        sessions={filtered}
         activeId={activeId}
         onSelect={setActiveId}
         query={query}
@@ -71,18 +210,15 @@ export function ChatView({ modelName }: { modelName?: string }) {
           insightOpen={insightOpen}
           onToggleInsight={() => setInsightOpen((v) => !v)}
           modelName={modelName}
+          sending={sending}
+          error={error}
+          meta={lastMeta}
+          workspaceDir={workspace?.workspace_dir}
           onSend={(text) => {
-            if (!activeId) return;
-            setMessagesById((prev) => ({
-              ...prev,
-              [activeId]: [
-                ...(prev[activeId] ?? []),
-                { id: crypto.randomUUID(), role: "user", content: text },
-              ],
-            }));
+            void handleSend(text);
           }}
         />
-        <InsightPanel open={insightOpen} />
+        <InsightPanel open={insightOpen} workspace={workspace} meta={lastMeta} />
       </div>
     </>
   );

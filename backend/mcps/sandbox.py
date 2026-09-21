@@ -1,6 +1,8 @@
-"""会话代码沙箱：主空间下的「时间戳-随机5字符」目录。
+"""会话工作区：时间戳-随机5字符目录，内含 output / logs / runs。
 
-用户创建对话时分配该目录，之后写代码、建虚拟环境、执行 Python 都只落在这里。
+- ``output/``：Agent 产物（用户需要的文件）
+- ``logs/session.sqlite``：本会话管理、工具返回、短期记忆
+- ``runs/``：代码沙箱虚拟环境与执行脚本（与产物隔离）
 """
 
 from __future__ import annotations
@@ -21,6 +23,12 @@ from mcps.workspace import workspace_root  # pyright: ignore[reportImplicitRelat
 _NAME = re.compile(r"^\d{8}-\d{6}-[a-z0-9]{5}$")
 _ALPHABET = string.ascii_lowercase + string.digits
 _current: ContextVar[Path | None] = ContextVar("chatvein_codesandbox", default=None)
+
+OUTPUT_DIR = "output"
+LOGS_DIR = "logs"
+RUNS_DIR = "runs"
+SESSION_DB_NAME = "session.sqlite"
+LAYOUT_DIRS = (OUTPUT_DIR, LOGS_DIR, RUNS_DIR)
 
 
 def allocate_workspace_name(now: datetime | None = None) -> str:
@@ -44,8 +52,45 @@ def conversation_root(name: str) -> Path:
     return target
 
 
+def init_conversation_layout(root: Path) -> Path:
+    """确保 ``output/`` ``logs/`` ``runs/`` 与 ``logs/session.sqlite`` 存在。"""
+    root.mkdir(parents=True, exist_ok=True)
+    for name in LAYOUT_DIRS:
+        (root / name).mkdir(parents=True, exist_ok=True)
+    # 延迟导入，避免与 conversations 包循环依赖
+    from conversations.session_store import ensure_session_db  # pyright: ignore[reportImplicitRelativeImport]
+
+    ensure_session_db(session_db_path(root))
+    return root
+
+
+def output_dir(root: Path | None = None) -> Path:
+    base = root if root is not None else current_sandbox()
+    path = base / OUTPUT_DIR
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def logs_dir(root: Path | None = None) -> Path:
+    base = root if root is not None else current_sandbox()
+    path = base / LOGS_DIR
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def runs_dir(root: Path | None = None) -> Path:
+    base = root if root is not None else current_sandbox()
+    path = base / RUNS_DIR
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def session_db_path(root: Path | None = None) -> Path:
+    return logs_dir(root) / SESSION_DB_NAME
+
+
 def create_conversation_dir() -> str:
-    """在主空间新建会话目录，返回目录名。"""
+    """在主空间新建会话目录并初始化布局，返回目录名。"""
     root = workspace_root()
     root.mkdir(parents=True, exist_ok=True)
     for _ in range(8):
@@ -55,6 +100,7 @@ def create_conversation_dir() -> str:
             path.mkdir(parents=False, exist_ok=False)
         except FileExistsError:
             continue
+        init_conversation_layout(path)
         return name
     raise RuntimeError("无法分配会话工作区")
 
@@ -71,17 +117,18 @@ def remove_conversation_dir(name: str) -> None:
         shutil.rmtree(path, ignore_errors=True)
 
 
-def venv_python(root: Path) -> Path:
+def venv_python(root: Path | None = None) -> Path:
+    """会话沙箱解释器：始终在 ``runs/.venv`` 下。"""
+    runs = runs_dir(root)
     if os.name == "nt":
-        return root / ".venv" / "Scripts" / "python.exe"
-    return root / ".venv" / "bin" / "python"
+        return runs / ".venv" / "Scripts" / "python.exe"
+    return runs / ".venv" / "bin" / "python"
 
 
 @contextmanager
 def use_conversation_sandbox(name: str) -> Iterator[Path]:
-    """把后续代码沙箱工具绑定到这个会话目录。"""
-    root = conversation_root(name)
-    root.mkdir(parents=True, exist_ok=True)
+    """把后续代码沙箱工具绑定到这个会话目录（含布局补齐）。"""
+    root = init_conversation_layout(conversation_root(name))
     token = _current.set(root)
     try:
         yield root
@@ -110,4 +157,27 @@ def resolve_in_sandbox(rel_path: str) -> Path:
         target.relative_to(root)
     except ValueError as exc:
         raise ValueError(f"路径越界会话工作区: {rel_path}") from exc
+    return target
+
+
+def resolve_in_runs(rel_path: str) -> Path:
+    """相对路径解析到 ``runs/`` 内（代码沙箱专用）。"""
+    runs = runs_dir()
+    text = (rel_path or "").strip()
+    if not text or text == ".":
+        raise ValueError("请给出 runs/ 内的相对路径")
+    candidate = Path(text)
+    if candidate.is_absolute():
+        raise ValueError(f"请使用相对路径: {rel_path}")
+    # 允许调用方写 ``runs/foo.py`` 或 ``foo.py``
+    parts = candidate.parts
+    if parts and parts[0] == RUNS_DIR:
+        candidate = Path(*parts[1:]) if len(parts) > 1 else Path(".")
+        if str(candidate) == ".":
+            raise ValueError("请给出 runs/ 内的相对路径")
+    target = (runs / candidate).resolve()
+    try:
+        target.relative_to(runs)
+    except ValueError as exc:
+        raise ValueError(f"路径越界 runs/: {rel_path}") from exc
     return target

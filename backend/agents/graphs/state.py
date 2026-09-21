@@ -16,5 +16,6 @@ class ChatState(TypedDict, total=False):
     tool_plan_reason: str
     reply: str
     used_llm: bool
-    # 透传调试 / 兼容字段
+    history: list[dict[str, Any]]
+    tool_trace: list[dict[str, Any]]
     extras: dict[str, Any]

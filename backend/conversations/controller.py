@@ -45,3 +45,11 @@ def delete_conversation(conversation_id: str):
 @conversations_controller.get("/{conversation_id}/messages")
 def list_messages(conversation_id: str):
     return {"messages": _service.list_messages(conversation_id)}
+
+
+@conversations_controller.get("/{conversation_id}/workspace")
+def conversation_workspace(conversation_id: str):
+    insight = _service.workspace_insight(conversation_id)
+    if insight is None:
+        raise HTTPException(status_code=404, detail="会话不存在")
+    return insight

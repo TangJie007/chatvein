@@ -46,7 +46,7 @@ def _child_env(root: Path) -> dict[str, str]:
     python = venv_python(root)
     if python.is_file():
         env["PATH"] = str(python.parent) + os.pathsep + env.get("PATH", "")
-        env["VIRTUAL_ENV"] = str((root / ".venv").resolve())
+        env["VIRTUAL_ENV"] = str(python.parent.parent.resolve())
         env["PYTHONNOUSERSITE"] = "1"
     env["PYTHONIOENCODING"] = "utf-8"
     return env

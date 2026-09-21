@@ -24,6 +24,14 @@ type ChatPanelProps = {
   onToggleInsight: () => void;
   onSend?: (text: string) => void;
   modelName?: string;
+  sending?: boolean;
+  error?: string | null;
+  workspaceDir?: string;
+  meta?: {
+    difficulty?: string;
+    selectedTools?: string[];
+    routeReason?: string;
+  };
 };
 
 export function ChatPanel({
@@ -33,6 +41,10 @@ export function ChatPanel({
   onToggleInsight,
   onSend,
   modelName = "主对话模型",
+  sending = false,
+  error = null,
+  workspaceDir,
+  meta,
 }: ChatPanelProps) {
   const [draft, setDraft] = useState("");
 
@@ -46,10 +58,16 @@ export function ChatPanel({
 
   const submit = () => {
     const text = draft.trim();
-    if (!text) return;
+    if (!text || sending) return;
     onSend?.(text);
     setDraft("");
   };
+
+  const subtitleParts = [
+    `使用 ${modelName}`,
+    workspaceDir ? `工作区 ${workspaceDir}` : null,
+    meta?.difficulty ? `难度 ${meta.difficulty}` : null,
+  ].filter(Boolean);
 
   return (
     <section className="flex min-h-0 min-w-0 flex-1 flex-row bg-surface">
@@ -63,7 +81,7 @@ export function ChatPanel({
               <Badge tone={session.tagTone ?? "neutral"}>{session.tagLabel}</Badge>
             </div>
             <p className="mt-0.5 truncate text-[12px] text-ink-400">
-              使用 {modelName} · 后续接入真实会话元数据
+              {subtitleParts.join(" · ")}
             </p>
           </div>
           <Tooltip>
@@ -99,7 +117,7 @@ export function ChatPanel({
                 <div
                   key={m.id}
                   className={cn(
-                    "max-w-[85%] rounded-2xl px-3.5 py-2.5 text-[13.5px] leading-6",
+                    "max-w-[85%] rounded-2xl px-3.5 py-2.5 text-[13.5px] leading-6 whitespace-pre-wrap",
                     m.role === "user"
                       ? "ml-auto bg-brand-600 text-white shadow-soft"
                       : m.role === "system"
@@ -111,6 +129,11 @@ export function ChatPanel({
                 </div>
               ))
             )}
+            {error ? (
+              <p className="rounded-xl bg-red-50 px-3 py-2 text-[12.5px] text-red-700">
+                {error}
+              </p>
+            ) : null}
           </div>
         </ScrollArea>
 
@@ -126,14 +149,19 @@ export function ChatPanel({
                 }
               }}
               rows={1}
-              placeholder="输入消息，Enter 发送，Shift+Enter 换行"
-              className="max-h-[212px] min-h-8 flex-1 resize-none bg-transparent px-2 py-1.5 text-[13.5px] leading-5 text-ink-900 placeholder:text-ink-400 focus:outline-none"
+              disabled={sending}
+              placeholder={
+                sending
+                  ? "Agent 处理中…"
+                  : "输入消息，Enter 发送，Shift+Enter 换行"
+              }
+              className="max-h-[212px] min-h-8 flex-1 resize-none bg-transparent px-2 py-1.5 text-[13.5px] leading-5 text-ink-900 placeholder:text-ink-400 focus:outline-none disabled:opacity-60"
             />
             <Button
               variant="primary"
               size="icon"
               onClick={submit}
-              disabled={!draft.trim()}
+              disabled={!draft.trim() || sending}
               aria-label="发送"
             >
               <SendHorizontal className="size-4" strokeWidth={1.75} />

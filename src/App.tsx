@@ -23,6 +23,7 @@ export default function App() {
   });
   const [defaultModelName, setDefaultModelName] = useState<string | null>(null);
   const [addModelRequestId, setAddModelRequestId] = useState(0);
+  const [newChatRequestId, setNewChatRequestId] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -44,6 +45,8 @@ export default function App() {
   const handleNew = () => {
     if (view === "models") {
       setAddModelRequestId((n) => n + 1);
+    } else if (view === "chat") {
+      setNewChatRequestId((n) => n + 1);
     }
   };
 
@@ -66,7 +69,13 @@ export default function App() {
               className="animate-view flex min-h-0 min-w-0 flex-1 overflow-hidden rounded-lg bg-surface"
             >
               {view === "chat" && (
-                <ChatView modelName={defaultModelName ?? undefined} />
+                <ChatView
+                  modelName={defaultModelName ?? undefined}
+                  newRequestId={newChatRequestId}
+                  onConversationCount={(n) =>
+                    setCounts((c) => ({ ...c, chat: n }))
+                  }
+                />
               )}
               {view === "group" && <GroupView />}
               {view === "kb" && <KnowledgeView />}

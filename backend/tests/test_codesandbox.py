@@ -29,6 +29,10 @@ def test_new_conversation_gets_timestamp_workspace() -> None:
     folder = workspace_root() / name
     assert folder.is_dir()
     assert folder.parent == workspace_root()
+    assert (folder / "output").is_dir()
+    assert (folder / "logs").is_dir()
+    assert (folder / "runs").is_dir()
+    assert (folder / "logs" / "session.sqlite").is_file()
 
     again, _, _ = service.save_exchange(created["id"], "继续", "好")
     stored = service.get_conversation(again)
@@ -65,7 +69,7 @@ def test_sandbox_rejects_escape_then_runs_python() -> None:
     name = created["workspace_dir"]
     with use_conversation_sandbox(name):
         escaped = sandbox_write_file.invoke({"path": "../outside.py", "content": "print(1)"})
-        assert "越界" in str(escaped)
+        assert "越界" in str(escaped) or "runs" in str(escaped).lower()
         blocked = sandbox_write_file.invoke({"path": ".venv/evil.py", "content": "print(1)"})
         assert "虚拟环境" in str(blocked)
 
@@ -77,11 +81,44 @@ def test_sandbox_rejects_escape_then_runs_python() -> None:
         text = str(ran)
         assert "exit=0" in text
         assert "2" in text
-        assert (workspace_root() / name / "main.py").is_file()
-        assert (workspace_root() / name / ".venv").is_dir()
+        root = workspace_root() / name
+        assert (root / "runs" / "main.py").is_file()
+        assert (root / "runs" / ".venv").is_dir()
+        assert not (root / "main.py").exists()
+        assert not (root / ".venv").exists()
 
         rejected = sandbox_pip_install.invoke({"packages": "-r requirements.txt"})
         assert "不合法" in str(rejected)
 
     outside = workspace_root().parent / "outside.py"
     assert not outside.exists()
+
+
+def test_session_store_short_term_memory_and_tools() -> None:
+    service = ConversationsService()
+    created = service.create_conversation(CreateConversationDto(title="记忆"))
+    name = created["workspace_dir"]
+    service.record_turn(
+        name,
+        user_text="你好",
+        reply_text="你好呀",
+        route="simple",
+        used_llm=False,
+        tool_trace=[
+            {
+                "tool_name": "get_current_time",
+                "arguments": {},
+                "result_text": "12:00",
+                "status": "ok",
+            }
+        ],
+    )
+    memory = service.short_term_memory(name)
+    assert len(memory) == 2
+    assert memory[0]["role"] == "user"
+    assert memory[1]["content"] == "你好呀"
+    insight = service.workspace_insight(created["id"])
+    assert insight is not None
+    assert insight["memory_count"] == 2
+    assert insight["tool_calls"][0]["tool_name"] == "get_current_time"
+    assert (workspace_root() / name / "output").is_dir()

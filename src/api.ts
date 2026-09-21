@@ -156,6 +156,82 @@ export function dbBackup() {
   );
 }
 
+/** Create an empty conversation (allocates workspace_dir). */
+export function createConversation(title = "") {
+  return backendRequest<ConversationRecord>("/api/conversations/", "POST", {
+    title,
+  });
+}
+
+/** Run one chat turn against the agent pipeline. */
+export function sendChat(message: string, conversationId?: string | null) {
+  return backendRequest<{
+    reply: string;
+    from: string;
+    difficulty: string;
+    rewritten?: string;
+    route: string;
+    route_reason?: string;
+    tool_plan_reason?: string;
+    selected_tools: string[];
+    tool_trace: Array<{
+      tool_name: string;
+      tool_call_id?: string | null;
+      arguments?: unknown;
+      result_text?: string;
+      status?: string;
+    }>;
+    used_llm: boolean;
+    conversation_id: string;
+    user_message: ChatMessageRecord;
+    assistant_message: ChatMessageRecord;
+    workspace?: ConversationWorkspace;
+  }>("/api/chat", "POST", {
+    message,
+    conversation_id: conversationId ?? null,
+  });
+}
+
+export interface ConversationArtifact {
+  name: string;
+  path: string;
+  size_bytes: number;
+  modified_at: string;
+}
+
+export interface ConversationToolCall {
+  id: number;
+  turn_id: number | null;
+  tool_name: string;
+  tool_call_id: string | null;
+  arguments_json: string | null;
+  result_text: string;
+  status: string;
+  created_at: string;
+}
+
+export interface ConversationWorkspace {
+  conversation_id: string;
+  workspace_dir: string;
+  paths: {
+    root?: string;
+    output?: string;
+    logs?: string;
+    runs?: string;
+    session_db?: string;
+  };
+  artifacts: ConversationArtifact[];
+  tool_calls: ConversationToolCall[];
+  memory_count: number;
+}
+
+/** Per-conversation workspace insight (output / logs / runs). */
+export function getConversationWorkspace(conversationId: string) {
+  return backendRequest<ConversationWorkspace>(
+    `/api/conversations/${conversationId}/workspace`
+  );
+}
+
 /** Conversations, newest activity first. */
 export async function listConversations(limit = 50) {
   const data = await backendRequest<{ conversations: ConversationRecord[] }>(

@@ -93,7 +93,7 @@ def _child_env(root: Path, bash: Path) -> dict[str, str]:
     python = venv_python(root)
     if python.is_file():
         extra = str(python.parent) + (os.pathsep + extra if extra else "")
-        env["VIRTUAL_ENV"] = str((root / ".venv").resolve())
+        env["VIRTUAL_ENV"] = str(python.parent.parent.resolve())
         env["PYTHONNOUSERSITE"] = "1"
     if extra:
         env["PATH"] = extra + os.pathsep + env.get("PATH", "")

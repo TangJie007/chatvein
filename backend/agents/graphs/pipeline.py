@@ -11,16 +11,6 @@ from . import medium as medium_mod
 from . import simple as simple_mod
 from .state import ChatState
 
-_HARD_SYSTEM = (
-    "你是 ChatVein 助手，处理较复杂的本机任务。"
-    "先在内部理清步骤，再按需多次调用工具（文件 / 联网 / 知识库 / 只读 SQL / 代码沙箱 / "
-    "Bash 或 PowerShell / 浏览器），交叉核对后再用中文总结回答。不要编造工具结果；"
-    "写文件前确认路径在工作区内。"
-    "用 Python 解决问题时：在当前会话工作区创建虚拟环境，把代码写成 .py，执行，"
-    "阅读 stdout 和 stderr，失败就修改后再跑，不要在没有成功执行结果时声称已解决。"
-    "操作网页时先 snapshot 再按 ref 交互。"
-)
-
 DifficultyRoute = Literal["simple", "medium", "hard"]
 
 
@@ -45,12 +35,16 @@ def _route(state: ChatState) -> DifficultyRoute:
 
 
 def _simple_node(state: ChatState) -> dict[str, Any]:
-    reply, ran = simple_mod.run_simple(str(state.get("rewritten") or ""))
+    reply, ran = simple_mod.run_simple(
+        str(state.get("rewritten") or ""),
+        history=list(state.get("history") or []),
+    )
     return {
         "reply": reply,
         "used_llm": bool(state.get("used_llm") or ran),
         "selected_tools": [],
         "tool_plan_reason": None,
+        "tool_trace": [],
     }
 
 
@@ -58,6 +52,7 @@ def _medium_node(state: ChatState) -> dict[str, Any]:
     result = medium_mod.run_medium(
         str(state.get("rewritten") or ""),
         used_llm=bool(state.get("used_llm")),
+        history=list(state.get("history") or []),
         system_prompt=medium_mod.MEDIUM_SYSTEM,
         name="medium_react",
     )
@@ -66,15 +61,16 @@ def _medium_node(state: ChatState) -> dict[str, Any]:
         "selected_tools": result["selected_tools"],
         "tool_plan_reason": result.get("tool_plan_reason"),
         "used_llm": result["used_llm"],
+        "tool_trace": result.get("tool_trace") or [],
     }
 
 
 def _hard_node(state: ChatState) -> dict[str, Any]:
-    # hard 仍走选型 + ReAct，system 更强调多步核对（独立图名便于后续拆分）
     result = medium_mod.run_medium(
         str(state.get("rewritten") or ""),
         used_llm=bool(state.get("used_llm")),
-        system_prompt=_HARD_SYSTEM,
+        history=list(state.get("history") or []),
+        system_prompt=medium_mod.HARD_SYSTEM,
         name="hard_react",
     )
     return {
@@ -82,6 +78,7 @@ def _hard_node(state: ChatState) -> dict[str, Any]:
         "selected_tools": result["selected_tools"],
         "tool_plan_reason": result.get("tool_plan_reason"),
         "used_llm": result["used_llm"],
+        "tool_trace": result.get("tool_trace") or [],
     }
 
 
@@ -108,10 +105,19 @@ def build_pipeline():
     return graph.compile(name="chat_pipeline")
 
 
-def run_pipeline(message: str) -> dict[str, Any]:
+def run_pipeline(
+    message: str,
+    *,
+    history: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
     """入口：跑总图，返回 ``run_chat`` 所需字段。"""
     text = (message or "").strip()
-    out = build_pipeline().invoke({"message": text})
+    out = build_pipeline().invoke(
+        {
+            "message": text,
+            "history": list(history or []),
+        }
+    )
     difficulty = str(out.get("difficulty") or "simple")
     return {
         "reply": str(out.get("reply") or ""),
@@ -121,5 +127,6 @@ def run_pipeline(message: str) -> dict[str, Any]:
         "route_reason": out.get("route_reason"),
         "selected_tools": list(out.get("selected_tools") or []),
         "tool_plan_reason": out.get("tool_plan_reason"),
+        "tool_trace": list(out.get("tool_trace") or []),
         "used_llm": bool(out.get("used_llm")),
     }

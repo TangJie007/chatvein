@@ -4,14 +4,15 @@ from __future__ import annotations
 
 from typing import Any
 
-from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
 from langgraph.graph import END, START, MessagesState, StateGraph
 
 from .. import llm as llm_mod
+from ..memory import to_lc_messages
 
 from .common import last_text
 
-_SYSTEM = "你是 ChatVein 助手，用中文简洁回答。"
+_SYSTEM = "你是 ChatVein 助手，用中文简洁回答。可参考上文对话上下文。"
 
 
 def build_simple_graph(model: Any):
@@ -28,15 +29,19 @@ def build_simple_graph(model: Any):
     return graph.compile(name="simple_chat")
 
 
-def run_simple(text: str) -> tuple[str, bool]:
+def run_simple(
+    text: str,
+    *,
+    history: list[dict[str, Any]] | None = None,
+) -> tuple[str, bool]:
     """跑 simple 图；无主模型时离线回落。"""
     model = llm_mod.get_chat_model()
     if model is None:
         return (f"（离线）{text}" if text else "（离线）未配置 LLM。"), False
     try:
-        out = build_simple_graph(model).invoke(
-            {"messages": [HumanMessage(content=text or "你好")]}
-        )
+        prior = to_lc_messages(history)
+        messages: list[BaseMessage] = [*prior, HumanMessage(content=text or "你好")]
+        out = build_simple_graph(model).invoke({"messages": messages})
         reply = last_text(out.get("messages"))
         if reply:
             return reply, True

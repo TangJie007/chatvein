@@ -83,10 +83,15 @@ class ChatRequest(BaseModel):
 @app.post("/api/chat", tags=["chat"], summary="改写 + 难度路由 + 工具选择")
 def chat(req: ChatRequest):
     prepared = conversations_service.open_for_chat(req.conversation_id, req.message)
+    history = conversations_service.short_term_memory(
+        prepared["workspace_dir"],
+        conversation_id=prepared["id"],
+    )
     with use_conversation_sandbox(prepared["workspace_dir"]):
-        result = run_chat(req.message)
+        result = run_chat(req.message, history=history)
     reply = str(result.get("reply") or "")
     route = str(result.get("difficulty") or result.get("route") or "simple")
+    tool_trace = list(result.get("tool_trace") or [])
     conversation_id, user_msg, assistant_msg = conversations_service.save_exchange(
         prepared["id"],
         req.message,
@@ -94,6 +99,15 @@ def chat(req: ChatRequest):
         used_llm=bool(result.get("used_llm", False)),
         route=route,
     )
+    conversations_service.record_turn(
+        prepared["workspace_dir"],
+        user_text=req.message,
+        reply_text=reply,
+        route=route,
+        used_llm=bool(result.get("used_llm", False)),
+        tool_trace=tool_trace,
+    )
+    insight = conversations_service.workspace_insight(conversation_id)
     return {
         "reply": reply,
         "from": "agents",
@@ -103,10 +117,12 @@ def chat(req: ChatRequest):
         "route_reason": result.get("route_reason"),
         "tool_plan_reason": result.get("tool_plan_reason"),
         "selected_tools": list(result.get("selected_tools") or []),
+        "tool_trace": tool_trace,
         "used_llm": bool(result.get("used_llm", False)),
         "conversation_id": conversation_id,
         "user_message": user_msg,
         "assistant_message": assistant_msg,
+        "workspace": insight,
     }
 
 

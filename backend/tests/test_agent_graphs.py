@@ -18,7 +18,7 @@ def test_pipeline_routes_simple(monkeypatch) -> None:
     )
     monkeypatch.setattr(
         "agents.graphs.pipeline.simple_mod.run_simple",
-        lambda _text: ("你好呀", True),
+        lambda _text, **_kwargs: ("你好呀", True),
     )
     out = run_pipeline("hi")
     assert out["difficulty"] == "simple"
@@ -48,6 +48,7 @@ def test_pipeline_routes_medium_react(monkeypatch) -> None:
             "selected_tools": ["get_current_time"],
             "tool_plan_reason": "时间",
             "used_llm": True,
+            "tool_trace": [],
         }
 
     monkeypatch.setattr("agents.graphs.pipeline.medium_mod.run_medium", fake_medium)
@@ -77,6 +78,7 @@ def test_pipeline_hard_uses_hard_react_name(monkeypatch) -> None:
             "selected_tools": ["sandbox_run_python"],
             "tool_plan_reason": "沙箱",
             "used_llm": True,
+            "tool_trace": [],
         }
 
     monkeypatch.setattr("agents.graphs.pipeline.medium_mod.run_medium", fake_medium)
