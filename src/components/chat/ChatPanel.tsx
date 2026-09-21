@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import { Bot, PanelRight, User } from "lucide-react";
 import { Badge } from "../ui/badge";
 import { ScrollArea } from "../ui/scroll-area";
@@ -66,6 +67,17 @@ export function ChatPanel({
   onSelectMessage,
   meta,
 }: ChatPanelProps) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const root = scrollRef.current;
+    if (!root) return;
+    const viewport =
+      root.querySelector<HTMLElement>("[data-radix-scroll-area-viewport]") ??
+      (root.firstElementChild as HTMLElement | null);
+    if (viewport) viewport.scrollTop = viewport.scrollHeight;
+  }, [messages]);
+
   if (!session) {
     return (
       <section className="flex min-h-0 min-w-0 flex-1 items-center justify-center bg-surface">
@@ -124,7 +136,7 @@ export function ChatPanel({
           </div>
         </header>
 
-        <ScrollArea className="flex-1 px-6 pb-2">
+        <ScrollArea ref={scrollRef} className="flex-1 px-6 pb-2">
           <div className="mx-auto flex max-w-[760px] flex-col gap-5 pb-4">
             {messages.length === 0 ? (
               <p className="py-16 text-center text-[13px] text-ink-400">
