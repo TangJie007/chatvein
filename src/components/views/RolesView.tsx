@@ -432,11 +432,11 @@ function RoleConfig({ role, models, loadingModels, onSave, onDelete }: RoleConfi
                       <Wrench className="size-3.5" strokeWidth={1.75} />
                     </span>
                     <div className="flex min-w-0 flex-1 items-baseline gap-2">
-                      <span className="shrink-0 truncate font-mono text-[11.5px] font-medium text-ink-900">
-                        {t.id}
+                      <span className="shrink-0 truncate text-[12px] font-medium text-ink-900">
+                        {t.name}
                       </span>
-                      <span className="min-w-0 flex-1 truncate text-[11px] text-ink-400">
-                        {t.desc}
+                      <span className="min-w-0 flex-1 truncate font-mono text-[10.5px] text-ink-400">
+                        {t.id}
                       </span>
                     </div>
                     <Switch checked={on} onCheckedChange={() => toggleTool(t.id)} />

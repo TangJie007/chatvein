@@ -43,7 +43,7 @@ type ChatPanelProps = {
   messages: ChatMessage[];
   insightOpen: boolean;
   onToggleInsight: () => void;
-  onSend?: (text: string) => void;
+  onSend?: (text: string, skills?: { slug: string; name: string }[]) => void;
   onOpenWorkspace?: () => void;
   onOpenTrace?: () => void;
   roleName?: string;
@@ -256,7 +256,7 @@ export function ChatPanel({
           contextPct={contextPct}
           contextTitle={contextTitle}
           sending={sending}
-          onSend={(text) => onSend?.(text)}
+          onSend={(text, skills) => onSend?.(text, skills)}
           conversationId={session?.id}
         />
       </div>

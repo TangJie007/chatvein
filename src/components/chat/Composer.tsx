@@ -2,7 +2,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Paperclip, Plus, SendHorizontal, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { listSkills, uploadFiles, type SkillHubItem } from "../../api";
+import { listInstalledSkills, listSkills, uploadFiles, type SkillHubItem } from "../../api";
 import { cn } from "../../lib/cn";
 
 const LINE_HEIGHT = 20;
@@ -27,7 +27,7 @@ type ComposerProps = {
   contextPct: number;
   contextTitle: string;
   sending?: boolean;
-  onSend: (text: string) => void;
+  onSend: (text: string, skills?: ComposerSkill[]) => void;
   conversationId?: string | null;
 };
 
@@ -46,19 +46,10 @@ function toBase64(bytes: Uint8Array): string {
 
 function composeOutgoing(
   text: string,
-  skills: ComposerSkill[],
   files: ComposerFile[]
 ): string {
-  const extras: string[] = [];
-  if (skills.length > 0) {
-    extras.push(
-      "请结合以下技能：\n" + skills.map((s) => `- ${s.name} (${s.slug})`).join("\n")
-    );
-  }
-  if (files.length > 0) {
-    extras.push("请参考以下本地文件：\n" + files.map((f) => `- ${f.path}`).join("\n"));
-  }
-  return extras.length > 0 ? `${text}\n\n${extras.join("\n\n")}` : text;
+  if (files.length === 0) return text;
+  return `${text}\n\n请参考以下本地文件：\n${files.map((f) => `- ${f.path}`).join("\n")}`;
 }
 
 export function Composer({
@@ -91,9 +82,36 @@ export function Composer({
     const timer = window.setTimeout(() => {
       setSkillLoading(true);
       setSkillError(null);
-      void listSkills({ keyword, page: 1, pageSize: 8 })
-        .then((data) => {
-          if (!cancelled) setCatalog(data.skills);
+      void Promise.all([
+        listInstalledSkills().catch(() => ({
+          skills: [] as Array<{ slug: string; name: string; description: string }>,
+        })),
+        listSkills({ keyword, page: 1, pageSize: 8 }),
+      ])
+        .then(([installed, data]) => {
+          if (cancelled) return;
+          const local: SkillHubItem[] = installed.skills.map((s) => ({
+            slug: s.slug,
+            name: s.name,
+            description: s.description || "",
+            category: "installed",
+            category_label: "已安装",
+            sub_categories: [],
+            downloads: 0,
+            installs: 0,
+            stars: 0,
+            version: "",
+            icon_url: null,
+            homepage: "",
+            publisher: "",
+            source: "local",
+            verified: true,
+            updated_at: null,
+          }));
+          const remote = data.skills.filter(
+            (s) => !local.some((l) => l.slug === s.slug)
+          );
+          setCatalog([...local, ...remote]);
         })
         .catch((err: unknown) => {
           if (!cancelled) {
@@ -176,7 +194,7 @@ export function Composer({
   const submit = () => {
     const text = draft.trim();
     if (!text || sending) return;
-    onSend(composeOutgoing(text, skills, files));
+    onSend(composeOutgoing(text, files), skills);
     setSkills([]);
     setFiles([]);
     setSkillOpen(false);

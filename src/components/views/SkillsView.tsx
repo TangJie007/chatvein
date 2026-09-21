@@ -226,7 +226,7 @@ export function SkillsView() {
               </span>
             </div>
             <p className="mt-0.5 text-[12.5px] text-ink-400">
-              浏览腾讯 SkillHub 公开技能；点击卡片查看详情，安装与使用后续接入
+              浏览腾讯 SkillHub；详情可安装到本机，对话里选用后会注入 SKILL.md
             </p>
           </div>
           <Button

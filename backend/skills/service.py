@@ -1,8 +1,8 @@
-"""SkillHub 公开目录代理。
+"""SkillHub 公开目录代理 + 本机安装。
 
 浏览用 ``GET https://api.skillhub.cn/api/skills``（无需鉴权）。
 详情用 ``GET https://api.skillhub.cn/api/v1/skills/{slug}``，并可选拉取 ``SKILL.md``。
-安装 / 下载留到后续版本。
+安装落到 ``CHATVEIN_DATA_DIR/skills/<slug>/``。
 """
 
 from __future__ import annotations
@@ -12,6 +12,8 @@ import re
 from typing import Any
 
 import httpx
+
+from . import local_store
 
 SKILLHUB_API = os.environ.get("CHATVEIN_SKILLHUB_API", "https://api.skillhub.cn").rstrip(
     "/"
@@ -320,4 +322,30 @@ def get_skill(slug: str) -> dict[str, Any]:
     if not isinstance(payload, dict):
         raise RuntimeError("SkillHub 详情格式异常")
 
-    return _normalize_detail(payload, skill_md=skill_md)
+    detail = _normalize_detail(payload, skill_md=skill_md)
+    detail["installed"] = local_store.is_installed(cleaned)
+    return detail
+
+
+def install_from_hub(slug: str) -> dict[str, Any]:
+    """拉取详情并安装到本机。"""
+    detail = get_skill(slug)
+    installed = local_store.install_skill(detail)
+    detail["installed"] = True
+    detail["local"] = installed
+    return detail
+
+
+def uninstall_local(slug: str) -> dict[str, Any]:
+    removed = local_store.uninstall_skill(slug)
+    return {"slug": slug, "removed": removed}
+
+
+def list_local_skills() -> dict[str, Any]:
+    rows = local_store.list_installed()
+    return {"skills": rows, "total": len(rows)}
+
+
+def skill_prompt_blocks(slugs: list[str] | None) -> str:
+    blocks = local_store.load_skill_blocks(slugs)
+    return local_store.format_skills_for_prompt(blocks)

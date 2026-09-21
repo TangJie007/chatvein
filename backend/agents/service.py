@@ -3,7 +3,7 @@
 流水线见 ``agents.graphs.pipeline``：
 - simple：单节点直答图
 - medium：选型 → ReAct（``create_agent`` 编译的 agent⇄tools 循环）
-- hard：同 ReAct 结构，更强 system（后续可再拆独立图）
+- hard：plan → 选型 → ReAct → verify（未通过可回环再执行）
 
 ``history`` 为短期记忆（不含本轮用户句），来自会话 ``logs/session.sqlite``。
 """

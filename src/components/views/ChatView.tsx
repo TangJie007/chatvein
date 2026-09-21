@@ -298,7 +298,10 @@ export function ChatView({
     }));
   }, [workspace?.artifacts]);
 
-  const handleSend = async (text: string) => {
+  const handleSend = async (
+    text: string,
+    skills?: { slug: string; name: string }[]
+  ) => {
     if (sending) return;
     setSending(true);
     setError(null);
@@ -310,7 +313,12 @@ export function ChatView({
       { id: pendingId, role: "agent", content: "", streaming: true },
     ]);
     try {
-      const result = await sendChat(text, activeId, roleId);
+      const result = await sendChat(
+        text,
+        activeId,
+        roleId,
+        skills?.map((s) => s.slug) ?? null
+      );
       setActiveId(result.conversation_id);
       setMetaById((prev) => ({
         ...prev,
@@ -403,8 +411,8 @@ export function ChatView({
               setError(err instanceof Error ? err.message : String(err));
             });
           }}
-          onSend={(text) => {
-            void handleSend(text);
+          onSend={(text, skills) => {
+            void handleSend(text, skills);
           }}
         />
       </div>

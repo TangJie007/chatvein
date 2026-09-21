@@ -249,13 +249,16 @@ def _error_info(error: BaseException) -> dict[str, Any]:
 def _path(difficulty: str) -> list[dict[str, Any]]:
     level = difficulty if difficulty in ("simple", "medium", "hard") else "simple"
     branched = level in ("medium", "hard")
-    react = "ReAct · 复杂" if level == "hard" else "ReAct"
+    is_hard = level == "hard"
+    react = "ReAct · 复杂" if is_hard else "ReAct"
     return [
         {"id": "understand", "label": "理解", "taken": True},
         {"id": "route", "label": "路由", "taken": True},
         {"id": "simple", "label": "直答", "taken": level == "simple"},
+        {"id": "plan", "label": "规划", "taken": is_hard},
         {"id": "select_tools", "label": "筛选工具", "taken": branched},
         {"id": "react", "label": react, "taken": branched},
+        {"id": "verify", "label": "核对", "taken": is_hard},
     ]
 
 

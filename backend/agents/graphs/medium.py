@@ -44,19 +44,17 @@ _MEDIUM_SYSTEM = (
     "简洁用中文给出结果，并注明关键来源路径或链接（产物路径以 output/ 开头）。"
 )
 
-_HARD_SYSTEM_EXTRA = (
-    "你是 ChatVein 助手，处理较复杂的本机任务。可参考上文对话上下文。"
-    "会话布局：产物写 output/；沙箱代码与 .venv 只在 runs/；不要污染产物目录。"
-    "先在内部理清步骤，再按需多次调用工具（文件 / 联网 / 知识库 / 只读 SQL / 代码沙箱 / "
-    "Bash 或 PowerShell / 浏览器），交叉核对后再用中文总结回答。不要编造工具结果；"
-    "写文件前确认路径在工作区内。"
-    "用 Python 解决问题时：在 runs/ 创建虚拟环境，把代码写成 .py，执行，"
-    "阅读 stdout 和 stderr，失败就修改后再跑，不要在没有成功执行结果时声称已解决。"
-    "操作网页时先 snapshot 再按 ref 交互。"
-)
-
 # medium：少量工具调用即可；限制图递归，避免空转
 _RECURSION_LIMIT = 12
+
+
+def _allowed_from_role(role: dict[str, Any] | None) -> list[str] | None:
+    if not role:
+        return None
+    tools = role.get("tools")
+    if not isinstance(tools, list) or not tools:
+        return None
+    return [str(t) for t in tools if str(t).strip()]
 
 
 def build_react_graph(model: Any, tools: list[Any], *, system_prompt: str, name: str):
@@ -78,7 +76,10 @@ def build_medium_graph(
     """选型 → ReAct 的 medium 子图。"""
 
     def select_tools_node(state: ChatState) -> dict[str, Any]:
-        planned = tool_selector.select_tools(state.get("rewritten") or state.get("message") or "")
+        planned = tool_selector.select_tools(
+            state.get("rewritten") or state.get("message") or "",
+            allowed=_allowed_from_role(role),
+        )
         used = bool(state.get("used_llm")) or bool(planned.get("used_llm"))
         selected = list(planned.get("selected_tools") or [])
         candidates = list(planned.get("candidate_tools") or [])
@@ -191,4 +192,3 @@ def run_medium(
 
 
 MEDIUM_SYSTEM = _MEDIUM_SYSTEM
-HARD_SYSTEM = _HARD_SYSTEM_EXTRA

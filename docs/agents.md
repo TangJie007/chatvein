@@ -1,13 +1,17 @@
 # Agent 流水线：改写 + 难度图
 
+> **已实现功能清单** → [`features.md`](./features.md)  
+> **Agent 图设计（总图 / simple·medium·hard 详解）** → [`agent-graphs.md`](./agent-graphs.md)  
+> **工作区规则** → [`workspace.md`](./workspace.md)
+
 全程使用 **主模型**（`ModelsService.get_runtime_config()` → `agents.llm`）。
 
 | 包 | 职责 |
 | --- | --- |
 | `agents/router.py` | 一次 structured：`rewritten` + `difficulty` |
-| `agents/tool_selector.py` | 只缩工具集（吃改写后文本） |
+| `agents/tool_selector.py` | 只缩工具集（吃改写后文本；hard 另附计划） |
 | `agents/service.py` | 入口 `run_chat` → 总图 |
-| `agents/graphs/` | LangGraph：总图路由 + simple / medium ReAct 子图 |
+| `agents/graphs/` | LangGraph：总图路由 + simple / medium / hard 子图 |
 | `mcps/` | 工具注册 + 按名 invoke（实现见 `mcps/tools/`） |
 
 ```text
@@ -15,12 +19,16 @@
   → [pipeline] understand（改写 + simple|medium|hard）
        ├─ simple  → 单节点直答图（主模型，无工具）
        ├─ medium  → [子图] tool_selector → ReAct（create_agent：agent⇄tools）
-       └─ hard    → [子图] tool_selector → ReAct（多步/核对 system；结构同 medium）
+       └─ hard    → [子图] plan → tool_selector → ReAct → verify
+                    （未通过可回环再选型/执行，有回环上限）
 ```
+
+节点语义、状态字段、递归上限、HTTP 接线见 [`agent-graphs.md`](./agent-graphs.md)。
 
 落库 `Message.route` 写入难度档位；HTTP 额外返回 `rewritten` / `difficulty` / `tool_trace` / `workspace`。
 原文仍作为用户消息入库，改写只供下游 Agent 使用。
-短期记忆来自会话空间 `logs/session.sqlite`（近若干轮），注入 simple / medium / hard 图；无会话库记录时回落主库消息。
+短期记忆来自会话空间 `logs/session.sqlite`（近若干轮，条数可由角色 `memory` 覆盖），注入 simple / medium / hard 图；无会话库记录时回落主库消息。
+角色勾选的工具（分组 id 或工具名）会限制 medium / hard 的候选集；空列表表示不限制。
 
 ### 会话工作区布局
 
@@ -75,7 +83,7 @@ ChatVein 是本机桌面 Agent（Tauri + Python），前端设置页已规划 `b
 | --- | --- | --- | --- |
 | **Browser `--caps`** | 只对齐 Core + Tabs | 按需对齐上游可选能力：`vision`（坐标鼠标）、`pdf`（`browser_pdf_save`）、`devtools`、`storage`、`network`、`testing` | 官方用 `--caps=` / `PLAYWRIGHT_MCP_CAPS` opt-in；补时需设置页开关、依赖探测、落盘与权限说明。细节见 `.agents/notes/mcp-browser.md` |
 | **自定义 HTTP MCP（`mcp-http`）** | 设置页占位 | LangChain `MCPAdapter` 拉远程工具；用户自配 URL / headers | 承接 SaaS 连接器，不进默认分发 |
-| **Skill 市场：安装 / 使用** | 侧边栏可浏览 SkillHub 目录与详情（`GET /api/skills/`、`GET /api/skills/{slug}`） | 下载到本机 skills 目录、发现 `SKILL.md`、注入 Agent；更新 / 卸载 | 浏览与详情已接；registry URL 宜可配置。与 MCP 工具轨分离 |
+| **Skill 市场：安装 / 使用** | 可浏览、安装到 `CHATVEIN_DATA_DIR/skills/`、对话 Composer 注入 SKILL.md | 更新检测、可配置 registry、技能自动发现 | 浏览 / 安装 / 卸载 / 手动选用已接 |
 | **Filesystem `read_media_file`** | 未对齐上游 | 若产品需要读图/音视频元数据再补 | 首版刻意省略 |
 | **Browser caps 之外的体验** | headed 默认、截图进 `browser-output/` | 无头策略、多 profile、下载目录策略等按需打磨 | 不阻塞主路径 |
 

@@ -15,9 +15,11 @@ import { cn } from "../../lib/cn";
 
 const STEP_LABEL: Record<string, string> = {
   understand: "理解",
+  plan: "规划",
   select_tools: "筛选工具",
   simple: "直答",
   react: "ReAct",
+  verify: "核对",
   route: "路由",
 };
 

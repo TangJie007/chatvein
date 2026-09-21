@@ -21,4 +21,11 @@ class ChatState(TypedDict, total=False):
     candidate_tools: list[str]
     # 角色运行时配置（RolesService.get_runtime），为空表示不套用角色
     role: dict[str, Any] | None
+    # hard：规划与核对
+    plan: dict[str, Any]
+    plan_text: str
+    verify_passed: bool
+    verify_reason: str
+    verify_focus: str
+    verify_round: int
     extras: dict[str, Any]

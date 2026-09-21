@@ -93,6 +93,7 @@ class ChatRequest(BaseModel):
     message: str = Field(min_length=1, max_length=32000)
     conversation_id: str | None = Field(default=None, max_length=64)
     role_id: str | None = Field(default=None, max_length=64)
+    skills: list[str] | None = Field(default=None, max_length=16)
 
 
 try:  # langchain-core 版本差异：拿不到用量回调就退化为不统计
@@ -120,13 +121,29 @@ def _collect_tokens(usage: Any) -> int:
 @app.post("/api/chat", tags=["chat"], summary="改写 + 难度路由 + 工具选择")
 def chat(req: ChatRequest):
     prepared = conversations_service.open_for_chat(req.conversation_id, req.message)
+    from roles.service import RolesService  # pyright: ignore[reportImplicitRelativeImport]
+    from skills.service import skill_prompt_blocks  # pyright: ignore[reportImplicitRelativeImport]
+
+    role_runtime = RolesService().resolve_for_chat(req.role_id)
+    memory_limit = 24
+    if role_runtime and role_runtime.get("memory") is not None:
+        try:
+            memory_limit = max(0, min(60, int(role_runtime["memory"]) * 2))
+        except (TypeError, ValueError):
+            memory_limit = 24
     history = conversations_service.short_term_memory(
         prepared["workspace_dir"],
         conversation_id=prepared["id"],
+        limit=memory_limit,
     )
-    from roles.service import RolesService  # pyright: ignore[reportImplicitRelativeImport]
-
-    role_runtime = RolesService().resolve_for_chat(req.role_id)
+    skill_block = skill_prompt_blocks(req.skills)
+    if skill_block and role_runtime is not None:
+        role_runtime = {
+            **role_runtime,
+            "prompt": f"{(role_runtime.get('prompt') or '').strip()}\n\n{skill_block}".strip(),
+        }
+    elif skill_block:
+        role_runtime = {"prompt": skill_block, "tools": []}
     turn_id = uuid.uuid4().hex
     db_path = session_db_path(
         conversations_service.workspace_root_for(prepared["workspace_dir"])

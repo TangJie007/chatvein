@@ -188,7 +188,8 @@ export function createConversation(title = "") {
 export function sendChat(
   message: string,
   conversationId?: string | null,
-  roleId?: string | null
+  roleId?: string | null,
+  skills?: string[] | null
 ) {
   return backendRequest<{
     reply: string;
@@ -218,6 +219,7 @@ export function sendChat(
     message,
     conversation_id: conversationId ?? null,
     role_id: roleId ?? null,
+    skills: skills?.length ? skills : null,
   });
 }
 
@@ -622,7 +624,7 @@ export type ListSkillsParams = {
   sortBy?: "score" | "downloads" | "updated_at";
 };
 
-/** 浏览 SkillHub 公开技能目录（安装后续再接）。 */
+/** 浏览 SkillHub 公开技能目录。 */
 export function listSkills(params: ListSkillsParams = {}) {
   const q = new URLSearchParams();
   if (params.page) q.set("page", String(params.page));
@@ -650,12 +652,46 @@ export interface SkillHubDetail extends SkillHubItem {
   changelog: string;
   security_reports: SkillSecurityReport[];
   website: string;
+  installed?: boolean;
+}
+
+export interface InstalledSkill {
+  slug: string;
+  name: string;
+  description: string;
+  version: string;
+  homepage: string;
+  installed_at: string;
+  path: string;
+}
+
+/** 本机已安装技能。 */
+export function listInstalledSkills() {
+  return backendRequest<{ skills: InstalledSkill[]; total: number }>(
+    "/api/skills/installed"
+  );
 }
 
 /** 拉取单个技能详情（含可选 SKILL.md）。 */
 export function getSkill(slug: string) {
   return backendRequest<SkillHubDetail>(
     `/api/skills/${encodeURIComponent(slug)}`
+  );
+}
+
+/** 安装技能到本机。 */
+export function installSkill(slug: string) {
+  return backendRequest<SkillHubDetail & { local?: InstalledSkill }>(
+    `/api/skills/${encodeURIComponent(slug)}/install`,
+    "POST"
+  );
+}
+
+/** 卸载本机技能。 */
+export function uninstallSkill(slug: string) {
+  return backendRequest<{ slug: string; removed: boolean }>(
+    `/api/skills/${encodeURIComponent(slug)}`,
+    "DELETE"
   );
 }
 

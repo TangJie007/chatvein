@@ -8,6 +8,8 @@ import {
 import { useEffect, useState } from "react";
 import {
   getSkill,
+  installSkill,
+  uninstallSkill,
   type SkillHubDetail,
   type SkillHubItem,
 } from "../../api";
@@ -19,11 +21,6 @@ import {
   SheetHeader,
   SheetTitle,
 } from "../ui/sheet";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "../ui/tooltip";
 
 function formatCount(n: number): string {
   if (n >= 10_000) {
@@ -56,6 +53,8 @@ export function SkillDetailDrawer({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [installing, setInstalling] = useState(false);
+  const [installError, setInstallError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open || !skill?.slug) {
@@ -95,6 +94,27 @@ export function SkillDetailDrawer({
   const homepage = detail?.homepage || skill?.homepage;
   const updated = formatUpdatedAt(detail?.updated_at ?? skill?.updated_at);
   const bodyMd = detail?.overview_md || detail?.skill_md || "";
+  const installed = Boolean(detail?.installed);
+  const canInstall = Boolean(detail?.skill_md?.trim());
+
+  const handleInstallToggle = async () => {
+    if (!skill?.slug || installing) return;
+    setInstalling(true);
+    setInstallError(null);
+    try {
+      if (installed) {
+        await uninstallSkill(skill.slug);
+        setDetail((prev) => (prev ? { ...prev, installed: false } : prev));
+      } else {
+        const next = await installSkill(skill.slug);
+        setDetail(next);
+      }
+    } catch (err) {
+      setInstallError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setInstalling(false);
+    }
+  };
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -266,29 +286,43 @@ export function SkillDetailDrawer({
                     </div>
                   ) : null}
 
-                  <div className="flex items-center gap-2 pt-1">
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <span className="flex-1">
-                          <Button variant="tint" size="sm" className="w-full" disabled>
-                            安装
-                          </Button>
-                        </span>
-                      </TooltipTrigger>
-                      <TooltipContent>安装能力即将支持</TooltipContent>
-                    </Tooltip>
-                    {homepage && (
+                  <div className="flex flex-col gap-2 pt-1">
+                    {installError ? (
+                      <p className="text-[12px] text-danger-600">{installError}</p>
+                    ) : null}
+                    <div className="flex items-center gap-2">
                       <Button
-                        variant="ghost"
+                        variant="tint"
                         size="sm"
-                        onClick={() =>
-                          window.open(homepage, "_blank", "noopener,noreferrer")
-                        }
+                        className="flex-1"
+                        disabled={loading || installing || (!installed && !canInstall)}
+                        onClick={() => {
+                          void handleInstallToggle();
+                        }}
                       >
-                        <ExternalLink className="size-3.5" strokeWidth={1.75} />
-                        SkillHub
+                        {installing ? (
+                          <Loader2 className="size-3.5 animate-spin" strokeWidth={1.75} />
+                        ) : null}
+                        {installed ? "卸载" : "安装到本机"}
                       </Button>
-                    )}
+                      {homepage && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() =>
+                            window.open(homepage, "_blank", "noopener,noreferrer")
+                          }
+                        >
+                          <ExternalLink className="size-3.5" strokeWidth={1.75} />
+                          SkillHub
+                        </Button>
+                      )}
+                    </div>
+                    {!installed && !canInstall && !loading ? (
+                      <p className="text-[11.5px] text-ink-400">
+                        该技能暂无 SKILL.md，无法安装
+                      </p>
+                    ) : null}
                   </div>
                 </div>
               )}

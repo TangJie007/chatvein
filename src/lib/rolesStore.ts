@@ -8,14 +8,19 @@ export type { RoleRecord, RoleTone, CreateRolePayload } from "../api";
 
 import type { CreateRolePayload, RoleTone } from "../api";
 
-/** 该角色可用的内置工具（对应内置 MCP）。 */
+/** 该角色可用的内置工具分组（与 ``prefs.MCP_SERVERS`` / 后端 ``tool_groups`` 对齐）。 */
 export const TOOLSET: { id: string; name: string; desc: string }[] = [
-  { id: "order.get", name: "订单查询", desc: "按订单号取详情、支付与状态" },
-  { id: "logistics.track", name: "物流跟踪", desc: "按运单号查最新轨迹" },
-  { id: "refund.check", name: "退款核验", desc: "校验订单是否符合退款政策" },
-  { id: "policy.guard", name: "策略护栏", desc: "执行前做权限与额度校验" },
-  { id: "kb.search", name: "知识库检索", desc: "向量召回 + 重排，注入上下文" },
-  { id: "db.query", name: "数据库查询", desc: "只读 SQL，走白名单表" },
+  { id: "core", name: "时间 / 计算 / 本机", desc: "当前时间、时区换算、计算器、系统概况" },
+  { id: "mcp-fs", name: "文件系统", desc: "读写工作区文件、目录树、搜索与删除" },
+  { id: "mcp-web", name: "联网", desc: "web_search / web_fetch" },
+  { id: "mcp-sqlite", name: "只读 SQL", desc: "查 ChatVein SQLite 表结构与查询" },
+  { id: "mcp-kb", name: "知识库", desc: "笔记沉淀与向量召回" },
+  { id: "mcp-codesandbox", name: "代码沙箱", desc: "会话 runs/ 虚拟环境与 Python 执行" },
+  { id: "mcp-bash", name: "Git Bash", desc: "本机 Bash（探测到才可用）" },
+  { id: "mcp-powershell", name: "PowerShell", desc: "仅 Windows；与 Bash 可并存" },
+  { id: "mcp-browser", name: "浏览器", desc: "Playwright 快照 + ref 交互" },
+  { id: "mcp-ip", name: "IP 归属地", desc: "公网出口与 IP 查库" },
+  { id: "mcp-ocr", name: "OCR 识字", desc: "图片文字识别" },
 ];
 
 export const DEFAULT_ENABLED_TOOLS = TOOLSET.map((t) => t.id);

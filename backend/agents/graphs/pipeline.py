@@ -8,11 +8,22 @@ from langgraph.graph import END, START, StateGraph
 
 from .. import router
 from trace import complete, note, tracing  # pyright: ignore[reportMissingImports]
+from . import hard as hard_mod
 from . import medium as medium_mod
 from . import simple as simple_mod
 from .state import ChatState
 
 DifficultyRoute = Literal["simple", "medium", "hard"]
+
+
+def _merged_system(role: dict[str, Any] | None, base: str) -> str:
+    """角色提示叠在能力说明之上，避免丢掉工作区 / 工具约定。"""
+    role_prompt = ""
+    if role:
+        role_prompt = str(role.get("prompt") or "").strip()
+    if role_prompt:
+        return f"{role_prompt}\n\n{base}"
+    return base
 
 
 def _understand(state: ChatState) -> dict[str, Any]:
@@ -50,7 +61,7 @@ def _route(state: ChatState) -> DifficultyRoute:
 
 def _simple_node(state: ChatState) -> dict[str, Any]:
     role = state.get("role")
-    system_prompt = (role or {}).get("prompt") or simple_mod.SIMPLE_SYSTEM
+    system_prompt = _merged_system(role, simple_mod.SIMPLE_SYSTEM)
     reply, ran = simple_mod.run_simple(
         str(state.get("rewritten") or ""),
         history=list(state.get("history") or []),
@@ -79,7 +90,7 @@ def _branch_result(result: dict[str, Any]) -> dict[str, Any]:
 
 def _medium_node(state: ChatState) -> dict[str, Any]:
     role = state.get("role")
-    system_prompt = (role or {}).get("prompt") or medium_mod.MEDIUM_SYSTEM
+    system_prompt = _merged_system(role, medium_mod.MEDIUM_SYSTEM)
     result = medium_mod.run_medium(
         str(state.get("rewritten") or ""),
         used_llm=bool(state.get("used_llm")),
@@ -93,8 +104,8 @@ def _medium_node(state: ChatState) -> dict[str, Any]:
 
 def _hard_node(state: ChatState) -> dict[str, Any]:
     role = state.get("role")
-    system_prompt = (role or {}).get("prompt") or medium_mod.HARD_SYSTEM
-    result = medium_mod.run_medium(
+    system_prompt = _merged_system(role, hard_mod.HARD_SYSTEM)
+    result = hard_mod.run_hard(
         str(state.get("rewritten") or ""),
         used_llm=bool(state.get("used_llm")),
         history=list(state.get("history") or []),
@@ -102,7 +113,12 @@ def _hard_node(state: ChatState) -> dict[str, Any]:
         name="hard_react",
         role=role,
     )
-    return _branch_result(result)
+    branched = _branch_result(result)
+    if result.get("plan"):
+        branched["plan"] = result["plan"]
+    if result.get("verify_reason"):
+        branched["verify_reason"] = result["verify_reason"]
+    return branched
 
 
 def build_pipeline():

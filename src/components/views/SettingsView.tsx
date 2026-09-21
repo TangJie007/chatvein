@@ -29,7 +29,7 @@ const SECTIONS: {
 export function SettingsView() {
   const [section, setSection] = useState<SectionKey>("app");
   const [prefs, setPrefs] = useState<AppPrefs>(loadPrefs);
-  const [servers, setServers] = useState<McpServer[]>(hydrateMcpServers);
+  const [servers] = useState<McpServer[]>(hydrateMcpServers);
 
   const [info, setInfo] = useState<DbInfo | null>(null);
   const [loading, setLoading] = useState(true);

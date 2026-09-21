@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 from mcps.registry import (  # pyright: ignore[reportImplicitRelativeImport]
     all_tools,
     heuristic_tool_names,
+    tool_groups,
 )
 
 from . import llm as llm_mod
@@ -24,15 +25,57 @@ class ToolPlan(BaseModel):
     reason: str = Field(description="为何选这些工具")
 
 
-def select_tools(message: str) -> dict[str, Any]:
-    """返回 ``{selected_tools, candidate_tools, tool_plan_reason, used_llm}``。"""
+def expand_allowlist(allowed: list[str] | None) -> set[str] | None:
+    """把角色勾选的分组 id / 工具名展开为具体工具名集合。
+
+    - 空 / None → 不限制
+    - ``mcp-web`` 等分组 id → 该组全部工具
+    - 具体工具名 → 原样保留
+    """
+    if not allowed:
+        return None
+    groups = tool_groups()
+    names: set[str] = set()
+    for item in allowed:
+        key = str(item).strip()
+        if not key:
+            continue
+        if key in groups:
+            names.update(groups[key])
+        else:
+            names.add(key)
+    return names or None
+
+
+def select_tools(
+    message: str,
+    *,
+    allowed: list[str] | None = None,
+) -> dict[str, Any]:
+    """返回 ``{selected_tools, candidate_tools, tool_plan_reason, used_llm}``。
+
+    ``allowed`` 为角色勾选的分组或工具名；空表示不限制。
+    """
     text = (message or "").strip()
     tools = all_tools()
+    allow_set = expand_allowlist(allowed)
+    if allow_set is not None:
+        tools = [t for t in tools if t.name in allow_set]
     candidates = [tool.name for tool in tools]
+    if not candidates:
+        return {
+            "selected_tools": [],
+            "candidate_tools": [],
+            "tool_plan_reason": "角色未开放任何可用工具",
+            "used_llm": False,
+        }
+
     catalog = "\n".join(f"- {tool.name}: {tool.description}" for tool in tools)
     model = llm_mod.get_chat_model(temperature=0)
     if model is None:
-        names = heuristic_tool_names(text) or ["get_current_time"]
+        names = [n for n in heuristic_tool_names(text) if n in candidates]
+        if not names:
+            names = [candidates[0]]
         return {
             "selected_tools": names,
             "candidate_tools": candidates,
@@ -50,9 +93,11 @@ def select_tools(message: str) -> dict[str, Any]:
                     HumanMessage(content=text or "(空)"),
                 ],
             )
-        names = [n for n in plan.tool_names if n] or heuristic_tool_names(text) or [
-            "get_current_time"
-        ]
+        names = [n for n in plan.tool_names if n in candidates]
+        if not names:
+            names = [n for n in heuristic_tool_names(text) if n in candidates]
+        if not names:
+            names = [candidates[0]]
         return {
             "selected_tools": names,
             "candidate_tools": candidates,
@@ -60,7 +105,9 @@ def select_tools(message: str) -> dict[str, Any]:
             "used_llm": True,
         }
     except Exception as exc:  # noqa: BLE001
-        names = heuristic_tool_names(text) or ["get_current_time"]
+        names = [n for n in heuristic_tool_names(text) if n in candidates]
+        if not names:
+            names = [candidates[0]]
         return {
             "selected_tools": names,
             "candidate_tools": candidates,
