@@ -2,7 +2,8 @@
 
 > **已实现功能清单** → [`features.md`](./features.md)  
 > **Agent 图设计（总图 / simple·medium·hard 详解）** → [`agent-graphs.md`](./agent-graphs.md)  
-> **工作区规则** → [`workspace.md`](./workspace.md)
+> **工作区规则** → [`workspace.md`](./workspace.md)  
+> **工具人工测试集** → [`test/README.md`](./test/README.md)
 
 全程使用 **主模型**（`ModelsService.get_runtime_config()` → `agents.llm`）。
 
