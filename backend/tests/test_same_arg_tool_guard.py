@@ -6,7 +6,19 @@ from types import SimpleNamespace
 
 from langchain_core.messages import ToolMessage
 
-from agents.graphs.common import same_arg_tool_guard, tool_call_fingerprint
+from agents.graphs.common import (
+    react_recursion_limit,
+    RECURSION_LIMIT_MARGIN,
+    same_arg_tool_guard,
+    tool_call_fingerprint,
+)
+
+
+def test_react_recursion_limit_formula() -> None:
+    assert RECURSION_LIMIT_MARGIN == 10
+    assert react_recursion_limit(12) == 34
+    assert react_recursion_limit(16) == 42
+    assert react_recursion_limit(12, margin=0) == 24
 
 
 def test_fingerprint_stable_for_same_args() -> None:

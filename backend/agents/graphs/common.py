@@ -90,6 +90,26 @@ def same_arg_tool_guard():
     return _guard
 
 
+# create_agent 一轮约「模型节点 + 工具节点」各计 1 步；middleware / 并行 tool 另占步数。
+# 余量 10：对齐社区常见 create_agent 默认量级（约 25）相对「纯 2×轮次」多出的缓冲。
+RECURSION_LIMIT_MARGIN = 10
+
+
+def react_recursion_limit(
+    max_model_calls: int,
+    *,
+    margin: int = RECURSION_LIMIT_MARGIN,
+) -> int:
+    """图 ``recursion_limit``：``2 × max_model_calls + margin``。
+
+    须大于模型/工具 middleware 预算，否则天气这类「定位 + 搜索」会先撞图步数。
+    空转由 Tool/Model call limit 收束，本值只当安全网。
+    """
+    calls = max(1, int(max_model_calls))
+    pad = max(0, int(margin))
+    return 2 * calls + pad
+
+
 def build_react_graph(
     model: Any,
     tools: list[Any],

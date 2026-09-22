@@ -163,11 +163,11 @@ START → select_tools → react → END
 
 1. `resolve_tools(selected_names)`；名字无效时回落全量（registry 行为）。
 2. `create_agent(model, tools, system_prompt=MEDIUM_SYSTEM…)`。
-3. `invoke({messages: history + HumanMessage(rewritten)})`，`recursion_limit=12`。
+3. `invoke({messages: history + HumanMessage(rewritten)})`，`recursion_limit = 2 × max_model_calls + 10`（默认 34）。
 4. 抽最后文本为 `reply`；`extract_tool_trace` 记工具调用。
 5. 无模型：跳过 LLM，直接 `run_tools(text, names)`。
 
-适合「一两跳工具就能答」的任务；上限 12 防止空转。
+适合「一两跳工具就能答」的任务；**空转**靠工具/模型 call limit 收束，图步数只当安全网（须大于预算，避免天气「定位+搜索」误撞限）。
 
 ---
 
@@ -190,7 +190,7 @@ START → plan → select_tools → react → verify
 | --- | --- | --- |
 | 规划 | 无 | 结构化 `TaskPlan` |
 | 选型输入 | 仅改写文本 | 改写 + 计划文本（+ 核对缺口） |
-| ReAct 递归 | 12 | 28 |
+| ReAct 递归 | `2×12+10=34` | `2×16+10=42` |
 | 结束后 | 直接 END | `VerifyDecision`；可回环再选型/执行；`tool_trace` **跨轮累计** |
 | 回环上限 | — | `_MAX_VERIFY_ROUNDS = 2` |
 
@@ -215,7 +215,7 @@ TaskPlan:
 
 - system = `HARD_SYSTEM`（或已 merge 的角色+HARD）再附 `plan_text`。
 - 用户消息 = 改写 + 计划 +（可选）缺口焦点。
-- `recursion_limit=28`，便于「改代码 → 跑 → 看 stderr → 再改」。
+- `recursion_limit = 2 × _MAX_MODEL_CALLS + 10`（默认 42），便于「改代码 → 跑 → 看 stderr → 再改」。
 
 ### 7.4 `verify`（结构化）
 
@@ -322,11 +322,14 @@ role.memory  ──────→ history 条数（HTTP 层）  │
 
 | 常量 | 位置 | 值 | 含义 |
 | --- | --- | --- | --- |
-| medium `_RECURSION_LIMIT` | `medium.py` | 12 | ReAct 图递归上限 |
-| hard `_RECURSION_LIMIT` | `hard.py` | 28 | 复杂任务更多工具跳 |
+| `RECURSION_LIMIT_MARGIN` | `common.py` | **10** | 图步余量（middleware / 并行 tool 节点）；对齐社区 create_agent 相对「纯 2×轮次」的常见缓冲 |
+| `react_recursion_limit(n)` | `common.py` | `2×n+10` | 图 `recursion_limit` 公式；空转由 call limit 收束 |
+| medium `_RECURSION_LIMIT` | `medium.py` | **34**（`2×12+10`） | 由公式推导，勿手写偏小 |
+| hard `_RECURSION_LIMIT` | `hard.py` | **42**（`2×16+10`） | 同上 |
 | hard `_MAX_VERIFY_ROUNDS` | `hard.py` | 2 | 核对回环次数上限 |
 | `_MAX_WEB_SEARCH` | medium/hard | 3 | 对齐 LangChain 文档 search `run_limit` |
 | `_MAX_TOOL_CALLS` | medium/hard | 10 | 对齐 LangChain 文档全体工具 `run_limit` |
+| `_MAX_MODEL_CALLS` | medium / hard | 12 / 16 | 模型调用触顶 end |
 | `DEFAULT_HISTORY_LIMIT` | `memory.py` | 24 | 未传角色时的默认历史条数 |
 | 角色 memory | HTTP | `memory × 2`，夹在 0…60 | 短期记忆条数 |
 

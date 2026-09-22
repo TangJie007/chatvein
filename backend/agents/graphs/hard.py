@@ -32,6 +32,7 @@ from .common import (
     invoke_react,
     last_text,
     merge_tool_traces,
+    react_recursion_limit,
 )
 from .state import ChatState
 from .tool_trace import extract_tool_trace
@@ -48,14 +49,14 @@ _HARD_SYSTEM = (
     "工具结果已够回答时立刻总结，不要反复空转调用同类工具。"
 )
 
-_RECURSION_LIMIT = 28
 _MAX_VERIFY_ROUNDS = 2
 _LLM_TIMEOUT = 120.0
 _REACT_DEADLINE_S = 420.0
-# 工具上限对齐 LangChain 文档示例；模型略宽以配合 recursion=28
+# 工具上限对齐 LangChain 文档示例；图步数 = 2×模型上限 + 余量
 _MAX_MODEL_CALLS = 16
 _MAX_TOOL_CALLS = 10
 _MAX_WEB_SEARCH = 3
+_RECURSION_LIMIT = react_recursion_limit(_MAX_MODEL_CALLS)  # 2×16+10 = 42
 
 
 class TaskPlan(BaseModel):

@@ -19,7 +19,7 @@ from trace import (  # pyright: ignore[reportMissingImports]
     trace_checkpoint,
 )
 
-from .common import allowed_from_role, build_react_graph, invoke_react, last_text
+from .common import allowed_from_role, build_react_graph, invoke_react, last_text, react_recursion_limit
 from .state import ChatState
 from .tool_trace import extract_tool_trace
 
@@ -46,13 +46,13 @@ _MEDIUM_SYSTEM = (
     "简洁注明关键来源路径或链接（产物路径以 output/ 开头）。"
 )
 
-# medium：recursion 防图空转；工具上限对齐 LangChain 文档示例（search=3 / 全体=10）
-_RECURSION_LIMIT = 12
+# medium：工具上限对齐 LangChain 文档；图步数由公式推导，勿再手写偏小常量
 _LLM_TIMEOUT = 120.0
 _REACT_DEADLINE_S = 300.0
 _MAX_MODEL_CALLS = 12  # 略高于工具上限，避免模型先触顶
 _MAX_TOOL_CALLS = 10
 _MAX_WEB_SEARCH = 3
+_RECURSION_LIMIT = react_recursion_limit(_MAX_MODEL_CALLS)  # 2×12+10 = 34
 
 
 def build_medium_graph(
