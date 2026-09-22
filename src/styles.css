@@ -163,6 +163,12 @@
   font-size: 12.5px;
 }
 
+/* 气泡内文本选中高亮用品牌色，避免系统默认深蓝/黑块 */
+.chat-md ::selection {
+  background: color-mix(in srgb, var(--color-brand-500) 28%, transparent);
+  color: var(--color-ink-900);
+}
+
 html,
 body,
 #root {

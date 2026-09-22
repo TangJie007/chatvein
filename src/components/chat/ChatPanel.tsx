@@ -225,10 +225,10 @@ export function ChatPanel({
                             : isSystem
                               ? "bg-tint text-ink-500 text-[12.5px]"
                               : "bg-tint text-ink-900",
-                          canInspect && "cursor-pointer transition-shadow",
+                          canInspect && "cursor-pointer transition-[box-shadow,background-color]",
                           selected
-                            ? "ring-2 ring-brand-400"
-                            : canInspect && "hover:ring-1 hover:ring-brand-300"
+                            ? "ring-2 ring-brand-500/40 ring-offset-0"
+                            : canInspect && "hover:ring-1 hover:ring-brand-500/25"
                         )}
                       >
                         {isAgent ? (
