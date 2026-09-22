@@ -1,5 +1,5 @@
-import { useEffect, useRef } from "react";
-import { Bot, PanelRight, Pencil, Undo2, User } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Bot, Check, Copy, PanelRight, Pencil, Undo2, User } from "lucide-react";
 import { Badge } from "../ui/badge";
 import { ScrollArea } from "../ui/scroll-area";
 import { cn } from "../../lib/cn";
@@ -109,12 +109,40 @@ export function ChatPanel({
   meta,
 }: ChatPanelProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
+  const copyTimer = useRef<number | null>(null);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
 
   // 当前正在生成的任务：列表里最后一条用户消息（仅在生成中显示编辑 / 撤回）。
   const lastUserIndex = messages.reduce(
     (acc, m, i) => (m.role === "user" ? i : acc),
     -1
   );
+
+  const handleCopy = useCallback(async (id: string, text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      // 退化方案：部分环境（非安全上下文）禁用异步剪贴板。
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      ta.style.position = "fixed";
+      ta.style.opacity = "0";
+      document.body.appendChild(ta);
+      ta.select();
+      try {
+        document.execCommand("copy");
+      } catch {
+        /* 忽略复制失败 */
+      }
+      document.body.removeChild(ta);
+    }
+    setCopiedId(id);
+    if (copyTimer.current) window.clearTimeout(copyTimer.current);
+    copyTimer.current = window.setTimeout(
+      () => setCopiedId((cur) => (cur === id ? null : cur)),
+      1500
+    );
+  }, []);
 
   useEffect(() => {
     const root = scrollRef.current;
@@ -124,6 +152,12 @@ export function ChatPanel({
       (root.firstElementChild as HTMLElement | null);
     if (viewport) viewport.scrollTop = viewport.scrollHeight;
   }, [messages]);
+
+  useEffect(() => {
+    return () => {
+      if (copyTimer.current) window.clearTimeout(copyTimer.current);
+    };
+  }, []);
 
   if (!session) {
     return (
@@ -245,7 +279,7 @@ export function ChatPanel({
                             : undefined
                         }
                         className={cn(
-                          "rounded-2xl px-3.5 py-2.5 text-[13.5px] leading-6",
+                          "group relative rounded-2xl px-3.5 py-2.5 text-[13.5px] leading-6",
                           !isAgent && "whitespace-pre-wrap",
                           isUser
                             ? "bg-brand-600 text-white shadow-soft"
@@ -267,6 +301,24 @@ export function ChatPanel({
                         ) : (
                           m.content
                         )}
+                        {!m.streaming ? (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              void handleCopy(m.id, m.content);
+                            }}
+                            title={copiedId === m.id ? "已复制" : "复制内容"}
+                            aria-label={copiedId === m.id ? "已复制" : "复制内容"}
+                            className="absolute right-2 top-2 z-10 flex size-7 items-center justify-center rounded-lg bg-white/90 text-ink-600 shadow-sm opacity-0 transition-opacity hover:bg-white hover:text-ink-900 focus-visible:opacity-100 group-hover:opacity-100"
+                          >
+                            {copiedId === m.id ? (
+                              <Check className="size-4" strokeWidth={2} />
+                            ) : (
+                              <Copy className="size-4" strokeWidth={1.75} />
+                            )}
+                          </button>
+                        ) : null}
                       </div>
                       {isActiveTask ? (
                         <div
