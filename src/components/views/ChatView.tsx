@@ -412,18 +412,29 @@ export function ChatView({
   };
 
   /** 后端是同步落库，停止 HTTP 请求后它可能仍在生成并稍后写入。
-   *  这里轮询删除最近一轮，直到后端真正落库并被清掉（最多约 6.4s）。 */
-  const cleanupLastTurn = useCallback(async (conversationId: string) => {
-    for (let i = 0; i < 8; i++) {
+   *  这里轮询删除「内容匹配」的本轮，直到后端真正落库并被清掉（最多约 6.4s）。
+   *  绝不能无条件删最近一轮——否则会误删上一轮已完成的历史。 */
+  const cleanupInFlight = useRef(false);
+  const cleanupLastTurn = useCallback(
+    async (conversationId: string, userContent: string) => {
+      if (cleanupInFlight.current) return;
+      cleanupInFlight.current = true;
       try {
-        const res = await deleteLastTurn(conversationId);
-        if (res.deleted > 0) return;
-      } catch {
-        /* 会话可能已被切换或删除，忽略 */
+        for (let i = 0; i < 8; i++) {
+          try {
+            const res = await deleteLastTurn(conversationId, userContent);
+            if (res.deleted > 0) return;
+          } catch {
+            /* 会话可能已被切换或删除，忽略 */
+          }
+          await new Promise((resolve) => setTimeout(resolve, 800));
+        }
+      } finally {
+        cleanupInFlight.current = false;
       }
-      await new Promise((resolve) => setTimeout(resolve, 800));
-    }
-  }, []);
+    },
+    []
+  );
 
   /** 主动停止 / 编辑 / 撤回：中止在途请求并清理气泡。 */
   const cancelCurrent = useCallback(
@@ -444,7 +455,10 @@ export function ChatView({
       if (mode === "stop") setError("已取消本次生成", "muted");
       else setError(null);
       if (mode === "edit" && pending) setRestoreText(pending.text);
-      if (activeId) void cleanupLastTurn(activeId);
+      // 只清理本轮（按用户原文匹配）；无 pending 时不要动历史。
+      if (activeId && pending?.text) {
+        void cleanupLastTurn(activeId, pending.text);
+      }
     },
     [activeId, cleanupLastTurn, setError]
   );

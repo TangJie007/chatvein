@@ -250,10 +250,15 @@ export function sendChat(
   }, signal);
 }
 
-/** 撤回 / 停止生成：删除该会话最近一轮（用户句 + 助手句）。 */
-export function deleteLastTurn(conversationId: string) {
+/** 撤回 / 停止生成：删除该会话最近一轮（用户句 + 助手句）。
+ *  传入 userContent 时仅当最近用户句匹配才删，避免停止时误删上一轮历史。 */
+export function deleteLastTurn(conversationId: string, userContent?: string | null) {
+  const q =
+    userContent != null && userContent !== ""
+      ? `?user_content=${encodeURIComponent(userContent)}`
+      : "";
   return backendRequest<{ deleted: number }>(
-    `/api/conversations/${conversationId}/turns/last`,
+    `/api/conversations/${conversationId}/turns/last${q}`,
     "DELETE"
   );
 }

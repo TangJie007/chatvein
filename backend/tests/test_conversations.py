@@ -102,3 +102,51 @@ def test_workspace_root_survives_legacy_tool_calls_schema() -> None:
             ).fetchone()[0]
         ).upper()
     assert turn_type == "TEXT"
+
+
+def test_delete_last_exchange_requires_matching_user_content() -> None:
+    """停止生成时若本轮尚未落库，不得误删上一轮历史。"""
+    service = ConversationsService()
+    conversation_id, _, _ = service.save_exchange(None, "第一问", "第一答")
+    service.save_exchange(conversation_id, "第二问", "第二答")
+
+    assert service.delete_last_exchange(conversation_id, user_content="尚未发送的内容") == 0
+    roles = [m["role"] for m in service.list_messages(conversation_id)]
+    assert roles == ["user", "assistant", "user", "assistant"]
+
+    assert service.delete_last_exchange(conversation_id, user_content="第二问") == 2
+    roles = [m["role"] for m in service.list_messages(conversation_id)]
+    assert roles == ["user", "assistant"]
+    assert service.list_messages(conversation_id)[0]["content"] == "第一问"
+
+
+def test_rehydrate_messages_from_session_when_main_empty() -> None:
+    """主库消息被清空后，应从会话空间短期记忆回填。"""
+    service = ConversationsService()
+    conversation_id, _, _ = service.save_exchange(None, "回填问", "回填答")
+    stored = service.get_conversation(conversation_id)
+    assert stored is not None
+    ws = stored["workspace_dir"]
+    service.record_turn(ws, user_text="回填问", reply_text="回填答", turn_id="t-rehydrate")
+
+    # 模拟误删主库消息
+    from conversations.repository import ConversationsRepository
+    from db import session_scope
+    from conversations.entity import Message
+    from sqlmodel import delete
+    from sqlalchemy import ColumnElement
+    from typing import Any, cast
+
+    with session_scope() as session:
+        session.exec(
+            delete(Message)
+            .where(cast("ColumnElement[Any]", Message.conversation_id) == conversation_id)
+            .execution_options(synchronize_session=False)
+        )
+
+    assert ConversationsRepository().list_messages(conversation_id) == []
+    restored = service.list_messages(conversation_id)
+    assert len(restored) >= 2
+    assert restored[0]["content"] == "回填问"
+    assert restored[1]["content"] == "回填答"
+

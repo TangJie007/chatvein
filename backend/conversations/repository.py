@@ -213,22 +213,83 @@ class ConversationsRepository:
         with session_scope() as session:
             return [_message_dict(m) for m in session.exec(statement).all()]
 
-    def delete_last_exchange(self, conversation_id: str) -> int:
+    def import_messages(
+        self,
+        conversation_id: str,
+        rows: list[dict[str, Any]],
+    ) -> list[MessageRecord]:
+        """把会话空间短期记忆回填到主库（仅主库为空时调用）。"""
+        if not rows:
+            return []
+        with session_scope() as session:
+            conversation = session.get(Conversation, conversation_id)
+            if conversation is None:
+                return []
+            existing = session.exec(
+                select(func.count())
+                .select_from(Message)
+                .where(_col(Message.conversation_id) == conversation_id)
+            ).one()
+            if int(existing or 0) > 0:
+                return [
+                    _message_dict(m)
+                    for m in session.exec(
+                        select(Message)
+                        .where(_col(Message.conversation_id) == conversation_id)
+                        .order_by(_col(Message.id))
+                    ).all()
+                ]
+            written: list[Message] = []
+            for row in rows:
+                role = str(row.get("role") or "")
+                if role not in ("user", "assistant", "system"):
+                    continue
+                content = str(row.get("content") or "")
+                if not content.strip():
+                    continue
+                message = Message(
+                    conversation_id=conversation_id,
+                    role=role,
+                    content=content,
+                    used_llm=bool(row.get("used_llm")),
+                    route=row.get("route"),
+                    turn_id=str(row.get("turn_id") or ""),
+                    created_at=utc_now(),
+                )
+                session.add(message)
+                written.append(message)
+            if written:
+                conversation.updated_at = utc_now()
+            session.flush()
+            return [_message_dict(m) for m in written]
+
+    def delete_last_exchange(
+        self, conversation_id: str, *, user_content: str | None = None
+    ) -> int:
         """删除该会话最近一轮（user + assistant 两条）消息，用于「撤回 / 停止」。
 
-        会话本身保留；返回实际删除的消息条数（0 表示还没有可删除的消息，
-        例如后端仍在生成、尚未落库）。
+        若提供 ``user_content``，仅当最近一条用户消息内容与之匹配时才删除，
+        避免「停止生成」时误删上一轮已完成的历史（本轮尚未落库）。
+
+        会话本身保留；返回实际删除的消息条数（0 表示没有可删或内容不匹配）。
         """
         with session_scope() as session:
-            ids = session.exec(
-                select(Message.id)
+            rows = session.exec(
+                select(Message)
                 .where(_col(Message.conversation_id) == conversation_id)
                 .order_by(_col(Message.id).desc())
                 .limit(2)
             ).all()
-            if not ids:
+            if not rows:
                 return 0
-            id_set = [int(i) for i in ids]
+            if user_content is not None:
+                expected = user_content.strip()
+                last_user = next((m for m in rows if m.role == "user"), None)
+                if last_user is None or (last_user.content or "").strip() != expected:
+                    return 0
+            id_set = [int(m.id) for m in rows if m.id is not None]
+            if not id_set:
+                return 0
             session.exec(
                 delete(Message)
                 .where(_col(Message.id).in_(id_set))

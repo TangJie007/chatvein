@@ -170,7 +170,7 @@ def list_messages(db_path: Path, *, limit: int = 40) -> list[dict[str, Any]]:
     limit = max(1, min(int(limit), 200))
     with _connect(db_path) as conn:
         rows = conn.execute(
-            "SELECT id, role, content, route, used_llm, created_at "
+            "SELECT id, role, content, route, used_llm, turn_id, created_at "
             "FROM messages ORDER BY id DESC LIMIT ?",
             (limit,),
         ).fetchall()
@@ -182,6 +182,7 @@ def list_messages(db_path: Path, *, limit: int = 40) -> list[dict[str, Any]]:
             "content": str(r["content"]),
             "route": r["route"],
             "used_llm": bool(r["used_llm"]),
+            "turn_id": str(r["turn_id"] or ""),
             "created_at": str(r["created_at"]),
         }
         for r in ordered

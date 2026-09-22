@@ -39,18 +39,44 @@ class ConversationsService:
         return self._repo.clear()
 
     def list_messages(self, conversation_id: str) -> list[MessageRecord]:
-        return self._repo.list_messages(conversation_id)
+        rows = self._repo.list_messages(conversation_id)
+        if rows:
+            return rows
+        return self._rehydrate_messages_from_session(conversation_id)
 
-    def delete_last_exchange(self, conversation_id: str) -> int:
+    def _rehydrate_messages_from_session(self, conversation_id: str) -> list[MessageRecord]:
+        """主库消息被误删时，从会话空间 ``session.sqlite`` 回填。"""
+        conversation = self._repo.get(conversation_id)
+        if conversation is None:
+            return []
+        name = (conversation.get("workspace_dir") or "").strip()
+        if not name:
+            return []
+        try:
+            db = session_db_path(self.workspace_root_for(name))
+            session_rows = session_store.list_messages(db, limit=200)
+        except Exception:
+            return []
+        if not session_rows:
+            return []
+        return self._repo.import_messages(conversation_id, session_rows)
+
+    def delete_last_exchange(
+        self, conversation_id: str, *, user_content: str | None = None
+    ) -> int:
         """撤回 / 停止：删除最近一轮对话（主库消息 + 会话空间短期记忆）。
 
-        返回主库删除的消息条数；会话空间里的同一轮（用户句、助手句、工具轨迹）
-        一并清理，避免被后续轮次当作历史上下文。
+        ``user_content`` 非空时只删内容匹配的本轮，避免误伤历史。
+        返回主库删除的消息条数。
         """
-        removed = self._repo.delete_last_exchange(conversation_id)
-        conversation = self._repo.get_conversation(conversation_id)
-        if conversation and conversation.workspace_dir:
-            root = self.workspace_root_for(conversation.workspace_dir)
+        removed = self._repo.delete_last_exchange(
+            conversation_id, user_content=user_content
+        )
+        if removed <= 0:
+            return 0
+        conversation = self._repo.get(conversation_id)
+        if conversation and conversation.get("workspace_dir"):
+            root = self.workspace_root_for(str(conversation["workspace_dir"]))
             db_path = session_db_path(root)
             try:
                 session_store.delete_last_exchange(db_path)
