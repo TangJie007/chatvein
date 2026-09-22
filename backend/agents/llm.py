@@ -17,12 +17,18 @@ def get_chat_model(
     *,
     temperature: float | None = None,
     role: dict[str, Any] | None = None,
+    streaming: bool | None = None,
+    thinking: bool | None = None,
 ) -> ChatOpenAI | None:
     """返回一个 ChatOpenAI 实例。
 
     - 角色 ``role`` 提供 ``model_id`` 时，优先用该模型连接；
     - 否则回退到运行时配置（主 → 默认 → 首条启用）。
     生成参数（温度 / Max Tokens / 惩罚项）以角色值为准，角色未给则用模型默认值。
+
+    ``streaming`` / ``thinking``：
+    - ``None``：沿用供应商默认（聊天主路径）；
+    - ``False``：显式关闭（路由 / 结构化判定等）。
     """
     try:
         svc = ModelsService()
@@ -63,10 +69,27 @@ def get_chat_model(
     }
     if cfg.base_url:
         kwargs["base_url"] = cfg.base_url
+    if streaming is False:
+        kwargs["streaming"] = False
+        kwargs["disable_streaming"] = True
+    elif streaming is True:
+        kwargs["streaming"] = True
+    if thinking is False:
+        # DeepSeek V4 等默认 thinking；强制 tool_choice 会 400。
+        kwargs["extra_body"] = {"thinking": {"type": "disabled"}}
     callbacks = active_callbacks()
     if callbacks:
         kwargs["callbacks"] = callbacks
     return ChatOpenAI(**kwargs)
+
+
+def get_router_model() -> ChatOpenAI | None:
+    """路由 Agent 专用模型。
+
+    只复用主模型（运行时配置）的 ``model_id`` / ``api_key`` / ``base_url``；
+    生成参数按路由语义固定：温度 0、关闭 thinking、非流式。
+    """
+    return get_chat_model(temperature=0, streaming=False, thinking=False)
 
 
 def invoke_structured(model: ChatOpenAI, schema: type, messages: list[Any]) -> Any:

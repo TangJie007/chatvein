@@ -95,7 +95,7 @@ def select_tools(
         }
 
     catalog = "\n".join(f"- {tool.name}: {tool.description}" for tool in tools)
-    model = llm_mod.get_chat_model(temperature=0)
+    model = llm_mod.get_chat_model(temperature=0, streaming=False, thinking=False)
 
     def _with_note(reason: str) -> str:
         if filter_note:

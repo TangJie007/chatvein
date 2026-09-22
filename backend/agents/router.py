@@ -38,7 +38,7 @@ class UnderstandDecision(BaseModel):
 def understand(message: str) -> dict[str, Any]:
     """返回 ``{rewritten, difficulty, reason, used_llm}``。全程主模型。"""
     text = (message or "").strip()
-    model = llm_mod.get_chat_model(temperature=0)
+    model = llm_mod.get_router_model()
     if model is None:
         return _offline(text)
 

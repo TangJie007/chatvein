@@ -124,7 +124,9 @@ def build_hard_graph(
 
     def plan_node(state: ChatState) -> dict[str, Any]:
         text = (state.get("rewritten") or state.get("message") or "").strip()
-        model = llm_mod.get_chat_model(temperature=0, role=role)
+        model = llm_mod.get_chat_model(
+            temperature=0, role=role, streaming=False, thinking=False
+        )
         if model is None:
             plan = _default_plan(text)
             note(
@@ -307,7 +309,9 @@ def build_hard_graph(
         ]
         trace = state.get("tool_trace") or []
         round_n = int(state.get("verify_round") or 0) + 1
-        model = llm_mod.get_chat_model(temperature=0, role=role)
+        model = llm_mod.get_chat_model(
+            temperature=0, role=role, streaming=False, thinking=False
+        )
 
         if model is None:
             passed = bool(reply.strip())
