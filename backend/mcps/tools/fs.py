@@ -38,8 +38,23 @@ _MAX_WALK = 2_000
 
 
 class FileEdit(BaseModel):
-    oldText: str = Field(description="要精确匹配的原文")
-    newText: str = Field(description="替换成的新文本")
+    oldText: str = Field(description="要被替换的原文（优先精确匹配）")
+    newText: str = Field(description="替换后的新文本")
+
+
+# 给 LLM 的 path 参数共用说明（写入 schema description）
+_PATH = (
+    "路径。会话内用相对 session_root 的路径（例：output/a.txt、.、runs/main.py）；"
+    "会话外必须绝对路径并将请用户确认。不要用 ../ 逃出会话。"
+)
+_PATH_FILE = (
+    "文件路径。会话内推荐相对路径（例：output/hello.txt）；"
+    "会话外必须绝对路径并将请用户确认。"
+)
+_PATH_DIR = (
+    "目录路径。会话内推荐相对路径（例：output、.）；"
+    "会话外必须绝对路径并将请用户确认。`.` 表示会话根。"
+)
 
 
 def _format_size(nbytes: int) -> str:
@@ -267,29 +282,39 @@ def _read_text_args(path: str, tail: int | None, head: int | None) -> str:
 
 @tool
 def read_file(
-    path: str,
-    tail: Annotated[int | None, Field(description="若提供，只返回文件最后 N 行")] = None,
-    head: Annotated[int | None, Field(description="若提供，只返回文件前 N 行")] = None,
+    path: Annotated[str, Field(description=_PATH_FILE)],
+    tail: Annotated[int | None, Field(description="只返回最后 N 行；勿与 head 同时使用")] = None,
+    head: Annotated[int | None, Field(description="只返回前 N 行；勿与 tail 同时使用")] = None,
 ) -> str:
-    """读取文本文件的全部内容。已废弃：请改用 read_text_file。不能同时指定 head 和 tail。仅限工作区。"""
+    """已废弃，请改用 read_text_file。读取 UTF-8 文本；可选用 head/tail 截取行数。"""
     return _read_text_args(path, tail, head)
 
 
 @tool
 def read_text_file(
-    path: str,
-    tail: Annotated[int | None, Field(description="若提供，只返回文件最后 N 行")] = None,
-    head: Annotated[int | None, Field(description="若提供，只返回文件前 N 行")] = None,
+    path: Annotated[str, Field(description=_PATH_FILE)],
+    tail: Annotated[int | None, Field(description="只返回最后 N 行；勿与 head 同时使用")] = None,
+    head: Annotated[int | None, Field(description="只返回前 N 行；勿与 tail 同时使用")] = None,
 ) -> str:
-    """按 UTF-8 读取工作区内的单个文本文件。可用 head 只读前 N 行，或 tail 只读最后 N 行，二者不能同时指定。超大文件请分段读取。"""
+    """读取单个 UTF-8 文本文件内容。
+
+    大文件请用 head/tail 分段读。head 与 tail 不能同时指定。
+    成功返回文件文本；失败返回错误原因。
+    """
     return _read_text_args(path, tail, head)
 
 
 @tool
 def read_multiple_files(
-    paths: Annotated[list[str], Field(min_length=1, description="要读取的文件路径列表，至少一项，且都必须在工作区内")],
+    paths: Annotated[
+        list[str],
+        Field(
+            min_length=1,
+            description="要读取的文件路径列表（至少 1 个）。每项规则同单文件 path：会话内相对路径，会话外绝对路径。",
+        ),
+    ],
 ) -> str:
-    """一次读取多个文本文件。单个文件失败不会中断其余文件。仅限工作区。"""
+    """一次读取多个 UTF-8 文本文件。单个失败不中断其余；结果用 --- 分隔。"""
     if not paths:
         return "至少提供一个文件路径"
     chunks: list[str] = []
@@ -303,18 +328,42 @@ def read_multiple_files(
 
 
 @tool
-def write_file(path: str, content: str) -> str:
-    """新建或完全覆盖文本文件。会话内可用相对/绝对路径；会话外必须用绝对路径且需用户确认。父目录必须已存在。用户产物优先写 output/。"""
+def write_file(
+    path: Annotated[
+        str,
+        Field(
+            description=(
+                "目标文件路径。用户产物优先写到 output/ 下的相对路径，"
+                "例：output/hello.txt。用户指定了扩展名时必须带上。"
+                "父目录必须已存在。会话外须绝对路径并确认。"
+            )
+        ),
+    ],
+    content: Annotated[
+        str,
+        Field(description="要写入的完整文本（UTF-8）。会整文件覆盖已存在内容。"),
+    ],
+) -> str:
+    """新建或整文件覆盖写入文本。
+
+    成功返回 Successfully wrote …；失败返回原因（父目录不存在、用户拒绝会话外路径等）。
+    """
     return _write_text(path, content)
 
 
 @tool
 def edit_file(
-    path: str,
-    edits: Annotated[list[FileEdit], Field(description="按顺序应用的替换；oldText 需精确匹配，找不到时会放宽为忽略首尾空白的逐行匹配")],
-    dryRun: Annotated[bool, Field(description="为 true 时只返回 git diff，不写盘")] = False,
+    path: Annotated[str, Field(description=_PATH_FILE)],
+    edits: Annotated[
+        list[FileEdit],
+        Field(description="按顺序的替换列表。每项含 oldText/newText；oldText 优先精确匹配。"),
+    ],
+    dryRun: Annotated[
+        bool,
+        Field(description="true=只预览 git diff 不写盘；false=写盘并返回 diff"),
+    ] = False,
 ) -> str:
-    """对文本文件做若干次精确替换，并返回 git 风格 diff。dryRun 为 true 时只预览不写盘。会话外绝对路径需确认。"""
+    """对已有文本文件做精确替换并返回 unified diff。文件必须已存在。"""
     target, err = _resolve(path, action="edit_file")
     if err or target is None:
         return err or "路径无效"
@@ -343,8 +392,13 @@ def edit_file(
 
 
 @tool
-def create_directory(path: str) -> str:
-    """创建目录（含多级父目录）。目录已存在时视为成功。会话外绝对路径需确认。"""
+def create_directory(
+    path: Annotated[
+        str,
+        Field(description="要创建的目录路径，可含多级。会话内例：output/notes。已存在视为成功。"),
+    ],
+) -> str:
+    """创建目录（含缺失的父目录）。已存在则成功返回。"""
     target, err = _resolve(path, action="create_directory")
     if err or target is None:
         return err or "路径无效"
@@ -359,8 +413,10 @@ def create_directory(path: str) -> str:
 
 
 @tool
-def list_directory(path: str) -> str:
-    """列出目录的直接子项。目录前缀 [DIR]，其余为 [FILE]（含指向目录的符号链接）。会话外绝对路径需确认。"""
+def list_directory(
+    path: Annotated[str, Field(description=_PATH_DIR)],
+) -> str:
+    """列出目录下一层子项。每行前缀 [DIR] 或 [FILE]。不递归。"""
     target, err = _resolve(path, action="list_directory")
     if err or target is None:
         return err or "路径无效"
@@ -377,10 +433,13 @@ def list_directory(path: str) -> str:
 
 @tool
 def list_directory_with_sizes(
-    path: str,
-    sortBy: Annotated[Literal["name", "size"], Field(description="按名称或大小排序；size 为从大到小")] = "name",
+    path: Annotated[str, Field(description=_PATH_DIR)],
+    sortBy: Annotated[
+        Literal["name", "size"],
+        Field(description="排序：name=按名称；size=按文件大小从大到小（目录无大小）"),
+    ] = "name",
 ) -> str:
-    """列出目录直接子项，文件附带大小。目录显示为 [DIR] 且不计入体积。会话外绝对路径需确认。"""
+    """列出目录下一层子项并附文件大小与合计。不递归。"""
     target, err = _resolve(path, action="list_directory_with_sizes")
     if err or target is None:
         return err or "路径无效"
@@ -416,13 +475,13 @@ def list_directory_with_sizes(
 
 @tool
 def directory_tree(
-    path: str,
+    path: Annotated[str, Field(description=_PATH_DIR)],
     excludePatterns: Annotated[
         list[str] | None,
-        Field(description="排除的 glob；无 * 时按名称匹配任意层级（如 node_modules）"),
+        Field(description="要排除的 glob，相对搜索起点。例：node_modules、*.log、**/dist/**"),
     ] = None,
 ) -> str:
-    """递归返回目录树 JSON。目录含 children（可为空），文件没有 children。会话外绝对路径需确认。"""
+    """递归返回目录树 JSON（name/type/children）。过深会截断。"""
     target, err = _resolve(path, action="directory_tree")
     if err or target is None:
         return err or "路径无效"
@@ -458,8 +517,14 @@ def directory_tree(
 
 
 @tool
-def move_file(source: str, destination: str) -> str:
-    """移动或重命名文件/目录。目标已存在则失败，不会覆盖。会话外绝对路径需确认。"""
+def move_file(
+    source: Annotated[str, Field(description=f"源路径。{_PATH}")],
+    destination: Annotated[
+        str,
+        Field(description="目标路径（含新文件名）。目标不得已存在，不会覆盖。父目录须已存在。"),
+    ],
+) -> str:
+    """移动或重命名文件/目录。目标已存在则失败。"""
     src, src_err = _resolve(source, action="move_file(source)")
     dest, dest_err = _resolve(destination, action="move_file(destination)")
     if src_err or src is None:
@@ -487,14 +552,22 @@ def move_file(source: str, destination: str) -> str:
 
 @tool
 def search_files(
-    path: str,
-    pattern: str,
+    path: Annotated[str, Field(description=f"搜索起点目录或文件。{_PATH_DIR}")],
+    pattern: Annotated[
+        str,
+        Field(
+            description=(
+                "相对起点的 glob。"
+                "例：*.txt 只匹配当前层；**/*.txt 匹配所有子目录；notes/** 匹配 notes 下所有。"
+            )
+        ),
+    ],
     excludePatterns: Annotated[
         list[str] | None,
-        Field(description="排除的 glob，相对搜索起点。如 *.log 或 **/node_modules/**"),
+        Field(description="排除的 glob 列表，相对搜索起点。例：['*.log','**/node_modules/**']"),
     ] = None,
 ) -> str:
-    """按 glob 递归查找文件和目录。*.ext 只匹配当前层，**/*.ext 匹配所有子目录。返回绝对路径。会话外绝对路径需确认。"""
+    """按 glob 递归查找，返回匹配项的绝对路径（每行一个）。无匹配则返回 No matches found。"""
     target, err = _resolve(path, action="search_files")
     if err or target is None:
         return err or "路径无效"
@@ -539,8 +612,10 @@ def search_files(
 
 
 @tool
-def get_file_info(path: str) -> str:
-    """返回文件或目录的大小、创建/修改/访问时间、权限和类型。不读取内容。会话外绝对路径需确认。"""
+def get_file_info(
+    path: Annotated[str, Field(description=_PATH)],
+) -> str:
+    """返回大小、创建/修改/访问时间、类型与权限。不读取文件内容。"""
     target, err = _resolve(path, action="get_file_info")
     if err or target is None:
         return err or "路径无效"
@@ -566,7 +641,7 @@ def get_file_info(path: str) -> str:
 
 @tool
 def list_allowed_directories() -> str:
-    """返回默认可直接访问的目录（当前会话工作区）。会话外路径须传绝对路径，并由用户确认后才能访问。"""
+    """返回当前会话根（可直接访问、无需确认）。会话外访问须绝对路径并等人确认。"""
     root, err = _sandbox_root()
     if err or root is None:
         return err or "当前没有会话工作区"
@@ -585,8 +660,10 @@ def _open_in_file_manager(path_str: str) -> None:
 
 
 @tool
-def open_folder(path: str = ".") -> str:
-    """在系统文件管理器中打开文件夹。若 path 是文件，则打开其所在目录。会话外绝对路径需确认。"""
+def open_folder(
+    path: Annotated[str, Field(description=_PATH_DIR)] = ".",
+) -> str:
+    """在系统文件管理器中打开目录。若 path 指向文件，则打开其所在目录。"""
     target, err = _resolve(path, action="open_folder")
     if err or target is None:
         return err or "路径无效"
@@ -602,8 +679,18 @@ def open_folder(path: str = ".") -> str:
 
 
 @tool
-def delete_path(path: str) -> str:
-    """删除文件或文件夹（文件夹连同内容）。不能删除会话根目录。会话外绝对路径需确认。"""
+def delete_path(
+    path: Annotated[
+        str,
+        Field(
+            description=(
+                "要删除的文件或目录路径。目录会连同内容删除。"
+                "不能传 . 或空（禁止删会话根）。会话外须绝对路径并确认。"
+            )
+        ),
+    ],
+) -> str:
+    """删除文件或目录。不可恢复；不能删除会话根。"""
     if (path or "").strip() in {"", ".", "./", ".\\"}:
         return "不能删除会话工作区根目录"
     sandbox, sandbox_err = _sandbox_root()
