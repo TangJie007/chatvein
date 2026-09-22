@@ -4,7 +4,6 @@ import { useEffect, useState } from "react";
 import {
   getTrace,
   listTraces,
-  type TraceMessage,
   type TraceStep,
   type TraceSummary,
   type TurnTrace,
@@ -12,6 +11,7 @@ import {
 import { TitleBar } from "../layout/TitleBar";
 import { Badge, type BadgeTone } from "../ui/badge";
 import { cn } from "../../lib/cn";
+import { JsonBlock } from "./JsonBlock";
 
 const STEP_LABEL: Record<string, string> = {
   understand: "理解",
@@ -21,15 +21,6 @@ const STEP_LABEL: Record<string, string> = {
   react: "ReAct",
   verify: "核对",
   route: "路由",
-};
-
-const ROLE_LABEL: Record<string, string> = {
-  system: "系统",
-  human: "用户",
-  user: "用户",
-  ai: "助手",
-  assistant: "助手",
-  tool: "工具",
 };
 
 function stepLabel(name: string): string {
@@ -85,56 +76,35 @@ function stepRows(steps: TraceStep[]): Array<{ step: TraceStep; depth: number }>
   return rows;
 }
 
-function pretty(value: unknown): string {
-  if (value == null || value === "") return "";
-  if (typeof value === "string") {
-    const trimmed = value.trim();
-    if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
-      try {
-        return JSON.stringify(JSON.parse(trimmed), null, 2);
-      } catch {
-        return value;
-      }
-    }
-    return value;
-  }
-  try {
-    return JSON.stringify(value, null, 2);
-  } catch {
-    return String(value);
-  }
-}
-
 function stringList(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
   return value.map((item) => String(item));
 }
 
-function MessageBlock({ message }: { message: TraceMessage }) {
-  return (
-    <div className="rounded-xl bg-surface px-3 py-2 shadow-soft">
-      <div className="text-[11px] font-medium text-ink-400">
-        {ROLE_LABEL[message.role] ?? message.role}
-        {message.name ? ` · ${message.name}` : ""}
-      </div>
-      <pre className="mt-1 whitespace-pre-wrap break-words font-mono text-[12px] leading-5 text-ink-800">
-        {message.content || "（空）"}
-      </pre>
-      {message.tool_calls?.length ? (
-        <pre className="mt-2 whitespace-pre-wrap break-words font-mono text-[12px] leading-5 text-ink-700">
-          {message.tool_calls
-            .map((call) => `${call.name} ${pretty(call.args)}`)
-            .join("\n\n")}
-        </pre>
-      ) : null}
-    </div>
-  );
+/** 拼出调试用的完整请求体（模型 + 调用参数 + messages）。 */
+function requestPayload(step: TraceStep): unknown {
+  if (!step.request && !step.invocation && !step.model) return null;
+  return {
+    model: step.model ?? null,
+    ...(step.invocation && Object.keys(step.invocation).length > 0
+      ? { invocation: step.invocation }
+      : {}),
+    ...(step.request ?? { messages: [] }),
+  };
+}
+
+/** 拼出完整响应体。 */
+function responsePayload(step: TraceStep): unknown {
+  if (!step.response) return null;
+  return step.response;
 }
 
 function StepDetail({ step }: { step: TraceStep }) {
   const selected = stringList(step.detail?.selected_tools);
   const candidates = stringList(step.detail?.candidate_tools);
   const picked = new Set(selected);
+  const requestJson = requestPayload(step);
+  const responseJson = responsePayload(step);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-auto px-4 py-4">
@@ -169,37 +139,10 @@ function StepDetail({ step }: { step: TraceStep }) {
         </p>
       ) : null}
 
-      {step.invocation && Object.keys(step.invocation).length > 0 ? (
-        <section className="flex flex-col gap-2">
-          <h3 className="text-[12px] font-medium text-ink-500">调用参数</h3>
-          <p className="text-[12.5px] leading-6 text-ink-700">
-            {[
-              step.invocation.temperature != null ? `temperature ${step.invocation.temperature}` : "",
-              step.invocation.max_tokens != null ? `max_tokens ${step.invocation.max_tokens}` : "",
-              step.invocation.top_p != null ? `top_p ${step.invocation.top_p}` : "",
-              step.invocation.response_format ? `format ${step.invocation.response_format}` : "",
-              step.invocation.max_retries != null ? `retries ${step.invocation.max_retries}` : "",
-            ]
-              .filter(Boolean)
-              .join(" · ") || "已记录"}
-          </p>
-          {Array.isArray(step.invocation.tools) && step.invocation.tools.length > 0 ? (
-            <div className="flex flex-wrap gap-1.5">
-              {step.invocation.tools.map((tool) => (
-                <Badge key={tool.name} tone="neutral">
-                  {tool.name}
-                </Badge>
-              ))}
-            </div>
-          ) : null}
-        </section>
-      ) : null}
-
       {step.kind === "route" ? (
-        <section className="flex flex-col gap-2 text-[13px] leading-6 text-ink-800">
-          <p>难度 {String(step.detail?.difficulty || "—")}</p>
-          <p>改写 {String(step.detail?.rewritten || "—")}</p>
-          <p>理由 {String(step.detail?.reason || "—")}</p>
+        <section className="flex flex-col gap-2">
+          <h3 className="text-[12px] font-medium text-ink-500">路由 detail</h3>
+          <JsonBlock value={step.detail ?? {}} />
         </section>
       ) : null}
 
@@ -223,41 +166,38 @@ function StepDetail({ step }: { step: TraceStep }) {
               ) : null}
             </div>
           </div>
+          <h3 className="text-[12px] font-medium text-ink-500">detail JSON</h3>
+          <JsonBlock value={step.detail ?? {}} maxHeight={280} />
         </section>
       ) : null}
 
-      {step.request?.messages?.length ? (
+      {requestJson != null ? (
         <section className="flex flex-col gap-2">
-          <h3 className="text-[12px] font-medium text-ink-500">Request</h3>
-          {step.request.messages.map((message, index) => (
-            <MessageBlock key={`${message.role}-${index}`} message={message} />
-          ))}
+          <h3 className="text-[12px] font-medium text-ink-500">Request（完整 JSON）</h3>
+          <JsonBlock value={requestJson} maxHeight={560} />
         </section>
       ) : null}
 
-      {step.response ? (
+      {responseJson != null ? (
         <section className="flex flex-col gap-2">
-          <h3 className="text-[12px] font-medium text-ink-500">Response</h3>
-          <MessageBlock
-            message={{
-              role: "ai",
-              content: step.response.content,
-              tool_calls: step.response.tool_calls,
-            }}
-          />
+          <h3 className="text-[12px] font-medium text-ink-500">Response（完整 JSON）</h3>
+          <JsonBlock value={responseJson} maxHeight={420} />
         </section>
       ) : null}
 
       {step.kind === "tool" ? (
         <section className="flex flex-col gap-2">
-          <h3 className="text-[12px] font-medium text-ink-500">参数</h3>
-          <pre className="whitespace-pre-wrap break-words rounded-xl bg-surface px-3 py-2 font-mono text-[12px] leading-5 text-ink-800 shadow-soft">
-            {pretty(step.arguments) || "（无）"}
-          </pre>
-          <h3 className="text-[12px] font-medium text-ink-500">返回</h3>
-          <pre className="whitespace-pre-wrap break-words rounded-xl bg-surface px-3 py-2 font-mono text-[12px] leading-5 text-ink-800 shadow-soft">
-            {step.result || "（空）"}
-          </pre>
+          <h3 className="text-[12px] font-medium text-ink-500">参数 JSON</h3>
+          <JsonBlock value={step.arguments ?? null} emptyLabel="（无参数）" />
+          <h3 className="text-[12px] font-medium text-ink-500">返回 JSON</h3>
+          <JsonBlock value={step.result ?? null} emptyLabel="（空返回）" maxHeight={420} />
+        </section>
+      ) : null}
+
+      {step.error_detail && Object.keys(step.error_detail).length > 0 ? (
+        <section className="flex flex-col gap-2">
+          <h3 className="text-[12px] font-medium text-ink-500">错误详情 JSON</h3>
+          <JsonBlock value={step.error_detail} maxHeight={240} />
         </section>
       ) : null}
     </div>
@@ -515,11 +455,13 @@ export function TraceWindow({
         )}
       </section>
 
-      <aside className="flex w-[420px] shrink-0 flex-col overflow-hidden rounded-lg bg-panel">
+      <aside className="flex w-[520px] shrink-0 flex-col overflow-hidden rounded-lg bg-panel">
         {step ? (
           <StepDetail step={step} />
         ) : (
-          <p className="px-4 py-8 text-[13px] text-ink-400">点中间的步骤查看 request 和 response。</p>
+          <p className="px-4 py-8 text-[13px] text-ink-400">
+            点中间的步骤查看完整 Request / Response JSON。
+          </p>
         )}
       </aside>
     </div>

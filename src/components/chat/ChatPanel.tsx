@@ -5,6 +5,7 @@ import { ScrollArea } from "../ui/scroll-area";
 import { cn } from "../../lib/cn";
 import { Composer } from "./Composer";
 import { MarkdownMessage } from "./MarkdownMessage";
+import { WaitingBubble } from "./WaitingBubble";
 import type { SessionItem } from "./SessionList";
 import {
   InsightPanel,
@@ -232,7 +233,11 @@ export function ChatPanel({
                         )}
                       >
                         {isAgent ? (
-                          <MarkdownMessage content={m.content} streaming={m.streaming} />
+                          m.streaming && !m.content.trim() ? (
+                            <WaitingBubble />
+                          ) : (
+                            <MarkdownMessage content={m.content} streaming={m.streaming} />
+                          )
                         ) : (
                           m.content
                         )}

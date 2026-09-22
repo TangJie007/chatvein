@@ -169,6 +169,15 @@
   color: var(--color-ink-900);
 }
 
+/* 追踪 JSON 代码块：贴合面板，去掉多余外边距 */
+.trace-json [data-streamdown="code-block"],
+.trace-json pre {
+  margin: 0;
+}
+.trace-json {
+  font-size: 12px;
+}
+
 html,
 body,
 #root {
