@@ -1,7 +1,7 @@
 import { listen } from "@tauri-apps/api/event";
 import { type ReactNode, useEffect, useState } from "react";
-import { getBackendUrl, markBackendReady, waitForBackend } from "../api";
-import { TitleBar } from "./layout/TitleBar";
+import { getBackendUrl, markBackendReady, waitForBackend } from "../../api";
+import { TitleBar } from "./TitleBar";
 
 type Status = "loading" | "ready" | "error";
 
@@ -85,7 +85,7 @@ export function BackendGate({ children }: { children: ReactNode }) {
               className="h-8 w-8 animate-spin rounded-full border-2 border-brand-100 border-t-brand-600"
               aria-hidden
             />
-            <p className="text-sm text-ink-500">正在启动后端…</p>
+            <p className="text-sm text-ink-500">数据库与工作空间加载中，请等待</p>
           </>
         ) : (
           <>
