@@ -11,22 +11,40 @@ import { fetch } from "@tauri-apps/plugin-http";
  */
 
 let cachedUrl: string | null = null;
+/** Set when Rust emits `backend-ready` (or a successful health poll). */
+let backendReady = false;
+
+/** Cache URL from the Rust `backend-ready` event so later requests skip cold start. */
+export function markBackendReady(url: string): void {
+  cachedUrl = url;
+  backendReady = true;
+}
 
 /** Rust pushes the real backend URL at startup; this caches it. */
 export async function getBackendUrl(): Promise<string> {
   if (cachedUrl) return cachedUrl;
-  cachedUrl = await invoke<string>("backend_url");
+  try {
+    cachedUrl = await invoke<string>("backend_url");
+  } catch {
+    // Browser preview without Tauri — assume the fixed dev port.
+    cachedUrl = "http://127.0.0.1:8420";
+  }
   return cachedUrl;
 }
 
 /** Wait until the Python backend is actually listening (polls /api/health). */
 export async function waitForBackend(timeoutMs = 20000): Promise<string> {
+  if (backendReady && cachedUrl) return cachedUrl;
   const url = await getBackendUrl();
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
+    if (backendReady && cachedUrl) return cachedUrl;
     try {
       const r = await fetch(`${url}/api/health`);
-      if (r.ok) return url;
+      if (r.ok) {
+        markBackendReady(url);
+        return url;
+      }
     } catch {
       // not up yet — keep polling
     }
