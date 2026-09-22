@@ -132,7 +132,7 @@ function MainLayout() {
   };
 
   return (
-    <div className="relative flex h-screen w-screen min-h-[650px] min-w-[1050px] flex-col overflow-hidden bg-page font-sans text-ink-900 antialiased select-none">
+    <div className="relative flex h-screen w-screen min-h-[700px] min-w-[1250px] flex-col overflow-hidden bg-page font-sans text-ink-900 antialiased select-none">
       <TitleBar />
 
       <div className="flex min-h-0 min-w-0 flex-1">

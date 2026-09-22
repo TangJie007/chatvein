@@ -43,23 +43,47 @@ export async function backendRequest<T = unknown>(
   signal?: AbortSignal | null
 ): Promise<T> {
   const url = await waitForBackend();
-  const res = await fetch(`${url}${endpoint}`, {
-    method,
-    headers: body ? { "Content-Type": "application/json" } : undefined,
-    body: body ? JSON.stringify(body) : undefined,
-    signal: signal ?? undefined,
-  });
-  const text = await res.text();
-  let data: unknown = text;
   try {
-    data = JSON.parse(text);
-  } catch {
-    /* keep raw text when not JSON */
+    const res = await fetch(`${url}${endpoint}`, {
+      method,
+      headers: body ? { "Content-Type": "application/json" } : undefined,
+      body: body ? JSON.stringify(body) : undefined,
+      signal: signal ?? undefined,
+    });
+    const text = await res.text();
+    let data: unknown = text;
+    try {
+      data = JSON.parse(text);
+    } catch {
+      /* keep raw text when not JSON */
+    }
+    if (!res.ok) {
+      throw new Error(`Backend ${res.status}: ${text}`);
+    }
+    return data as T;
+  } catch (err) {
+    // Tauri plugin-http：Rust 抛 string "Request canceled"；JS 侧为 "Request cancelled"。
+    if (signal?.aborted || isHttpAbort(err)) {
+      const abortErr = new DOMException("Request cancelled", "AbortError");
+      throw abortErr;
+    }
+    throw err;
   }
-  if (!res.ok) {
-    throw new Error(`Backend ${res.status}: ${text}`);
-  }
-  return data as T;
+}
+
+function isHttpAbort(err: unknown): boolean {
+  if (err instanceof DOMException && err.name === "AbortError") return true;
+  if (err instanceof Error && err.name === "AbortError") return true;
+  const msg =
+    typeof err === "string"
+      ? err
+      : err instanceof Error
+        ? err.message
+        : err && typeof err === "object" && "message" in err
+          ? String((err as { message: unknown }).message)
+          : String(err);
+  const lower = msg.toLowerCase();
+  return lower.includes("request canceled") || lower.includes("request cancelled");
 }
 
 /** Lightweight health check against the Python backend. */

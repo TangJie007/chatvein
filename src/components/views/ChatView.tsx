@@ -98,17 +98,23 @@ function toChatMessages(rows: ChatMessageRecord[]): ChatMessage[] {
   }));
 }
 
-/** Tauri 插件 abort 文案可能是 canceled / cancelled；浏览器则为 AbortError。 */
+/** 抽取任意抛错上的可读文案（Tauri invoke 可能是 string，不是 Error）。 */
+function errorMessage(err: unknown): string {
+  if (typeof err === "string") return err;
+  if (err instanceof Error) return err.message;
+  if (err && typeof err === "object" && "message" in err) {
+    const msg = (err as { message: unknown }).message;
+    if (typeof msg === "string") return msg;
+  }
+  return String(err);
+}
+
+/** Tauri HTTP：Rust 为 "Request canceled"；JS 乐观路径为 "Request cancelled"；浏览器为 AbortError。 */
 function isAbortError(err: unknown): boolean {
-  if (!(err instanceof Error)) return false;
-  if (err.name === "AbortError") return true;
-  const msg = err.message.toLowerCase();
-  return (
-    msg === "request cancelled" ||
-    msg === "request canceled" ||
-    msg.includes("request cancelled") ||
-    msg.includes("request canceled")
-  );
+  if (err instanceof DOMException && err.name === "AbortError") return true;
+  if (err instanceof Error && err.name === "AbortError") return true;
+  const msg = errorMessage(err).toLowerCase();
+  return msg.includes("request canceled") || msg.includes("request cancelled");
 }
 
 type ChatViewProps = {
@@ -150,6 +156,8 @@ export function ChatView({
   }, []);
   /** 当前在途请求的取消控制器；非 null 表示 Agent 正在生成。 */
   const abortRef = useRef<AbortController | null>(null);
+  /** 本次 abort 的意图：catch 里用来决定要不要展示「已取消」提示。 */
+  const cancelModeRef = useRef<"stop" | "edit" | "recall" | null>(null);
   /** 本轮乐观插入的用户 / 助手气泡 id 与原文，便于停止 / 撤回时精确移除。 */
   const pendingRef = useRef<{
     userId: string;
@@ -386,13 +394,17 @@ export function ChatView({
       await refreshList();
       await loadConversation(result.conversation_id);
     } catch (err) {
-      // 用户主动停止 / 撤回：提示取消，不当作错误。
-      if (isAbortError(err)) {
-        setError("已取消本次生成", "muted");
+      // Rust 抛 string "Request canceled"（非 Error）；以 signal / 文案双保险，绝不能落到红字。
+      if (controller.signal.aborted || isAbortError(err)) {
+        const mode = cancelModeRef.current;
+        cancelModeRef.current = null;
+        if (mode === "stop" || mode == null) {
+          setError("已取消本次生成", "muted");
+        }
         return;
       }
       setMessages((prev) => prev.filter((m) => m.id !== optimisticId && m.id !== pendingId));
-      setError(err instanceof Error ? err.message : String(err));
+      setError(errorMessage(err));
     } finally {
       if (abortRef.current === controller) abortRef.current = null;
       setSending(false);
@@ -416,6 +428,7 @@ export function ChatView({
   /** 主动停止 / 编辑 / 撤回：中止在途请求并清理气泡。 */
   const cancelCurrent = useCallback(
     (mode: "stop" | "edit" | "recall") => {
+      cancelModeRef.current = mode;
       const controller = abortRef.current;
       if (controller) controller.abort();
       abortRef.current = null;
@@ -427,11 +440,13 @@ export function ChatView({
       );
       pendingRef.current = null;
       setSending(false);
-      setError(null);
+      // 停止：立刻给中性提示；编辑 / 撤回不额外打扰。
+      if (mode === "stop") setError("已取消本次生成", "muted");
+      else setError(null);
       if (mode === "edit" && pending) setRestoreText(pending.text);
       if (activeId) void cleanupLastTurn(activeId);
     },
-    [activeId, cleanupLastTurn]
+    [activeId, cleanupLastTurn, setError]
   );
 
   const handleDelete = useCallback(
