@@ -222,7 +222,7 @@ export function ChatPanel({
         </header>
 
         <ScrollArea ref={scrollRef} className="flex-1 px-6 pb-2">
-          <div className="mx-auto flex max-w-[760px] flex-col gap-5 pb-4">
+          <div className="mx-auto flex max-w-[760px] flex-col gap-0.5 pb-4">
             {messages.length === 0 ? (
               <p className="py-16 text-center text-[13px] text-ink-400">
                 还没有消息。输入内容后发送即可开始。
@@ -261,7 +261,7 @@ export function ChatPanel({
                     ) : null}
                     <div
                       className={cn(
-                        "flex min-w-0 flex-col gap-1",
+                        "group flex min-w-0 flex-col gap-1",
                         isAgent ? "max-w-[min(92%,720px)]" : "max-w-[78%]"
                       )}
                     >
@@ -279,7 +279,7 @@ export function ChatPanel({
                             : undefined
                         }
                         className={cn(
-                          "group relative rounded-2xl px-3.5 py-2.5 text-[13.5px] leading-6",
+                          "rounded-2xl px-3.5 py-2.5 text-[13.5px] leading-6",
                           !isAgent && "whitespace-pre-wrap",
                           isUser
                             ? "bg-brand-600 text-white shadow-soft"
@@ -301,24 +301,6 @@ export function ChatPanel({
                         ) : (
                           m.content
                         )}
-                        {!m.streaming ? (
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              void handleCopy(m.id, m.content);
-                            }}
-                            title={copiedId === m.id ? "已复制" : "复制内容"}
-                            aria-label={copiedId === m.id ? "已复制" : "复制内容"}
-                            className="absolute right-2 top-2 z-10 flex size-7 items-center justify-center rounded-lg bg-white/90 text-ink-600 shadow-sm opacity-0 transition-opacity hover:bg-white hover:text-ink-900 focus-visible:opacity-100 group-hover:opacity-100"
-                          >
-                            {copiedId === m.id ? (
-                              <Check className="size-4" strokeWidth={2} />
-                            ) : (
-                              <Copy className="size-4" strokeWidth={1.75} />
-                            )}
-                          </button>
-                        ) : null}
                       </div>
                       {isActiveTask ? (
                         <div
@@ -344,6 +326,50 @@ export function ChatPanel({
                           >
                             <Undo2 className="size-3.5" strokeWidth={1.75} />
                             撤回
+                          </button>
+                          {!m.streaming ? (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                void handleCopy(m.id, m.content);
+                              }}
+                              title={copiedId === m.id ? "已复制" : "复制内容"}
+                              aria-label={copiedId === m.id ? "已复制" : "复制内容"}
+                              className="flex items-center gap-1 rounded-lg px-2 py-1 text-[11.5px] text-ink-400 opacity-0 transition-[opacity,colors] hover:bg-tint hover:text-ink-700 focus-visible:opacity-100 group-hover:opacity-100"
+                            >
+                              {copiedId === m.id ? (
+                                <Check className="size-3.5" strokeWidth={2} />
+                              ) : (
+                                <Copy className="size-3.5" strokeWidth={1.75} />
+                              )}
+                              {copiedId === m.id ? "已复制" : "复制"}
+                            </button>
+                          ) : null}
+                        </div>
+                      ) : !m.streaming ? (
+                        <div
+                          className={cn(
+                            "flex items-center",
+                            isUser ? "self-end" : "self-start"
+                          )}
+                        >
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              void handleCopy(m.id, m.content);
+                            }}
+                            title={copiedId === m.id ? "已复制" : "复制内容"}
+                            aria-label={copiedId === m.id ? "已复制" : "复制内容"}
+                            className="flex items-center gap-1 rounded-lg px-2 py-1 text-[11.5px] text-ink-400 opacity-0 transition-[opacity,colors] hover:bg-tint hover:text-ink-700 focus-visible:opacity-100 group-hover:opacity-100"
+                          >
+                            {copiedId === m.id ? (
+                              <Check className="size-3.5" strokeWidth={2} />
+                            ) : (
+                              <Copy className="size-3.5" strokeWidth={1.75} />
+                            )}
+                            {copiedId === m.id ? "已复制" : "复制"}
                           </button>
                         </div>
                       ) : null}
