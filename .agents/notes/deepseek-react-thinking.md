@@ -1,22 +1,18 @@
-# DeepSeek thinking + ReAct
+# LLM 线路协议（不是按模型名硬编码）
 
-## 问题
+## 原则
 
-DeepSeek V4 默认 **thinking**。带 `tools` 的多轮（ReAct）要求把上一轮 assistant 的 `reasoning_content` 原样回传，否则第二轮 HTTP 400 / 表现成「卡在循环里」。
+默认一切按 **OpenAI Chat Completions 兼容**处理。加新模型（SenseNova / 通义 / 自建网关…）只配 `base_url` + `model_id`，**不要**再写 `if model == xxx`。
 
-`ChatOpenAI` 与上游 `ChatDeepSeek`（至 1.1.x）序列化消息时都会丢掉该字段。
+只有协议真相反时才分线路：
 
-## 方案
+| 线路 | 何时 | 行为 |
+| --- | --- | --- |
+| `openai`（默认） | 其它全部 | 出站剥 `reasoning` / `reasoning_content`；不发 DeepSeek `thinking` 字段 |
+| `deepseek` | provider/model/base_url 含 deepseek | 回传 `reasoning_content`；`thinking=False` → `thinking.type=disabled` |
 
-- 依赖：`langchain-deepseek`（入库 `reasoning_content` 到 `AIMessage.additional_kwargs`）。
-- 自研窄补丁：`agents/llm.py` 的 `ChatDeepSeekReact`，在 `_get_request_payload` 把 `reasoning_content` 写回 payload。
-- 检测到 provider / model_id / base_url 含 `deepseek` 时用该子类；否则仍用 `ChatOpenAI`。
+DeepSeek 是「必须回传思考」；多数兼容网关是「禁止回传思考」。默认走后者，避免 DeepSeek 修复污染 SenseNova 等。
 
-## 谁关 thinking
+## 以后若要可配置
 
-| 路径 | thinking |
-| --- | --- |
-| 路由 / 工具选型 / hard 规划·核对（结构化 + 强制 tool_choice） | **关**（不需要长思考，且 thinking 拒强制 tool_choice） |
-| simple / medium·hard **ReAct** | **开**（靠 `ChatDeepSeekReact` 回传） |
-
-否决「ReAct 一律关 thinking」：会削弱 Agent 推理，只是绕过序列化缺陷。
+在模型表加可选 `wire_profile: openai|deepseek`（下拉两项），而不是为每个模型 ID 加分支。当前用 URL/provider 自动推断 deepseek 即可。

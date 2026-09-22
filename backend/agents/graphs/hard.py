@@ -22,7 +22,6 @@ from ..memory import to_lc_messages
 from trace import (  # pyright: ignore[reportMissingImports]
     note,
     record_tools_if_absent,
-    runnable_config,
     span,
     trace_checkpoint,
 )
@@ -30,6 +29,7 @@ from trace import (  # pyright: ignore[reportMissingImports]
 from .common import (
     allowed_from_role,
     build_react_graph,
+    invoke_react,
     last_text,
     merge_tool_traces,
 )
@@ -50,7 +50,8 @@ _HARD_SYSTEM = (
 
 _RECURSION_LIMIT = 28
 _MAX_VERIFY_ROUNDS = 2
-_LLM_TIMEOUT = 90.0
+_LLM_TIMEOUT = 120.0
+_REACT_DEADLINE_S = 420.0
 
 
 class TaskPlan(BaseModel):
@@ -282,9 +283,11 @@ def build_hard_graph(
             ]
             with span("react"):
                 mark = trace_checkpoint()
-                out = agent.invoke(
+                out = invoke_react(
+                    agent,
                     {"messages": messages},
-                    config=runnable_config({"recursion_limit": _RECURSION_LIMIT}),
+                    recursion_limit=_RECURSION_LIMIT,
+                    deadline_s=_REACT_DEADLINE_S,
                 )
                 out_messages = out.get("messages") or []
                 reply = last_text(out_messages) or "工具调用完成，但无文本回复。"

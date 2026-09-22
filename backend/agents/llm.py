@@ -1,13 +1,18 @@
 """Chat 模型工厂：读 ModelsService 运行时配置，可被角色覆盖。
 
-DeepSeek thinking + 工具多轮时，API 要求回传 ``reasoning_content``。
-``ChatOpenAI`` / 上游 ``ChatDeepSeek`` 都会在序列化时丢掉该字段，导致 ReAct
-第二轮 400 或卡住。本模块对 DeepSeek 使用带回传补丁的子类，让 ReAct 可保留 thinking。
+默认假定 **OpenAI Chat Completions 兼容**网关；不为每个模型名写分支。
+
+仅两种线路协议：
+- ``openai``（默认）：出站剥掉 ``reasoning`` / ``reasoning_content``（多数网关只允许回传 content）；
+  不发送 DeepSeek 专用 ``thinking`` 字段。
+- ``deepseek``：须回传 ``reasoning_content``，关思考用 ``thinking.type=disabled``。
+
+新模型只要走 OpenAI 兼容协议，加配置即可，无需再改代码。
 """
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage, SystemMessage
@@ -19,13 +24,34 @@ from models.service import ModelsService  # pyright: ignore[reportImplicitRelati
 
 from trace import active_callbacks  # pyright: ignore[reportMissingImports]
 
+WireProfile = Literal["openai", "deepseek"]
+
+
+class ChatOpenAICompat(ChatOpenAI):
+    """通用 OpenAI 兼容客户端。
+
+    多轮工具调用时去掉 assistant 上的思考字段，避免各家网关「禁止回传 reasoning」卡死。
+    （DeepSeek 相反，走 ``ChatDeepSeekReact``。）
+    """
+
+    def _get_request_payload(
+        self,
+        input_: Any,
+        *,
+        stop: list[str] | None = None,
+        **kwargs: Any,
+    ) -> dict:
+        payload = super()._get_request_payload(input_, stop=stop, **kwargs)
+        for row in payload.get("messages") or []:
+            if not isinstance(row, dict) or row.get("role") != "assistant":
+                continue
+            row.pop("reasoning", None)
+            row.pop("reasoning_content", None)
+        return payload
+
 
 class ChatDeepSeekReact(ChatDeepSeek):
-    """DeepSeek：多轮请求时把 ``reasoning_content`` 写回 assistant 消息。
-
-    与官方文档 / langchain#37177 一致：thinking 模式下跟过 tool 之后的请求
-    必须带回上一轮的 reasoning，否则 HTTP 400。
-    """
+    """DeepSeek 线路：多轮把 ``reasoning_content`` 写回 assistant 消息。"""
 
     def _get_request_payload(
         self,
@@ -56,14 +82,20 @@ class ChatDeepSeekReact(ChatDeepSeek):
             if value is not None:
                 row["reasoning_content"] = value
             elif row.get("tool_calls"):
-                # 有 tool_calls 的 assistant 轮次也要求带上该字段（可为空串）。
                 row["reasoning_content"] = ""
         return payload
 
 
-def _is_deepseek(cfg: Any) -> bool:
-    blob = f"{getattr(cfg, 'provider', '')} {getattr(cfg, 'model_id', '')} {getattr(cfg, 'base_url', '') or ''}"
-    return "deepseek" in blob.lower()
+def resolve_wire_profile(cfg: Any) -> WireProfile:
+    """推断线路协议。默认 openai；仅 DeepSeek 官方线路切到 deepseek。"""
+    blob = (
+        f"{getattr(cfg, 'provider', '')} "
+        f"{getattr(cfg, 'model_id', '')} "
+        f"{getattr(cfg, 'base_url', '') or ''}"
+    ).lower()
+    if "deepseek" in blob:
+        return "deepseek"
+    return "openai"
 
 
 def get_chat_model(
@@ -78,16 +110,8 @@ def get_chat_model(
 
     - 角色 ``role`` 提供 ``model_id`` 时，优先用该模型连接；
     - 否则回退到运行时配置（主 → 默认 → 首条启用）。
-    生成参数（温度 / Max Tokens / 惩罚项）以角色值为准，角色未给则用模型默认值。
 
-    DeepSeek（含兼容网关）走 ``ChatDeepSeekReact``，可保留 thinking + 工具多轮；
-    其它供应商仍用 ``ChatOpenAI``。
-
-    ``streaming`` / ``thinking``：
-    - ``None``：沿用供应商默认；
-    - ``False``：显式关闭（路由 / 结构化判定等不需要长思考的路径）。
-
-    ``timeout``：单次 HTTP 请求超时（秒）；``None`` 不覆盖库默认。
+    ``thinking=False``：仅 deepseek 线路发 ``thinking.disabled``；openai 线路不塞额外字段。
     """
     try:
         svc = ModelsService()
@@ -133,8 +157,9 @@ def get_chat_model(
         kwargs["disable_streaming"] = True
     elif streaming is True:
         kwargs["streaming"] = True
-    if thinking is False:
-        # 路由 / 结构化：不需要长思考；且 thinking 下强制 tool_choice 会 400。
+
+    profile = resolve_wire_profile(cfg)
+    if thinking is False and profile == "deepseek":
         kwargs["extra_body"] = {"thinking": {"type": "disabled"}}
     if timeout is not None:
         kwargs["timeout"] = timeout
@@ -142,27 +167,18 @@ def get_chat_model(
     if callbacks:
         kwargs["callbacks"] = callbacks
 
-    if _is_deepseek(cfg):
+    if profile == "deepseek":
         return ChatDeepSeekReact(**kwargs)
-    return ChatOpenAI(**kwargs)
+    return ChatOpenAICompat(**kwargs)
 
 
 def get_router_model() -> BaseChatModel | None:
-    """路由 Agent 专用模型。
-
-    只复用主模型（运行时配置）的 ``model_id`` / ``api_key`` / ``base_url``；
-    生成参数按路由语义固定：温度 0、关闭 thinking、非流式。
-    """
+    """路由 Agent：主模型连接信息 + 温度 0 / 非流式；按线路安全关思考。"""
     return get_chat_model(temperature=0, streaming=False, thinking=False)
 
 
 def invoke_structured(model: BaseChatModel, schema: type, messages: list[Any]) -> Any:
-    """按结构化结果调用模型。
-
-    ``with_structured_output`` 默认 ``method="json_schema"``，会发送
-    ``response_format.type=json_schema``。DeepSeek 等兼容接口只接受 ``json_object``
-    或工具调用，否则返回 400：``This response_format type is unavailable now``。
-    """
+    """按结构化结果调用模型。"""
     last: BaseException | None = None
     for method in ("function_calling", "json_mode"):
         payload = messages
@@ -204,5 +220,6 @@ def _structured_method_rejected(exc: BaseException) -> bool:
         "function calling is not supported",
         "invalid_request_error",
         "error code: 400",
+        "message queue",
     )
     return any(marker in text for marker in markers)

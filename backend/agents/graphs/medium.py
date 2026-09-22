@@ -15,12 +15,11 @@ from ..memory import to_lc_messages
 from trace import (  # pyright: ignore[reportMissingImports]
     note,
     record_tools_if_absent,
-    runnable_config,
     span,
     trace_checkpoint,
 )
 
-from .common import allowed_from_role, build_react_graph, last_text
+from .common import allowed_from_role, build_react_graph, invoke_react, last_text
 from .state import ChatState
 from .tool_trace import extract_tool_trace
 
@@ -40,14 +39,14 @@ _MEDIUM_SYSTEM = (
     "browser_snapshot，再按快照里的 ref（如 e5）调用 browser_click / browser_type 等；"
     "不要靠截图像素点选。"
     "根据 stdout/stderr 改代码再执行，直到问题解决或明确说明卡在哪里。"
-    "工具结果已够回答时立刻用中文作答，不要反复搜索或空转调用工具；"
+    "工具结果已够回答时立刻用中文作答，不要反复空转调用同一工具同参；"
     "简洁注明关键来源路径或链接（产物路径以 output/ 开头）。"
 )
 
-# medium：少量工具调用即可；限制图递归，避免空转
+# medium：给足工具轮次保证质量；墙钟仅防死挂
 _RECURSION_LIMIT = 12
-# 单次 LLM HTTP 超时（秒）；避免 thinking/网络挂死导致 UI 一直转圈
-_LLM_TIMEOUT = 90.0
+_LLM_TIMEOUT = 120.0
+_REACT_DEADLINE_S = 300.0
 
 
 def build_medium_graph(
@@ -129,9 +128,11 @@ def build_medium_graph(
             ]
             with span("react"):
                 mark = trace_checkpoint()
-                out = agent.invoke(
+                out = invoke_react(
+                    agent,
                     {"messages": messages},
-                    config=runnable_config({"recursion_limit": _RECURSION_LIMIT}),
+                    recursion_limit=_RECURSION_LIMIT,
+                    deadline_s=_REACT_DEADLINE_S,
                 )
                 out_messages = out.get("messages") or []
                 reply = last_text(out_messages) or "工具调用完成，但无文本回复。"

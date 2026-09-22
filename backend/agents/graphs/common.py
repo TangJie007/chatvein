@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FuturesTimeout
 from typing import Any
 
 from langchain.agents import create_agent
@@ -62,10 +64,7 @@ def _tool_call_fields(tool_call: Any) -> tuple[str, Any, str]:
 
 
 def same_arg_tool_guard():
-    """本轮 ReAct 内：同一工具 + 相同参数只允许执行一次。
-
-    重复调用返回错误 ``ToolMessage``，让模型改用已有结果或换参，避免空转。
-    """
+    """本轮 ReAct 内：同一工具 + 相同参数只允许执行一次（质量护栏，非砍轮次）。"""
     seen: set[str] = set()
 
     @wrap_tool_call(name="SameArgToolGuard")
@@ -88,7 +87,7 @@ def same_arg_tool_guard():
 
 
 def build_react_graph(model: Any, tools: list[Any], *, system_prompt: str, name: str):
-    """用 ``create_agent`` 得到 ReAct 编译图（model ↔ tools 直到无 tool_calls）。"""
+    """用 ``create_agent`` 得到 ReAct 编译图；仅挂同参去重，不人为砍轮次。"""
     return create_agent(
         model,
         tools,
@@ -96,6 +95,35 @@ def build_react_graph(model: Any, tools: list[Any], *, system_prompt: str, name:
         name=name,
         middleware=[same_arg_tool_guard()],
     )
+
+
+def invoke_react(
+    agent: Any,
+    payload: dict[str, Any],
+    *,
+    recursion_limit: int,
+    deadline_s: float | None = None,
+    config_extra: dict[str, Any] | None = None,
+) -> Any:
+    """``agent.invoke``；可选墙钟超时（仅防死挂，默认不压质量）。"""
+    from trace import runnable_config  # pyright: ignore[reportMissingImports]
+
+    cfg = runnable_config({"recursion_limit": recursion_limit, **(config_extra or {})})
+
+    def _run() -> Any:
+        return agent.invoke(payload, config=cfg)
+
+    if deadline_s is None or deadline_s <= 0:
+        return _run()
+
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        fut = pool.submit(_run)
+        try:
+            return fut.result(timeout=deadline_s)
+        except FuturesTimeout as exc:
+            raise TimeoutError(
+                f"ReAct 超过 {int(deadline_s)}s 仍未结束（可能卡在模型或联网）"
+            ) from exc
 
 
 def merge_tool_traces(
