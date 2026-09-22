@@ -27,6 +27,9 @@ import { openTraceWindow } from "../../lib/openTrace";
 dayjs.extend(relativeTime);
 dayjs.locale("zh-cn");
 
+/** Survives ChatView remount so sticky newRequestId from App doesn't re-create. */
+let lastHandledNewRequestId = 0;
+
 const AVATAR_COLORS = [
   "bg-brand-600",
   "bg-violet-400",
@@ -211,12 +214,15 @@ export function ChatView({
   }, [activeId, loadConversation]);
 
   useEffect(() => {
-    if (!newRequestId) return;
+    // App keeps newRequestId sticky; remounting ChatView (leave/return 对话)
+    // must not treat the same id as another create request.
+    if (!newRequestId || newRequestId === lastHandledNewRequestId) return;
     let cancelled = false;
     // StrictMode 会立刻清理再执行一次；推迟到清理之后再请求，避免点一次建两个。
     const timer = window.setTimeout(() => {
       void (async () => {
-        if (cancelled) return;
+        if (cancelled || newRequestId === lastHandledNewRequestId) return;
+        lastHandledNewRequestId = newRequestId;
         try {
           const created = await createConversation("");
           if (cancelled) return;
