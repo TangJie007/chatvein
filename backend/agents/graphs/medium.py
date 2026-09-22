@@ -39,14 +39,18 @@ _MEDIUM_SYSTEM = (
     "browser_snapshot，再按快照里的 ref（如 e5）调用 browser_click / browser_type 等；"
     "不要靠截图像素点选。"
     "根据 stdout/stderr 改代码再执行，直到问题解决或明确说明卡在哪里。"
-    "工具结果已够回答时立刻用中文作答，不要反复空转调用同一工具同参；"
+    "工具结果已够回答时立刻用中文作答；联网问答（天气/新闻等）web_search 一两次拿到可用结果后必须作答，"
+    "禁止换措辞反复搜索；不要空转调用同一工具同参。"
     "简洁注明关键来源路径或链接（产物路径以 output/ 开头）。"
 )
 
-# medium：给足工具轮次保证质量；墙钟仅防死挂
+# medium：recursion 防图空转；工具上限对齐 LangChain 文档示例（search=3 / 全体=10）
 _RECURSION_LIMIT = 12
 _LLM_TIMEOUT = 120.0
 _REACT_DEADLINE_S = 300.0
+_MAX_MODEL_CALLS = 12  # 略高于工具上限，避免模型先触顶
+_MAX_TOOL_CALLS = 10
+_MAX_WEB_SEARCH = 3
 
 
 def build_medium_graph(
@@ -120,6 +124,9 @@ def build_medium_graph(
                 tools,
                 system_prompt=system_prompt,
                 name=name,
+                max_model_calls=_MAX_MODEL_CALLS,
+                max_tool_calls=_MAX_TOOL_CALLS,
+                max_web_search=_MAX_WEB_SEARCH,
             )
             prior = to_lc_messages(state.get("history"))
             messages: list[BaseMessage] = [

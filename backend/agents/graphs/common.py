@@ -8,7 +8,11 @@ from concurrent.futures import TimeoutError as FuturesTimeout
 from typing import Any
 
 from langchain.agents import create_agent
-from langchain.agents.middleware import wrap_tool_call
+from langchain.agents.middleware import (
+    ModelCallLimitMiddleware,
+    ToolCallLimitMiddleware,
+    wrap_tool_call,
+)
 from langchain_core.messages import ToolMessage
 
 
@@ -86,14 +90,52 @@ def same_arg_tool_guard():
     return _guard
 
 
-def build_react_graph(model: Any, tools: list[Any], *, system_prompt: str, name: str):
-    """用 ``create_agent`` 得到 ReAct 编译图；仅挂同参去重，不人为砍轮次。"""
+def build_react_graph(
+    model: Any,
+    tools: list[Any],
+    *,
+    system_prompt: str,
+    name: str,
+    max_model_calls: int | None = 12,
+    max_tool_calls: int | None = 10,
+    max_web_search: int | None = 3,
+):
+    """用 ``create_agent`` 得到 ReAct 编译图。
+
+    护栏：
+    - 同工具同参只执行一次
+    - 工具次数对齐 LangChain 文档示例：``web_search`` run_limit=3、全体=10
+    - 模型调用上限（触顶 end）；默认略高于工具上限以免先卡死
+    """
+    middleware: list[Any] = [same_arg_tool_guard()]
+    if max_web_search is not None and max_web_search > 0:
+        middleware.append(
+            ToolCallLimitMiddleware(
+                tool_name="web_search",
+                run_limit=max_web_search,
+                exit_behavior="continue",
+            )
+        )
+    if max_tool_calls is not None and max_tool_calls > 0:
+        middleware.append(
+            ToolCallLimitMiddleware(
+                run_limit=max_tool_calls,
+                exit_behavior="continue",
+            )
+        )
+    if max_model_calls is not None and max_model_calls > 0:
+        middleware.append(
+            ModelCallLimitMiddleware(
+                run_limit=max_model_calls,
+                exit_behavior="end",
+            )
+        )
     return create_agent(
         model,
         tools,
         system_prompt=system_prompt,
         name=name,
-        middleware=[same_arg_tool_guard()],
+        middleware=middleware,
     )
 
 

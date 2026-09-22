@@ -52,6 +52,10 @@ _RECURSION_LIMIT = 28
 _MAX_VERIFY_ROUNDS = 2
 _LLM_TIMEOUT = 120.0
 _REACT_DEADLINE_S = 420.0
+# 工具上限对齐 LangChain 文档示例；模型略宽以配合 recursion=28
+_MAX_MODEL_CALLS = 16
+_MAX_TOOL_CALLS = 10
+_MAX_WEB_SEARCH = 3
 
 
 class TaskPlan(BaseModel):
@@ -275,6 +279,9 @@ def build_hard_graph(
                 tools,
                 system_prompt=prompt,
                 name=name,
+                max_model_calls=_MAX_MODEL_CALLS,
+                max_tool_calls=_MAX_TOOL_CALLS,
+                max_web_search=_MAX_WEB_SEARCH,
             )
             prior = to_lc_messages(state.get("history"))
             messages: list[BaseMessage] = [

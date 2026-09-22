@@ -325,6 +325,8 @@ role.memory  ──────→ history 条数（HTTP 层）  │
 | medium `_RECURSION_LIMIT` | `medium.py` | 12 | ReAct 图递归上限 |
 | hard `_RECURSION_LIMIT` | `hard.py` | 28 | 复杂任务更多工具跳 |
 | hard `_MAX_VERIFY_ROUNDS` | `hard.py` | 2 | 核对回环次数上限 |
+| `_MAX_WEB_SEARCH` | medium/hard | 3 | 对齐 LangChain 文档 search `run_limit` |
+| `_MAX_TOOL_CALLS` | medium/hard | 10 | 对齐 LangChain 文档全体工具 `run_limit` |
 | `DEFAULT_HISTORY_LIMIT` | `memory.py` | 24 | 未传角色时的默认历史条数 |
 | 角色 memory | HTTP | `memory × 2`，夹在 0…60 | 短期记忆条数 |
 
