@@ -40,37 +40,109 @@ class ConversationsService:
 
     def list_messages(self, conversation_id: str) -> list[MessageRecord]:
         rows = self._repo.list_messages(conversation_id)
-        if rows:
-            return rows
-        return self._rehydrate_messages_from_session(conversation_id)
+        if not rows:
+            rows = self._rehydrate_messages_from_session(conversation_id)
+        return self._enrich_metrics_from_traces(conversation_id, rows)
+
+    def _session_db_for(self, conversation_id: str) -> Path | None:
+        conversation = self._repo.get(conversation_id)
+        if conversation is None:
+            return None
+        name = (conversation.get("workspace_dir") or "").strip()
+        if not name:
+            return None
+        try:
+            return session_db_path(self.workspace_root_for(name))
+        except Exception:
+            return None
+
+    def _trace_metrics_by_turn(self, db_path: Path) -> dict[str, tuple[int, int]]:
+        """turn_id → (total_tokens, elapsed_ms)，来自会话库 turn_traces。"""
+        from trace.store import list_turn_traces  # pyright: ignore[reportImplicitRelativeImport]
+
+        metrics: dict[str, tuple[int, int]] = {}
+        try:
+            for item in list_turn_traces(db_path):
+                turn_id = str(item.get("turn_id") or "").strip()
+                if not turn_id:
+                    continue
+                totals = item.get("totals") if isinstance(item.get("totals"), dict) else {}
+                tokens = int(totals.get("total_tokens") or 0)
+                elapsed = int(item.get("elapsed_ms") or 0)
+                if tokens or elapsed:
+                    metrics[turn_id] = (tokens, elapsed)
+        except Exception:
+            return {}
+        return metrics
 
     def _rehydrate_messages_from_session(self, conversation_id: str) -> list[MessageRecord]:
         """主库消息被误删时，从会话空间 ``session.sqlite`` 回填。"""
-        conversation = self._repo.get(conversation_id)
-        if conversation is None:
-            return []
-        name = (conversation.get("workspace_dir") or "").strip()
-        if not name:
+        db = self._session_db_for(conversation_id)
+        if db is None:
             return []
         try:
-            db = session_db_path(self.workspace_root_for(name))
             session_rows = session_store.list_messages(db, limit=200)
         except Exception:
             return []
         if not session_rows:
             return []
-        return self._repo.import_messages(conversation_id, session_rows)
+        metrics = self._trace_metrics_by_turn(db)
+        enriched: list[dict[str, Any]] = []
+        for row in session_rows:
+            item = dict(row)
+            turn_id = str(item.get("turn_id") or "").strip()
+            if turn_id and turn_id in metrics:
+                tokens, elapsed = metrics[turn_id]
+                item["tokens"] = tokens
+                item["duration_ms"] = elapsed
+            enriched.append(item)
+        return self._repo.import_messages(conversation_id, enriched)
+
+    def _enrich_metrics_from_traces(
+        self, conversation_id: str, rows: list[MessageRecord]
+    ) -> list[MessageRecord]:
+        """已有消息若缺 tokens/耗时，从 turn_traces 补全并写回主库。"""
+        need = [
+            r
+            for r in rows
+            if r.get("role") == "assistant"
+            and (r.get("turn_id") or "").strip()
+            and (not int(r.get("tokens") or 0) or not int(r.get("duration_ms") or 0))
+        ]
+        if not need:
+            return rows
+        db = self._session_db_for(conversation_id)
+        if db is None:
+            return rows
+        metrics = self._trace_metrics_by_turn(db)
+        if not metrics:
+            return rows
+        updates: dict[str, tuple[int, int]] = {}
+        for row in need:
+            turn_id = str(row.get("turn_id") or "").strip()
+            if turn_id in metrics:
+                updates[turn_id] = metrics[turn_id]
+        if not updates:
+            return rows
+        self._repo.apply_turn_metrics(conversation_id, updates)
+        return self._repo.list_messages(conversation_id)
 
     def delete_last_exchange(
-        self, conversation_id: str, *, user_content: str | None = None
+        self,
+        conversation_id: str,
+        *,
+        user_content: str | None = None,
+        after_message_id: int | None = None,
     ) -> int:
         """撤回 / 停止：删除最近一轮对话（主库消息 + 会话空间短期记忆）。
 
-        ``user_content`` 非空时只删内容匹配的本轮，避免误伤历史。
+        ``user_content`` / ``after_message_id`` 用于只删本轮，避免误伤历史。
         返回主库删除的消息条数。
         """
         removed = self._repo.delete_last_exchange(
-            conversation_id, user_content=user_content
+            conversation_id,
+            user_content=user_content,
+            after_message_id=after_message_id,
         )
         if removed <= 0:
             return 0

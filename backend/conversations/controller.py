@@ -64,12 +64,19 @@ def conversation_workspace(conversation_id: str):
 
 
 @conversations_controller.delete("/{conversation_id}/turns/last")
-def delete_last_turn(conversation_id: str, user_content: str | None = None):
+def delete_last_turn(
+    conversation_id: str,
+    user_content: str | None = None,
+    after_message_id: int | None = None,
+):
     """撤回 / 停止生成：删除该会话最近一轮（用户句 + 助手句）。
 
-    传入 ``user_content`` 时仅当最近用户句匹配才删，避免停止时误删上一轮历史。
+    ``user_content`` + ``after_message_id``：只删 baseline 之后、原文匹配的本轮，
+    避免停止时误删上一轮已完成历史。
     """
     deleted = _service.delete_last_exchange(
-        conversation_id, user_content=user_content
+        conversation_id,
+        user_content=user_content,
+        after_message_id=after_message_id,
     )
     return {"deleted": deleted}

@@ -156,6 +156,8 @@ export function ChatView({
   }, []);
   /** 当前在途请求的取消控制器；非 null 表示 Agent 正在生成。 */
   const abortRef = useRef<AbortController | null>(null);
+  /** 发送前主库已落库的最大消息 id；清理时只删 id 更大的本轮。 */
+  const lastPersistedIdRef = useRef(0);
   /** 本次 abort 的意图：catch 里用来决定要不要展示「已取消」提示。 */
   const cancelModeRef = useRef<"stop" | "edit" | "recall" | null>(null);
   /** 本轮乐观插入的用户 / 助手气泡 id 与原文，便于停止 / 撤回时精确移除。 */
@@ -163,6 +165,8 @@ export function ChatView({
     userId: string;
     agentId: string;
     text: string;
+    /** 发送前主库最大消息 id；清理只删比它新的。 */
+    afterMessageId: number;
   } | null>(null);
   /** 编辑时回灌到输入框的原文（null 表示无需回灌）。 */
   const [restoreText, setRestoreText] = useState<string | null>(null);
@@ -195,6 +199,11 @@ export function ChatView({
     const data = await getConversation(id);
     const msgs = toChatMessages(data.messages);
     setMessages(msgs);
+    const maxId = data.messages.reduce(
+      (max, m) => Math.max(max, typeof m.id === "number" ? m.id : Number(m.id) || 0),
+      0
+    );
+    lastPersistedIdRef.current = maxId;
     const lastAgent = [...msgs].reverse().find((m) => m.role === "agent" && m.turnId);
     setSelectedTurnId(lastAgent?.turnId ?? null);
     try {
@@ -363,7 +372,12 @@ export function ChatView({
     setError(null);
     const optimisticId = crypto.randomUUID();
     const pendingId = crypto.randomUUID();
-    pendingRef.current = { userId: optimisticId, agentId: pendingId, text };
+    pendingRef.current = {
+      userId: optimisticId,
+      agentId: pendingId,
+      text,
+      afterMessageId: lastPersistedIdRef.current,
+    };
     const controller = new AbortController();
     abortRef.current = controller;
     setMessages((prev) => [
@@ -411,18 +425,21 @@ export function ChatView({
     }
   };
 
-  /** 后端是同步落库，停止 HTTP 请求后它可能仍在生成并稍后写入。
-   *  这里轮询删除「内容匹配」的本轮，直到后端真正落库并被清掉（最多约 6.4s）。
-   *  绝不能无条件删最近一轮——否则会误删上一轮已完成的历史。 */
+  /** 后端是同步落库，停止 HTTP 后仍可能稍后写入本轮。
+   *  轮询删除时必须同时匹配「用户原文」+「id > 发送前 baseline」，
+   *  否则本轮未落库时会误删上一轮历史（相同文案连发时仅靠原文也不够）。 */
   const cleanupInFlight = useRef(false);
   const cleanupLastTurn = useCallback(
-    async (conversationId: string, userContent: string) => {
+    async (conversationId: string, userContent: string, afterMessageId: number) => {
       if (cleanupInFlight.current) return;
       cleanupInFlight.current = true;
       try {
         for (let i = 0; i < 8; i++) {
           try {
-            const res = await deleteLastTurn(conversationId, userContent);
+            const res = await deleteLastTurn(conversationId, {
+              userContent,
+              afterMessageId,
+            });
             if (res.deleted > 0) return;
           } catch {
             /* 会话可能已被切换或删除，忽略 */
@@ -455,9 +472,9 @@ export function ChatView({
       if (mode === "stop") setError("已取消本次生成", "muted");
       else setError(null);
       if (mode === "edit" && pending) setRestoreText(pending.text);
-      // 只清理本轮（按用户原文匹配）；无 pending 时不要动历史。
+      // 只清理本轮；无 pending 时不要动历史。
       if (activeId && pending?.text) {
-        void cleanupLastTurn(activeId, pending.text);
+        void cleanupLastTurn(activeId, pending.text, pending.afterMessageId);
       }
     },
     [activeId, cleanupLastTurn, setError]

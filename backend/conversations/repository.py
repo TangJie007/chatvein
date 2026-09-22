@@ -254,6 +254,8 @@ class ConversationsRepository:
                     used_llm=bool(row.get("used_llm")),
                     route=row.get("route"),
                     turn_id=str(row.get("turn_id") or ""),
+                    tokens=int(row.get("tokens") or 0),
+                    duration_ms=int(row.get("duration_ms") or 0),
                     created_at=utc_now(),
                 )
                 session.add(message)
@@ -263,15 +265,51 @@ class ConversationsRepository:
             session.flush()
             return [_message_dict(m) for m in written]
 
-    def delete_last_exchange(
-        self, conversation_id: str, *, user_content: str | None = None
+    def apply_turn_metrics(
+        self, conversation_id: str, by_turn: dict[str, tuple[int, int]]
     ) -> int:
-        """删除该会话最近一轮（user + assistant 两条）消息，用于「撤回 / 停止」。
+        """按 turn_id 补全 assistant 消息的 tokens / duration_ms。返回更新条数。"""
+        if not by_turn:
+            return 0
+        updated = 0
+        with session_scope() as session:
+            rows = session.exec(
+                select(Message).where(
+                    _col(Message.conversation_id) == conversation_id,
+                    _col(Message.role) == "assistant",
+                )
+            ).all()
+            for message in rows:
+                turn_id = (message.turn_id or "").strip()
+                if turn_id not in by_turn:
+                    continue
+                tokens, duration_ms = by_turn[turn_id]
+                changed = False
+                if tokens and not int(message.tokens or 0):
+                    message.tokens = tokens
+                    changed = True
+                if duration_ms and not int(message.duration_ms or 0):
+                    message.duration_ms = duration_ms
+                    changed = True
+                if changed:
+                    updated += 1
+            session.flush()
+        return updated
 
-        若提供 ``user_content``，仅当最近一条用户消息内容与之匹配时才删除，
-        避免「停止生成」时误删上一轮已完成的历史（本轮尚未落库）。
+    def delete_last_exchange(
+        self,
+        conversation_id: str,
+        *,
+        user_content: str | None = None,
+        after_message_id: int | None = None,
+    ) -> int:
+        """删除该会话最近一轮（user + assistant）消息，用于「撤回 / 停止」。
 
-        会话本身保留；返回实际删除的消息条数（0 表示没有可删或内容不匹配）。
+        防护（停止生成时本轮可能尚未落库，绝不能误删上一轮历史）：
+        - ``user_content``：最近用户句必须全文匹配
+        - ``after_message_id``：最近用户句 id 必须大于该值（只删 baseline 之后新写入的）
+
+        停止 / 清理在途请求时应同时传入两者。返回实际删除条数。
         """
         with session_scope() as session:
             rows = session.exec(
@@ -282,10 +320,15 @@ class ConversationsRepository:
             ).all()
             if not rows:
                 return 0
+            last_user = next((m for m in rows if m.role == "user"), None)
             if user_content is not None:
                 expected = user_content.strip()
-                last_user = next((m for m in rows if m.role == "user"), None)
                 if last_user is None or (last_user.content or "").strip() != expected:
+                    return 0
+            if after_message_id is not None:
+                if last_user is None or last_user.id is None:
+                    return 0
+                if int(last_user.id) <= int(after_message_id):
                     return 0
             id_set = [int(m.id) for m in rows if m.id is not None]
             if not id_set:

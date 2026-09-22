@@ -120,6 +120,38 @@ def test_delete_last_exchange_requires_matching_user_content() -> None:
     assert service.list_messages(conversation_id)[0]["content"] == "第一问"
 
 
+def test_delete_last_exchange_respects_after_message_id() -> None:
+    """相同文案连发时，仅靠原文不够；必须要求 id 大于发送前 baseline。"""
+    service = ConversationsService()
+    conversation_id, _, _ = service.save_exchange(None, "同样的问题", "答一")
+    before = service.list_messages(conversation_id)
+    baseline = max(int(m["id"]) for m in before)
+
+    # 本轮尚未落库：即便原文相同，也不能删上一轮
+    assert (
+        service.delete_last_exchange(
+            conversation_id,
+            user_content="同样的问题",
+            after_message_id=baseline,
+        )
+        == 0
+    )
+    assert len(service.list_messages(conversation_id)) == 2
+
+    service.save_exchange(conversation_id, "同样的问题", "答二")
+    assert (
+        service.delete_last_exchange(
+            conversation_id,
+            user_content="同样的问题",
+            after_message_id=baseline,
+        )
+        == 2
+    )
+    left = service.list_messages(conversation_id)
+    assert len(left) == 2
+    assert left[1]["content"] == "答一"
+
+
 def test_rehydrate_messages_from_session_when_main_empty() -> None:
     """主库消息被清空后，应从会话空间短期记忆回填。"""
     service = ConversationsService()
