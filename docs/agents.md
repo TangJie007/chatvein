@@ -54,7 +54,7 @@ ChatVein 是本机桌面 Agent（Tauri + Python），前端设置页已规划 `b
 | 能力（WorkBuddy） | ChatVein 分组 | 工具 | 说明 |
 | --- | --- | --- | --- |
 | Filesystem（对齐 `@modelcontextprotocol/server-filesystem`，不含 `read_media_file`） | `mcp-fs` | `read_file` `read_text_file` `read_multiple_files` `write_file` `edit_file` `create_directory` `list_directory` `list_directory_with_sizes` `directory_tree` `move_file` `search_files` `get_file_info` `list_allowed_directories` `open_folder` `delete_path` | 主空间（设置页）优先，否则 `CHATVEIN_DATA_DIR/workspace`。`open_folder` 打开目录；`delete_path` 删除文件或文件夹，不能删主空间根 |
-| WebSearch / WebFetch | `mcp-web` | `web_search` `web_fetch` | 先 Firecrawl（`FIRECRAWL_API_KEY`，无 key 走免费档）；402/失败降级 `ddgs` + `httpx`/`bs4` |
+| WebSearch / WebFetch | `mcp-web` | `web_search` `web_fetch` | 搜索：Claw Search（Parallel Free MCP）→ Tavily Keyless → Firecrawl Keyless → `ddgs`；抓取：Firecrawl → `httpx`/`bs4` |
 | 本地库 / 数据 | `mcp-sqlite` | `sqlite_tables` `sqlite_schema` `sqlite_query` | **只读**打开 ChatVein SQLite |
 | 知识沉淀 / 召回 | `mcp-kb` | `kb_add_note` `kb_search` `kb_search_messages` `kb_index_workspace` | 独立 `kb.sqlite`；向量模型就绪时走 sqlite-vec |
 | 时间 / 计算 / 本机概况 | `core` | `get_current_time` `convert_time` `calculator` `get_system_info` `db_stats` `list_configured_models` | 对齐 WorkBuddy 文档中的 Time MCP（`mcp-server-time`）：按 IANA 时区取当前时间、时区换算；`CHATVEIN_LOCAL_TIMEZONE` 可覆盖本机时区。计算器为安全算术。本机概况含 OS/CPU/磁盘；另附 ChatVein 库表与模型列表。无独立设置卡片 |

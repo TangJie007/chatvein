@@ -19,10 +19,10 @@ langchain-deepseek>=1.1,<2.0
 # 本地向量模型：ONNX Runtime 推理，不引入 torch。模型权重不随安装包分发，
 # 首次使用时按需下载到 CHATVEIN_DATA_DIR/embeddings（见 embeddings/service.py）。
 fastembed>=0.8,<1.0
-# Agent 联网：Firecrawl 优先（FIRECRAWL_API_KEY，无 key 也可走免费档），
-# 额度用尽或失败时降级到 ddgs + httpx/bs4（见 mcps/tools/web.py）。
-# httpx 由 FastAPI / openai 生态已间接带入，此处不重复钉版本。
-firecrawl-py>=4,<5
+# Agent 联网搜索降级链（均可无 key）：
+# Claw Search（Parallel Free MCP）→ Tavily Keyless → Firecrawl Keyless → ddgs。
+# 抓取：Firecrawl → httpx/bs4。可选 env：TAVILY_API_KEY / FIRECRAWL_API_KEY / CLAW_SEARCH_MCP_URL。
+# 见 mcps/tools/web.py。
 ddgs>=9.0,<10
 beautifulsoup4>=4.12,<5
 lxml>=5.0,<7

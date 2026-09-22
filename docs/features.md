@@ -47,7 +47,7 @@ Agent 图细节见 [`agent-graphs.md`](./agent-graphs.md)；工具矩阵见 [`ag
 | --- | --- |
 | `core` | 时间、时区换算、计算器、本机概况、库统计、模型列表 |
 | `mcp-fs` | 工作区文件读写 / 树 / 搜索 / 打开目录 / 删除（不含 `read_media_file`） |
-| `mcp-web` | 搜索 + 抓取（Firecrawl → ddgs / httpx 降级） |
+| `mcp-web` | 搜索：Claw → Tavily Keyless → Firecrawl → ddgs；抓取：Firecrawl → httpx |
 | `mcp-sqlite` | 只读查 ChatVein SQLite |
 | `mcp-kb` | 笔记沉淀、向量/关键词检索、消息检索、工作区索引 |
 | `mcp-codesandbox` | 会话 `runs/` 内 venv + pip + 跑 Python |
