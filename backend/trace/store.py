@@ -4,20 +4,29 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
 
 def _iso_now() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
 
 
-def _connect(db_path: Path) -> sqlite3.Connection:
+@contextmanager
+def _connect(db_path: Path) -> Iterator[sqlite3.Connection]:
     db_path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(db_path), timeout=30)
     conn.row_factory = sqlite3.Row
-    return conn
+    try:
+        yield conn
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
 
 
 def ensure_trace_table(db_path: Path) -> None:
@@ -31,7 +40,6 @@ def ensure_trace_table(db_path: Path) -> None:
             )
             """
         )
-        conn.commit()
 
 
 def save_turn_trace(db_path: Path, turn_id: str, payload: dict[str, Any]) -> None:
@@ -46,7 +54,6 @@ def save_turn_trace(db_path: Path, turn_id: str, payload: dict[str, Any]) -> Non
             "ON CONFLICT(turn_id) DO UPDATE SET payload_json = excluded.payload_json",
             (turn_id, encoded, _iso_now()),
         )
-        conn.commit()
 
 
 def _totals(payload: dict[str, Any]) -> dict[str, int]:

@@ -1,4 +1,4 @@
-"""会话落库：复用 id、失效 id 新建、删除级联。"""
+"""会话落库：元数据主库 + 消息会话空间库。"""
 
 import sqlite3
 from pathlib import Path
@@ -23,6 +23,7 @@ def test_save_exchange_reuses_conversation_and_truncates_title() -> None:
     assert user_message["role"] == "user"
     roles = [message["role"] for message in service.list_messages(conversation_id)]
     assert roles == ["user", "assistant", "user", "assistant"]
+    assert stored["message_count"] == 4
 
 
 def test_unknown_conversation_id_starts_a_new_one() -> None:
@@ -32,10 +33,12 @@ def test_unknown_conversation_id_starts_a_new_one() -> None:
     assert service.get_conversation("missing") is None
 
 
-def test_delete_cascades_messages() -> None:
+def test_delete_cascades_workspace() -> None:
     service = ConversationsService()
     conversation_id, _, _ = service.save_exchange(None, "hi", "hello")
-    assert service.counts() == {"conversations": 1, "messages": 2}
+    counts = service.counts()
+    assert counts["conversations"] == 1
+    assert counts["messages"] == 2
 
     assert service.delete_conversation(conversation_id) is True
     assert service.counts() == {"conversations": 0, "messages": 0}
@@ -92,7 +95,6 @@ def test_workspace_root_survives_legacy_tool_calls_schema() -> None:
             );
             """
         )
-    # 再次打开布局（追踪列表也会走这条路径）不能 500
     again = session_db_path(service.workspace_root_for(stored["workspace_dir"]))
     assert again == db
     with sqlite3.connect(db) as conn:
@@ -127,7 +129,6 @@ def test_delete_last_exchange_respects_after_message_id() -> None:
     before = service.list_messages(conversation_id)
     baseline = max(int(m["id"]) for m in before)
 
-    # 本轮尚未落库：即便原文相同，也不能删上一轮
     assert (
         service.delete_last_exchange(
             conversation_id,
@@ -152,33 +153,34 @@ def test_delete_last_exchange_respects_after_message_id() -> None:
     assert left[1]["content"] == "答一"
 
 
-def test_rehydrate_messages_from_session_when_main_empty() -> None:
-    """主库消息被清空后，应从会话空间短期记忆回填。"""
+def test_messages_live_only_in_session_db() -> None:
+    """主库不再有 messages 表；消息只在会话空间。"""
     service = ConversationsService()
-    conversation_id, _, _ = service.save_exchange(None, "回填问", "回填答")
+    conversation_id, _, assistant = service.save_exchange(
+        None, "只在工作区", "好的", tokens=12, duration_ms=34
+    )
     stored = service.get_conversation(conversation_id)
     assert stored is not None
-    ws = stored["workspace_dir"]
-    service.record_turn(ws, user_text="回填问", reply_text="回填答", turn_id="t-rehydrate")
+    db = session_db_path(service.workspace_root_for(stored["workspace_dir"]))
+    with sqlite3.connect(db) as conn:
+        n = conn.execute("SELECT count(*) FROM messages").fetchone()[0]
+        row = conn.execute(
+            "SELECT tokens, duration_ms FROM messages WHERE role='assistant' ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+    assert n == 2
+    assert row is not None
+    assert int(row[0]) == 12
+    assert int(row[1]) == 34
+    assert assistant["tokens"] == 12
 
-    # 模拟误删主库消息
-    from conversations.repository import ConversationsRepository
-    from db import session_scope
-    from conversations.entity import Message
-    from sqlmodel import delete
-    from sqlalchemy import ColumnElement
-    from typing import Any, cast
+    from db import resolve_db_path
 
-    with session_scope() as session:
-        session.exec(
-            delete(Message)
-            .where(cast("ColumnElement[Any]", Message.conversation_id) == conversation_id)
-            .execution_options(synchronize_session=False)
-        )
-
-    assert ConversationsRepository().list_messages(conversation_id) == []
-    restored = service.list_messages(conversation_id)
-    assert len(restored) >= 2
-    assert restored[0]["content"] == "回填问"
-    assert restored[1]["content"] == "回填答"
-
+    main = resolve_db_path()
+    with sqlite3.connect(main) as conn:
+        tables = {
+            r[0]
+            for r in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'"
+            ).fetchall()
+        }
+    assert "messages" not in tables

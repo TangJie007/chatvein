@@ -1,4 +1,4 @@
-"""会话 / 消息持久化。"""
+"""会话元数据持久化（主库只存 conversations，消息在会话空间 session.sqlite）。"""
 # pyright: reportUnknownMemberType=false, reportUnknownVariableType=false, reportUnknownArgumentType=false
 
 from __future__ import annotations
@@ -7,7 +7,6 @@ from typing import Any, cast
 
 from sqlalchemy import ColumnElement, UnaryExpression, delete, func
 from sqlmodel import Session, select
-from sqlmodel.sql.expression import Select
 
 from db import iso, session_scope, utc_now  # pyright: ignore[reportImplicitRelativeImport]
 from mcps.sandbox import (  # pyright: ignore[reportImplicitRelativeImport]
@@ -17,7 +16,7 @@ from mcps.sandbox import (  # pyright: ignore[reportImplicitRelativeImport]
     remove_conversation_dir,
 )
 
-from .entity import Conversation, ConversationRecord, Message, MessageRecord, Role
+from .entity import Conversation, ConversationRecord
 
 TITLE_MAX_LEN = 30
 
@@ -28,21 +27,6 @@ def _col(column: object) -> ColumnElement[Any]:
 
 def _desc(column: object) -> UnaryExpression[Any]:
     return _col(column).desc()
-
-
-def _message_dict(message: Message) -> MessageRecord:
-    return MessageRecord(
-        id=int(message.id or 0),
-        conversation_id=message.conversation_id,
-        role=message.role,
-        content=message.content,
-        used_llm=message.used_llm,
-        route=message.route,
-        created_at=iso(message.created_at),
-        turn_id=message.turn_id,
-        tokens=int(message.tokens or 0),
-        duration_ms=int(message.duration_ms or 0),
-    )
 
 
 def _conversation_dict(
@@ -81,23 +65,6 @@ def _ensure_workspace(conversation: Conversation) -> None:
 
 
 class ConversationsRepository:
-    def _list_statement(self, limit: int | None = None) -> Select[Any]:
-        last_message = (
-            select(_col(Message.content))
-            .where(_col(Message.conversation_id) == _col(Conversation.id))
-            .order_by(_desc(Message.id))
-            .limit(1)
-            .correlate(Conversation)
-            .scalar_subquery()
-        )
-        statement = (
-            select(Conversation, func.count(_col(Message.id)), last_message)
-            .outerjoin(Message, _col(Message.conversation_id) == _col(Conversation.id))
-            .group_by(_col(Conversation.id))
-            .order_by(_desc(Conversation.updated_at))
-        )
-        return statement.limit(limit) if limit is not None else statement
-
     def create(self, title: str = "") -> ConversationRecord:
         with session_scope() as session:
             conversation = Conversation(
@@ -109,22 +76,21 @@ class ConversationsRepository:
             return _conversation_dict(conversation)
 
     def list(self, limit: int = 50) -> list[ConversationRecord]:
+        statement = (
+            select(Conversation)
+            .order_by(_desc(Conversation.updated_at))
+            .limit(limit)
+        )
         with session_scope() as session:
-            rows = session.exec(self._list_statement(limit)).all()
-            return [
-                _conversation_dict(conversation, count, last)
-                for conversation, count, last in rows
-            ]
+            rows = session.exec(statement).all()
+            return [_conversation_dict(conversation) for conversation in rows]
 
     def get(self, conversation_id: str) -> ConversationRecord | None:
         with session_scope() as session:
-            rows = session.exec(
-                self._list_statement().where(_col(Conversation.id) == conversation_id)
-            ).all()
-            if not rows:
+            conversation = session.get(Conversation, conversation_id)
+            if conversation is None:
                 return None
-            conversation, count, last = rows[0]
-            return _conversation_dict(conversation, count, last)
+            return _conversation_dict(conversation)
 
     def delete(self, conversation_id: str) -> bool:
         name = ""
@@ -146,7 +112,6 @@ class ConversationsRepository:
                 if conversation.workspace_dir
             ]
             deleted = session.scalar(select(func.count()).select_from(Conversation)) or 0
-            session.exec(delete(Message).execution_options(synchronize_session=False)).close()
             session.exec(
                 delete(Conversation).execution_options(synchronize_session=False)
             ).close()
@@ -176,188 +141,15 @@ class ConversationsRepository:
             session.flush()
             return _conversation_dict(conversation)
 
-    def add_message(
-        self,
-        conversation_id: str,
-        role: Role,
-        content: str,
-        *,
-        used_llm: bool = False,
-        route: str | None = None,
-    ) -> MessageRecord:
-        now = utc_now()
-        with session_scope() as session:
-            conversation = session.get(Conversation, conversation_id)
-            if conversation is None:
-                raise ValueError(f"会话不存在: {conversation_id}")
-            message = Message(
-                conversation_id=conversation_id,
-                role=role,
-                content=content,
-                used_llm=used_llm,
-                route=route,
-                created_at=now,
-            )
-            session.add(message)
-            conversation.updated_at = now
-            session.flush()
-            return _message_dict(message)
-
-    def list_messages(self, conversation_id: str, limit: int = 200) -> list[MessageRecord]:
-        statement = (
-            select(Message)
-            .where(_col(Message.conversation_id) == conversation_id)
-            .order_by(_col(Message.id))
-            .limit(limit)
-        )
-        with session_scope() as session:
-            return [_message_dict(m) for m in session.exec(statement).all()]
-
-    def import_messages(
-        self,
-        conversation_id: str,
-        rows: list[dict[str, Any]],
-    ) -> list[MessageRecord]:
-        """把会话空间短期记忆回填到主库（仅主库为空时调用）。"""
-        if not rows:
-            return []
-        with session_scope() as session:
-            conversation = session.get(Conversation, conversation_id)
-            if conversation is None:
-                return []
-            existing = session.exec(
-                select(func.count())
-                .select_from(Message)
-                .where(_col(Message.conversation_id) == conversation_id)
-            ).one()
-            if int(existing or 0) > 0:
-                return [
-                    _message_dict(m)
-                    for m in session.exec(
-                        select(Message)
-                        .where(_col(Message.conversation_id) == conversation_id)
-                        .order_by(_col(Message.id))
-                    ).all()
-                ]
-            written: list[Message] = []
-            for row in rows:
-                role = str(row.get("role") or "")
-                if role not in ("user", "assistant", "system"):
-                    continue
-                content = str(row.get("content") or "")
-                if not content.strip():
-                    continue
-                message = Message(
-                    conversation_id=conversation_id,
-                    role=role,
-                    content=content,
-                    used_llm=bool(row.get("used_llm")),
-                    route=row.get("route"),
-                    turn_id=str(row.get("turn_id") or ""),
-                    tokens=int(row.get("tokens") or 0),
-                    duration_ms=int(row.get("duration_ms") or 0),
-                    created_at=utc_now(),
-                )
-                session.add(message)
-                written.append(message)
-            if written:
-                conversation.updated_at = utc_now()
-            session.flush()
-            return [_message_dict(m) for m in written]
-
-    def apply_turn_metrics(
-        self, conversation_id: str, by_turn: dict[str, tuple[int, int]]
-    ) -> int:
-        """按 turn_id 补全 assistant 消息的 tokens / duration_ms。返回更新条数。"""
-        if not by_turn:
-            return 0
-        updated = 0
-        with session_scope() as session:
-            rows = session.exec(
-                select(Message).where(
-                    _col(Message.conversation_id) == conversation_id,
-                    _col(Message.role) == "assistant",
-                )
-            ).all()
-            for message in rows:
-                turn_id = (message.turn_id or "").strip()
-                if turn_id not in by_turn:
-                    continue
-                tokens, duration_ms = by_turn[turn_id]
-                changed = False
-                if tokens and not int(message.tokens or 0):
-                    message.tokens = tokens
-                    changed = True
-                if duration_ms and not int(message.duration_ms or 0):
-                    message.duration_ms = duration_ms
-                    changed = True
-                if changed:
-                    updated += 1
-            session.flush()
-        return updated
-
-    def delete_last_exchange(
-        self,
-        conversation_id: str,
-        *,
-        user_content: str | None = None,
-        after_message_id: int | None = None,
-    ) -> int:
-        """删除该会话最近一轮（user + assistant）消息，用于「撤回 / 停止」。
-
-        防护（停止生成时本轮可能尚未落库，绝不能误删上一轮历史）：
-        - ``user_content``：最近用户句必须全文匹配
-        - ``after_message_id``：最近用户句 id 必须大于该值（只删 baseline 之后新写入的）
-
-        停止 / 清理在途请求时应同时传入两者。返回实际删除条数。
-        """
-        with session_scope() as session:
-            rows = session.exec(
-                select(Message)
-                .where(_col(Message.conversation_id) == conversation_id)
-                .order_by(_col(Message.id).desc())
-                .limit(2)
-            ).all()
-            if not rows:
-                return 0
-            last_user = next((m for m in rows if m.role == "user"), None)
-            if user_content is not None:
-                expected = user_content.strip()
-                if last_user is None or (last_user.content or "").strip() != expected:
-                    return 0
-            if after_message_id is not None:
-                if last_user is None or last_user.id is None:
-                    return 0
-                if int(last_user.id) <= int(after_message_id):
-                    return 0
-            id_set = [int(m.id) for m in rows if m.id is not None]
-            if not id_set:
-                return 0
-            session.exec(
-                delete(Message)
-                .where(_col(Message.id).in_(id_set))
-                .execution_options(synchronize_session=False)
-            )
-            conversation = session.get(Conversation, conversation_id)
-            if conversation is not None:
-                conversation.updated_at = utc_now()
-            return len(id_set)
-
-    def save_exchange(
+    def touch_exchange(
         self,
         conversation_id: str | None,
-        user_text: str,
-        reply_text: str,
         *,
-        used_llm: bool = False,
-        route: str | None = None,
-        title_hint: str | None = None,
-        turn_id: str | None = None,
-        tokens: int = 0,
-        duration_ms: int = 0,
-    ) -> tuple[str, MessageRecord, MessageRecord]:
+        title_hint: str,
+    ) -> ConversationRecord:
+        """一轮对话结束后更新标题与 updated_at（消息写在会话空间库）。"""
+        hint = _derive_title(title_hint)
         now = utc_now()
-        hint = _derive_title(title_hint or user_text)
         with session_scope() as session:
             conversation = (
                 session.get(Conversation, conversation_id) if conversation_id else None
@@ -374,40 +166,14 @@ class ConversationsRepository:
                 _ensure_workspace(conversation)
                 if not conversation.title:
                     conversation.title = hint
-
-            user_message = Message(
-                conversation_id=conversation.id,
-                role="user",
-                content=user_text,
-                route=route,
-                created_at=now,
-            )
-            assistant_message = Message(
-                conversation_id=conversation.id,
-                role="assistant",
-                content=reply_text,
-                used_llm=used_llm,
-                route=route,
-                turn_id=turn_id or "",
-                tokens=int(tokens or 0),
-                duration_ms=int(duration_ms or 0),
-                created_at=now,
-            )
-            session.add(user_message)
-            session.add(assistant_message)
-            conversation.updated_at = now
+                conversation.updated_at = now
             session.flush()
-            return (
-                conversation.id,
-                _message_dict(user_message),
-                _message_dict(assistant_message),
-            )
+            return _conversation_dict(conversation)
 
     def counts(self, session: Session | None = None) -> dict[str, int]:
         def _read(s: Session) -> dict[str, int]:
             conversations = s.scalar(select(func.count()).select_from(Conversation)) or 0
-            messages = s.scalar(select(func.count()).select_from(Message)) or 0
-            return {"conversations": int(conversations), "messages": int(messages)}
+            return {"conversations": int(conversations), "messages": 0}
 
         if session is not None:
             return _read(session)

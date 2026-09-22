@@ -105,33 +105,39 @@ def kb_search_messages(query: str, limit: int = 5) -> str:
     if not q:
         return "query 不能为空"
     limit = max(1, min(int(limit), _MAX_HITS))
-    like = f"%{q}%"
     try:
-        path = db.resolve_db_path()
-        uri = f"file:{path.as_posix()}?mode=ro"
-        with sqlite3.connect(uri, uri=True) as conn:
-            conn.row_factory = sqlite3.Row
-            rows = conn.execute(
-                """
-                SELECT m.role, m.content, m.created_at, m.conversation_id
-                FROM messages m
-                WHERE m.content LIKE ?
-                ORDER BY m.created_at DESC
-                LIMIT ?
-                """,
-                (like, limit),
-            ).fetchall()
+        from conversations.service import ConversationsService  # pyright: ignore[reportImplicitRelativeImport]
+        from conversations import session_store  # pyright: ignore[reportImplicitRelativeImport]
+        from mcps.sandbox import session_db_path  # pyright: ignore[reportImplicitRelativeImport]
+
+        service = ConversationsService()
+        hits: list[str] = []
+        for conv in service.list_conversations(limit=200):
+            if len(hits) >= limit:
+                break
+            name = (conv.get("workspace_dir") or "").strip()
+            if not name:
+                continue
+            try:
+                db = session_db_path(service.workspace_root_for(name))
+                rows = session_store.list_messages(db, limit=200)
+            except Exception:
+                continue
+            for m in reversed(rows):
+                content = str(m.get("content") or "")
+                if q.lower() not in content.lower():
+                    continue
+                snippet = re.sub(r"\s+", " ", content)[:240]
+                hits.append(
+                    f"[{m.get('created_at')}] {m.get('role')} conv={conv['id']}\n{snippet}"
+                )
+                if len(hits) >= limit:
+                    break
     except Exception as exc:  # noqa: BLE001
         return f"消息检索失败: {exc}"
-    if not rows:
+    if not hits:
         return "历史消息无命中"
-    lines: list[str] = []
-    for r in rows:
-        snippet = re.sub(r"\s+", " ", str(r["content"]))[:240]
-        lines.append(
-            f"[{r['created_at']}] {r['role']} conv={r['conversation_id']}\n{snippet}"
-        )
-    return "\n\n".join(lines)
+    return "\n\n".join(hits)
 
 
 @tool

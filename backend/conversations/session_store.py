@@ -1,4 +1,7 @@
-"""会话空间 ``logs/session.sqlite``：短期记忆、工具返回、会话元数据。"""
+"""会话空间 ``logs/session.sqlite``：对话消息、工具返回、会话元数据。
+
+主库不再存 messages；UI 历史与 Agent 短期记忆都读这里。
+"""
 
 from __future__ import annotations
 
@@ -37,6 +40,8 @@ CREATE TABLE IF NOT EXISTS messages (
     turn_id TEXT,
     route_reason TEXT,
     tool_plan TEXT,
+    tokens INTEGER NOT NULL DEFAULT 0,
+    duration_ms INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL
 );
 """ + _TOOL_CALLS_DDL.replace("CREATE TABLE", "CREATE TABLE IF NOT EXISTS", 1) + """
@@ -64,11 +69,7 @@ def _connect(db_path: Path) -> Iterator[sqlite3.Connection]:
 
 
 def ensure_session_db(db_path: Path) -> Path:
-    """创建或升级会话库 schema。
-
-    ``messages`` 表增量加列（幂等）；``tool_calls.turn_id`` 需为 TEXT 以存放 turn uuid，
-    旧版本（INTEGER）直接重建该表（仅丢失历史工具轨迹，会随对话重新生成）。
-    """
+    """创建或升级会话库 schema。"""
     db_path.parent.mkdir(parents=True, exist_ok=True)
     with _connect(db_path) as conn:
         conn.executescript(_SCHEMA)
@@ -78,6 +79,8 @@ def ensure_session_db(db_path: Path) -> Path:
         _add_column(conn, "messages", "turn_id", "TEXT")
         _add_column(conn, "messages", "route_reason", "TEXT")
         _add_column(conn, "messages", "tool_plan", "TEXT")
+        _add_column(conn, "messages", "tokens", "INTEGER NOT NULL DEFAULT 0")
+        _add_column(conn, "messages", "duration_ms", "INTEGER NOT NULL DEFAULT 0")
         cols = {
             str(r[1]): str(r[2])
             for r in conn.execute("PRAGMA table_info(tool_calls)").fetchall()
@@ -122,11 +125,15 @@ def append_message(
     turn_id: str | None = None,
     route_reason: str | None = None,
     tool_plan: str | None = None,
+    tokens: int = 0,
+    duration_ms: int = 0,
 ) -> int:
+    ensure_session_db(db_path)
     with _connect(db_path) as conn:
         cur = conn.execute(
             "INSERT INTO messages(role, content, route, used_llm, turn_id, "
-            "route_reason, tool_plan, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            "route_reason, tool_plan, tokens, duration_ms, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 role,
                 content,
@@ -135,42 +142,63 @@ def append_message(
                 turn_id or None,
                 route_reason,
                 tool_plan,
+                int(tokens or 0),
+                int(duration_ms or 0),
                 _iso_now(),
             ),
         )
         return int(cur.lastrowid or 0)
 
 
-def delete_last_exchange(db_path: Path) -> int:
-    """撤回 / 停止：删除会话空间里最近一轮（用户句 + 助手句 + 该轮工具轨迹）。
+def delete_last_exchange(
+    db_path: Path,
+    *,
+    user_content: str | None = None,
+    after_message_id: int | None = None,
+) -> int:
+    """撤回 / 停止：删除最近一轮（用户句 + 助手句 + 该轮工具轨迹）。
 
-    用户句在 ``record_turn`` 中不带 ``turn_id``，故按「助手句 id 的前一条」定位并删除；
-    工具轨迹按助手句的 ``turn_id`` 删除。返回 1 表示已删除，0 表示本轮尚未落库。
+    防护：``user_content`` 须匹配；``after_message_id`` 须小于最近用户句 id。
+    返回删除的消息条数（0 / 1 / 2）。
     """
-    with _connect(db_path) as conn:
-        row = conn.execute(
-            "SELECT id, turn_id FROM messages "
-            "WHERE role = 'assistant' AND turn_id IS NOT NULL AND turn_id != '' "
-            "ORDER BY id DESC LIMIT 1"
-        ).fetchone()
-        if row is None:
-            return 0
-        assistant_id = int(row["id"])
-        turn_id = row["turn_id"]
-        conn.execute(
-            "DELETE FROM messages WHERE id = ? OR (role = 'user' AND id = ? - 1)",
-            (assistant_id, assistant_id),
-        )
-        conn.execute("DELETE FROM tool_calls WHERE turn_id = ?", (turn_id,))
-        return 1
-
-
-def list_messages(db_path: Path, *, limit: int = 40) -> list[dict[str, Any]]:
-    """按时间正序返回最近 ``limit`` 条（短期记忆窗口）。"""
-    limit = max(1, min(int(limit), 200))
+    ensure_session_db(db_path)
     with _connect(db_path) as conn:
         rows = conn.execute(
-            "SELECT id, role, content, route, used_llm, turn_id, created_at "
+            "SELECT id, role, content, turn_id FROM messages ORDER BY id DESC LIMIT 2"
+        ).fetchall()
+        if not rows:
+            return 0
+        last_user = next((r for r in rows if str(r["role"]) == "user"), None)
+        if user_content is not None:
+            expected = user_content.strip()
+            if last_user is None or str(last_user["content"] or "").strip() != expected:
+                return 0
+        if after_message_id is not None:
+            if last_user is None:
+                return 0
+            if int(last_user["id"]) <= int(after_message_id):
+                return 0
+
+        assistant = next((r for r in rows if str(r["role"]) == "assistant"), None)
+        ids = [int(r["id"]) for r in rows]
+        placeholders = ",".join("?" * len(ids))
+        conn.execute(f"DELETE FROM messages WHERE id IN ({placeholders})", ids)
+        if assistant is not None and assistant["turn_id"]:
+            conn.execute(
+                "DELETE FROM tool_calls WHERE turn_id = ?",
+                (str(assistant["turn_id"]),),
+            )
+        return len(ids)
+
+
+def list_messages(db_path: Path, *, limit: int = 200) -> list[dict[str, Any]]:
+    """按时间正序返回最近 ``limit`` 条。"""
+    ensure_session_db(db_path)
+    limit = max(1, min(int(limit), 500))
+    with _connect(db_path) as conn:
+        rows = conn.execute(
+            "SELECT id, role, content, route, used_llm, turn_id, "
+            "tokens, duration_ms, created_at "
             "FROM messages ORDER BY id DESC LIMIT ?",
             (limit,),
         ).fetchall()
@@ -183,10 +211,45 @@ def list_messages(db_path: Path, *, limit: int = 40) -> list[dict[str, Any]]:
             "route": r["route"],
             "used_llm": bool(r["used_llm"]),
             "turn_id": str(r["turn_id"] or ""),
+            "tokens": int(r["tokens"] or 0),
+            "duration_ms": int(r["duration_ms"] or 0),
             "created_at": str(r["created_at"]),
         }
         for r in ordered
     ]
+
+
+def preview(db_path: Path) -> tuple[int, str | None]:
+    """返回 (message_count, last_message_content)。"""
+    if not db_path.is_file():
+        return 0, None
+    ensure_session_db(db_path)
+    with _connect(db_path) as conn:
+        count = int(conn.execute("SELECT count(*) FROM messages").fetchone()[0])
+        row = conn.execute(
+            "SELECT content FROM messages ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+    last = str(row["content"]) if row else None
+    return count, last
+
+
+def apply_turn_metrics(db_path: Path, by_turn: dict[str, tuple[int, int]]) -> int:
+    """按 turn_id 补全 assistant 的 tokens / duration_ms。"""
+    if not by_turn:
+        return 0
+    ensure_session_db(db_path)
+    updated = 0
+    with _connect(db_path) as conn:
+        for turn_id, (tokens, duration_ms) in by_turn.items():
+            cur = conn.execute(
+                "UPDATE messages SET "
+                "tokens = CASE WHEN tokens = 0 AND ? > 0 THEN ? ELSE tokens END, "
+                "duration_ms = CASE WHEN duration_ms = 0 AND ? > 0 THEN ? ELSE duration_ms END "
+                "WHERE role = 'assistant' AND turn_id = ?",
+                (tokens, tokens, duration_ms, duration_ms, turn_id),
+            )
+            updated += int(cur.rowcount or 0)
+    return updated
 
 
 def append_tool_call(
@@ -199,6 +262,7 @@ def append_tool_call(
     turn_id: str | None = None,
     status: str = "ok",
 ) -> int:
+    ensure_session_db(db_path)
     args_json = None
     if arguments is not None:
         try:
@@ -217,6 +281,7 @@ def append_tool_call(
 
 
 def list_tool_calls(db_path: Path, *, limit: int = 50) -> list[dict[str, Any]]:
+    ensure_session_db(db_path)
     limit = max(1, min(int(limit), 200))
     with _connect(db_path) as conn:
         rows = conn.execute(
@@ -241,7 +306,8 @@ def list_tool_calls(db_path: Path, *, limit: int = 50) -> list[dict[str, Any]]:
 
 
 def list_reasoning(db_path: Path) -> list[dict[str, Any]]:
-    """返回每个有 turn_id 的助手消息的推理文本（route_reason / tool_plan）。"""
+    """返回每个有 turn_id 的助手消息的推理文本。"""
+    ensure_session_db(db_path)
     with _connect(db_path) as conn:
         rows = conn.execute(
             "SELECT turn_id, route_reason, tool_plan FROM messages "

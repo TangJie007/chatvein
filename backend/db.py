@@ -20,8 +20,9 @@ import sqlite_vec
 from sqlalchemy import Connection, Engine, create_engine, event, text
 from sqlmodel import Session, SQLModel
 
-# v1: 手写 sqlite3；v2: SQLModel；v3: llm_models；v4: conversations.workspace_dir。
-SCHEMA_VERSION = 4
+# v1: 手写 sqlite3；v2: SQLModel；v3: llm_models；v4: conversations.workspace_dir；
+# v5: 主库移除 messages（对话消息只存会话空间 session.sqlite）。
+SCHEMA_VERSION = 5
 DB_FILENAME = "chatvein.db"
 
 _BACKEND_DIR = Path(__file__).resolve().parent
@@ -129,16 +130,16 @@ def register_entities() -> None:
     global _entities_registered
     if _entities_registered:
         return
-    from conversations.entity import Conversation, Message  # noqa: F401
+    from conversations.entity import Conversation  # noqa: F401
     from models.entity import LlmModel  # noqa: F401
     from roles.entity import Role  # noqa: F401
 
-    _ = (Conversation, Message, LlmModel, Role)
+    _ = (Conversation, LlmModel, Role)
     _entities_registered = True
 
 
 def _normalise_v1_timestamps(connection: Connection) -> None:
-    targets = (("conversations", ("created_at", "updated_at")), ("messages", ("created_at",)))
+    targets = (("conversations", ("created_at", "updated_at")),)
     for table, columns in targets:
         for column in columns:
             statement = (
@@ -159,30 +160,59 @@ def _ensure_workspace_dir_column(connection: Connection) -> None:
         ).close()
 
 
-def _ensure_message_metrics_columns(connection: Connection) -> None:
-    """``create_all`` 不会给已有表加列。旧库补上本轮 token 用量与耗时。"""
-    rows = connection.exec_driver_sql("PRAGMA table_info(messages)").fetchall()
-    names = {str(row[1]) for row in rows}
-    if not names:
+def _drop_main_messages_table(connection: Connection) -> None:
+    """v5：对话消息迁到会话空间后，删除主库 messages 表。"""
+    rows = connection.exec_driver_sql(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='messages'"
+    ).fetchall()
+    if not rows:
         return
-    for column, ddl in (
-        ("tokens", "INTEGER NOT NULL DEFAULT 0"),
-        ("duration_ms", "INTEGER NOT NULL DEFAULT 0"),
-    ):
-        if column not in names:
-            connection.exec_driver_sql(
-                f"ALTER TABLE messages ADD COLUMN {column} {ddl}"
-            ).close()
+    # 尽量把尚未同步到 session 的主库消息迁过去（幂等：session 已有内容则跳过）
+    try:
+        from conversations import session_store  # pyright: ignore[reportImplicitRelativeImport]
+        from mcps.sandbox import (  # pyright: ignore[reportImplicitRelativeImport]
+            conversation_root,
+            init_conversation_layout,
+            session_db_path,
+        )
 
-
-def _ensure_messages_turn_id_column(connection: Connection) -> None:
-    """``create_all`` 不会给已有表加列。旧库补上消息的 turn_id（关联会话工作区同一轮 trace）。"""
-    rows = connection.exec_driver_sql("PRAGMA table_info(messages)").fetchall()
-    names = {str(row[1]) for row in rows}
-    if names and "turn_id" not in names:
-        connection.exec_driver_sql(
-            "ALTER TABLE messages ADD COLUMN turn_id VARCHAR(64) NOT NULL DEFAULT ''"
-        ).close()
+        convs = connection.exec_driver_sql(
+            "SELECT id, workspace_dir FROM conversations"
+        ).fetchall()
+        for conv in convs:
+            cid = str(conv[0])
+            ws = str(conv[1] or "").strip()
+            if not ws:
+                continue
+            try:
+                db_path = session_db_path(init_conversation_layout(conversation_root(ws)))
+            except Exception:
+                continue
+            existing = session_store.list_messages(db_path, limit=1)
+            if existing:
+                continue
+            msg_rows = connection.exec_driver_sql(
+                "SELECT role, content, used_llm, route, turn_id, tokens, duration_ms, created_at "
+                "FROM messages WHERE conversation_id = ? ORDER BY id",
+                (cid,),
+            ).fetchall()
+            for m in msg_rows:
+                role = str(m[0] or "")
+                if role not in ("user", "assistant", "system"):
+                    continue
+                session_store.append_message(
+                    db_path,
+                    role,
+                    str(m[1] or ""),
+                    used_llm=bool(m[2]),
+                    route=m[3],
+                    turn_id=str(m[4] or "") or None,
+                    tokens=int(m[5] or 0),
+                    duration_ms=int(m[6] or 0),
+                )
+    except Exception as exc:  # noqa: BLE001 — 迁移失败不阻断启动，仍删表
+        print(f"CHATVEIN migrate messages→session skipped: {exc}", flush=True)
+    connection.exec_driver_sql("DROP TABLE IF EXISTS messages").close()
 
 
 def _migrate(connection: Connection) -> None:
@@ -191,8 +221,8 @@ def _migrate(connection: Connection) -> None:
         _normalise_v1_timestamps(connection)
     SQLModel.metadata.create_all(connection)
     _ensure_workspace_dir_column(connection)
-    _ensure_messages_turn_id_column(connection)
-    _ensure_message_metrics_columns(connection)
+    if current < 5:
+        _drop_main_messages_table(connection)
     if current != SCHEMA_VERSION:
         connection.exec_driver_sql(f"PRAGMA user_version = {SCHEMA_VERSION}").close()
 
@@ -257,12 +287,17 @@ def info() -> dict[str, object]:
     payload = stats()
     with session_scope() as session:
         conversations = int(_scalar(session, "SELECT count(*) FROM conversations", 0))  # pyright: ignore[reportArgumentType]
-        messages = int(_scalar(session, "SELECT count(*) FROM messages", 0))  # pyright: ignore[reportArgumentType]
         journal_mode = str(_scalar(session, "PRAGMA journal_mode", ""))
         sqlite_version = str(_scalar(session, "SELECT sqlite_version()", ""))
         page_size = int(_scalar(session, "PRAGMA page_size", 0))  # pyright: ignore[reportArgumentType]
         page_count = int(_scalar(session, "PRAGMA page_count", 0))  # pyright: ignore[reportArgumentType]
         free_pages = int(_scalar(session, "PRAGMA freelist_count", 0))  # pyright: ignore[reportArgumentType]
+    try:
+        from conversations.service import ConversationsService  # pyright: ignore[reportImplicitRelativeImport]
+
+        messages = int(ConversationsService().counts().get("messages") or 0)
+    except Exception:  # noqa: BLE001
+        messages = 0
     size_bytes = path.stat().st_size if path.exists() else 0
     payload.update(
         {

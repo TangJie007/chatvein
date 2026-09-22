@@ -113,8 +113,17 @@ def remove_conversation_dir(name: str) -> None:
         path = conversation_root(name)
     except ValueError:
         return
-    if path.is_dir():
+    if not path.is_dir():
+        return
+    # Windows 上 session.sqlite 的 WAL 句柄可能尚未释放，重试几次。
+    import time
+
+    for attempt in range(5):
         shutil.rmtree(path, ignore_errors=True)
+        if not path.exists():
+            return
+        time.sleep(0.05 * (attempt + 1))
+    shutil.rmtree(path, ignore_errors=True)
 
 
 def venv_python(root: Path | None = None) -> Path:

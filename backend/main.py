@@ -177,17 +177,9 @@ def chat(req: ChatRequest):
         turn_id=turn_id,
         tokens=tokens,
         duration_ms=duration_ms,
-    )
-    conversations_service.record_turn(
-        prepared["workspace_dir"],
-        user_text=req.message,
-        reply_text=reply,
-        route=route,
-        used_llm=bool(result.get("used_llm", False)),
         tool_trace=tool_trace,
         route_reason=result.get("route_reason"),
         tool_plan=result.get("tool_plan_reason"),
-        turn_id=turn_id,
     )
     insight = conversations_service.workspace_insight(conversation_id)
     return {
