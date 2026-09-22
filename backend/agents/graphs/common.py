@@ -196,7 +196,13 @@ def invoke_react(
     deadline_s: float | None = None,
     config_extra: dict[str, Any] | None = None,
 ) -> Any:
-    """``agent.invoke``；可选墙钟超时（仅防死挂，默认不压质量）。"""
+    """``agent.invoke``；可选墙钟超时（仅防死挂，默认不压质量）。
+
+    超时跑在线程池时须 ``copy_context().run``，否则丢失
+    ``use_conversation_sandbox`` 的 ContextVar，文件/沙箱工具会报「没有会话工作区」。
+    """
+    import contextvars
+
     from trace import runnable_config  # pyright: ignore[reportMissingImports]
 
     cfg = runnable_config({"recursion_limit": recursion_limit, **(config_extra or {})})
@@ -207,8 +213,9 @@ def invoke_react(
     if deadline_s is None or deadline_s <= 0:
         return _run()
 
+    ctx = contextvars.copy_context()
     with ThreadPoolExecutor(max_workers=1) as pool:
-        fut = pool.submit(_run)
+        fut = pool.submit(ctx.run, _run)
         try:
             return fut.result(timeout=deadline_s)
         except FuturesTimeout as exc:

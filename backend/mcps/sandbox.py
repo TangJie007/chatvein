@@ -148,7 +148,7 @@ def use_conversation_sandbox(name: str) -> Iterator[Path]:
 def current_sandbox() -> Path:
     root = _current.get()
     if root is None:
-        raise ValueError("当前没有会话工作区，无法使用代码沙箱")
+        raise ValueError("当前没有会话工作区")
     return root
 
 
