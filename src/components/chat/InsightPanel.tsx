@@ -3,6 +3,7 @@ import {
   Ban,
   Check,
   File,
+  FolderOpen,
   Image,
   Lightbulb,
   PanelRightClose,
@@ -40,6 +41,8 @@ export type InsightArtifact = {
   name: string;
   meta: string;
   time: string;
+  /** 产物在本机的绝对路径，用于「在文件管理器中打开」；缺失则不显示该操作。 */
+  path?: string;
 };
 
 type IconCmp = ComponentType<{ className?: string }>;
@@ -68,12 +71,15 @@ type InsightPanelProps = {
   thread?: InsightThreadItem[];
   artifacts?: InsightArtifact[];
   onClose: () => void;
+  /** 在文件管理器中打开产物所在目录（path 为本机绝对路径）。 */
+  onRevealArtifact?: (path: string) => void;
 };
 
 export function InsightPanel({
   thread = [],
   artifacts = [],
   onClose,
+  onRevealArtifact,
 }: InsightPanelProps) {
   const steps: InsightStep[] = [];
   let goal = "";
@@ -139,6 +145,7 @@ export function InsightPanel({
                 {artifacts.map((a, i) => {
                   const meta = ART_META[a.type] || ART_META.file;
                   const ArtIcon = meta.icon;
+                  const canReveal = !!a.path && !!onRevealArtifact;
                   return (
                     <button
                       key={`${a.name}-${i}`}
@@ -162,6 +169,28 @@ export function InsightPanel({
                       <span className="shrink-0 text-[10px] text-ink-300 group-hover:text-ink-500">
                         {a.time}
                       </span>
+                      {canReveal ? (
+                        <span
+                          role="button"
+                          tabIndex={0}
+                          title="打开文件所在位置"
+                          aria-label="打开文件所在位置"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onRevealArtifact?.(a.path as string);
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" || e.key === " ") {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              onRevealArtifact?.(a.path as string);
+                            }
+                          }}
+                          className="flex size-6 shrink-0 items-center justify-center rounded-md text-ink-400 transition-colors hover:bg-tint hover:text-brand-600 focus-visible:outline-2 focus-visible:outline-brand-600"
+                        >
+                          <FolderOpen className="size-3.5" strokeWidth={1.75} />
+                        </span>
+                      ) : null}
                     </button>
                   );
                 })}

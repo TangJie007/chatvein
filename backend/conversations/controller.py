@@ -1,6 +1,6 @@
 """会话 HTTP 路由。"""
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Body
 
 from .entity import CreateConversationDto
 from .service import ConversationsService
@@ -53,6 +53,16 @@ def open_conversation_workspace(conversation_id: str):
     if path is None:
         raise HTTPException(status_code=404, detail="会话不存在")
     return {"ok": True, "path": path}
+
+
+@conversations_controller.post("/{conversation_id}/open-artifact")
+def open_artifact_location(conversation_id: str, body: dict = Body(default={})):
+    """在文件管理器中打开产物所在目录（path 必须位于会话工作区内）。"""
+    path = body.get("path") if isinstance(body, dict) else None
+    folder = _service.open_artifact_location(conversation_id, path)
+    if folder is None:
+        raise HTTPException(status_code=404, detail="无法打开该路径")
+    return {"ok": True, "path": folder}
 
 
 @conversations_controller.get("/{conversation_id}/workspace")

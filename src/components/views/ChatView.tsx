@@ -12,6 +12,7 @@ import {
   listConversations,
   listModels,
   listRoles,
+  openArtifactLocation,
   openConversationWorkspace,
   pickActiveModel,
   sendChat,
@@ -360,8 +361,19 @@ export function ChatView({
       name: item.name,
       meta: artifactMeta(item.size_bytes),
       time: item.modified_at ? dayjs(item.modified_at).format("HH:mm") : "",
+      path: item.path || undefined,
     }));
   }, [workspace?.artifacts]);
+
+  const handleRevealArtifact = useCallback(
+    (path: string) => {
+      if (!activeId) return;
+      void openArtifactLocation(activeId, path).catch(() => {
+        /* 打开失败静默忽略（路径越界 / 文件管理器异常） */
+      });
+    },
+    [activeId]
+  );
 
   const handleSend = async (
     text: string,
@@ -542,6 +554,7 @@ export function ChatView({
           conversationId={activeId}
           insightThread={insightThread}
           artifacts={artifacts}
+          onRevealArtifact={handleRevealArtifact}
           selectedTurnId={selectedTurnId}
           onSelectMessage={(tid) => setSelectedTurnId(tid)}
           onOpenWorkspace={() => {

@@ -335,6 +335,35 @@ class ConversationsService:
         _open_in_file_manager(str(root))
         return str(root)
 
+    def open_artifact_location(self, conversation_id: str, path: str | None) -> str | None:
+        """在系统文件管理器中打开产物所在目录。
+
+        仅当 ``path`` 位于该会话工作区内时才允许，避免越权打开任意路径。
+        """
+        conversation = self._repo.get(conversation_id)
+        if conversation is None:
+            return None
+        name = (conversation.get("workspace_dir") or "").strip()
+        if not name or not path:
+            return None
+        root = self.workspace_root_for(name).resolve()
+        target = Path(path).resolve()
+        try:
+            target.relative_to(root)
+        except ValueError:
+            return None
+        from mcps.tools.fs import _open_in_file_manager  # pyright: ignore[reportImplicitRelativeImport]
+
+        folder = (
+            target.parent
+            if target.is_file()
+            else target
+            if target.is_dir()
+            else root
+        )
+        _open_in_file_manager(str(folder))
+        return str(folder)
+
     def workspace_insight(self, conversation_id: str) -> dict[str, Any] | None:
         conversation = self._repo.get(conversation_id)
         if conversation is None:

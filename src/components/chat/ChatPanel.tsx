@@ -61,6 +61,8 @@ type ChatPanelProps = {
   insightThread?: InsightThreadItem[];
   artifacts?: InsightArtifact[];
   selectedTurnId?: string | null;
+  /** 在文件管理器中打开产物所在目录（path 为本机绝对路径）。 */
+  onRevealArtifact?: (path: string) => void;
   onSelectMessage?: (turnId: string) => void;
   /** 主动停止当前生成（与 composer 的停止按钮一致）。 */
   onStop?: () => void;
@@ -100,6 +102,7 @@ export function ChatPanel({
   insightThread = [],
   artifacts = [],
   selectedTurnId,
+  onRevealArtifact,
   onSelectMessage,
   onStop,
   onEditMessage,
@@ -411,6 +414,7 @@ export function ChatPanel({
           thread={insightThread}
           artifacts={artifacts}
           onClose={onToggleInsight}
+          onRevealArtifact={onRevealArtifact}
         />
       ) : null}
     </section>

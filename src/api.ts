@@ -330,6 +330,15 @@ export function openConversationWorkspace(conversationId: string) {
   );
 }
 
+/** 在系统文件管理器中打开产物所在目录（path 为该产物文件 / 目录的绝对路径）。 */
+export function openArtifactLocation(conversationId: string, path: string) {
+  return backendRequest<{ ok: boolean; path: string }>(
+    `/api/conversations/${conversationId}/open-artifact`,
+    "POST",
+    { path }
+  );
+}
+
 /** Per-conversation workspace insight (output / logs / runs). */
 export function getConversationWorkspace(conversationId: string) {
   return backendRequest<ConversationWorkspace>(
