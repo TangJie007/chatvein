@@ -1,4 +1,4 @@
-"""IP 归属地：ip2region 离线查询（本机出口 / 给定 IP）。"""
+"""IP 归属地：免费源降级（ipinfo → ipwhois → ip-api）。"""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import json
 
 from langchain_core.tools import BaseTool, tool
 
-from mcps.ip2region_runtime import (  # pyright: ignore[reportImplicitRelativeImport]
+from mcps.ipwhois_runtime import (  # pyright: ignore[reportImplicitRelativeImport]
     lookup_ip,
     lookup_my_location,
 )
@@ -16,9 +16,8 @@ from mcps.ip2region_runtime import (  # pyright: ignore[reportImplicitRelativeIm
 def get_my_location() -> str:
     """获取本机公网出口 IP 及其归属地（国家 / 省 / 市 / ISP）。
 
-    先探测出口公网 IP，再用本地 ip2region 库离线解析。
-    内网环境下返回的是 NAT 出口位置，不是局域网地址。
-    首次使用会按需下载 xdb 数据库到数据目录。
+    免费降级：ipinfo.io → ipwhois.io → ip-api.com（均无 Key）。
+    全部失败时返回失败原因。内网环境下是 NAT 出口位置，不是局域网地址。
     """
     try:
         return json.dumps(lookup_my_location(), ensure_ascii=False)
@@ -30,8 +29,8 @@ def get_my_location() -> str:
 def lookup_ip_region(ip: str) -> str:
     """查询给定 IP 的归属地（国家 / 省 / 市 / ISP）。
 
-    支持 IPv4 与 IPv6。私有、回环、保留地址不会查库，会标明原因。
-    首次使用会按需下载对应版本的 xdb 数据库。
+    支持 IPv4 与 IPv6。免费降级：ipinfo → ipwhois → ip-api（均无 Key）。
+    私有 / 回环 / 保留地址不请求网络；全部失败时返回原因。
     """
     try:
         return json.dumps(lookup_ip(ip), ensure_ascii=False)

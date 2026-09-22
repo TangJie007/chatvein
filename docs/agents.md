@@ -63,7 +63,7 @@ ChatVein 是本机桌面 Agent（Tauri + Python），前端设置页已规划 `b
 
 | PowerShell（仅 Windows） | `mcp-powershell` | `powershell_info` `powershell_run` | 对齐 WorkBuddy：有 Bash 时两者并存；无 Bash 时它是唯一 shell。`CHATVEIN_POWERSHELL_PATH` / `pwsh` / Windows PowerShell；`CHATVEIN_USE_POWERSHELL_TOOL=0` 关闭。命令同样限会话目录 + 确认 |
 | Browser 自动化 | `mcp-browser` | `browser_info` `browser_navigate` `browser_navigate_back` `browser_navigate_forward` `browser_reload` `browser_snapshot` `browser_find` `browser_click` `browser_hover` `browser_drag` `browser_drop` `browser_type` `browser_fill_form` `browser_select_option` `browser_press_key` `browser_file_upload` `browser_handle_dialog` `browser_evaluate` `browser_take_screenshot` `browser_console_messages` `browser_network_requests` `browser_network_request` `browser_wait_for` `browser_resize` `browser_close` `browser_tabs` | 进程内 Playwright，工具名/参数对齐 `@playwright/mcp` Core + Tabs。先 snapshot 再按 `ref` 交互。需本机 `playwright install chromium`（或 `CHATVEIN_BROWSER` / `CHATVEIN_BROWSER_EXECUTABLE`）；**未探测到则不注册**。默认 headed，`CHATVEIN_BROWSER_HEADLESS=1` 无头。不暴露 `browser_run_code_unsafe`。截图落盘主空间 `browser-output/` |
-| IP 归属地 | `mcp-ip` | `get_my_location` `lookup_ip_region` | 离线 `py-ip2region`。`get_my_location` 先探测公网出口再查库；`lookup_ip_region` 查给定 IPv4/IPv6。xdb 首次使用下载到 `CHATVEIN_DATA_DIR/ip2region/`，可用 `CHATVEIN_IP2REGION_V4` / `CHATVEIN_IP2REGION_V6` 指向本地文件 |
+| IP 归属地 | `mcp-ip` | `get_my_location` `lookup_ip_region` | 免费降级：ipinfo.io → ipwhois-python → ip-api.com（均无 Key）；全失败返回原因 |
 | OCR 识字 | `mcp-ocr` | `ocr_image` `ocr_image_base64` | 先 OCR.space（默认公共 key `helloworld`，可用 `CHATVEIN_OCR_SPACE_KEY`）；失败则在当前会话沙箱 `pip install rapidocr-onnxruntime`、写 `ocr_run.py` 并执行。支持 URL 或工作区/会话目录内路径 |
 | 自定义 HTTP MCP | `mcp-http` | （配置位） | 设置页占位；后续用 LangChain `MCPAdapter` 拉远程工具 |
 

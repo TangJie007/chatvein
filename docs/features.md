@@ -54,7 +54,7 @@ Agent 图细节见 [`agent-graphs.md`](./agent-graphs.md)；工具矩阵见 [`ag
 | `mcp-bash` | Git Bash（可按需下 MinGit）；限会话目录 + 危险拦截 + 确认 |
 | `mcp-powershell` | Windows PowerShell；策略同 Bash |
 | `mcp-browser` | Playwright Core+Tabs；本机有 Chromium 才注册 |
-| `mcp-ip` | 公网出口 / IP 归属（ip2region，xdb 按需下载） |
+| `mcp-ip` | 公网出口 / IP 归属（ipinfo → ipwhois → ip-api，免费无 Key） |
 | `mcp-ocr` | OCR.space → 沙箱 RapidOCR 降级 |
 
 目录 API：`GET /api/mcps/catalog`。
@@ -110,7 +110,7 @@ Agent 图细节见 [`agent-graphs.md`](./agent-graphs.md)；工具矩阵见 [`ag
 | --- | --- |
 | 开发 | `npm run tauri dev`：固定端口 8420，后端可热重载 |
 | 发布 | `npm run tauri build` → `prepare:runtime`（PyInstaller）+ 前端 + NSIS/MSI |
-| 运行时 | 用户机无需装 Python；Chromium / MinGit / 向量权重 / ip2region **不进包**，按需下载 |
+| 运行时 | 用户机无需装 Python；Chromium / MinGit / 向量权重 **不进包**，按需下载 |
 | 数据目录 | Rust `app_data_dir` → `CHATVEIN_DATA_DIR` |
 
 ---

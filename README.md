@@ -101,7 +101,7 @@ Rust 只负责把真实后端 URL 交给前端，新增接口无需改动 Rust �
 每会话工作区：`output/` 产物、`logs/session.sqlite` 短期记忆与工具轨迹、`runs/` 沙箱执行；历史会注入 Agent。
 技能可安装到本机并在对话中注入 `SKILL.md`。
 
-内置 MCP（进程内工具，对齐设置页）：文件系统沙箱 / 联网搜索 / 只读 SQLite / 本地知识库 / 代码沙箱 / Git Bash·PowerShell / 浏览器自动化（Playwright，需本机安装浏览器）/ IP 归属地（ip2region，xdb 按需下载）。
+内置 MCP（进程内工具，对齐设置页）：文件系统沙箱 / 联网搜索 / 只读 SQLite / 本地知识库 / 代码沙箱 / Git Bash·PowerShell / 浏览器自动化（Playwright，需本机安装浏览器）/ IP 归属地（ipinfo → ipwhois → ip-api）。
 
 文档：
 

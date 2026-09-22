@@ -30,5 +30,5 @@ lxml>=5.0,<7
 # 浏览器二进制不随包装；需本机 `playwright install chromium`（见 docs/agents.md）。
 # aria_snapshot(mode="ai") 需较新版本（约 >=1.59）。
 playwright>=1.59,<2
-# IP 归属地（mcp-ip）：官方 py-ip2region；xdb 首次查询时下载到 CHATVEIN_DATA_DIR/ip2region。
-py-ip2region>=3.0,<4
+# IP 归属地（mcp-ip）：免费降级 ipinfo → ipwhois-python → ip-api（均无 Key）。
+ipwhois-python>=1.2,<2

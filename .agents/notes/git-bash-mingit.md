@@ -9,7 +9,7 @@
    `mcp-powershell`（Windows 上几乎总有）。
 
 不把 MinGit 打进 Tauri/PyInstaller 包（约 37MB+ 压缩，解压更大），与 Chromium /
-ip2region xdb 同属「数据目录按需拉取」。
+ipwhois.io 在线查询同属「联网能力，无需本机大文件」；与 MinGit / 向量权重的离线按需拉取不同。
 
 ## 环境变量
 

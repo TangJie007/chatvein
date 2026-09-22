@@ -136,7 +136,7 @@ export const MCP_SERVERS: McpServer[] = [
     name: "IP 归属地",
     kind: "geo",
     builtin: true,
-    desc: "离线 ip2region：查本机公网出口位置，或给定 IP 的国家 / 省 / 市 / ISP。首次使用按需下载 xdb。",
+    desc: "免费归属地：ipinfo → ipwhois → ip-api（无 Key）。查本机公网出口或给定 IP；全失败返回原因。",
     transport: "本机进程",
     cmd: "builtin://mcp-ip",
     tools: 2,
