@@ -54,6 +54,8 @@ type ChatPanelProps = {
   contextTitle?: string;
   sending?: boolean;
   error?: string | null;
+  /** danger=失败（红）；muted=用户取消等提示（中性）。 */
+  errorTone?: "danger" | "muted";
   workspaceDir?: string;
   conversationId?: string | null;
   insightThread?: InsightThreadItem[];
@@ -92,6 +94,7 @@ export function ChatPanel({
   contextTitle = "上下文已用 0%",
   sending = false,
   error = null,
+  errorTone = "danger",
   workspaceDir,
   conversationId,
   insightThread = [],
@@ -298,7 +301,14 @@ export function ChatPanel({
               })
             )}
             {error ? (
-              <p className="rounded-xl bg-red-50 px-3 py-2 text-[12.5px] text-red-700">
+              <p
+                className={cn(
+                  "rounded-xl px-3 py-2 text-[12.5px]",
+                  errorTone === "muted"
+                    ? "bg-tint text-ink-500"
+                    : "bg-red-50 text-red-700"
+                )}
+              >
                 {error}
               </p>
             ) : null}

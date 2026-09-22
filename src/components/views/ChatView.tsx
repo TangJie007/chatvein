@@ -98,11 +98,16 @@ function toChatMessages(rows: ChatMessageRecord[]): ChatMessage[] {
   }));
 }
 
-/** Tauri 插件在 abort 时抛 ``Error("Request cancelled")``，浏览器则抛 ``AbortError``。 */
+/** Tauri 插件 abort 文案可能是 canceled / cancelled；浏览器则为 AbortError。 */
 function isAbortError(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  if (err.name === "AbortError") return true;
+  const msg = err.message.toLowerCase();
   return (
-    err instanceof Error &&
-    (err.name === "AbortError" || err.message === "Request cancelled")
+    msg === "request cancelled" ||
+    msg === "request canceled" ||
+    msg.includes("request cancelled") ||
+    msg.includes("request canceled")
   );
 }
 
@@ -137,7 +142,12 @@ export function ChatView({
   const [workspace, setWorkspace] = useState<ConversationWorkspace | null>(null);
   const [selectedTurnId, setSelectedTurnId] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setErrorState] = useState<string | null>(null);
+  const [errorTone, setErrorTone] = useState<"danger" | "muted">("danger");
+  const setError = useCallback((message: string | null, tone: "danger" | "muted" = "danger") => {
+    setErrorTone(tone);
+    setErrorState(message);
+  }, []);
   /** 当前在途请求的取消控制器；非 null 表示 Agent 正在生成。 */
   const abortRef = useRef<AbortController | null>(null);
   /** 本轮乐观插入的用户 / 助手气泡 id 与原文，便于停止 / 撤回时精确移除。 */
@@ -376,8 +386,11 @@ export function ChatView({
       await refreshList();
       await loadConversation(result.conversation_id);
     } catch (err) {
-      // 被主动停止 / 撤回：气泡已由 cancelCurrent 清理，这里不再报错。
-      if (isAbortError(err)) return;
+      // 用户主动停止 / 撤回：提示取消，不当作错误。
+      if (isAbortError(err)) {
+        setError("已取消本次生成", "muted");
+        return;
+      }
       setMessages((prev) => prev.filter((m) => m.id !== optimisticId && m.id !== pendingId));
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -472,6 +485,7 @@ export function ChatView({
           contextTitle={contextTitle}
           sending={sending}
           error={error}
+          errorTone={errorTone}
           meta={lastMeta}
           onStop={() => cancelCurrent("stop")}
           onEditMessage={() => cancelCurrent("edit")}
