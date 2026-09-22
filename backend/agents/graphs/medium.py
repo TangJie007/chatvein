@@ -40,11 +40,14 @@ _MEDIUM_SYSTEM = (
     "browser_snapshot，再按快照里的 ref（如 e5）调用 browser_click / browser_type 等；"
     "不要靠截图像素点选。"
     "根据 stdout/stderr 改代码再执行，直到问题解决或明确说明卡在哪里。"
-    "简洁用中文给出结果，并注明关键来源路径或链接（产物路径以 output/ 开头）。"
+    "工具结果已够回答时立刻用中文作答，不要反复搜索或空转调用工具；"
+    "简洁注明关键来源路径或链接（产物路径以 output/ 开头）。"
 )
 
 # medium：少量工具调用即可；限制图递归，避免空转
 _RECURSION_LIMIT = 12
+# 单次 LLM HTTP 超时（秒）；避免 thinking/网络挂死导致 UI 一直转圈
+_LLM_TIMEOUT = 90.0
 
 
 def build_medium_graph(
@@ -85,7 +88,10 @@ def build_medium_graph(
         text = (state.get("rewritten") or state.get("message") or "").strip()
         names = list(state.get("selected_tools") or [])
         tools = resolve_tools(names)
-        model = llm_mod.get_chat_model(role=role)
+        model = llm_mod.get_chat_model(
+            role=role,
+            timeout=_LLM_TIMEOUT,
+        )
         if model is None:
             if not names:
                 reply = f"（离线）{text}" if text else "（离线）未配置 LLM。"

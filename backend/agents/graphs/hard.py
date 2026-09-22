@@ -45,10 +45,12 @@ _HARD_SYSTEM = (
     "用 Python 解决问题时：在 runs/ 创建虚拟环境，把代码写成 .py，执行，"
     "阅读 stdout 和 stderr，失败就修改后再跑，不要在没有成功执行结果时声称已解决。"
     "操作网页时先 snapshot 再按 ref 交互。"
+    "工具结果已够回答时立刻总结，不要反复空转调用同类工具。"
 )
 
 _RECURSION_LIMIT = 28
 _MAX_VERIFY_ROUNDS = 2
+_LLM_TIMEOUT = 90.0
 
 
 class TaskPlan(BaseModel):
@@ -234,7 +236,10 @@ def build_hard_graph(
 
         names = list(state.get("selected_tools") or [])
         tools = resolve_tools(names)
-        model = llm_mod.get_chat_model(role=role)
+        model = llm_mod.get_chat_model(
+            role=role,
+            timeout=_LLM_TIMEOUT,
+        )
         prompt = system_prompt
         if plan_text:
             prompt = f"{system_prompt}\n\n{plan_text}"
