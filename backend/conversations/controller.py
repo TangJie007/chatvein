@@ -61,3 +61,10 @@ def conversation_workspace(conversation_id: str):
     if insight is None:
         raise HTTPException(status_code=404, detail="会话不存在")
     return insight
+
+
+@conversations_controller.delete("/{conversation_id}/turns/last")
+def delete_last_turn(conversation_id: str):
+    """撤回 / 停止生成：删除该会话最近一轮（用户句 + 助手句）。"""
+    deleted = _service.delete_last_exchange(conversation_id)
+    return {"deleted": deleted}

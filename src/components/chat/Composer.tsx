@@ -1,6 +1,6 @@
 import { open } from "@tauri-apps/plugin-dialog";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { Paperclip, Plus, SendHorizontal, X } from "lucide-react";
+import { Paperclip, Plus, SendHorizontal, Square, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { listInstalledSkills, listSkills, uploadFiles, type SkillHubItem } from "../../api";
 import { cn } from "../../lib/cn";
@@ -28,6 +28,12 @@ type ComposerProps = {
   contextTitle: string;
   sending?: boolean;
   onSend: (text: string, skills?: ComposerSkill[]) => void;
+  /** 生成中点击：主动停止当前 LLM 推理。 */
+  onStop?: () => void;
+  /** 由父组件回灌的待编辑原文（null 表示无需回灌）。 */
+  restoreText?: string | null;
+  /** 消费 restoreText 后回调，父组件据此清空。 */
+  onRestored?: () => void;
   conversationId?: string | null;
 };
 
@@ -59,6 +65,9 @@ export function Composer({
   contextTitle,
   sending = false,
   onSend,
+  onStop,
+  restoreText = null,
+  onRestored,
   conversationId = null,
 }: ComposerProps) {
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -190,6 +199,21 @@ export function Composer({
     el.style.height = `${MIN_H}px`;
     el.style.overflowY = "hidden";
   };
+
+  // 编辑 / 撤回后把原文回灌到输入框，便于继续修改后重发。
+  useEffect(() => {
+    if (restoreText == null) return;
+    setDraft(restoreText);
+    const el = inputRef.current;
+    if (el) {
+      el.style.height = "auto";
+      const next = Math.min(el.scrollHeight, MAX_H);
+      el.style.height = `${next}px`;
+      el.style.overflowY = el.scrollHeight > MAX_H ? "auto" : "hidden";
+      el.focus();
+    }
+    onRestored?.();
+  }, [restoreText, onRestored]);
 
   const submit = () => {
     const text = draft.trim();
@@ -439,15 +463,27 @@ export function Composer({
             className="flex-1 resize-none overflow-y-hidden bg-transparent py-1.5 text-[13px] leading-5 text-ink-900 placeholder:text-ink-400 focus:outline-none disabled:opacity-60"
             style={{ height: MIN_H, maxHeight: MAX_H }}
           />
-          <button
-            type="button"
-            onClick={submit}
-            disabled={!draft.trim() || sending}
-            aria-label="发送"
-            className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-brand-600 text-white shadow-soft transition-colors hover:bg-brand-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 disabled:opacity-50"
-          >
-            <SendHorizontal className="size-4" strokeWidth={1.75} />
-          </button>
+          {sending ? (
+            <button
+              type="button"
+              onClick={onStop}
+              aria-label="停止生成"
+              title="停止生成"
+              className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-danger-600 text-white shadow-soft transition-colors hover:bg-danger-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-danger-600"
+            >
+              <Square className="size-4" strokeWidth={2} />
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={submit}
+              disabled={!draft.trim()}
+              aria-label="发送"
+              className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-brand-600 text-white shadow-soft transition-colors hover:bg-brand-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 disabled:opacity-50"
+            >
+              <SendHorizontal className="size-4" strokeWidth={1.75} />
+            </button>
+          )}
         </div>
       </div>
     </footer>

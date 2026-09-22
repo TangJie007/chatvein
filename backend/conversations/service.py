@@ -41,6 +41,24 @@ class ConversationsService:
     def list_messages(self, conversation_id: str) -> list[MessageRecord]:
         return self._repo.list_messages(conversation_id)
 
+    def delete_last_exchange(self, conversation_id: str) -> int:
+        """撤回 / 停止：删除最近一轮对话（主库消息 + 会话空间短期记忆）。
+
+        返回主库删除的消息条数；会话空间里的同一轮（用户句、助手句、工具轨迹）
+        一并清理，避免被后续轮次当作历史上下文。
+        """
+        removed = self._repo.delete_last_exchange(conversation_id)
+        conversation = self._repo.get_conversation(conversation_id)
+        if conversation and conversation.workspace_dir:
+            root = self.workspace_root_for(conversation.workspace_dir)
+            db_path = session_db_path(root)
+            try:
+                session_store.delete_last_exchange(db_path)
+            except Exception:
+                # 会话空间库缺失或损坏不应阻断撤回
+                pass
+        return removed
+
     def add_message(
         self,
         conversation_id: str,

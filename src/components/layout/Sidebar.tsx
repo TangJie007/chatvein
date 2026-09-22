@@ -8,9 +8,15 @@ import {
   Users,
   UserCog,
 } from "lucide-react";
+import { NavLink, useLocation } from "react-router-dom";
 import { Button } from "../ui/button";
 import { cn } from "../../lib/cn";
-import type { AppView, NavCounts } from "../../types/view";
+import {
+  VIEW_PATH,
+  viewFromPathname,
+  type AppView,
+  type NavCounts,
+} from "../../types/view";
 
 const NAV: {
   key: Exclude<AppView, "settings">;
@@ -33,19 +39,25 @@ const NEW_LABEL: Partial<Record<AppView, string>> = {
 };
 
 type SidebarProps = {
-  view: AppView;
-  onView: (view: AppView) => void;
   counts?: NavCounts;
   onNew?: () => void;
 };
 
-export function Sidebar({ view, onView, counts = {}, onNew }: SidebarProps) {
+export function Sidebar({ counts = {}, onNew }: SidebarProps) {
+  const location = useLocation();
+  const view = viewFromPathname(location.pathname);
   const newLabel = NEW_LABEL[view] ?? "新建对话";
+  const canNew = view === "chat" || view === "models";
 
   return (
     <aside className="flex w-[138px] shrink-0 flex-col select-none pb-[15px]">
       <div className="px-3 pt-1.5">
-        <Button variant="tint" className="w-full" onClick={onNew}>
+        <Button
+          variant="tint"
+          className="w-full"
+          disabled={!canNew}
+          onClick={onNew}
+        >
           <Plus className="size-3.5" strokeWidth={1.75} />
           {newLabel}
         </Button>
@@ -53,20 +65,20 @@ export function Sidebar({ view, onView, counts = {}, onNew }: SidebarProps) {
 
       <nav className="mt-3 flex flex-col gap-0.5 px-3">
         {NAV.map(({ key, label, icon: Icon, badgeKey }) => {
-          const active = view === key;
           const badge = badgeKey ? counts[badgeKey] : undefined;
           return (
-            <button
+            <NavLink
               key={key}
-              type="button"
-              onClick={() => onView(key)}
-              className={cn(
-                "flex items-center gap-2 rounded-xl px-3 py-[6px] text-[12.5px] transition-colors",
-                "focus-visible:outline-2 focus-visible:outline-brand-600",
-                active
-                  ? "bg-surface font-medium text-ink-900 shadow-soft"
-                  : "text-ink-500 hover:bg-tint/70 hover:text-ink-700"
-              )}
+              to={VIEW_PATH[key]}
+              className={({ isActive }) =>
+                cn(
+                  "flex items-center gap-2 rounded-xl px-3 py-[6px] text-[12.5px] transition-colors",
+                  "focus-visible:outline-2 focus-visible:outline-brand-600",
+                  isActive
+                    ? "bg-surface font-medium text-ink-900 shadow-soft"
+                    : "text-ink-500 hover:bg-tint/70 hover:text-ink-700"
+                )
+              }
             >
               <Icon className="size-3.5 shrink-0" strokeWidth={1.75} />
               <span className="flex-1 text-left">{label}</span>
@@ -75,26 +87,27 @@ export function Sidebar({ view, onView, counts = {}, onNew }: SidebarProps) {
                   {badge}
                 </span>
               )}
-            </button>
+            </NavLink>
           );
         })}
       </nav>
 
       <div className="mt-auto px-3">
-        <button
-          type="button"
-          onClick={() => onView("settings")}
-          className={cn(
-            "flex w-full items-center gap-2 rounded-xl px-3 py-[6px] text-[12.5px] transition-colors",
-            "focus-visible:outline-2 focus-visible:outline-brand-600",
-            view === "settings"
-              ? "bg-surface font-medium text-ink-900 shadow-soft"
-              : "text-ink-500 hover:bg-tint/70 hover:text-ink-700"
-          )}
+        <NavLink
+          to={VIEW_PATH.settings}
+          className={({ isActive }) =>
+            cn(
+              "flex w-full items-center gap-2 rounded-xl px-3 py-[6px] text-[12.5px] transition-colors",
+              "focus-visible:outline-2 focus-visible:outline-brand-600",
+              isActive
+                ? "bg-surface font-medium text-ink-900 shadow-soft"
+                : "text-ink-500 hover:bg-tint/70 hover:text-ink-700"
+            )
+          }
         >
           <Settings className="size-3.5 shrink-0" strokeWidth={1.75} />
           <span className="flex-1 text-left">设置</span>
-        </button>
+        </NavLink>
       </div>
     </aside>
   );

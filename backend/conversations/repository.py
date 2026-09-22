@@ -213,6 +213,32 @@ class ConversationsRepository:
         with session_scope() as session:
             return [_message_dict(m) for m in session.exec(statement).all()]
 
+    def delete_last_exchange(self, conversation_id: str) -> int:
+        """删除该会话最近一轮（user + assistant 两条）消息，用于「撤回 / 停止」。
+
+        会话本身保留；返回实际删除的消息条数（0 表示还没有可删除的消息，
+        例如后端仍在生成、尚未落库）。
+        """
+        with session_scope() as session:
+            ids = session.exec(
+                select(Message.id)
+                .where(_col(Message.conversation_id) == conversation_id)
+                .order_by(_col(Message.id).desc())
+                .limit(2)
+            ).all()
+            if not ids:
+                return 0
+            id_set = [int(i) for i in ids]
+            session.exec(
+                delete(Message)
+                .where(_col(Message.id).in_(id_set))
+                .execution_options(synchronize_session=False)
+            )
+            conversation = session.get(Conversation, conversation_id)
+            if conversation is not None:
+                conversation.updated_at = utc_now()
+            return len(id_set)
+
     def save_exchange(
         self,
         conversation_id: str | None,

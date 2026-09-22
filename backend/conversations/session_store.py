@@ -141,6 +141,30 @@ def append_message(
         return int(cur.lastrowid or 0)
 
 
+def delete_last_exchange(db_path: Path) -> int:
+    """撤回 / 停止：删除会话空间里最近一轮（用户句 + 助手句 + 该轮工具轨迹）。
+
+    用户句在 ``record_turn`` 中不带 ``turn_id``，故按「助手句 id 的前一条」定位并删除；
+    工具轨迹按助手句的 ``turn_id`` 删除。返回 1 表示已删除，0 表示本轮尚未落库。
+    """
+    with _connect(db_path) as conn:
+        row = conn.execute(
+            "SELECT id, turn_id FROM messages "
+            "WHERE role = 'assistant' AND turn_id IS NOT NULL AND turn_id != '' "
+            "ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        if row is None:
+            return 0
+        assistant_id = int(row["id"])
+        turn_id = row["turn_id"]
+        conn.execute(
+            "DELETE FROM messages WHERE id = ? OR (role = 'user' AND id = ? - 1)",
+            (assistant_id, assistant_id),
+        )
+        conn.execute("DELETE FROM tool_calls WHERE turn_id = ?", (turn_id,))
+        return 1
+
+
 def list_messages(db_path: Path, *, limit: int = 40) -> list[dict[str, Any]]:
     """按时间正序返回最近 ``limit`` 条（短期记忆窗口）。"""
     limit = max(1, min(int(limit), 200))

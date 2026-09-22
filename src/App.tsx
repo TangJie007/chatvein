@@ -1,4 +1,14 @@
 import { useCallback, useEffect, useState } from "react";
+import {
+  Navigate,
+  Outlet,
+  Route,
+  Routes,
+  useLocation,
+  useOutletContext,
+  useParams,
+  useSearchParams,
+} from "react-router-dom";
 import { listModels, listRoles, pickActiveModel } from "./api";
 import { TitleBar } from "./components/layout/TitleBar";
 import { Sidebar } from "./components/layout/Sidebar";
@@ -12,31 +22,50 @@ import { SettingsView } from "./components/views/SettingsView";
 import { SkillsView } from "./components/views/SkillsView";
 import { TooltipProvider } from "./components/ui/tooltip";
 import { TraceShell } from "./components/trace/TraceWindow";
-import type { AppView, NavCounts } from "./types/view";
+import { viewFromPathname, type NavCounts } from "./types/view";
 
-function traceLaunch(): { conversationId: string; turnId: string | null } | null {
-  const params = new URLSearchParams(window.location.search);
-  if (params.get("view") !== "trace") return null;
-  return {
-    conversationId: params.get("conversation") ?? "",
-    turnId: params.get("turn"),
-  };
-}
+type MainOutletContext = {
+  defaultModelName: string | null;
+  newChatRequestId: number;
+  addModelRequestId: number;
+  onConversationCount: (n: number) => void;
+  onModelsChange: (info: { count: number; defaultName: string | null }) => void;
+};
 
 export default function App() {
-  const trace = traceLaunch();
-  if (trace) {
-    return (
-      <TooltipProvider delayDuration={300}>
-        <TraceShell conversationId={trace.conversationId} turnId={trace.turnId} />
-      </TooltipProvider>
-    );
-  }
-  return <MainApp />;
+  return (
+    <TooltipProvider delayDuration={300}>
+      <Routes>
+        <Route path="/trace/:conversationId" element={<TraceRoute />} />
+        <Route element={<MainLayout />}>
+          <Route index element={<Navigate to="/chat" replace />} />
+          <Route path="/chat" element={<ChatOutlet />} />
+          <Route path="/chat/:conversationId" element={<ChatOutlet />} />
+          <Route path="/group" element={<GroupView />} />
+          <Route path="/kb" element={<KnowledgeView />} />
+          <Route path="/skills" element={<SkillsView />} />
+          <Route path="/roles" element={<RolesView />} />
+          <Route path="/models" element={<ModelsOutlet />} />
+          <Route path="/settings" element={<Navigate to="/settings/app" replace />} />
+          <Route path="/settings/:section" element={<SettingsView />} />
+          <Route path="*" element={<Navigate to="/chat" replace />} />
+        </Route>
+      </Routes>
+    </TooltipProvider>
+  );
 }
 
-function MainApp() {
-  const [view, setView] = useState<AppView>("chat");
+function TraceRoute() {
+  const { conversationId = "" } = useParams<{ conversationId: string }>();
+  const [search] = useSearchParams();
+  return (
+    <TraceShell conversationId={conversationId} turnId={search.get("turn")} />
+  );
+}
+
+function MainLayout() {
+  const location = useLocation();
+  const view = viewFromPathname(location.pathname);
   const [counts, setCounts] = useState<NavCounts>({
     chat: 1,
     group: 0,
@@ -50,7 +79,6 @@ function MainApp() {
   const [newChatRequestId, setNewChatRequestId] = useState(0);
 
   useEffect(() => {
-    // 角色数量来自后端 /api/roles，启动即读一次（后端未就绪时静默）。
     void listRoles()
       .then((roles) => setCounts((c) => ({ ...c, roles: roles.length })))
       .catch(() => {
@@ -79,6 +107,14 @@ function MainApp() {
     setCounts((c) => (c.chat === n ? c : { ...c, chat: n }));
   }, []);
 
+  const handleModelsChange = useCallback(
+    ({ count, defaultName }: { count: number; defaultName: string | null }) => {
+      setCounts((c) => ({ ...c, models: count }));
+      setDefaultModelName(defaultName);
+    },
+    []
+  );
+
   const handleNew = () => {
     if (view === "models") {
       setAddModelRequestId((n) => n + 1);
@@ -87,50 +123,52 @@ function MainApp() {
     }
   };
 
+  const outletContext: MainOutletContext = {
+    defaultModelName,
+    newChatRequestId,
+    addModelRequestId,
+    onConversationCount: handleConversationCount,
+    onModelsChange: handleModelsChange,
+  };
+
   return (
-    <TooltipProvider delayDuration={300}>
-      <div className="relative flex h-screen w-screen min-h-[650px] min-w-[1050px] flex-col overflow-hidden bg-page font-sans text-ink-900 antialiased select-none">
-        <TitleBar />
+    <div className="relative flex h-screen w-screen min-h-[650px] min-w-[1050px] flex-col overflow-hidden bg-page font-sans text-ink-900 antialiased select-none">
+      <TitleBar />
 
-        <div className="flex min-h-0 min-w-0 flex-1">
-          <Sidebar
-            view={view}
-            onView={setView}
-            counts={counts}
-            onNew={handleNew}
-          />
+      <div className="flex min-h-0 min-w-0 flex-1">
+        <Sidebar counts={counts} onNew={handleNew} />
 
-          <div className="flex min-h-0 min-w-0 flex-1 gap-[15px] pb-[15px] pr-[15px]">
-            <section
-              key={view}
-              className="animate-view flex min-h-0 min-w-0 flex-1 overflow-hidden rounded-lg bg-surface"
-            >
-              {view === "chat" && (
-                <ChatView
-                  modelName={defaultModelName ?? undefined}
-                  newRequestId={newChatRequestId}
-                  onConversationCount={handleConversationCount}
-                />
-              )}
-              {view === "group" && <GroupView />}
-              {view === "kb" && <KnowledgeView />}
-              {view === "skills" && <SkillsView />}
-              {view === "roles" && <RolesView />}
-              {view === "models" && (
-                <ModelsView
-                  addRequestId={addModelRequestId}
-                  onModelsChange={({ count, defaultName }) => {
-                    setCounts((c) => ({ ...c, models: count }));
-                    setDefaultModelName(defaultName);
-                  }}
-                />
-              )}
-              {view === "settings" && <SettingsView />}
-            </section>
-          </div>
+        <div className="flex min-h-0 min-w-0 flex-1 gap-[15px] pb-[15px] pr-[15px]">
+          <section
+            key={view}
+            className="animate-view flex min-h-0 min-w-0 flex-1 overflow-hidden rounded-lg bg-surface"
+          >
+            <Outlet context={outletContext} />
+          </section>
         </div>
       </div>
       <BashApproval />
-    </TooltipProvider>
+    </div>
+  );
+}
+
+function ChatOutlet() {
+  const ctx = useOutletContext<MainOutletContext>();
+  return (
+    <ChatView
+      modelName={ctx.defaultModelName ?? undefined}
+      newRequestId={ctx.newChatRequestId}
+      onConversationCount={ctx.onConversationCount}
+    />
+  );
+}
+
+function ModelsOutlet() {
+  const ctx = useOutletContext<MainOutletContext>();
+  return (
+    <ModelsView
+      addRequestId={ctx.addModelRequestId}
+      onModelsChange={ctx.onModelsChange}
+    />
   );
 }

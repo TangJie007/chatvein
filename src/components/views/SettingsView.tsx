@@ -1,7 +1,9 @@
 import { Database, Plug, Settings2, type LucideIcon } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
+import { NavLink, Navigate, useParams } from "react-router-dom";
 import { dbBackup, dbInfo, dbVacuum, type DbInfo } from "../../api";
 import { cn } from "../../lib/cn";
+import { VIEW_PATH } from "../../types/view";
 import { AppSection } from "../settings/AppSection";
 import { McpSection } from "../settings/McpSection";
 import { SqliteSection, formatBytes } from "../settings/SqliteSection";
@@ -15,6 +17,12 @@ import {
 
 type SectionKey = "app" | "mcp" | "sqlite";
 
+const SECTION_KEYS = new Set<SectionKey>(["app", "mcp", "sqlite"]);
+
+function isSectionKey(value: string | undefined): value is SectionKey {
+  return !!value && SECTION_KEYS.has(value as SectionKey);
+}
+
 const SECTIONS: {
   key: SectionKey;
   label: string;
@@ -27,7 +35,16 @@ const SECTIONS: {
 ];
 
 export function SettingsView() {
-  const [section, setSection] = useState<SectionKey>("app");
+  const { section: sectionParam } = useParams<{ section?: string }>();
+  if (!isSectionKey(sectionParam)) {
+    return <Navigate to={`${VIEW_PATH.settings}/app`} replace />;
+  }
+  const section = sectionParam;
+
+  return <SettingsBody section={section} />;
+}
+
+function SettingsBody({ section }: { section: SectionKey }) {
   const [prefs, setPrefs] = useState<AppPrefs>(loadPrefs);
   const [servers] = useState<McpServer[]>(hydrateMcpServers);
 
@@ -119,35 +136,39 @@ export function SettingsView() {
           </div>
           <div className="flex flex-col gap-1">
             {SECTIONS.map(({ key, label, icon: Icon, hint }) => {
-              const active = section === key;
               return (
-                <button
+                <NavLink
                   key={key}
-                  type="button"
-                  onClick={() => setSection(key)}
-                  className={cn(
-                    "flex w-full flex-col gap-0.5 rounded-xl px-2.5 py-1.5 text-left transition-colors",
-                    "focus-visible:outline-2 focus-visible:outline-brand-600",
-                    active ? "bg-surface shadow-soft" : "hover:bg-tint/60"
-                  )}
+                  to={`${VIEW_PATH.settings}/${key}`}
+                  className={({ isActive }) =>
+                    cn(
+                      "flex w-full flex-col gap-0.5 rounded-xl px-2.5 py-1.5 text-left transition-colors",
+                      "focus-visible:outline-2 focus-visible:outline-brand-600",
+                      isActive ? "bg-surface shadow-soft" : "hover:bg-tint/60"
+                    )
+                  }
                 >
-                  <span className="flex items-center gap-2">
-                    <span className={active ? "text-brand-600" : "text-ink-400"}>
-                      <Icon className="size-3.5" strokeWidth={1.75} />
-                    </span>
-                    <span
-                      className={cn(
-                        "min-w-0 flex-1 truncate text-[12.5px]",
-                        active ? "font-medium text-ink-900" : "text-ink-500"
-                      )}
-                    >
-                      {label}
-                    </span>
-                  </span>
-                  <span className="truncate pl-[23px] text-[10.5px] text-ink-400">
-                    {hint}
-                  </span>
-                </button>
+                  {({ isActive }) => (
+                    <>
+                      <span className="flex items-center gap-2">
+                        <span className={isActive ? "text-brand-600" : "text-ink-400"}>
+                          <Icon className="size-3.5" strokeWidth={1.75} />
+                        </span>
+                        <span
+                          className={cn(
+                            "min-w-0 flex-1 truncate text-[12.5px]",
+                            isActive ? "font-medium text-ink-900" : "text-ink-500"
+                          )}
+                        >
+                          {label}
+                        </span>
+                      </span>
+                      <span className="truncate pl-[23px] text-[10.5px] text-ink-400">
+                        {hint}
+                      </span>
+                    </>
+                  )}
+                </NavLink>
               );
             })}
           </div>

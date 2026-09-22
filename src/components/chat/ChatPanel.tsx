@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { Bot, PanelRight, User } from "lucide-react";
+import { Bot, PanelRight, Pencil, Undo2, User } from "lucide-react";
 import { Badge } from "../ui/badge";
 import { ScrollArea } from "../ui/scroll-area";
 import { cn } from "../../lib/cn";
@@ -60,6 +60,16 @@ type ChatPanelProps = {
   artifacts?: InsightArtifact[];
   selectedTurnId?: string | null;
   onSelectMessage?: (turnId: string) => void;
+  /** 主动停止当前生成（与 composer 的停止按钮一致）。 */
+  onStop?: () => void;
+  /** 编辑当前任务：停止生成并把原文回灌到输入框。 */
+  onEditMessage?: () => void;
+  /** 撤回当前任务：停止生成并撤销本轮消息。 */
+  onRecallMessage?: () => void;
+  /** 编辑时由父组件回灌到输入框的原文（null 表示无需回灌）。 */
+  restoreText?: string | null;
+  /** Composer 消费 restoreText 后回调，父组件据此清空。 */
+  onRestored?: () => void;
   meta?: {
     difficulty?: string;
     selectedTools?: string[];
@@ -88,9 +98,20 @@ export function ChatPanel({
   artifacts = [],
   selectedTurnId,
   onSelectMessage,
+  onStop,
+  onEditMessage,
+  onRecallMessage,
+  restoreText,
+  onRestored,
   meta,
 }: ChatPanelProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  // 当前正在生成的任务：列表里最后一条用户消息（仅在生成中显示编辑 / 撤回）。
+  const lastUserIndex = messages.reduce(
+    (acc, m, i) => (m.role === "user" ? i : acc),
+    -1
+  );
 
   useEffect(() => {
     const root = scrollRef.current;
@@ -170,12 +191,14 @@ export function ChatPanel({
                 还没有消息。输入内容后发送即可开始。
               </p>
             ) : (
-              messages.map((m) => {
+              messages.map((m, index) => {
                 const isUser = m.role === "user";
                 const isSystem = m.role === "system";
                 const isAgent = m.role === "agent";
                 const canInspect = isAgent && !!m.turnId;
                 const selected = canInspect && m.turnId === selectedTurnId;
+                // 当前正在生成的任务：最后一条用户消息，仅此时显示编辑 / 撤回。
+                const isActiveTask = isUser && sending && index === lastUserIndex;
                 return (
                   <div
                     key={m.id}
@@ -242,6 +265,33 @@ export function ChatPanel({
                           m.content
                         )}
                       </div>
+                      {isActiveTask ? (
+                        <div
+                          className={cn(
+                            "flex items-center gap-1",
+                            isUser ? "self-end" : "self-start"
+                          )}
+                        >
+                          <button
+                            type="button"
+                            onClick={onEditMessage}
+                            title="编辑这条消息"
+                            className="flex items-center gap-1 rounded-lg px-2 py-1 text-[11.5px] text-ink-400 transition-colors hover:bg-tint hover:text-brand-700 focus-visible:outline-2 focus-visible:outline-brand-600"
+                          >
+                            <Pencil className="size-3.5" strokeWidth={1.75} />
+                            编辑
+                          </button>
+                          <button
+                            type="button"
+                            onClick={onRecallMessage}
+                            title="撤回这条消息"
+                            className="flex items-center gap-1 rounded-lg px-2 py-1 text-[11.5px] text-ink-400 transition-colors hover:bg-tint hover:text-danger-600 focus-visible:outline-2 focus-visible:outline-brand-600"
+                          >
+                            <Undo2 className="size-3.5" strokeWidth={1.75} />
+                            撤回
+                          </button>
+                        </div>
+                      ) : null}
                     </div>
                   </div>
                 );
@@ -262,6 +312,9 @@ export function ChatPanel({
           contextTitle={contextTitle}
           sending={sending}
           onSend={(text, skills) => onSend?.(text, skills)}
+          onStop={onStop}
+          restoreText={restoreText}
+          onRestored={onRestored}
           conversationId={session?.id}
         />
       </div>

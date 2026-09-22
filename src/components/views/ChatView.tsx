@@ -2,9 +2,11 @@ import dayjs from "dayjs";
 import relativeTime from "dayjs/plugin/relativeTime";
 import "dayjs/locale/zh-cn";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate, useParams } from "react-router-dom";
 import {
   createConversation,
   deleteConversation,
+  deleteLastTurn,
   getConversation,
   getConversationWorkspace,
   listConversations,
@@ -23,6 +25,7 @@ import { ChatPanel, type ChatMessage } from "../chat/ChatPanel";
 import type { InsightArtifact, InsightThreadItem } from "../chat/InsightPanel";
 import { SessionList, type SessionItem } from "../chat/SessionList";
 import { openTraceWindow } from "../../lib/openTrace";
+import { VIEW_PATH } from "../../types/view";
 
 dayjs.extend(relativeTime);
 dayjs.locale("zh-cn");
@@ -95,6 +98,14 @@ function toChatMessages(rows: ChatMessageRecord[]): ChatMessage[] {
   }));
 }
 
+/** Tauri 插件在 abort 时抛 ``Error("Request cancelled")``，浏览器则抛 ``AbortError``。 */
+function isAbortError(err: unknown): boolean {
+  return (
+    err instanceof Error &&
+    (err.name === "AbortError" || err.message === "Request cancelled")
+  );
+}
+
 type ChatViewProps = {
   modelName?: string;
   newRequestId?: number;
@@ -106,8 +117,20 @@ export function ChatView({
   newRequestId = 0,
   onConversationCount,
 }: ChatViewProps) {
+  const navigate = useNavigate();
+  const { conversationId: routeConversationId } = useParams<{
+    conversationId?: string;
+  }>();
+  const activeId = routeConversationId ?? null;
+  const routeIdRef = useRef(routeConversationId);
+  routeIdRef.current = routeConversationId;
+  const selectConversation = useCallback(
+    (id: string | null, replace = false) => {
+      navigate(id ? `${VIEW_PATH.chat}/${id}` : VIEW_PATH.chat, { replace });
+    },
+    [navigate]
+  );
   const [sessions, setSessions] = useState<SessionItem[]>([]);
-  const [activeId, setActiveId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [insightOpen, setInsightOpen] = useState(true);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -115,6 +138,16 @@ export function ChatView({
   const [selectedTurnId, setSelectedTurnId] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** 当前在途请求的取消控制器；非 null 表示 Agent 正在生成。 */
+  const abortRef = useRef<AbortController | null>(null);
+  /** 本轮乐观插入的用户 / 助手气泡 id 与原文，便于停止 / 撤回时精确移除。 */
+  const pendingRef = useRef<{
+    userId: string;
+    agentId: string;
+    text: string;
+  } | null>(null);
+  /** 编辑时回灌到输入框的原文（null 表示无需回灌）。 */
+  const [restoreText, setRestoreText] = useState<string | null>(null);
   const [roles, setRoles] = useState<RoleRecord[]>([]);
   const [models, setModels] = useState<LlmModelRecord[]>([]);
   const [roleId, setRoleId] = useState<string | null>(null);
@@ -179,9 +212,8 @@ export function ChatView({
       try {
         const rows = await refreshList();
         if (cancelled) return;
-        if (rows.length > 0) {
-          const first = rows[0]!.id;
-          setActiveId((prev) => prev ?? first);
+        if (!routeIdRef.current && rows.length > 0) {
+          selectConversation(rows[0]!.id, true);
         }
       } catch {
         /* backend may still be starting */
@@ -190,7 +222,7 @@ export function ChatView({
     return () => {
       cancelled = true;
     };
-  }, [refreshList]);
+  }, [refreshList, selectConversation]);
 
   useEffect(() => {
     if (!activeId) {
@@ -228,7 +260,7 @@ export function ChatView({
           if (cancelled) return;
           await refreshListRef.current();
           if (cancelled) return;
-          setActiveId(created.id);
+          selectConversation(created.id);
           setMessages([]);
           setMetaById((prev) => ({ ...prev, [created.id]: {} }));
           setError(null);
@@ -243,7 +275,7 @@ export function ChatView({
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [newRequestId]);
+  }, [newRequestId, selectConversation]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -313,6 +345,9 @@ export function ChatView({
     setError(null);
     const optimisticId = crypto.randomUUID();
     const pendingId = crypto.randomUUID();
+    pendingRef.current = { userId: optimisticId, agentId: pendingId, text };
+    const controller = new AbortController();
+    abortRef.current = controller;
     setMessages((prev) => [
       ...prev,
       { id: optimisticId, role: "user", content: text },
@@ -323,9 +358,10 @@ export function ChatView({
         text,
         activeId,
         roleId,
-        skills?.map((s) => s.slug) ?? null
+        skills?.map((s) => s.slug) ?? null,
+        controller.signal
       );
-      setActiveId(result.conversation_id);
+      selectConversation(result.conversation_id);
       setMetaById((prev) => ({
         ...prev,
         [result.conversation_id]: {
@@ -340,12 +376,50 @@ export function ChatView({
       await refreshList();
       await loadConversation(result.conversation_id);
     } catch (err) {
+      // 被主动停止 / 撤回：气泡已由 cancelCurrent 清理，这里不再报错。
+      if (isAbortError(err)) return;
       setMessages((prev) => prev.filter((m) => m.id !== optimisticId && m.id !== pendingId));
       setError(err instanceof Error ? err.message : String(err));
     } finally {
+      if (abortRef.current === controller) abortRef.current = null;
       setSending(false);
     }
   };
+
+  /** 后端是同步落库，停止 HTTP 请求后它可能仍在生成并稍后写入。
+   *  这里轮询删除最近一轮，直到后端真正落库并被清掉（最多约 6.4s）。 */
+  const cleanupLastTurn = useCallback(async (conversationId: string) => {
+    for (let i = 0; i < 8; i++) {
+      try {
+        const res = await deleteLastTurn(conversationId);
+        if (res.deleted > 0) return;
+      } catch {
+        /* 会话可能已被切换或删除，忽略 */
+      }
+      await new Promise((resolve) => setTimeout(resolve, 800));
+    }
+  }, []);
+
+  /** 主动停止 / 编辑 / 撤回：中止在途请求并清理气泡。 */
+  const cancelCurrent = useCallback(
+    (mode: "stop" | "edit" | "recall") => {
+      const controller = abortRef.current;
+      if (controller) controller.abort();
+      abortRef.current = null;
+      const pending = pendingRef.current;
+      setMessages((prev) =>
+        pending
+          ? prev.filter((m) => m.id !== pending.userId && m.id !== pending.agentId)
+          : prev
+      );
+      pendingRef.current = null;
+      setSending(false);
+      setError(null);
+      if (mode === "edit" && pending) setRestoreText(pending.text);
+      if (activeId) void cleanupLastTurn(activeId);
+    },
+    [activeId, cleanupLastTurn]
+  );
 
   const handleDelete = useCallback(
     async (id: string) => {
@@ -358,7 +432,7 @@ export function ChatView({
         const rows = await refreshList();
         if (activeId === id) {
           const next = rows[0]?.id ?? null;
-          setActiveId(next);
+          selectConversation(next);
           if (!next) {
             setMessages([]);
             setWorkspace(null);
@@ -370,7 +444,7 @@ export function ChatView({
         setError(err instanceof Error ? err.message : String(err));
       }
     },
-    [activeId, refreshList, sessions]
+    [activeId, refreshList, selectConversation, sessions]
   );
 
   return (
@@ -378,7 +452,7 @@ export function ChatView({
       <SessionList
         sessions={filtered}
         activeId={activeId}
-        onSelect={setActiveId}
+        onSelect={(id) => selectConversation(id)}
         onDelete={(id) => {
           void handleDelete(id);
         }}
@@ -399,6 +473,11 @@ export function ChatView({
           sending={sending}
           error={error}
           meta={lastMeta}
+          onStop={() => cancelCurrent("stop")}
+          onEditMessage={() => cancelCurrent("edit")}
+          onRecallMessage={() => cancelCurrent("recall")}
+          restoreText={restoreText}
+          onRestored={() => setRestoreText(null)}
           workspaceDir={workspace?.workspace_dir}
           conversationId={activeId}
           insightThread={insightThread}

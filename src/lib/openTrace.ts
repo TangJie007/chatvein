@@ -8,9 +8,8 @@ function inTauri(): boolean {
 }
 
 function traceUrl(conversationId: string, turnId?: string | null): string {
-  const params = new URLSearchParams({ view: "trace", conversation: conversationId });
-  if (turnId) params.set("turn", turnId);
-  return `index.html?${params.toString()}`;
+  const params = turnId ? `?turn=${encodeURIComponent(turnId)}` : "";
+  return `index.html#/trace/${encodeURIComponent(conversationId)}${params}`;
 }
 
 /** 打开（或聚焦）追踪窗口，并切到指定会话 / 轮次。 */

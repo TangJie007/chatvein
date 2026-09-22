@@ -479,6 +479,11 @@ export function TraceShell({
   const [turn, setTurn] = useState(turnId);
 
   useEffect(() => {
+    setConversation(conversationId);
+    setTurn(turnId);
+  }, [conversationId, turnId]);
+
+  useEffect(() => {
     let unlisten: (() => void) | undefined;
     let alive = true;
     void listen<{ conversationId: string; turnId: string | null }>("trace-navigate", (event) => {

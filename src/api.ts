@@ -39,13 +39,15 @@ export async function waitForBackend(timeoutMs = 20000): Promise<string> {
 export async function backendRequest<T = unknown>(
   endpoint: string,
   method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE" = "GET",
-  body?: unknown
+  body?: unknown,
+  signal?: AbortSignal | null
 ): Promise<T> {
   const url = await waitForBackend();
   const res = await fetch(`${url}${endpoint}`, {
     method,
     headers: body ? { "Content-Type": "application/json" } : undefined,
     body: body ? JSON.stringify(body) : undefined,
+    signal: signal ?? undefined,
   });
   const text = await res.text();
   let data: unknown = text;
@@ -189,7 +191,8 @@ export function sendChat(
   message: string,
   conversationId?: string | null,
   roleId?: string | null,
-  skills?: string[] | null
+  skills?: string[] | null,
+  signal?: AbortSignal | null
 ) {
   return backendRequest<{
     reply: string;
@@ -220,7 +223,15 @@ export function sendChat(
     conversation_id: conversationId ?? null,
     role_id: roleId ?? null,
     skills: skills?.length ? skills : null,
-  });
+  }, signal);
+}
+
+/** 撤回 / 停止生成：删除该会话最近一轮（用户句 + 助手句）。 */
+export function deleteLastTurn(conversationId: string) {
+  return backendRequest<{ deleted: number }>(
+    `/api/conversations/${conversationId}/turns/last`,
+    "DELETE"
+  );
 }
 
 export interface ConversationArtifact {
