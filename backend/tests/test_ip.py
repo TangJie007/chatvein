@@ -120,4 +120,5 @@ def test_mcp_ip_group_registered() -> None:
 
 def test_heuristic_hits_location_keywords() -> None:
     assert "get_my_location" in heuristic("我在哪里")
+    assert "get_my_location" in heuristic("今天天气怎么样")
     assert "lookup_ip_region" in heuristic("查一下这个 IP 归属地")

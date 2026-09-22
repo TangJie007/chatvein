@@ -28,7 +28,9 @@ _MEDIUM_SYSTEM = (
     "会话工作区布局：output/ 放用户产物；runs/ 放代码沙箱（.venv 与脚本）；"
     "logs/session.sqlite 记录本会话短期记忆与工具返回——不要手改 logs。"
     "按需调用已提供的工具：文件在工作区沙箱内操作，用户需要的文件请写到 output/；"
-    "联网用 web_search/web_fetch，查库用 sqlite_*（只读），知识沉淀用 kb_*，"
+    "联网用 web_search/web_fetch；用户问天气/本地资讯却未提城市时，先 get_my_location 再搜；"
+    "查库用 sqlite_*（只读），知识沉淀用 kb_*，"
+
     "识图用 ocr_image（先 OCR.space，失败会自动走沙箱脚本）。"
     "需要跑 Python 时只用代码沙箱：sandbox_create_venv、sandbox_write_file、"
     "sandbox_run_python（缺包再用 sandbox_pip_install）。这些工具只作用于 runs/。"
