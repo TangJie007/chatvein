@@ -34,21 +34,11 @@ from .common import (
     merge_tool_traces,
     react_recursion_limit,
 )
+from .prompts import HARD_SYSTEM_STATIC, build_agent_system
 from .state import ChatState
 from .tool_trace import extract_tool_trace
 
-_HARD_SYSTEM = (
-    "你是 ChatVein 助手，处理较复杂的本机任务。可参考上文对话上下文。"
-    "会话布局：产物写 output/；沙箱代码与 .venv 只在 runs/；"
-    "sandbox_run_python 工作目录是会话根（与 write_file 相同）。"
-    "先在内部理清步骤，再按需多次调用工具（文件 / 联网 / 知识库 / 只读 SQL / 代码沙箱 / "
-    "Bash 或 PowerShell / 浏览器），交叉核对后再用中文总结回答。不要编造工具结果；"
-    "写文件前确认路径：会话内相对/绝对路径可直写；会话外须绝对路径并等人确认。"
-    "用 Python 解决问题时：在 runs/ 创建虚拟环境，把代码写成 .py，执行，"
-    "阅读 stdout 和 stderr，失败就修改后再跑，不要在没有成功执行结果时声称已解决。"
-    "操作网页时先 snapshot 再按 ref 交互。"
-    "工具结果已够回答时立刻总结，不要反复空转调用同类工具。"
-)
+_HARD_SYSTEM = HARD_SYSTEM_STATIC
 
 _MAX_VERIFY_ROUNDS = 2
 _LLM_TIMEOUT = 120.0
@@ -247,9 +237,12 @@ def build_hard_graph(
             role=role,
             timeout=_LLM_TIMEOUT,
         )
-        prompt = system_prompt
-        if plan_text:
-            prompt = f"{system_prompt}\n\n{plan_text}"
+        role_prompt = str((role or {}).get("prompt") or "").strip()
+        prompt = build_agent_system(
+            tier="hard",
+            role_prompt=role_prompt or None,
+            plan_text=plan_text or None,
+        )
         prior_trace = list(state.get("tool_trace") or [])
 
         if model is None:

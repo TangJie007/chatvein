@@ -162,7 +162,8 @@ START → select_tools → react → END
 ### 6.2 `react`
 
 1. `resolve_tools(selected_names)`；名字无效时回落全量（registry 行为）。
-2. `create_agent(model, tools, system_prompt=MEDIUM_SYSTEM…)`。
+2. `create_agent(..., system_prompt=build_agent_system(tier="medium", role_prompt=…))`：
+   Identity → **Environment（本轮会话绝对路径，靠前）** → Workspace → Tooling → Stopping → Response → Tier。
 3. `invoke({messages: history + HumanMessage(rewritten)})`，`recursion_limit = 2 × max_model_calls + 10`（默认 34）。
 4. 抽最后文本为 `reply`；`extract_tool_trace` 记工具调用。
 5. 无模型：跳过 LLM，直接 `run_tools(text, names)`。
@@ -213,7 +214,7 @@ TaskPlan:
 
 ### 7.3 `react`
 
-- system = `HARD_SYSTEM`（或已 merge 的角色+HARD）再附 `plan_text`。
+- system = `build_agent_system(tier="hard", role_prompt=…, plan_text=…)`（Environment 含会话绝对路径）。
 - 用户消息 = 改写 + 计划 +（可选）缺口焦点。
 - `recursion_limit = 2 × _MAX_MODEL_CALLS + 10`（默认 42），便于「改代码 → 跑 → 看 stderr → 再改」。
 

@@ -336,7 +336,7 @@ export function ChatPanel({
                               }}
                               title={copiedId === m.id ? "已复制" : "复制内容"}
                               aria-label={copiedId === m.id ? "已复制" : "复制内容"}
-                              className="flex items-center gap-1 rounded-lg px-2 py-1 text-[11.5px] text-ink-400 opacity-0 transition-[opacity,colors] hover:bg-tint hover:text-ink-700 focus-visible:opacity-100 group-hover:opacity-100"
+                              className="flex items-center gap-1 rounded-lg px-2 py-1 text-[11.5px] text-ink-400 transition-colors hover:bg-tint hover:text-ink-700 focus-visible:outline-2 focus-visible:outline-brand-600"
                             >
                               {copiedId === m.id ? (
                                 <Check className="size-3.5" strokeWidth={2} />
@@ -362,7 +362,7 @@ export function ChatPanel({
                             }}
                             title={copiedId === m.id ? "已复制" : "复制内容"}
                             aria-label={copiedId === m.id ? "已复制" : "复制内容"}
-                            className="flex items-center gap-1 rounded-lg px-2 py-1 text-[11.5px] text-ink-400 opacity-0 transition-[opacity,colors] hover:bg-tint hover:text-ink-700 focus-visible:opacity-100 group-hover:opacity-100"
+                            className="flex items-center gap-1 rounded-lg px-2 py-1 text-[11.5px] text-ink-400 transition-colors hover:bg-tint hover:text-ink-700 focus-visible:outline-2 focus-visible:outline-brand-600"
                           >
                             {copiedId === m.id ? (
                               <Check className="size-3.5" strokeWidth={2} />

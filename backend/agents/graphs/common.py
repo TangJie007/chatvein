@@ -34,6 +34,35 @@ def last_text(messages: list[Any] | None) -> str | None:
     return None
 
 
+def session_workspace_block() -> str:
+    """兼容别名：动态 Environment 段（见 ``graphs.prompts``）。"""
+    from .prompts import environment_section
+
+    return environment_section()
+
+
+def with_session_context(system_prompt: str) -> str:
+    """兼容旧调用：若传入的已是完整宪法，仍把 Environment 插到 Identity 之后。
+
+    新代码请直接用 ``prompts.build_agent_system``。
+    """
+    from .prompts import build_agent_system, environment_section
+
+    base = (system_prompt or "").strip()
+    if not base:
+        return build_agent_system(tier="medium")
+    # 已含 Environment 则不再重复
+    if "# Environment" in base:
+        return base
+    env = environment_section()
+    if base.startswith("# Identity"):
+        # Identity 段落后插入 Environment
+        parts = base.split("\n\n", 1)
+        if len(parts) == 2:
+            return f"{parts[0]}\n\n{env}\n\n{parts[1]}"
+    return f"{base}\n\n{env}"
+
+
 def allowed_from_role(role: dict[str, Any] | None) -> list[str] | None:
     """角色勾选的工具/分组；空列表表示不限制。"""
     if not role:

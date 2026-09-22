@@ -92,12 +92,10 @@ def _branch_result(result: dict[str, Any]) -> dict[str, Any]:
 
 def _medium_node(state: ChatState) -> dict[str, Any]:
     role = state.get("role")
-    system_prompt = _merged_system(role, medium_mod.MEDIUM_SYSTEM)
     result = medium_mod.run_medium(
         str(state.get("rewritten") or ""),
         used_llm=bool(state.get("used_llm")),
         history=list(state.get("history") or []),
-        system_prompt=system_prompt,
         name="medium_react",
         role=role,
     )
@@ -106,12 +104,10 @@ def _medium_node(state: ChatState) -> dict[str, Any]:
 
 def _hard_node(state: ChatState) -> dict[str, Any]:
     role = state.get("role")
-    system_prompt = _merged_system(role, hard_mod.HARD_SYSTEM)
     result = hard_mod.run_hard(
         str(state.get("rewritten") or ""),
         used_llm=bool(state.get("used_llm")),
         history=list(state.get("history") or []),
-        system_prompt=system_prompt,
         name="hard_react",
         role=role,
     )

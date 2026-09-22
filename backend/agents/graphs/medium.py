@@ -19,35 +19,18 @@ from trace import (  # pyright: ignore[reportMissingImports]
     trace_checkpoint,
 )
 
-from .common import allowed_from_role, build_react_graph, invoke_react, last_text, react_recursion_limit
+from .common import (
+    allowed_from_role,
+    build_react_graph,
+    invoke_react,
+    last_text,
+    react_recursion_limit,
+)
+from .prompts import MEDIUM_SYSTEM_STATIC, build_agent_system
 from .state import ChatState
 from .tool_trace import extract_tool_trace
 
-_MEDIUM_SYSTEM = (
-    "你是 ChatVein 助手（本机桌面 Agent）。可参考上文对话上下文。"
-    "会话工作区布局：output/ 放用户产物；runs/ 放代码沙箱（.venv 与脚本）；"
-    "logs/session.sqlite 记录本会话短期记忆与工具返回——不要手改 logs。"
-    "按需调用已提供的工具：文件默认在当前会话工作区；相对路径只认会话内；"
-    "访问会话外必须用绝对路径，并等待用户确认。"
-    "用户需要的文件请写到 output/；"
-    "联网用 web_search/web_fetch；用户问天气/本地资讯却未提城市时，先 get_my_location 再搜；"
-    "查库用 sqlite_*（只读），知识沉淀用 kb_*，"
-
-    "识图用 ocr_image（先 OCR.space，失败会自动走沙箱脚本）。"
-    "需要跑 Python 时只用代码沙箱：sandbox_create_venv、sandbox_write_file、"
-    "sandbox_run_python（缺包再用 sandbox_pip_install）。脚本与 .venv 在 runs/，"
-    "进程工作目录是会话根（与 write_file 相同），用户产物写 output/。"
-    "Git Bash 用 bash_run（本机已安装时才有）；Windows 上还可用 powershell_run。"
-    "两者都只在当前会话目录。只读命令会直接执行；"
-    "会改文件的命令要等用户确认；被拒绝的命令不要换一种写法绕过。"
-    "浏览器用 browser_*（本机已安装 Playwright 浏览器时才有）：先 browser_navigate / "
-    "browser_snapshot，再按快照里的 ref（如 e5）调用 browser_click / browser_type 等；"
-    "不要靠截图像素点选。"
-    "根据 stdout/stderr 改代码再执行，直到问题解决或明确说明卡在哪里。"
-    "工具结果已够回答时立刻用中文作答；联网问答（天气/新闻等）web_search 一两次拿到可用结果后必须作答，"
-    "禁止换措辞反复搜索；不要空转调用同一工具同参。"
-    "简洁注明关键来源路径或链接（产物路径以 output/ 开头）。"
-)
+_MEDIUM_SYSTEM = MEDIUM_SYSTEM_STATIC
 
 # medium：工具上限对齐 LangChain 文档；图步数由公式推导，勿再手写偏小常量
 _LLM_TIMEOUT = 120.0
@@ -124,10 +107,14 @@ def build_medium_graph(
                 "tool_trace": [],
             }
         try:
+            role_prompt = str((role or {}).get("prompt") or "").strip()
             agent = build_react_graph(
                 model,
                 tools,
-                system_prompt=system_prompt,
+                system_prompt=build_agent_system(
+                    tier="medium",
+                    role_prompt=role_prompt or None,
+                ),
                 name=name,
                 max_model_calls=_MAX_MODEL_CALLS,
                 max_tool_calls=_MAX_TOOL_CALLS,
