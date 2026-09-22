@@ -1,8 +1,11 @@
-"""文件系统工具（沙箱内）。
+"""文件系统工具。
 
 行为对齐 ``@modelcontextprotocol/server-filesystem``，不包含 ``read_media_file``。
-另加 ``open_folder``（在文件管理器中打开目录）和 ``delete_path``（删除文件或文件夹）。
-允许目录只有一个：设置页里的主空间，否则数据目录下的 ``workspace``。
+另加 ``open_folder`` 与 ``delete_path``。
+
+路径策略：
+- 相对路径 / 会话内绝对路径 → 当前会话工作区，无需确认
+- 会话外绝对路径 → 弹窗人机确认后才可访问
 """
 
 from __future__ import annotations
@@ -24,9 +27,9 @@ from typing import Annotated, Literal
 from langchain_core.tools import BaseTool, tool
 from pydantic import BaseModel, Field
 
-from mcps.workspace import (  # pyright: ignore[reportImplicitRelativeImport]
-    resolve_in_workspace,
-    workspace_root,
+from mcps.path_access import resolve_agent_path  # pyright: ignore[reportImplicitRelativeImport]
+from mcps.sandbox import (  # pyright: ignore[reportImplicitRelativeImport]
+    current_sandbox,
 )
 
 _MAX_READ_BYTES = 512_000
@@ -76,15 +79,23 @@ def _excluded(relative: str, patterns: list[str], *, name_anywhere: bool) -> boo
     return False
 
 
-def _resolve(path: str) -> tuple[str, None] | tuple[None, str]:
+def _sandbox_root() -> tuple[Path, None] | tuple[None, str]:
     try:
-        return str(resolve_in_workspace(path)), None
+        return current_sandbox().resolve(), None
     except ValueError as exc:
         return None, str(exc)
 
 
-def _read_text(path_str: str) -> tuple[str, None] | tuple[None, str]:
-    target, err = _resolve(path_str)
+def _resolve(path: str, *, action: str) -> tuple[str, None] | tuple[None, str]:
+    """相对 → 仅会话内；绝对 → 会话内直通，会话外需人机确认。"""
+    try:
+        return str(resolve_agent_path(path, action=action)), None
+    except ValueError as exc:
+        return None, str(exc)
+
+
+def _read_text(path_str: str, *, action: str = "read_file") -> tuple[str, None] | tuple[None, str]:
+    target, err = _resolve(path_str, action=action)
     if err or target is None:
         return None, err or "路径无效"
     path = Path(target)
@@ -105,7 +116,7 @@ def _read_text(path_str: str) -> tuple[str, None] | tuple[None, str]:
 
 
 def _head_file(path_str: str, num_lines: int) -> str:
-    target, err = _resolve(path_str)
+    target, err = _resolve(path_str, action="read_text_file(head)")
     if err or target is None:
         return err or "路径无效"
     path = Path(target)
@@ -126,7 +137,7 @@ def _head_file(path_str: str, num_lines: int) -> str:
 
 
 def _tail_file(path_str: str, num_lines: int) -> str:
-    target, err = _resolve(path_str)
+    target, err = _resolve(path_str, action="read_text_file(tail)")
     if err or target is None:
         return err or "路径无效"
     path = Path(target)
@@ -146,7 +157,7 @@ def _tail_file(path_str: str, num_lines: int) -> str:
 
 
 def _write_text(path_str: str, content: str) -> str:
-    target, err = _resolve(path_str)
+    target, err = _resolve(path_str, action="write_file")
     if err or target is None:
         return err or "路径无效"
     path = Path(target)
@@ -293,7 +304,7 @@ def read_multiple_files(
 
 @tool
 def write_file(path: str, content: str) -> str:
-    """新建或完全覆盖工作区内的文本文件。父目录必须已存在，已有文件会被覆盖。不跟随逃出工作区的符号链接。"""
+    """新建或完全覆盖文本文件。会话内可用相对/绝对路径；会话外必须用绝对路径且需用户确认。父目录必须已存在。用户产物优先写 output/。"""
     return _write_text(path, content)
 
 
@@ -303,8 +314,8 @@ def edit_file(
     edits: Annotated[list[FileEdit], Field(description="按顺序应用的替换；oldText 需精确匹配，找不到时会放宽为忽略首尾空白的逐行匹配")],
     dryRun: Annotated[bool, Field(description="为 true 时只返回 git diff，不写盘")] = False,
 ) -> str:
-    """对文本文件做若干次精确替换，并返回 git 风格 diff。dryRun 为 true 时只预览不写盘。仅限工作区。"""
-    target, err = _resolve(path)
+    """对文本文件做若干次精确替换，并返回 git 风格 diff。dryRun 为 true 时只预览不写盘。会话外绝对路径需确认。"""
+    target, err = _resolve(path, action="edit_file")
     if err or target is None:
         return err or "路径无效"
     file_path = Path(target)
@@ -333,8 +344,8 @@ def edit_file(
 
 @tool
 def create_directory(path: str) -> str:
-    """创建目录（含多级父目录）。目录已存在时视为成功。仅限工作区。"""
-    target, err = _resolve(path)
+    """创建目录（含多级父目录）。目录已存在时视为成功。会话外绝对路径需确认。"""
+    target, err = _resolve(path, action="create_directory")
     if err or target is None:
         return err or "路径无效"
     directory = Path(target)
@@ -349,8 +360,8 @@ def create_directory(path: str) -> str:
 
 @tool
 def list_directory(path: str) -> str:
-    """列出目录的直接子项。目录前缀 [DIR]，其余为 [FILE]（含指向目录的符号链接）。仅限工作区。"""
-    target, err = _resolve(path)
+    """列出目录的直接子项。目录前缀 [DIR]，其余为 [FILE]（含指向目录的符号链接）。会话外绝对路径需确认。"""
+    target, err = _resolve(path, action="list_directory")
     if err or target is None:
         return err or "路径无效"
     directory = Path(target)
@@ -369,8 +380,8 @@ def list_directory_with_sizes(
     path: str,
     sortBy: Annotated[Literal["name", "size"], Field(description="按名称或大小排序；size 为从大到小")] = "name",
 ) -> str:
-    """列出目录直接子项，文件附带大小。目录显示为 [DIR] 且不计入体积。仅限工作区。"""
-    target, err = _resolve(path)
+    """列出目录直接子项，文件附带大小。目录显示为 [DIR] 且不计入体积。会话外绝对路径需确认。"""
+    target, err = _resolve(path, action="list_directory_with_sizes")
     if err or target is None:
         return err or "路径无效"
     directory = Path(target)
@@ -411,8 +422,8 @@ def directory_tree(
         Field(description="排除的 glob；无 * 时按名称匹配任意层级（如 node_modules）"),
     ] = None,
 ) -> str:
-    """递归返回目录树 JSON。目录含 children（可为空），文件没有 children。仅限工作区。"""
-    target, err = _resolve(path)
+    """递归返回目录树 JSON。目录含 children（可为空），文件没有 children。会话外绝对路径需确认。"""
+    target, err = _resolve(path, action="directory_tree")
     if err or target is None:
         return err or "路径无效"
     root = Path(target)
@@ -448,9 +459,9 @@ def directory_tree(
 
 @tool
 def move_file(source: str, destination: str) -> str:
-    """在工作区内移动或重命名文件/目录。目标已存在则失败，不会覆盖。"""
-    src, src_err = _resolve(source)
-    dest, dest_err = _resolve(destination)
+    """移动或重命名文件/目录。目标已存在则失败，不会覆盖。会话外绝对路径需确认。"""
+    src, src_err = _resolve(source, action="move_file(source)")
+    dest, dest_err = _resolve(destination, action="move_file(destination)")
     if src_err or src is None:
         return src_err or "路径无效"
     if dest_err or dest is None:
@@ -483,8 +494,8 @@ def search_files(
         Field(description="排除的 glob，相对搜索起点。如 *.log 或 **/node_modules/**"),
     ] = None,
 ) -> str:
-    """按 glob 递归查找文件和目录。*.ext 只匹配当前层，**/*.ext 匹配所有子目录。返回绝对路径。仅限工作区。"""
-    target, err = _resolve(path)
+    """按 glob 递归查找文件和目录。*.ext 只匹配当前层，**/*.ext 匹配所有子目录。返回绝对路径。会话外绝对路径需确认。"""
+    target, err = _resolve(path, action="search_files")
     if err or target is None:
         return err or "路径无效"
     root = Path(target)
@@ -492,6 +503,7 @@ def search_files(
         return f"路径不存在: {path}"
     patterns = list(excludePatterns or [])
     hits: list[str] = []
+    root_resolved = root.resolve()
 
     def walk(current: Path) -> bool:
         try:
@@ -503,14 +515,16 @@ def search_files(
                 hits.append("…(已截断)")
                 return True
             try:
-                checked = resolve_in_workspace(str(entry))
+                checked_path = entry.resolve()
+                checked_path.relative_to(root_resolved)
+                checked = str(checked_path)
             except ValueError:
                 continue
             relative = entry.relative_to(root).as_posix()
             if _excluded(relative, patterns, name_anywhere=False):
                 continue
             if _glob_match(relative, pattern):
-                hits.append(str(checked))
+                hits.append(checked)
             if _is_real_dir(entry) and walk(entry):
                 return True
         return False
@@ -526,8 +540,8 @@ def search_files(
 
 @tool
 def get_file_info(path: str) -> str:
-    """返回文件或目录的大小、创建/修改/访问时间、权限和类型。不读取内容。仅限工作区。"""
-    target, err = _resolve(path)
+    """返回文件或目录的大小、创建/修改/访问时间、权限和类型。不读取内容。会话外绝对路径需确认。"""
+    target, err = _resolve(path, action="get_file_info")
     if err or target is None:
         return err or "路径无效"
     file_path = Path(target)
@@ -552,9 +566,14 @@ def get_file_info(path: str) -> str:
 
 @tool
 def list_allowed_directories() -> str:
-    """返回本服务允许访问的目录。工作区内的子路径都可以访问。"""
-    root = workspace_root()
-    return f"Allowed directories:\n{root}"
+    """返回默认可直接访问的目录（当前会话工作区）。会话外路径须传绝对路径，并由用户确认后才能访问。"""
+    root, err = _sandbox_root()
+    if err or root is None:
+        return err or "当前没有会话工作区"
+    return (
+        f"Allowed directories (no prompt):\n{root}\n"
+        "Outside this tree: pass an absolute path; the UI will ask for confirmation."
+    )
 
 
 def _open_in_file_manager(path_str: str) -> None:
@@ -567,18 +586,14 @@ def _open_in_file_manager(path_str: str) -> None:
 
 @tool
 def open_folder(path: str = ".") -> str:
-    """在系统文件管理器中打开工作区内的文件夹。若 path 是文件，则打开其所在目录。"""
-    target, err = _resolve(path)
+    """在系统文件管理器中打开文件夹。若 path 是文件，则打开其所在目录。会话外绝对路径需确认。"""
+    target, err = _resolve(path, action="open_folder")
     if err or target is None:
         return err or "路径无效"
     file_path = Path(target)
     if not file_path.exists():
         return f"路径不存在: {path}"
     folder = file_path if _is_real_dir(file_path) else file_path.parent
-    try:
-        folder.relative_to(workspace_root())
-    except ValueError:
-        return f"路径越界工作区: {path}"
     try:
         _open_in_file_manager(str(folder))
     except OSError as exc:
@@ -588,29 +603,18 @@ def open_folder(path: str = ".") -> str:
 
 @tool
 def delete_path(path: str) -> str:
-    """删除工作区内的文件或文件夹。文件夹会连同其中内容一起删除。不能删除主空间根目录。符号链接只删除链接本身。"""
+    """删除文件或文件夹（文件夹连同内容）。不能删除会话根目录。会话外绝对路径需确认。"""
     if (path or "").strip() in {"", ".", "./", ".\\"}:
-        return "不能删除主空间根目录"
-    root = workspace_root()
-    candidate = Path(path.strip())
-    lexical = candidate if candidate.is_absolute() else root / candidate
-    lexical = Path(os.path.abspath(lexical))
-    try:
-        lexical.relative_to(root)
-    except ValueError:
-        return f"路径越界工作区: {path}"
-    if lexical == root:
-        return "不能删除主空间根目录"
-    if lexical.parent != root:
-        parent, parent_err = _resolve(str(lexical.parent))
-        if parent_err or parent is None:
-            if parent_err and "越界" in parent_err:
-                return f"路径越界工作区: {path}"
-            return parent_err or "路径无效"
-        try:
-            Path(parent).relative_to(root)
-        except ValueError:
-            return f"路径越界工作区: {path}"
+        return "不能删除会话工作区根目录"
+    sandbox, sandbox_err = _sandbox_root()
+    if sandbox_err or sandbox is None:
+        return sandbox_err or "当前没有会话工作区"
+    target, err = _resolve(path, action="delete_path")
+    if err or target is None:
+        return err or "路径无效"
+    lexical = Path(target)
+    if lexical == sandbox:
+        return "不能删除会话工作区根目录"
     if not lexical.exists() and not lexical.is_symlink():
         return f"路径不存在: {path}"
     try:
@@ -660,7 +664,9 @@ def heuristic(text: str) -> list[str]:
         names.append("read_text_file")
     if any(k in text for k in ("编辑文件", "修改文件", "替换文本", "edit file", "打补丁")):
         names.append("edit_file")
-    if any(k in text for k in ("写文件", "保存到", "创建文件", "write file", "写入", "覆盖文件")):
+    if any(k in text for k in (
+        "写文件", "保存到", "创建文件", "生成文件", "write file", "写入", "覆盖文件",
+    )) or ("生成" in text and "文件" in text):
         names.append("write_file")
     if any(k in text for k in ("创建目录", "新建文件夹", "mkdir", "建目录")):
         names.append("create_directory")

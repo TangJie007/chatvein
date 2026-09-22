@@ -12,7 +12,7 @@ from langchain_core.tools import BaseTool, tool
 
 import db  # pyright: ignore[reportImplicitRelativeImport]
 from embeddings.service import get_service  # pyright: ignore[reportImplicitRelativeImport]
-from mcps.workspace import workspace_root  # pyright: ignore[reportImplicitRelativeImport]
+from mcps.sandbox import current_sandbox  # pyright: ignore[reportImplicitRelativeImport]
 
 _DIM = 384
 _MAX_HITS = 8
@@ -142,11 +142,14 @@ def kb_search_messages(query: str, limit: int = 5) -> str:
 
 @tool
 def kb_index_workspace(glob: str = "**/*.md") -> str:
-    """把工作区内匹配的文本文件批量写入知识库（便于后续 kb_search）。"""
-    root = workspace_root()
+    """把当前会话工作区内匹配的文本文件批量写入知识库（便于后续 kb_search）。"""
+    try:
+        root = current_sandbox()
+    except ValueError as exc:
+        return str(exc)
     files = [p for p in root.glob(glob or "**/*.md") if p.is_file()]
     if not files:
-        return "工作区无匹配文件"
+        return "会话工作区无匹配文件"
     added = 0
     with _ensure_kb() as conn:
         for fp in files[:100]:

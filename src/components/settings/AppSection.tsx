@@ -91,7 +91,7 @@ export function AppSection({ prefs, onSet }: AppSectionProps) {
     <>
       <Card
         title="工作区"
-        desc="文件读写、搜索和知识库索引都限制在主空间里"
+        desc="每个对话在此主空间下有独立会话目录；Agent 读写只在会话目录内"
         icon={<FolderOpen className="size-3.5 text-brand-600" strokeWidth={1.75} />}
       >
         <div className="flex items-center gap-3 rounded-xl px-3.5 py-3 transition-colors hover:bg-tint/50">
@@ -142,7 +142,7 @@ export function AppSection({ prefs, onSet }: AppSectionProps) {
             {busy ? "保存中…" : "选择文件夹"}
           </Button>
         </div>
-        <Note>Agent 不能读写主空间以外的路径</Note>
+        <Note>Agent 只能读写各会话目录（主空间下的时间戳文件夹），不能越出主空间</Note>
       </Card>
 
       <Card

@@ -34,7 +34,10 @@
 
 1. **Agent 在会话沙箱内运行**。`POST /api/chat` 以
    `use_conversation_sandbox(workspace_dir)` 包裹整轮，之后 `current_sandbox()` 与
-   `resolve_in_sandbox()` 都相对**会话目录**，而非主工作区。
+   `resolve_in_sandbox()` 都相对**会话目录**，而非主工作区。文件系统工具（`mcp-fs` 的
+   `write_file` / `list_directory` 等）与 bash / 代码沙箱一样，只认会话根。
+   路径入参：会话内可用相对或绝对路径；**会话外必须传绝对路径**，并走与 Bash
+   相同的人机确认弹窗，允许后才执行。
 
 2. **任何需要被 Agent 读取的文件，必须落在所属会话工作区内，不要落在主工作区根目录。**
    - 例：`ocr_image(source)` 解析本地路径时，先 `resolve_in_sandbox`（会话目录），
@@ -55,7 +58,7 @@
 | 文件 | 关键符号 | 职责 |
 | --- | --- | --- |
 | `backend/mcps/workspace.py` | `workspace_root()` `resolve_in_workspace()` | 主工作区解析与越界校验 |
-| `backend/mcps/sandbox.py` | `allocate_workspace_name()` `conversation_root()` `init_conversation_layout()` `use_conversation_sandbox()` `current_sandbox()` `resolve_in_sandbox()` | 会话工作区分配、沙箱上下文、会话内路径解析 |
+| `backend/mcps/tools/fs.py` | `_resolve` → `current_sandbox` / `resolve_in_sandbox` | Agent 文件工具只认会话根 |
 | `backend/conversations/service.py` | `workspace_root_for(workspace_dir)` | 把会话 `workspace_dir` 解析成带布局的会话根 |
 | `backend/main.py` | `/api/uploads` → `_resolve_upload_root()` `_handle_upload_item()` | 上传落盘到会话工作区（或回退主工作区） |
 | `src/api.ts` | `uploadFiles(files, conversationId?)` | 前端上传入口，透传会话 id |

@@ -9,7 +9,7 @@ import {
   DialogTitle,
 } from "../ui/dialog";
 
-/** 应用打开期间轮询待确认的 shell 命令（Bash / PowerShell）。 */
+/** 应用打开期间轮询待确认的操作（Shell 命令 / 会话外文件路径）。 */
 export function BashApproval() {
   const [current, setCurrent] = useState<BashPending | null>(null);
   const [busy, setBusy] = useState(false);
@@ -55,19 +55,25 @@ export function BashApproval() {
     }
   };
 
+  const isPathOp = Boolean(current?.command?.includes("\n"));
+
   return (
     <Dialog open={current !== null} onOpenChange={(open) => !open && void finish(false)}>
       <DialogContent className="max-w-lg">
         <DialogHeader>
-          <DialogTitle>允许执行这条命令？</DialogTitle>
+          <DialogTitle>{isPathOp ? "允许访问此路径？" : "允许执行这条命令？"}</DialogTitle>
           <DialogDescription>
-            Bash / PowerShell 都只在当前会话目录里运行。拒绝或关闭都不会执行。
+            {isPathOp
+              ? "会话工作区内的文件操作可直接执行；会话外路径需要你确认。拒绝或关闭都不会执行。"
+              : "Bash / PowerShell 都只在当前会话目录里运行。拒绝或关闭都不会执行。"}
           </DialogDescription>
         </DialogHeader>
         <pre className="select-text max-h-40 overflow-auto rounded-xl bg-page px-3 py-2 text-[12.5px] leading-5 text-ink-800">
           {current?.command}
         </pre>
-        <p className="mt-2 text-[12px] text-ink-400">目录 {current?.cwd || "."}</p>
+        <p className="mt-2 text-[12px] text-ink-400">
+          {isPathOp ? "位置" : "目录"} {current?.cwd || "."}
+        </p>
         <div className="mt-4 flex justify-end gap-2">
           <Button variant="secondary" disabled={busy} onClick={() => void finish(false)}>
             拒绝

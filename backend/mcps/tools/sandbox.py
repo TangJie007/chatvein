@@ -1,6 +1,8 @@
-"""代码沙箱：只在当前会话 ``runs/`` 里建虚拟环境、写 Python、执行。
+"""代码沙箱：绑定当前会话工作区（与文件系统工具同一根）。
 
-产物请写到 ``output/``（用文件系统工具），避免与执行环境混在一起。
+- 脚本 / ``.venv`` / pip：只在会话 ``runs/`` 内
+- ``sandbox_run_python`` 的进程 cwd：会话根（可相对路径写 ``output/``）
+- 用户产物优先用文件系统工具写 ``output/``，避免与执行环境混在一起
 """
 
 from __future__ import annotations
@@ -137,7 +139,7 @@ def sandbox_create_venv() -> str:
 
 @tool
 def sandbox_write_file(path: str, content: str) -> str:
-    """把文本写入当前会话 ``runs/`` 的相对路径。用来编写 ``.py``。不能写进 ``.venv``，也不能逃出 ``runs/``。用户产物请写到 ``output/``。"""
+    """把文本写入当前会话 ``runs/``。``path`` 可为相对路径（如 ``main.py``）或 ``runs/`` 内绝对路径。不能写进 ``.venv``。用户产物请写到 ``output/``。"""
     try:
         target = resolve_in_runs(path)
     except ValueError as exc:
@@ -182,8 +184,12 @@ def sandbox_pip_install(packages: str) -> str:
 
 @tool
 def sandbox_run_python(path: str = "", code: str = "", timeout_seconds: int = 30) -> str:
-    """用 ``runs/.venv`` 执行 Python。``code`` 非空时先写入 ``path``（默认 ``main.py``，落在 ``runs/``）再运行；否则运行已有的 ``.py``。工作目录是 ``runs/``。"""
+    """用 ``runs/.venv`` 执行 Python。``code`` 非空时先写入 ``path``（默认 ``main.py``，落在 ``runs/``）再运行；否则运行已有的 ``.py``。
+
+    工作目录是**当前会话工作区根**（与文件系统工具相同），因此脚本里 ``output/xxx`` 等相对路径会写到会话产物目录；脚本文件本身仍在 ``runs/``。
+    """
     try:
+        root = current_sandbox()
         runs = runs_dir()
     except ValueError as exc:
         return str(exc)
@@ -213,8 +219,9 @@ def sandbox_run_python(path: str = "", code: str = "", timeout_seconds: int = 30
     env["PATH"] = str(scripts) + os.pathsep + env.get("PATH", "")
     env["PYTHONNOUSERSITE"] = "1"
     env["PYTHONIOENCODING"] = "utf-8"
-    result = _run([str(python), str(target)], cwd=runs, timeout=timeout, env=env)
-    return f"file=runs/{target.relative_to(runs).as_posix()}\n{result}"
+    # cwd = 会话根：与 write_file / bash 同一工作区地址；脚本在 runs/，产物可写 output/
+    result = _run([str(python), str(target)], cwd=root, timeout=timeout, env=env)
+    return f"file=runs/{target.relative_to(runs).as_posix()}\ncwd={root}\n{result}"
 
 
 TOOLS: tuple[BaseTool, ...] = (

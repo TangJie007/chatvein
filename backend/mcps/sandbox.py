@@ -152,41 +152,50 @@ def current_sandbox() -> Path:
     return root
 
 
-def resolve_in_sandbox(rel_path: str) -> Path:
-    """把相对路径解析到当前会话目录内；越界则抛 ``ValueError``。"""
-    root = current_sandbox()
-    text = (rel_path or "").strip()
-    if not text or text == ".":
-        raise ValueError("请给出会话工作区内的相对路径")
+def resolve_in_sandbox(path: str) -> Path:
+    """解析到当前会话目录内。
+
+    接受相对路径，或仍落在会话根下的绝对路径（便于沿用 ``list_directory`` /
+    ``search_files`` 返回的完整路径）。越界则抛 ``ValueError``。
+    """
+    root = current_sandbox().resolve()
+    text = (path or "").strip()
+    if not text or text in {".", "./", ".\\"}:
+        raise ValueError("请给出会话工作区内的路径")
     candidate = Path(text)
     if candidate.is_absolute():
-        raise ValueError(f"请使用相对路径: {rel_path}")
-    target = (root / candidate).resolve()
+        target = candidate.resolve()
+    else:
+        target = (root / candidate).resolve()
     try:
         target.relative_to(root)
     except ValueError as exc:
-        raise ValueError(f"路径越界会话工作区: {rel_path}") from exc
+        raise ValueError(f"路径越界会话工作区: {path}") from exc
     return target
 
 
-def resolve_in_runs(rel_path: str) -> Path:
-    """相对路径解析到 ``runs/`` 内（代码沙箱专用）。"""
-    runs = runs_dir()
-    text = (rel_path or "").strip()
-    if not text or text == ".":
-        raise ValueError("请给出 runs/ 内的相对路径")
+def resolve_in_runs(path: str) -> Path:
+    """解析到当前会话 ``runs/`` 内。
+
+    接受相对路径（``foo.py`` 或 ``runs/foo.py``），或仍落在 ``runs/`` 下的绝对路径。
+    """
+    runs = runs_dir().resolve()
+    text = (path or "").strip()
+    if not text or text in {".", "./", ".\\"}:
+        raise ValueError("请给出 runs/ 内的路径")
     candidate = Path(text)
     if candidate.is_absolute():
-        raise ValueError(f"请使用相对路径: {rel_path}")
-    # 允许调用方写 ``runs/foo.py`` 或 ``foo.py``
-    parts = candidate.parts
-    if parts and parts[0] == RUNS_DIR:
-        candidate = Path(*parts[1:]) if len(parts) > 1 else Path(".")
-        if str(candidate) == ".":
-            raise ValueError("请给出 runs/ 内的相对路径")
-    target = (runs / candidate).resolve()
+        target = candidate.resolve()
+    else:
+        # 允许调用方写 ``runs/foo.py`` 或 ``foo.py``
+        parts = candidate.parts
+        if parts and parts[0] == RUNS_DIR:
+            candidate = Path(*parts[1:]) if len(parts) > 1 else Path(".")
+            if str(candidate) == ".":
+                raise ValueError("请给出 runs/ 内的路径")
+        target = (runs / candidate).resolve()
     try:
         target.relative_to(runs)
     except ValueError as exc:
-        raise ValueError(f"路径越界 runs/: {rel_path}") from exc
+        raise ValueError(f"路径越界 runs/: {path}") from exc
     return target
