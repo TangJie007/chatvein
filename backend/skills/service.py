@@ -10,6 +10,10 @@
        ``$CHATVEIN_DATA_DIR/skills/<slug>/``，同版本幂等复用。
     4. 接线：聊天时前端把已选 slug 发到 ``/api/chat``，``main.py`` 用
        ``skill_prompt_blocks()`` 拼出文本注入 role prompt（详见 local_store）。
+
+关键函数（实现索引详见 docs/skills.md 第 9 节）：
+    - 市场/安装：``list_skills`` / ``get_skill`` / ``install_from_hub`` / ``uninstall_local``
+    - 注入接线：``skill_prompt_blocks()`` —— 只注入目录，正文由 ``load_skill`` 工具按需拉取
 """
 
 from __future__ import annotations

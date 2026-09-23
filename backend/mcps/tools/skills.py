@@ -3,6 +3,10 @@
 配合 main.py 的"技能目录注入"：system prompt 里只有技能 name+description 目录，
 模型认为需要时调用本工具把完整正文拉进上下文，避免几千米的 SKILL.md 一次性
 挤爆上下文。真正的动作仍走其他已注册的 MCP 工具。
+
+注册位置：
+- mcps/tools/__init__.py ``build_tool_groups`` → 挂 ``mcp-skills`` 分组（恒常驻）；
+- agents/graphs/common.py ``ALWAYS_ON_TOOLS`` 让聊天时无条件挂进工具列表。
 """
 
 from __future__ import annotations

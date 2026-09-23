@@ -133,18 +133,59 @@ MCP 工具（执行能力）     ──→  真正"怎么做"
 在 `main.py` 技能接线之前用当前消息从**全部已安装技能**召回 top-k 加入目录；
 常驻技能建议保留目录注入（人格相关，需稳定可见），懒加载只作用于池子技能。
 
-## 9. 相关文件与接口
+## 9. 实现文件与代码位置索引
 
-| 文件 / 接口 | 职责 |
+> 技能链路分四层：**路由层 → 服务层 → 落盘层 → Agent 注入层**。
+> 下面"关键代码"以函数 / 常量名为准（行号随演进可能漂移），全路径前缀为 `backend/`。
+
+### 9.1 技能市场 / 安装（`skills/`）
+
+| 文件 | 关键代码 | 职责 |
+| --- | --- | --- |
+| `skills/__init__.py` | 模块 docstring | 模块入口，文件分工说明 |
+| `skills/module.py` | `skills_router` | 路由组装（`/api/skills` 前缀），由 `main.py` include |
+| `skills/controller.py` | `get_categories` / `get_skills` / `get_skill_detail` / `post_install` / `delete_skill` | `/api/skills*` HTTP 路由，错误转 HTTPException |
+| `skills/service.py` | `list_skills` / `get_skill` / `install_from_hub` / `uninstall_local` / `list_local_skills` / `skill_prompt_blocks` | SkillHub 代理 + **注入接线入口**（生成目录） |
+| `skills/local_store.py` | `install_skill` / `uninstall_skill` / `is_installed` / `read_skill_md` / `load_skill_catalog` / `format_skill_catalog_for_prompt` / `load_skill_blocks` / `format_skills_for_prompt` | 落盘（SKILL.md + meta.json）+ 目录生成 + 全文兼容模式 |
+
+### 9.2 技能来源：会话级 / 角色常驻
+
+| 文件 | 关键代码 | 职责 |
+| --- | --- | --- |
+| `conversations/controller.py` | `PUT /{conversation_id}/skills` → `update_conversation_skills` | Composer 勾选 / 移除时即时持久化 |
+| `conversations/service.py` | `set_conversation_skills` / `get_conversation_skills` | 会话级技能读写 |
+| `conversations/repository.py` | `set_skills` / `get_skills` / `_encode_skills` / `_decode_skills` | `conversations.skills` 列 JSON 落库（保序去重） |
+| `roles/service.py` | `get_runtime`（返回 `resident_skills`） | 常驻技能来源（每次会话自动带上） |
+| `roles/entity/entity.py` | `Role.resident_skills` 字段 | 常驻技能存储列 |
+
+### 9.3 Agent 注入 / 按需加载
+
+| 文件 | 关键代码 | 职责 |
+| --- | --- | --- |
+| `main.py` | `chat()` 技能接线段（`merged_slugs` → `skill_prompt_blocks` → 追加 `role_runtime["prompt"]` → 下传 `_skill_slugs`） | **注入核心拼装点** |
+| `mcps/tools/skills.py` | `@tool load_skill(slug)` / `TOOLS` / `heuristic()` | 按需拉取 SKILL.md 正文的工具 |
+| `mcps/tools/__init__.py` | `build_tool_groups` → `"mcp-skills"` 分组 | 工具分组挂载（恒常驻） |
+| `agents/graphs/common.py` | `ALWAYS_ON_TOOLS = ("load_skill", "sandbox_run_python")` | 聊天常驻工具，绕过选型 / 角色白名单 |
+| `agents/graphs/medium.py` / `hard.py` | `react_node`（`names = [*selected, *ALWAYS_ON_TOOLS]`） | 工具列表组装，无条件挂 `load_skill` |
+| `agents/graphs/pipeline.py` | `_merged_system(role, base)` | simple 分支 system prompt 组装 |
+| `agents/graphs/prompts.py` | `build_agent_system(role_prompt=...)` | `# Role` 段置于宪法最前（**最终落地点**） |
+| `agents/llm.py` | `get_chat_model` | 按 `role.model_id` 发出模型请求 |
+
+### 9.4 关键接线代码速查
+
+| 环节 | 位置 |
 | --- | --- |
-| `skills/local_store.py` | 落盘、目录生成（`load_skill_catalog` / `format_skill_catalog_for_prompt`）；全文模式 `load_skill_blocks` / `format_skills_for_prompt` 兼容保留 |
-| `skills/service.py` | SkillHub 浏览 / 详情 / 安装代理；`skill_prompt_blocks()` 接线入口（生成目录） |
-| `skills/controller.py` | `/api/skills*` 路由 |
-| `mcps/tools/skills.py` | `load_skill(slug)` 工具实现 |
-| `mcps/tools/__init__.py` | `mcp-skills` 分组挂载 + 启发式模块注册 |
-| `agents/graphs/medium.py` / `hard.py` | react_node 按 `_skill_slugs` 无条件附加 `load_skill` |
-| `main.py` 技能接线段 | slug 合并 → 目录注入 → `_skill_slugs` 下传 |
-| `roles/` | `resident_skills` 常驻技能字段 |
-| `conversations/` | `conversations.skills` 会话级技能列；`PUT /api/conversations/{id}/skills` 落盘 |
+| 注入拼装 | `main.py` `chat()` 技能接线段（约 186-219 行） |
+| 目录生成 | `skills/local_store.py` `load_skill_catalog()` + `format_skill_catalog_for_prompt()` |
+| 接线入口 | `skills/service.py` `skill_prompt_blocks()` |
+| 正文加载 | `mcps/tools/skills.py` `load_skill()` |
+| 常驻挂载 | `agents/graphs/common.py` `ALWAYS_ON_TOOLS` |
+| 最终落点 | `agents/graphs/prompts.py` `build_agent_system()`（`# Role` 段） |
+
+### 9.5 API 与前端
+
+| 接口 / 文件 | 说明 |
+| --- | --- |
 | `POST /api/chat` | `skills[]` 字段兜底同步会话级技能（`null`=不改动 / `[]`=清空 / 列表=覆盖） |
+| `PUT /api/conversations/{id}/skills` | Composer 勾选 / 移除时即时持久化 |
 | 前端 `Composer.tsx` | 附件面板勾选已安装技能（排除常驻技能，勾选即会话级持久化） |

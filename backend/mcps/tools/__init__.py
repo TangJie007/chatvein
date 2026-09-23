@@ -1,4 +1,10 @@
-"""内置工具包：按本机运行时动态挂载 Bash / PowerShell / Browser。"""
+"""内置工具包：按本机运行时动态挂载 Bash / PowerShell / Browser。
+
+模块约定：每个工具模块导出 ``TOOLS``（可挂载工具元组）+ ``heuristic()``（离线关键词命中）。
+技能相关：
+- ``skills`` 模块 = ``load_skill`` 工具（mcps/tools/skills.py），挂 ``mcp-skills`` 分组，恒常驻；
+- 技能目录注入不在此层，见 main.py 技能接线段 → skills/service.skill_prompt_blocks()。
+"""
 
 from __future__ import annotations
 
