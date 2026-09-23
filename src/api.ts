@@ -166,6 +166,33 @@ export interface DbInfo {
   vector_extension: DbVectorInfo;
 }
 
+export interface DbTableSummary {
+  name: string;
+  type: "table" | "view" | string;
+  row_count: number | null;
+  sql: string;
+}
+
+export interface DbColumnInfo {
+  cid: number;
+  name: string;
+  type: string | null;
+  notnull: boolean;
+  default: string | null;
+  pk: boolean;
+}
+
+export interface DbTableDetail {
+  name: string;
+  type: string;
+  sql: string;
+  columns: DbColumnInfo[];
+  total: number | null;
+  limit: number;
+  offset: number;
+  rows: Record<string, unknown>[];
+}
+
 export interface WorkspaceInfo {
   path: string;
   label: string;
@@ -220,6 +247,20 @@ export function dbBackup() {
   return backendRequest<{ path: string; backup_path: string; size_bytes: number }>(
     "/api/db/backup",
     "POST"
+  );
+}
+
+/** List all non-system tables and views in the database. */
+export async function listDbTables() {
+  const data = await backendRequest<{ tables: DbTableSummary[] }>("/api/db/tables");
+  return data.tables;
+}
+
+/** Fetch columns + first N rows of a single table / view. */
+export function getDbTableDetail(name: string, limit = 50, offset = 0) {
+  const q = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+  return backendRequest<DbTableDetail>(
+    `/api/db/tables/${encodeURIComponent(name)}?${q.toString()}`
   );
 }
 

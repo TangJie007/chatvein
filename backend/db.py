@@ -10,6 +10,7 @@
 # pyright: reportAny=false, reportExplicitAny=false, reportUnknownMemberType=false, reportUnknownVariableType=false, reportUnknownArgumentType=false, reportImplicitRelativeImport=false
 
 import os
+import re
 import sqlite3
 from collections.abc import Generator
 from contextlib import contextmanager
@@ -327,6 +328,139 @@ def stats() -> dict[str, object]:
             "error": _vec_error,
         },
     }
+
+
+def _escape_identifier(name: str) -> str:
+    """把表 / 列名安全地包成 SQLite 标识符（只允许字母、数字、下划线、点、$）。"""
+    if not re.match(r"^[A-Za-z_][A-Za-z0-9_$.]*$", name):
+        raise ValueError(f"非法标识符: {name}")
+    return f'"{name}"'
+
+
+def tables() -> list[dict[str, object]]:
+    """库中所有非系统表 / 视图，含行数（视图返回 None）。"""
+    with session_scope() as session:
+        rows = session.execute(
+            text(
+                "SELECT name, type FROM sqlite_master "
+                "WHERE type IN ('table', 'view') AND name NOT LIKE 'sqlite_%' "
+                "ORDER BY (type='table') DESC, name"
+            )
+        ).fetchall()
+        result: list[dict[str, object]] = []
+        for r in rows:
+            name = str(r[0] or "")
+            kind = str(r[1] or "table")
+            sql_value = session.scalar(
+                text("SELECT sql FROM sqlite_master WHERE name = :n AND type = :t"),
+                {"n": name, "t": kind},
+            )
+            row_count: int | None = None
+            if kind == "table":
+                try:
+                    value = session.scalar(text(f"SELECT count(*) FROM {_escape_identifier(name)}"))
+                    row_count = int(value or 0)  # pyright: ignore[reportArgumentType]
+                except Exception:  # noqa: BLE001 — 个别表 count 失败不阻断整体
+                    row_count = None
+            result.append(
+                {
+                    "name": name,
+                    "type": kind,
+                    "row_count": row_count,
+                    "sql": str(sql_value or ""),
+                }
+            )
+        return result
+
+
+def table_detail(name: str, limit: int = 50, offset: int = 0) -> dict[str, object]:
+    """一张表的字段定义 + 前若干行数据；limit/offset 由前端控制翻页。"""
+    if not re.match(r"^[A-Za-z_][A-Za-z0-9_$.]*$", name):
+        raise ValueError(f"非法表名: {name}")
+    safe = _escape_identifier(name)
+    limit_i = max(1, min(500, int(limit)))
+    offset_i = max(0, int(offset))
+    with session_scope() as session:
+        master = session.scalar(
+            text("SELECT sql FROM sqlite_master WHERE name = :n AND type IN ('table','view')"),
+            {"n": name},
+        )
+        kind = session.scalar(
+            text("SELECT type FROM sqlite_master WHERE name = :n"),
+            {"n": name},
+        )
+        if not master:
+            raise KeyError(f"表不存在: {name}")
+        kind = str(kind or "table")
+        is_table = kind == "table"
+
+        if is_table:
+            pragma_rows = session.execute(text(f"PRAGMA table_info({safe})")).fetchall()
+            columns: list[dict[str, object]] = []
+            for i, row in enumerate(pragma_rows):
+                values = tuple(row)
+                columns.append({
+                    "cid": int(values[0]) if values[0] is not None else i,
+                    "name": str(values[1]),
+                    "type": (str(values[2]) if values[2] is not None else None),
+                    "notnull": bool(values[3]),
+                    "default": (str(values[4]) if values[4] is not None else None),
+                    "pk": bool(values[5]),
+                })
+            total_value = session.scalar(text(f"SELECT count(*) FROM {safe}"))
+            total = int(total_value or 0)  # pyright: ignore[reportArgumentType]
+            data_rows = session.execute(
+                text(f"SELECT * FROM {safe} LIMIT :l OFFSET :o"),
+                {"l": limit_i, "o": offset_i},
+            )
+            raw_cols = tuple(data_rows.keys())
+            row_tuples = data_rows.fetchall()
+        else:
+            # 视图无法 PRAGMA table_info；用一次 LIMIT 取出行并从中反推列名。
+            view_result = session.execute(text(f"SELECT * FROM {safe} LIMIT :l"), {"l": limit_i})
+            col_names = tuple(view_result.keys())
+            raw_cols = col_names
+            row_tuples = view_result.fetchall()
+            total = None
+            columns = [{"cid": i, "name": name, "type": None, "notnull": False, "default": None, "pk": False}
+                       for i, name in enumerate(col_names)]
+
+        rows_out: list[dict[str, object]] = []
+        for tup in row_tuples:
+            row: dict[str, object] = {}
+            for i, value in enumerate(tup):
+                key = raw_cols[i] if i < len(raw_cols) else f"c{i}"
+                row[key] = _coerce_cell(value)
+            rows_out.append(row)
+
+        return {
+            "name": name,
+            "type": kind,
+            "sql": str(master or ""),
+            "columns": columns,
+            "total": total,
+            "limit": limit_i,
+            "offset": offset_i,
+            "rows": rows_out,
+        }
+
+
+def _coerce_cell(value: object) -> object:
+    """把 SQLite 里的 BLOB / bytes 转成可读字符串，其他类型透传（JSON 序列化友好）。"""
+    if value is None:
+        return None
+    if isinstance(value, (bytes, bytearray)):
+        try:
+            return value.decode("utf-8", errors="replace")
+        except Exception:  # noqa: BLE001
+            return repr(value)
+    if isinstance(value, (int, float, str, bool)):
+        return value
+    # datetime / date 等对象兜底
+    try:
+        return value.isoformat() if hasattr(value, "isoformat") else str(value)
+    except Exception:  # noqa: BLE001
+        return str(value)
 
 
 def info() -> dict[str, object]:

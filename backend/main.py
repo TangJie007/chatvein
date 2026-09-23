@@ -451,6 +451,32 @@ def db_info():
     return db.info()
 
 
+@app.get("/api/db/tables", tags=["db"], summary="列出所有表 / 视图")
+def db_tables():
+    """设置页 SQLite 分区：库中的业务表 / 视图与行数。"""
+    try:
+        return {"tables": db.tables()}
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.get(
+    "/api/db/tables/{name}",
+    tags=["db"],
+    summary="查看一张表 / 视图的字段与数据",
+)
+def db_table_detail(name: str, limit: int = 50, offset: int = 0):
+    """字段定义（PRAGMA table_info）+ 前 N 行数据；limit 上限 500。"""
+    try:
+        return db.table_detail(name, limit=limit, offset=offset)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
 @app.post("/api/db/vacuum", tags=["db"], summary="整理数据库")
 def db_vacuum():
     """VACUUM：重建文件并回收空闲页，返回整理后的概况。"""
