@@ -9,6 +9,7 @@ import {
   deleteLastTurn,
   getConversation,
   getConversationWorkspace,
+  getTrace,
   listConversations,
   listModels,
   listRoles,
@@ -21,10 +22,15 @@ import {
   type ChatMessageRecord,
   type LlmModelRecord,
   type RoleRecord,
+  type TurnTrace,
 } from "../../api";
 import { ChatPanel, type ChatMessage } from "../chat/ChatPanel";
 import type { ComposerSkill } from "../chat/Composer";
-import type { InsightArtifact, InsightThreadItem } from "../chat/InsightPanel";
+import {
+  type InsightArtifact,
+  type InsightStep,
+  type InsightThreadItem,
+} from "../chat/InsightPanel";
 import { SessionList, type SessionItem } from "../chat/SessionList";
 import { openTraceWindow } from "../../lib/openTrace";
 import { VIEW_PATH } from "../../types/view";
@@ -111,6 +117,49 @@ function errorMessage(err: unknown): string {
   return String(err);
 }
 
+/** 在途追踪 → 思考流节点：只取「思考结论 + 工具调用」，与完成后的展示口径一致。 */
+function toLiveSteps(trace: TurnTrace): InsightStep[] {
+  const steps: InsightStep[] = [];
+  if (trace.route_reason?.trim()) {
+    steps.push({ kind: "thought", text: trace.route_reason.trim() });
+  }
+  if (trace.tool_plan_reason?.trim()) {
+    steps.push({ kind: "thought", text: trace.tool_plan_reason.trim() });
+  }
+  for (const step of trace.steps ?? []) {
+    if (step.kind === "llm") {
+      // 离线兜底（没有模型）不是真实思考，不占思考流。
+      if (step.status === "offline") continue;
+      const model = step.model?.trim() || step.name || "模型";
+      steps.push({
+        kind: "thought",
+        text:
+          step.status === "running"
+            ? `调用 ${model} 推理中…`
+            : `调用 ${model} 完成`,
+      });
+      continue;
+    }
+    if (step.kind !== "tool") continue;
+    const args =
+      step.arguments == null
+        ? ""
+        : typeof step.arguments === "string"
+          ? step.arguments
+          : JSON.stringify(step.arguments);
+    steps.push({
+      kind: "tool",
+      tool: step.name || "tool",
+      args,
+      status: step.status === "error" ? "blocked" : "ok",
+      result:
+        (step.result ?? "").trim() ||
+        (step.status === "running" ? "执行中…" : (step.error ?? "").trim() || "已返回"),
+    });
+  }
+  return steps;
+}
+
 /** Tauri HTTP：Rust 为 "Request canceled"；JS 乐观路径为 "Request cancelled"；浏览器为 AbortError。 */
 function isAbortError(err: unknown): boolean {
   if (err instanceof DOMException && err.name === "AbortError") return true;
@@ -159,6 +208,17 @@ export function ChatView({
   }, []);
   /** 当前在途请求的取消控制器；非 null 表示 Agent 正在生成。 */
   const abortRef = useRef<AbortController | null>(null);
+  /** 本轮正在回答的问题原文：生成中把「思考流」锁定到这条问题上。 */
+  const [pendingQuestion, setPendingQuestion] = useState<string | null>(null);
+  /** 在途轮次（会话 id + 前端生成的 turn_id）：据此轮询本轮追踪进度。 */
+  const [liveTurn, setLiveTurn] = useState<{
+    conversationId: string;
+    turnId: string;
+  } | null>(null);
+  /** 在途轮次的思考流节点（追踪实时落库，轮询刷新）。 */
+  const [liveSteps, setLiveSteps] = useState<InsightStep[]>([]);
+  /** 本轮回复已就地回填到占位气泡，切换会话 id 时跳过整表重载（否则气泡会被替换成新组件）。 */
+  const skipNextLoadRef = useRef<string | null>(null);
   /** 发送前主库已落库的最大消息 id；清理时只删 id 更大的本轮。 */
   const lastPersistedIdRef = useRef(0);
   /** 本次 abort 的意图：catch 里用来决定要不要展示「已取消」提示。 */
@@ -267,6 +327,12 @@ export function ChatView({
     }
     // 切换会话：清掉上一个会话残留的错误（含挂在提问气泡下的那条）。
     setError(null);
+    // 首次发送会新建会话并切过来：回复已就地回填到占位气泡，
+    // 再整表重载会把气泡换成新组件，这里直接跳过。
+    if (skipNextLoadRef.current === activeId) {
+      skipNextLoadRef.current = null;
+      return;
+    }
     let cancelled = false;
     void (async () => {
       try {
@@ -400,6 +466,28 @@ export function ChatView({
     [activeId, setError]
   );
 
+  /** 生成中轮询本轮追踪：后端每完成一步就落库，思考流因此能边跑边长。 */
+  useEffect(() => {
+    if (!liveTurn) return;
+    let cancelled = false;
+    let timer = 0;
+    const tick = async () => {
+      try {
+        const trace = await getTrace(liveTurn.conversationId, liveTurn.turnId);
+        if (!cancelled) setLiveSteps(toLiveSteps(trace));
+      } catch {
+        // 追踪还没落第一条（或会话刚建）：忽略，下个周期再取。
+      }
+      if (!cancelled) timer = window.setTimeout(tick, 1200);
+    };
+    void tick();
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+      setLiveSteps([]);
+    };
+  }, [liveTurn]);
+
   const handleSend = async (
     text: string,
     skills?: { slug: string; name: string }[]
@@ -407,6 +495,30 @@ export function ChatView({
     if (sending) return;
     setSending(true);
     setError(null);
+    // 思考流立刻锁定到本轮问题：占位气泡此时还没有 turn_id，
+    // 若不锁定，右侧洞察会继续显示上一轮轨迹，看起来像"没在思考"。
+    setPendingQuestion(text);
+    setSelectedTurnId(null);
+    // 本轮 id 由前端生成：后端按它逐步落追踪，思考流可边等边轮询。
+    const turnId = crypto.randomUUID().replace(/-/g, "");
+    // 没有当前会话时先建一个：否则拿不到轮询追踪所需的 conversation_id。
+    let conversationId = activeId;
+    if (!conversationId) {
+      try {
+        const created = await createConversation("");
+        conversationId = created.id;
+        // 新会话是空的：别让它触发的整表重载清掉下面插入的乐观气泡。
+        skipNextLoadRef.current = created.id;
+        selectConversation(created.id);
+        void refreshListRef.current();
+      } catch (err) {
+        setSending(false);
+        setPendingQuestion(null);
+        setError(errorMessage(err));
+        return;
+      }
+    }
+    setLiveTurn({ conversationId, turnId });
     const optimisticId = crypto.randomUUID();
     const pendingId = crypto.randomUUID();
     pendingRef.current = {
@@ -428,12 +540,19 @@ export function ChatView({
     try {
       const result = await sendChat(
         text,
-        activeId,
+        conversationId,
         roleId,
         skills?.map((s) => s.slug) ?? null,
+        turnId,
         controller.signal
       );
-      selectConversation(result.conversation_id);
+      // 兜底：后端换了会话（理论上不会），切过去时同样跳过整表重载。
+      if (result.conversation_id !== conversationId) {
+        skipNextLoadRef.current = result.conversation_id;
+        // 新会话技能集由本次请求写入，重载被跳过时这里补上，保持 chip 与后端一致。
+        if (skills?.length) setComposerSkills(skills);
+        selectConversation(result.conversation_id);
+      }
       setMetaById((prev) => ({
         ...prev,
         [result.conversation_id]: {
@@ -445,8 +564,29 @@ export function ChatView({
       }));
       if (result.workspace) setWorkspace(result.workspace);
       setSelectedTurnId(result.turn_id);
+      // 结果写回那一个占位气泡：id（React key）不变，只换内容，
+      // 避免整表重载把气泡换成新组件（视觉上像"整块跳变"）。
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === pendingId
+            ? {
+                ...m,
+                content: result.reply,
+                streaming: false,
+                turnId: result.turn_id,
+                tokens: result.tokens ?? null,
+                durationMs: result.duration_ms ?? null,
+              }
+            : m
+        )
+      );
+      // 本轮已落库：抬高清理基线，之后撤回 / 停止只删这条之后的记录。
+      lastPersistedIdRef.current = Math.max(
+        lastPersistedIdRef.current,
+        Number(result.assistant_message?.id) || 0,
+        Number(result.user_message?.id) || 0
+      );
       await refreshList();
-      await loadConversation(result.conversation_id);
     } catch (err) {
       // Rust 抛 string "Request canceled"（非 Error）；以 signal / 文案双保险，绝不能落到红字。
       if (controller.signal.aborted || isAbortError(err)) {
@@ -464,6 +604,9 @@ export function ChatView({
     } finally {
       if (abortRef.current === controller) abortRef.current = null;
       setSending(false);
+      setPendingQuestion(null);
+      // 本轮结束：停掉追踪轮询，思考流交回已完成轮次的轨迹。
+      setLiveTurn(null);
     }
   };
 
@@ -510,6 +653,8 @@ export function ChatView({
       );
       pendingRef.current = null;
       setSending(false);
+      // 停止 / 撤回：立刻停掉本轮追踪轮询。
+      setLiveTurn(null);
       // 气泡已被移除，错误不能再挂在原提问上，否则提示会消失。
       setErrorAnchorId(null);
       // 停止：立刻给中性提示；编辑 / 撤回不额外打扰。
@@ -523,6 +668,17 @@ export function ChatView({
     },
     [activeId, cleanupLastTurn, setError]
   );
+
+  /** 占位气泡里的进度文案：优先显示本轮正在跑的那一步，让等待看起来"在做事"。 */
+  const thinkingHint = useMemo(() => {
+    for (let i = liveSteps.length - 1; i >= 0; i--) {
+      const step = liveSteps[i];
+      if (!step) continue;
+      if (step.kind === "tool") return `正在调用 ${step.tool}…`;
+      if (step.kind === "thought" && step.text.includes("推理中")) return step.text;
+    }
+    return null;
+  }, [liveSteps]);
 
   const handleDelete = useCallback(
     async (id: string) => {
@@ -590,6 +746,12 @@ export function ChatView({
           onRevealArtifact={handleRevealArtifact}
           selectedTurnId={selectedTurnId}
           onSelectMessage={(tid) => setSelectedTurnId(tid)}
+          live={
+            sending && pendingQuestion
+              ? { goal: pendingQuestion, steps: liveSteps }
+              : null
+          }
+          thinkingHint={sending ? thinkingHint : null}
           onOpenWorkspace={() => {
             if (!activeId) return;
             void openConversationWorkspace(activeId).catch((err: unknown) => {

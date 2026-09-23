@@ -27,16 +27,24 @@ function pickLine(exclude?: string): string {
   return pool[index] ?? WAITING_LINES[0];
 }
 
-/** 机器人等待最终结果：转圈 + 随机吐槽。 */
-export function WaitingBubble() {
+type WaitingBubbleProps = {
+  /** 本轮真实进度（如「正在调用 web_search…」）；有值时优先展示，不再轮换吐槽文案。 */
+  hint?: string | null;
+};
+
+/** 机器人等待最终结果：转圈 + 进度（或随机吐槽）。 */
+export function WaitingBubble({ hint = null }: WaitingBubbleProps) {
   const [line, setLine] = useState(() => pickLine());
 
   useEffect(() => {
+    if (hint) return;
     const timer = window.setInterval(() => {
       setLine((prev) => pickLine(prev));
     }, ROTATE_MS);
     return () => window.clearInterval(timer);
-  }, []);
+  }, [hint]);
+
+  const text = hint?.trim() || line;
 
   return (
     <div
@@ -50,8 +58,8 @@ export function WaitingBubble() {
         strokeWidth={2}
         aria-hidden
       />
-      <span key={line} className="animate-[view-in_0.18s_ease-out]">
-        {line}
+      <span key={text} className="animate-[view-in_0.18s_ease-out]">
+        {text}
       </span>
     </div>
   );

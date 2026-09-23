@@ -295,12 +295,14 @@ export function updateConversationSkills(conversationId: string, skills: string[
   );
 }
 
-/** Run one chat turn against the agent pipeline. */
+/** Run one chat turn against the agent pipeline.
+ *  ``turnId`` 由前端预先生成：后端按它逐步落追踪，UI 可边等边轮询思考流进度。 */
 export function sendChat(
   message: string,
   conversationId?: string | null,
   roleId?: string | null,
   skills?: string[] | null,
+  turnId?: string | null,
   signal?: AbortSignal | null
 ) {
   return backendRequest<{
@@ -333,7 +335,9 @@ export function sendChat(
     role_id: roleId ?? null,
     // 会话级技能：空数组 = 清空会话技能集；null = 不改动（保留既有会话技能）
     skills: skills ?? null,
-  }, signal);
+    // 前端生成的本轮 id：追踪逐步落库，UI 轮询时按它取在途进度
+    turn_id: turnId ?? null,
+  }, signal ?? undefined);
 }
 
 /** 撤回 / 停止生成：删除该会话最近一轮（用户句 + 助手句）。

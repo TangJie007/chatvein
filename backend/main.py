@@ -97,6 +97,9 @@ class ChatRequest(BaseModel):
     # 已选技能 slug 列表：由前端 Composer 从「附件菜单 → Skill」里勾选后带上；
     # chat() 里用它去查本机 <data>/skills/<slug>/ 目录，把 SKILL.md 正文注入 role prompt。
     skills: list[str] | None = Field(default=None, max_length=16)
+    # 前端预先生成的本轮 id：追踪每完成一步就落库，UI 可用它轮询「思考流」进度。
+    # 缺省时后端自行生成，行为与之前一致。
+    turn_id: str | None = Field(default=None, max_length=64)
 
 
 try:  # langchain-core 版本差异：拿不到用量回调就退化为不统计
@@ -233,7 +236,8 @@ def _chat_turn(req: ChatRequest) -> dict[str, object]:
     elif skill_block:
         # 无角色时只注入技能目录；tools 省略表示不限制
         role_runtime = {"prompt": skill_block, **skill_ctx}
-    turn_id = uuid.uuid4().hex
+    # 优先用前端带来的 turn_id（UI 边生成边轮询追踪）；缺失 / 非法时退回后端生成。
+    turn_id = (req.turn_id or "").strip() or uuid.uuid4().hex
     db_path = session_db_path(
         conversations_service.workspace_root_for(prepared["workspace_dir"])
     )

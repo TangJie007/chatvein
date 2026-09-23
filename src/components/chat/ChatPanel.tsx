@@ -10,6 +10,7 @@ import type { SessionItem } from "./SessionList";
 import {
   InsightPanel,
   type InsightArtifact,
+  type InsightStep,
   type InsightThreadItem,
 } from "./InsightPanel";
 
@@ -63,6 +64,10 @@ type ChatPanelProps = {
   insightThread?: InsightThreadItem[];
   artifacts?: InsightArtifact[];
   selectedTurnId?: string | null;
+  /** 生成中的在途轮次：非空时洞察面板的思考流锁定到这条问题与它的实时步骤。 */
+  live?: { goal: string; steps: InsightStep[] } | null;
+  /** 生成中显示在占位气泡里的真实进度（工具名 / 推理中）。 */
+  thinkingHint?: string | null;
   /** 在文件管理器中打开产物所在目录（path 为本机绝对路径）。 */
   onRevealArtifact?: (path: string) => void;
   onSelectMessage?: (turnId: string) => void;
@@ -111,6 +116,8 @@ export function ChatPanel({
   insightThread = [],
   artifacts = [],
   selectedTurnId,
+  live = null,
+  thinkingHint = null,
   onRevealArtifact,
   onSelectMessage,
   onStop,
@@ -249,7 +256,9 @@ export function ChatPanel({
                 const isSystem = m.role === "system";
                 const isAgent = m.role === "agent";
                 const canInspect = isAgent && !!m.turnId;
-                const selected = canInspect && m.turnId === selectedTurnId;
+                // 生成中的占位气泡也算「当前回答」，同样高亮，避免用户以为焦点还在上一轮。
+                const selected =
+                  !!m.streaming || (canInspect && m.turnId === selectedTurnId);
                 // 当前正在生成的任务：最后一条用户消息，仅此时显示编辑 / 撤回。
                 const isActiveTask = isUser && sending && index === lastUserIndex;
                 return (
@@ -310,9 +319,19 @@ export function ChatPanel({
                       >
                         {isAgent ? (
                           m.streaming && !m.content.trim() ? (
-                            <WaitingBubble />
+                            <WaitingBubble hint={thinkingHint} />
                           ) : (
-                            <MarkdownMessage content={m.content} streaming={m.streaming} />
+                            // key 随 streaming 结束变化：最终内容在同一个气泡里淡入，
+                            // 而不是替换整个气泡（避免「换了个组件」的跳变感）。
+                            <div
+                              key={m.streaming ? "streaming" : "final"}
+                              className="animate-view"
+                            >
+                              <MarkdownMessage
+                                content={m.content}
+                                streaming={m.streaming}
+                              />
+                            </div>
                           )
                         ) : (
                           m.content
@@ -446,6 +465,7 @@ export function ChatPanel({
         <InsightPanel
           thread={insightThread}
           artifacts={artifacts}
+          live={live}
           onClose={onToggleInsight}
           onRevealArtifact={onRevealArtifact}
         />

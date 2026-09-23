@@ -7,6 +7,7 @@ import {
   FolderOpen,
   Image,
   Lightbulb,
+  Loader2,
   PanelRightClose,
   Sparkles,
   Table,
@@ -14,7 +15,7 @@ import {
   TriangleAlert,
   Wrench,
 } from "lucide-react";
-import { useState, type ComponentType, type ReactNode } from "react";
+import { useEffect, useState, type ComponentType, type ReactNode } from "react";
 
 export type InsightToolStatus = "ok" | "blocked";
 
@@ -74,6 +75,11 @@ type InsightPanelProps = {
   onClose: () => void;
   /** 在文件管理器中打开产物所在目录（path 为本机绝对路径）。 */
   onRevealArtifact?: (path: string) => void;
+  /**
+   * 生成中的在途轮次：把「思考流」锁定到这条正在回答的问题，
+   * 不再沿用上一轮轨迹（否则看起来毫无反应）。步骤由追踪实时轮询填充。
+   */
+  live?: { goal: string; steps: InsightStep[] } | null;
 };
 
 export function InsightPanel({
@@ -81,6 +87,7 @@ export function InsightPanel({
   artifacts = [],
   onClose,
   onRevealArtifact,
+  live = null,
 }: InsightPanelProps) {
   const steps: InsightStep[] = [];
   let goal = "";
@@ -90,6 +97,9 @@ export function InsightPanel({
       m.trace.steps.forEach((s) => steps.push(s));
     }
   });
+  // 在途轮次：思考流只显示本轮问题与它自己的实时步骤（末尾挂一个进行中节点）。
+  const shownGoal = live ? live.goal : goal;
+  const shownSteps = live ? live.steps : steps;
 
   return (
     <aside className="flex w-[220px] shrink-0 flex-col bg-list">
@@ -113,21 +123,41 @@ export function InsightPanel({
           <SectionTitle
             icon={<Lightbulb className="size-4 text-amber-400" strokeWidth={1.75} />}
             title="思考流"
-            hint={steps.length ? `${steps.length} 步` : null}
+            hint={
+              live
+                ? shownSteps.length
+                  ? `${shownSteps.length} 步 · 进行中`
+                  : "进行中"
+                : shownSteps.length
+                  ? `${shownSteps.length} 步`
+                  : null
+            }
           />
           <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden pr-0.5">
-            {goal ? (
-              <div className="mb-3 flex items-center gap-1.5 rounded-xl bg-tint/70 px-3 py-2 text-[12px] leading-5 text-ink-500">
-                <span className="shrink-0 font-medium text-ink-700">目标</span>
-                <span className="truncate">{goal}</span>
+            {shownGoal ? (
+              <div
+                className="mb-3 flex items-center gap-1.5 rounded-xl bg-tint/70 px-3 py-2 text-[12px] leading-5 text-ink-500"
+                title={shownGoal}
+              >
+                <span className="shrink-0 font-medium text-ink-700">
+                  {live ? "正在回答" : "目标"}
+                </span>
+                <span className="line-clamp-2 break-words">{shownGoal}</span>
               </div>
             ) : null}
-            {steps.length ? (
+            {shownSteps.length ? (
               <div className="flex flex-col">
-                {steps.map((s, i) => (
-                  <TimelineNode key={i} step={s} last={i === steps.length - 1} />
+                {shownSteps.map((s, i) => (
+                  <TimelineNode
+                    key={i}
+                    step={s}
+                    last={!live && i === shownSteps.length - 1}
+                  />
                 ))}
+                {live ? <LiveThinkingNode /> : null}
               </div>
+            ) : live ? (
+              <LiveThinkingNode />
             ) : (
               <Empty text="该会话暂无执行轨迹" />
             )}
@@ -203,6 +233,29 @@ export function InsightPanel({
         </div>
       </div>
     </aside>
+  );
+}
+
+/** 在途轮次的思考节点：转圈 + 计时，说明 Agent 正盯着当前这条问题在跑。 */
+function LiveThinkingNode() {
+  const [seconds, setSeconds] = useState(0);
+  useEffect(() => {
+    const timer = window.setInterval(() => setSeconds((s) => s + 1), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
+  return (
+    <div className="relative flex min-w-0 gap-2">
+      <span className="relative z-10 mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full bg-surface shadow-soft">
+        <Loader2 className="size-2.5 animate-spin text-brand-600" strokeWidth={2.5} />
+      </span>
+      <div className="min-w-0 flex-1">
+        <div className="rounded-xl bg-tint/70 px-2.5 py-1.5 text-[11.5px] leading-4 break-words text-ink-500">
+          <span className="font-medium text-ink-700">思考中 </span>
+          <span className="animate-pulse">正在理解问题并规划执行路径…</span>
+          <span className="ml-1 tabular-nums text-ink-400">{seconds}s</span>
+        </div>
+      </div>
+    </div>
   );
 }
 
