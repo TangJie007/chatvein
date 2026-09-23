@@ -154,6 +154,17 @@ export const MCP_SERVERS: McpServer[] = [
     enabled: true,
   },
   {
+    id: "mcp-pdf",
+    name: "PDF 处理",
+    kind: "doc",
+    builtin: true,
+    desc: "读取文本与元信息、按页范围拆分、多文件合并、文本生成 PDF、加密/解密。pypdf + reportlab，全部本机处理。",
+    transport: "本机进程",
+    cmd: "builtin://mcp-pdf",
+    tools: 7,
+    enabled: true,
+  },
+  {
     id: "mcp-http",
     name: "自定义 HTTP",
     kind: "custom",

@@ -56,6 +56,7 @@ Agent 图细节见 [`agent-graphs.md`](./agent-graphs.md)；工具矩阵见 [`ag
 | `mcp-browser` | Playwright Core+Tabs；本机有 Chromium 才注册 |
 | `mcp-ip` | 公网出口 / IP 归属（ipinfo → ipwhois → ip-api，免费无 Key） |
 | `mcp-ocr` | OCR.space → 沙箱 RapidOCR 降级 |
+| `mcp-pdf` | 文本/元信息读取、合并、按页拆分、文本生成、加密/解密（pypdf + reportlab） |
 
 目录 API：`GET /api/mcps/catalog`。
 

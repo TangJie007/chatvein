@@ -4,6 +4,10 @@
 技能相关：
 - ``skills`` 模块 = ``load_skill`` 工具（mcps/tools/skills.py），挂 ``mcp-skills`` 分组，恒常驻；
 - 技能目录注入不在此层，见 main.py 技能接线段 → skills/service.skill_prompt_blocks()。
+PDF 相关：
+- ``pdf`` 模块 = ``pdf_info`` / ``pdf_read`` / ``pdf_merge`` / ``pdf_split`` /
+  ``pdf_generate`` / ``pdf_encrypt`` / ``pdf_decrypt``（mcps/tools/pdf.py），挂 ``mcp-pdf`` 分组。
+  读取/合并/拆分/加解密用 pypdf，生成用 reportlab（内置中文字体）。
 """
 
 from __future__ import annotations
@@ -16,7 +20,7 @@ from mcps.bash_runtime import (  # pyright: ignore[reportImplicitRelativeImport]
 )
 from mcps.browser_runtime import browser_available  # pyright: ignore[reportImplicitRelativeImport]
 
-from . import bash, browser, core, fs, ip, kb, ocr, powershell, sandbox, skills, sqlite_tools, web
+from . import bash, browser, core, fs, ip, kb, ocr, pdf, powershell, sandbox, skills, sqlite_tools, web
 
 
 def build_tool_groups() -> dict[str, list[BaseTool]]:
@@ -32,6 +36,7 @@ def build_tool_groups() -> dict[str, list[BaseTool]]:
         "mcp-codesandbox": list(sandbox.TOOLS),
         "mcp-ip": list(ip.TOOLS),
         "mcp-ocr": list(ocr.TOOLS),
+        "mcp-pdf": list(pdf.TOOLS),
         "mcp-skills": list(skills.TOOLS),
     }
     if bash_available():
@@ -59,7 +64,7 @@ def heuristic_hits(message: str) -> list[str]:
     """按关键词启发式命中工具名（离线回落）。"""
     text = (message or "").lower()
     names: list[str] = []
-    modules = [core, fs, web, sqlite_tools, kb, sandbox, ip, ocr, skills]
+    modules = [core, fs, web, sqlite_tools, kb, sandbox, ip, ocr, pdf, skills]
     if bash_available():
         modules.append(bash)
     if powershell_available():

@@ -32,3 +32,7 @@ lxml>=5.0,<7
 playwright>=1.59,<2
 # IP 归属地（mcp-ip）：免费降级 ipinfo → ipwhois-python → ip-api（均无 Key）。
 ipwhois-python>=1.2,<2
+# PDF 处理（mcp-pdf）：pypdf 做读取/合并/拆分/加解密（纯 Python、轻量）；
+# reportlab 做文本生成 PDF（内置 CID 中文字体，无需字体文件）。见 mcps/tools/pdf.py。
+pypdf>=5.0,<7.0
+reportlab>=4.0,<5.0

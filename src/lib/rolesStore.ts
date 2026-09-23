@@ -21,6 +21,7 @@ export const TOOLSET: { id: string; name: string; desc: string }[] = [
   { id: "mcp-browser", name: "浏览器", desc: "Playwright 快照 + ref 交互" },
   { id: "mcp-ip", name: "IP 归属地", desc: "公网出口与 IP 查库" },
   { id: "mcp-ocr", name: "OCR 识字", desc: "图片文字识别" },
+  { id: "mcp-pdf", name: "PDF 处理", desc: "读取 / 合并 / 拆分 / 生成 / 加解密" },
 ];
 
 export const DEFAULT_ENABLED_TOOLS = TOOLSET.map((t) => t.id);
