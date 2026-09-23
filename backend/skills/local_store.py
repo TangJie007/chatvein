@@ -1,4 +1,9 @@
-"""本机已安装技能：落盘 ``CHATVEIN_DATA_DIR/skills/<slug>/``。"""
+"""本机已安装技能：落盘 ``CHATVEIN_DATA_DIR/skills/<slug>/``。
+
+数据模型：每个技能一个目录，包含 ``SKILL.md``（正文）+ ``meta.json``（元数据）。
+Agent 运行时通过 :func:`load_skill_blocks` / :func:`format_skills_for_prompt`
+把这些 MD 拼进 system prompt；真正的执行仍走已注册的 MCP 工具，不在此处。
+"""
 
 from __future__ import annotations
 
@@ -9,11 +14,17 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+# slug 白名单：首字符必须是字母或数字，后续允许 [a-zA-Z0-9._-]，长度 ≤128。
+# 目的是防止 ../、绝对路径、控制字符等越界写入 skills 根目录。
 _SLUG_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$")
+
+# 单个 SKILL.md 的大小上限（字符数）。
+# 超限直接拒绝：既保护后端内存 / 磁盘，也避免超长 prompt 挤爆上下文窗口。
 _MAX_SKILL_MD = 120_000
 
 
 def _data_dir() -> Path:
+    """返回本机数据根目录：优先环境变量，否则回退到项目下的 .chatvein。"""
     raw = (os.environ.get("CHATVEIN_DATA_DIR") or "").strip()
     if raw:
         return Path(raw).expanduser()
@@ -21,12 +32,14 @@ def _data_dir() -> Path:
 
 
 def skills_root() -> Path:
+    """返回 / 创建 ``<data_dir>/skills`` 根目录，所有已安装技能都挂在这里。"""
     path = _data_dir() / "skills"
     path.mkdir(parents=True, exist_ok=True)
     return path
 
 
 def _skill_dir(slug: str) -> Path:
+    """把 slug 规范化成该技能的目录路径；slug 非法直接抛 ValueError。"""
     cleaned = (slug or "").strip()
     if not _SLUG_RE.match(cleaned):
         raise ValueError("无效的 skill slug")
@@ -46,6 +59,7 @@ def _iso_now() -> str:
 
 
 def is_installed(slug: str) -> bool:
+    """以 SKILL.md 是否存在判定「已安装」；slug 非法视为未安装。"""
     try:
         return _skill_md_path(slug).is_file()
     except ValueError:
@@ -53,6 +67,11 @@ def is_installed(slug: str) -> bool:
 
 
 def list_installed() -> list[dict[str, Any]]:
+    """扫描 skills 根目录，返回所有已安装技能的展示信息（按名字排序）。
+
+    只把同时具备 SKILL.md 的目录视为有效安装；meta.json 缺失 / 损坏时
+    退化为使用目录名，避免历史脏数据把整个列表打崩。
+    """
     root = skills_root()
     rows: list[dict[str, Any]] = []
     for child in sorted(root.iterdir(), key=lambda p: p.name.lower()):
@@ -86,6 +105,7 @@ def list_installed() -> list[dict[str, Any]]:
 
 
 def read_skill_md(slug: str) -> str | None:
+    """读取 SKILL.md 正文；文件不存在 / 读失败 / 全空白一律返回 None。"""
     try:
         path = _skill_md_path(slug)
     except ValueError:
@@ -100,7 +120,12 @@ def read_skill_md(slug: str) -> str | None:
 
 
 def install_skill(detail: dict[str, Any]) -> dict[str, Any]:
-    """把 SkillHub 详情落到本机；需要 ``skill_md`` 正文。"""
+    """把 SkillHub 详情落到本机；需要 ``skill_md`` 正文。
+
+    流程：slug 校验 → SKILL.md 正文校验（非空、大小上限）→ 创建目录 →
+    写入 SKILL.md → 写入 meta.json（含安装时间）。整个过程不是原子的，
+    但在应用规模下可接受：失败重试只会覆盖同名文件。
+    """
     slug = str(detail.get("slug") or "").strip()
     if not _SLUG_RE.match(slug):
         raise ValueError("无效的 skill slug")
@@ -130,6 +155,7 @@ def install_skill(detail: dict[str, Any]) -> dict[str, Any]:
 
 
 def uninstall_skill(slug: str) -> bool:
+    """卸载本机技能：整目录 rmtree。目录不存在返回 False 而非报错。"""
     import shutil
 
     try:
@@ -143,7 +169,11 @@ def uninstall_skill(slug: str) -> bool:
 
 
 def load_skill_blocks(slugs: list[str] | None) -> list[dict[str, str]]:
-    """按 slug 读取已安装技能，供 Agent system 注入。"""
+    """按 slug 读取已安装技能，供 Agent system 注入。
+
+    去重规则：按传入顺序去重，未安装的 slug 静默跳过（避免单个缺失让
+    整条链中断）；正文超上限按 ``_MAX_SKILL_MD`` 截断，保证 prompt 安全。
+    """
     out: list[dict[str, str]] = []
     seen: set[str] = set()
     for raw in slugs or []:
@@ -174,6 +204,7 @@ def load_skill_blocks(slugs: list[str] | None) -> list[dict[str, str]]:
 
 
 def format_skills_for_prompt(blocks: list[dict[str, str]]) -> str:
+    """把技能块拼成一段可以直接粘进 system prompt 的 Markdown 片段。"""
     if not blocks:
         return ""
     parts = ["【已启用技能 — 按下列说明协助用户，真正执行仍用已提供的工具】"]

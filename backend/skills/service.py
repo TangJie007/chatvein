@@ -1,8 +1,15 @@
 """SkillHub 公开目录代理 + 本机安装。
 
-浏览用 ``GET https://api.skillhub.cn/api/skills``（无需鉴权）。
-详情用 ``GET https://api.skillhub.cn/api/v1/skills/{slug}``，并可选拉取 ``SKILL.md``。
-安装落到 ``CHATVEIN_DATA_DIR/skills/<slug>/``。
+下载链路（浏览 → 详情 → 安装）：
+    1. 浏览/搜索：``GET /api/skills`` → ``list_skills()`` → ``_normalize_skill``
+       代理 SkillHub 列表并做字段归一化，前端 Skill 市场直接渲染。
+    2. 详情：``GET /api/v1/skills/{slug}`` + 可选 ``SKILL.md`` → ``get_skill()`` →
+       ``_normalize_detail``。SKILL.md 走同一 httpx 客户端，失败时静默降级。
+    3. 安装：``POST /api/skills/{slug}/install`` → ``install_from_hub()`` →
+       ``local_store.install_skill()`` 把 SKILL.md + manifest.json 落到
+       ``$CHATVEIN_DATA_DIR/skills/<slug>/``，同版本幂等复用。
+    4. 接线：聊天时前端把已选 slug 发到 ``/api/chat``，``main.py`` 用
+       ``skill_prompt_blocks()`` 拼出文本注入 role prompt（详见 local_store）。
 """
 
 from __future__ import annotations
@@ -43,17 +50,30 @@ _USER_AGENT = "ChatVein/0.1 (+https://github.com/chatvein; SkillHub browse)"
 
 
 def category_catalog() -> list[dict[str, str]]:
+    """输出前端筛选下拉用的分类字典（[{id, label}, ...]）。"""
     return [{"id": key, "label": label} for key, label in CATEGORY_LABELS.items()]
 
 
 def _prefer_text(*candidates: Any) -> str:
+    """按顺序挑选第一个非空字符串，用作字段兜底（中文优先于英文等）。"""
     for value in candidates:
         if isinstance(value, str) and value.strip():
             return value.strip()
     return ""
 
 
+def _as_dict(value: Any) -> dict[str, Any]:
+    """把可能为 dict 的值安全归一为 dict（非 dict 时返回空字典）。"""
+    return value if isinstance(value, dict) else {}
+
+
+def _as_list(value: Any) -> list[Any]:
+    """把可能为 list 的值安全归一为 list（非 list 时返回空列表）。"""
+    return value if isinstance(value, list) else []
+
+
 def _publisher_name(raw: dict[str, Any]) -> str:
+    """从列表项里挖发布方名字：publisher → namespace → ownerName → handle。"""
     publisher = raw.get("publisher")
     if isinstance(publisher, dict):
         name = _prefer_text(publisher.get("name"), publisher.get("certifiedName"))
@@ -72,12 +92,14 @@ def _publisher_name(raw: dict[str, Any]) -> str:
 
 
 def _homepage_for(slug: str, homepage: str = "") -> str:
+    """当 SkillHub 返回的 homepage 缺失或指向自家 API 时，兜底成站点页 URL。"""
     if slug and (not homepage.startswith("http") or "api.skillhub.cn" in homepage):
         return f"{SKILLHUB_SITE}/skills/{slug}"
     return homepage
 
 
 def _normalize_skill(raw: dict[str, Any]) -> dict[str, Any]:
+    """把 SkillHub 列表接口的一条原始记录翻译成前端卡片需要的字段。"""
     slug = _prefer_text(raw.get("slug"))
     category = _prefer_text(raw.get("category"))
     sub_names: list[str] = []
@@ -109,6 +131,7 @@ def _normalize_skill(raw: dict[str, Any]) -> dict[str, Any]:
 
 
 def _http_client() -> httpx.Client:
+    """构造 SkillHub 请求用的 httpx 客户端（统一超时和 UA）。"""
     return httpx.Client(
         timeout=_DEFAULT_TIMEOUT,
         headers={"User-Agent": _USER_AGENT, "Accept": "application/json"},
@@ -117,6 +140,7 @@ def _http_client() -> httpx.Client:
 
 
 def _raise_http(exc: Exception) -> None:
+    """把 httpx / json 异常翻译成面向用户的中文报错（供 controller 转 HTTPException）。"""
     if isinstance(exc, httpx.TimeoutException):
         raise RuntimeError("SkillHub 请求超时，请稍后重试") from exc
     if isinstance(exc, httpx.HTTPStatusError):
@@ -132,6 +156,7 @@ def _raise_http(exc: Exception) -> None:
 
 
 def _security_reports(raw: dict[str, Any] | None) -> list[dict[str, str]]:
+    """整理第三方安全扫描结论（provider → status / statusText / reportUrl）。"""
     if not isinstance(raw, dict):
         return []
     reports: list[dict[str, str]] = []
@@ -157,21 +182,16 @@ def _security_reports(raw: dict[str, Any] | None) -> list[dict[str, str]]:
 def _normalize_detail(
     payload: dict[str, Any], *, skill_md: str | None = None
 ) -> dict[str, Any]:
-    skill = payload.get("skill") if isinstance(payload.get("skill"), dict) else {}
+    """把 SkillHub 详情接口 payload 翻译成前端抽屉需要的字段结构。"""
+    skill = _as_dict(payload.get("skill"))
     slug = _prefer_text(payload.get("slug"), skill.get("slug"))
     if not slug:
         raise RuntimeError("SkillHub 详情缺少 slug")
 
-    stats = skill.get("stats") if isinstance(skill.get("stats"), dict) else {}
-    latest = (
-        payload.get("latestVersion")
-        if isinstance(payload.get("latestVersion"), dict)
-        else {}
-    )
-    owner = payload.get("owner") if isinstance(payload.get("owner"), dict) else {}
-    namespace = (
-        payload.get("namespace") if isinstance(payload.get("namespace"), dict) else {}
-    )
+    stats = _as_dict(skill.get("stats"))
+    latest = _as_dict(payload.get("latestVersion"))
+    owner = _as_dict(payload.get("owner"))
+    namespace = _as_dict(payload.get("namespace"))
     category = _prefer_text(skill.get("category"))
     sub_names: list[str] = []
     for item in skill.get("subCategories") or []:
@@ -186,7 +206,7 @@ def _normalize_detail(
         namespace.get("displayName"),
         namespace.get("handle"),
     )
-    tags = skill.get("tags") if isinstance(skill.get("tags"), dict) else {}
+    tags = _as_dict(skill.get("tags"))
     version = _prefer_text(latest.get("version"), tags.get("latest"))
     updated_at = skill.get("updatedAt")
     if updated_at is None:
@@ -266,7 +286,7 @@ def list_skills(
     data = payload.get("data")
     if not isinstance(data, dict):
         data = {}
-    raw_skills = data.get("skills") if isinstance(data.get("skills"), list) else []
+    raw_skills = _as_list(data.get("skills"))
     skills = [
         _normalize_skill(item)
         for item in raw_skills
@@ -328,7 +348,7 @@ def get_skill(slug: str) -> dict[str, Any]:
 
 
 def install_from_hub(slug: str) -> dict[str, Any]:
-    """拉取详情并安装到本机。"""
+    """拉取详情并安装到本机。返回对象里带 local 字段供前端展示落盘信息。"""
     detail = get_skill(slug)
     installed = local_store.install_skill(detail)
     detail["installed"] = True
@@ -337,15 +357,23 @@ def install_from_hub(slug: str) -> dict[str, Any]:
 
 
 def uninstall_local(slug: str) -> dict[str, Any]:
+    """卸载本机技能：直接删掉 <data>/skills/<slug>/ 整个目录。"""
     removed = local_store.uninstall_skill(slug)
     return {"slug": slug, "removed": removed}
 
 
 def list_local_skills() -> dict[str, Any]:
+    """列出本机已安装技能，供聊天附件选择器渲染。"""
     rows = local_store.list_installed()
     return {"skills": rows, "total": len(rows)}
 
 
 def skill_prompt_blocks(slugs: list[str] | None) -> str:
+    """接线入口：把已选 slug 集合拼成多段 SKILL.md 文本块，供 main.py 注入 role prompt。
+
+    - 忽略空列表和未安装的 slug（load_skill_blocks 已经过滤）；
+    - 按 (1.0, ...) 权重降序拼接，头部技能优先被模型读到；
+    - 超长会按 skill_prompt_max_chars 截断。
+    """
     blocks = local_store.load_skill_blocks(slugs)
     return local_store.format_skills_for_prompt(blocks)

@@ -93,6 +93,8 @@ class ChatRequest(BaseModel):
     message: str = Field(min_length=1, max_length=32000)
     conversation_id: str | None = Field(default=None, max_length=64)
     role_id: str | None = Field(default=None, max_length=64)
+    # 已选技能 slug 列表：由前端 Composer 从「附件菜单 → Skill」里勾选后带上；
+    # chat() 里用它去查本机 <data>/skills/<slug>/ 目录，把 SKILL.md 正文注入 role prompt。
     skills: list[str] | None = Field(default=None, max_length=16)
 
 
@@ -136,6 +138,11 @@ def chat(req: ChatRequest):
         conversation_id=prepared["id"],
         limit=memory_limit,
     )
+    # --- 技能接线 ---
+    # 1) skill_prompt_blocks 读取本机 <data>/skills/<slug>/SKILL.md 并拼成文本块
+    #    （按权重排序、超长截断；未安装的 slug 会被过滤）
+    # 2) 有角色：把技能正文追加到角色 prompt 之后，模型先看角色再看技能
+    # 3) 无角色：把技能正文直接当 role_runtime.prompt，工具面默认放开
     skill_block = skill_prompt_blocks(req.skills)
     if skill_block and role_runtime is not None:
         role_runtime = {

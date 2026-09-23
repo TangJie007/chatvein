@@ -12,7 +12,9 @@ const MIN_H = LINE_HEIGHT + PADDING_Y;
 const MAX_H = LINE_HEIGHT * MAX_LINES + PADDING_Y;
 
 export type ComposerSkill = {
+  /** SkillHub slug；对应本机 <data>/skills/<slug>/ 目录 */
   slug: string;
+  /** 展示名，用于底部 chip；发给后端时只用 slug */
   name: string;
 };
 
@@ -85,6 +87,8 @@ export function Composer({
   const [skillLoading, setSkillLoading] = useState(false);
   const [dragActive, setDragActive] = useState(false);
 
+  // 技能附件面板打开时：并行拉「已安装」+「SkillHub 搜索」，去重后合成为下拉。
+  // 已安装的在前，用户勾选后走 skill 附件链路（提交时只发 slug 给后端）。
   useEffect(() => {
     if (!skillOpen) return;
     let cancelled = false;
@@ -215,6 +219,8 @@ export function Composer({
     onRestored?.();
   }, [restoreText, onRestored]);
 
+  // 发送：拼出带本地文件路径的最终文案，并把 skills（含 slug）交给父组件。
+  // 发送后立即清空 skills / files / skillOpen，避免下一条消息误带旧附件。
   const submit = () => {
     const text = draft.trim();
     if (!text || sending) return;
@@ -270,6 +276,8 @@ export function Composer({
     }
   };
 
+  // 勾选一条技能：按 slug 去重追加到已选，然后收起面板、清空搜索词。
+  // 已选列表会在 UI 上以 chip 形式展示，发送时随消息一起提交。
   const attachSkill = (item: SkillHubItem) => {
     setSkills((prev) =>
       prev.some((s) => s.slug === item.slug)

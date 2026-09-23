@@ -1,12 +1,15 @@
 import { debounce } from "es-toolkit";
 import {
+  Check,
   ExternalLink,
   Loader2,
   Search,
   Sparkles,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  installSkill,
+  listInstalledSkills,
   listSkills,
   type SkillCategory,
   type SkillHubItem,
@@ -35,10 +38,22 @@ function formatCount(n: number): string {
 
 function SkillCard({
   skill,
+  installed,
+  installing,
+  installError,
   onOpen,
+  onInstall,
 }: {
   skill: SkillHubItem;
+  /** 是否已安装到本机（决定按钮文案与形态）。 */
+  installed: boolean;
+  /** 该卡片正处于「正在安装」的下载流程中。 */
+  installing: boolean;
+  /** 卡片安装失败时的错误文案；成功态不需要传。 */
+  installError: string | null;
   onOpen: (skill: SkillHubItem) => void;
+  /** 点击下载到本机：调后端 POST /api/skills/{slug}/install。 */
+  onInstall: (skill: SkillHubItem) => void;
 }) {
   return (
     <article
@@ -95,20 +110,42 @@ function SkillCard({
       </div>
 
       <div className="mt-auto flex items-center gap-2 pt-0.5">
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <span
-              className="flex-1"
-              onClick={(e) => e.stopPropagation()}
-              onKeyDown={(e) => e.stopPropagation()}
-            >
-              <Button variant="tint" size="sm" className="w-full" disabled>
-                安装
-              </Button>
-            </span>
-          </TooltipTrigger>
-          <TooltipContent>安装能力即将支持</TooltipContent>
-        </Tooltip>
+        {installed ? (
+          <span className="inline-flex flex-1 items-center justify-center gap-1 rounded-lg bg-ok-500/15 px-2.5 py-1.5 text-[12px] font-medium text-ok-700">
+            <Check className="size-3.5" strokeWidth={2} />
+            已安装
+          </span>
+        ) : (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span
+                className="flex-1"
+                onClick={(e) => e.stopPropagation()}
+                onKeyDown={(e) => e.stopPropagation()}
+              >
+                <Button
+                  variant="tint"
+                  size="sm"
+                  className="w-full"
+                  disabled={installing}
+                  onClick={() => onInstall(skill)}
+                >
+                  {installing ? (
+                    <>
+                      <Loader2 className="size-3.5 animate-spin" strokeWidth={1.75} />
+                      下载中
+                    </>
+                  ) : (
+                    "安装"
+                  )}
+                </Button>
+              </span>
+            </TooltipTrigger>
+            <TooltipContent>
+              {installError ?? "下载 SKILL.md 到本机 skills 目录"}
+            </TooltipContent>
+          </Tooltip>
+        )}
         {skill.homepage && (
           <Button
             variant="ghost"
@@ -143,6 +180,64 @@ export function SkillsView() {
   const [refreshKey, setRefreshKey] = useState(0);
   const [selected, setSelected] = useState<SkillHubItem | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
+
+  // 已安装技能 slug 集合：卡片据此切换「安装 / 已安装」两态。
+  const [installedSet, setInstalledSet] = useState<Set<string>>(new Set());
+  // 正在下载的 slug（同时只有一个，避免并发安装同一技能）。
+  const [installingSlug, setInstallingSlug] = useState<string | null>(null);
+  // 最近一次安装失败的错误文案（slug → 消息），下一次点击时清空。
+  const [installErrors, setInstallErrors] = useState<
+    Record<string, string | null>
+  >({});
+
+  // 打开页面时先把本机已安装列表拉下来，卡片才能正确显示「已安装」态。
+  useEffect(() => {
+    let cancelled = false;
+    void listInstalledSkills()
+      .then((data) => {
+        if (cancelled) return;
+        setInstalledSet(new Set(data.skills.map((s) => s.slug)));
+      })
+      .catch(() => {
+        /* 后端未就绪时忽略；用户点安装时会自行报错 */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [refreshKey]);
+
+  // 下载链路入口：POST /api/skills/{slug}/install → 后端拉 SKILL.md 落到本机目录。
+  const handleInstall = useCallback(async (skill: SkillHubItem) => {
+    if (installedSet.has(skill.slug) || installingSlug) return;
+    setInstallingSlug(skill.slug);
+    setInstallErrors((prev) => ({ ...prev, [skill.slug]: null }));
+    try {
+      // 后端一次请求内部会：先拉详情、再拉 SKILL.md、再写盘。
+      await installSkill(skill.slug);
+      setInstalledSet((prev) => {
+        const next = new Set(prev);
+        next.add(skill.slug);
+        return next;
+      });
+    } catch (err) {
+      setInstallErrors((prev) => ({
+        ...prev,
+        [skill.slug]: err instanceof Error ? err.message : String(err),
+      }));
+    } finally {
+      setInstallingSlug(null);
+    }
+  }, [installedSet, installingSlug]);
+
+  // 抽屉内的安装 / 卸载结果回灌：包装成稳定引用，避免子组件 effect 反复触发。
+  const handleInstallChange = useCallback((slug: string, isInstalled: boolean) => {
+    setInstalledSet((prev) => {
+      const next = new Set(prev);
+      if (isInstalled) next.add(slug);
+      else next.delete(slug);
+      return next;
+    });
+  }, []);
 
   const applyKeyword = useMemo(
     () =>
@@ -339,7 +434,13 @@ export function SkillsView() {
                   <SkillCard
                     key={`${skill.slug}-${skill.version}-${index}`}
                     skill={skill}
+                    installed={installedSet.has(skill.slug)}
+                    installing={installingSlug === skill.slug}
+                    installError={installErrors[skill.slug] ?? null}
                     onOpen={openDetail}
+                    onInstall={(s) => {
+                      void handleInstall(s);
+                    }}
                   />
                 ))}
               </div>
@@ -373,6 +474,7 @@ export function SkillsView() {
         skill={selected}
         open={detailOpen}
         onOpenChange={setDetailOpen}
+        onInstallChange={handleInstallChange}
       />
     </div>
   );

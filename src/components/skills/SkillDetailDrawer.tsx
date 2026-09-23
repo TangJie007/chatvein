@@ -42,12 +42,15 @@ type SkillDetailDrawerProps = {
   skill: SkillHubItem | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** 抽屉里成功安装 / 卸载时回调，父组件据此同步卡片状态。 */
+  onInstallChange?: (slug: string, installed: boolean) => void;
 };
 
 export function SkillDetailDrawer({
   skill,
   open,
   onOpenChange,
+  onInstallChange,
 }: SkillDetailDrawerProps) {
   const [detail, setDetail] = useState<SkillHubDetail | null>(null);
   const [loading, setLoading] = useState(false);
@@ -73,6 +76,8 @@ export function SkillDetailDrawer({
       .then((data) => {
         if (cancelled) return;
         setDetail(data);
+        // 首次拉到详情时同步一次已安装状态：让父组件的卡片也保持一致。
+        onInstallChange?.(skill.slug, Boolean(data.installed));
       })
       .catch((err) => {
         if (cancelled) return;
@@ -85,7 +90,7 @@ export function SkillDetailDrawer({
     return () => {
       cancelled = true;
     };
-  }, [open, skill?.slug, refreshKey]);
+  }, [open, skill?.slug, refreshKey, onInstallChange]);
 
   const title = detail?.name || skill?.name || "技能详情";
   const description =
@@ -105,9 +110,11 @@ export function SkillDetailDrawer({
       if (installed) {
         await uninstallSkill(skill.slug);
         setDetail((prev) => (prev ? { ...prev, installed: false } : prev));
+        onInstallChange?.(skill.slug, false);
       } else {
         const next = await installSkill(skill.slug);
         setDetail(next);
+        onInstallChange?.(skill.slug, true);
       }
     } catch (err) {
       setInstallError(err instanceof Error ? err.message : String(err));

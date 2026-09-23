@@ -397,6 +397,9 @@ export function ChatView({
       { id: optimisticId, role: "user", content: text },
       { id: pendingId, role: "agent", content: "", streaming: true },
     ]);
+  // Composer 把带 slug 的技能数组回传过来；这里只发 slug（后端按 slug 找到
+  // 本机 <data>/skills/<slug>/SKILL.md 注入 role prompt）。用户看到的 chip 名字
+  // 只是本地 UI，不进入 API 请求体。
     try {
       const result = await sendChat(
         text,
