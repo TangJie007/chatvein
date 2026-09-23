@@ -1,6 +1,7 @@
 import {
   AppWindow,
   ChevronRight,
+  Clock,
   Database,
   FileText,
   FolderClosed,
@@ -23,6 +24,7 @@ import type { McpKind, McpServer } from "./prefs";
 import { Card, CardAction, Note } from "./primitives";
 
 const KIND_ICON: Record<McpKind, LucideIcon> = {
+  core: Clock,
   db: Database,
   fs: FolderClosed,
   web: Globe,

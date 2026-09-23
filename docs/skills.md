@@ -165,8 +165,8 @@ MCP 工具（执行能力）     ──→  真正"怎么做"
 | `main.py` | `chat()` 技能接线段（`merged_slugs` → `skill_prompt_blocks` → 追加 `role_runtime["prompt"]` → 下传 `_skill_slugs`） | **注入核心拼装点** |
 | `mcps/tools/skills.py` | `@tool load_skill(slug)` / `TOOLS` / `heuristic()` | 按需拉取 SKILL.md 正文的工具 |
 | `mcps/tools/__init__.py` | `build_tool_groups` → `"mcp-skills"` 分组 | 工具分组挂载（恒常驻） |
-| `agents/graphs/common.py` | `ALWAYS_ON_TOOLS = ("load_skill", "sandbox_run_python")` | 聊天常驻工具，绕过选型 / 角色白名单 |
-| `agents/graphs/medium.py` / `hard.py` | `react_node`（`names = [*selected, *ALWAYS_ON_TOOLS]`） | 工具列表组装，无条件挂 `load_skill` |
+| `agents/graphs/common.py` | `ALWAYS_ON_TOOLS = ("load_skill", "sandbox_run_python", "get_current_time")` | 聊天常驻工具，绕过选型 / 角色白名单 |
+| `agents/graphs/medium.py` / `hard.py` | `react_node`（`names = [*selected, *ALWAYS_ON_TOOLS]`） | 工具列表组装，无条件挂 `load_skill` 等常驻工具 |
 | `agents/graphs/pipeline.py` | `_merged_system(role, base)` | simple 分支 system prompt 组装 |
 | `agents/graphs/prompts.py` | `build_agent_system(role_prompt=...)` | `# Role` 段置于宪法最前（**最终落地点**） |
 | `agents/llm.py` | `get_chat_model` | 按 `role.model_id` 发出模型请求 |

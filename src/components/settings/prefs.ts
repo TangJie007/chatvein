@@ -18,6 +18,7 @@ export const DEFAULT_PREFS: AppPrefs = {
 };
 
 export type McpKind =
+  | "core"
   | "db"
   | "fs"
   | "web"
@@ -44,6 +45,17 @@ export type McpServer = {
 
 /** 随应用分发的内置协议服务；启用状态由用户覆盖后写回 localStorage。 */
 export const MCP_SERVERS: McpServer[] = [
+  {
+    id: "core",
+    name: "时间 / 计算 / 本机",
+    kind: "core",
+    builtin: true,
+    desc: "当前时间、时区换算、算术计算、本机概况（系统与磁盘）、ChatVein 数据库概况与已配置模型列表。",
+    transport: "本机进程",
+    cmd: "builtin://core",
+    tools: 6,
+    enabled: true,
+  },
   {
     id: "mcp-sqlite",
     name: "SQLite",

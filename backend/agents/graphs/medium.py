@@ -82,7 +82,8 @@ def build_medium_graph(
         selected = list(state.get("selected_tools") or [])
         # 常驻工具：不参与 select_tools 选型 / 角色白名单过滤，无条件挂进工具列表。
         # （技能目录已注入 role prompt，模型按需调用 load_skill；sandbox_run_python
-        #  同 load_skill 一样始终可用，调用失败时工具会返回引导信息。）
+        #  同 load_skill 一样始终可用，调用失败时工具会返回引导信息；get_current_time
+        #  让时间类问题无需选型命中、也无需角色勾选 core 分组即可拿到准确时间。）
         names = list(dict.fromkeys([*selected, *ALWAYS_ON_TOOLS]))
         tools = resolve_tools(names)
         model = llm_mod.get_chat_model(

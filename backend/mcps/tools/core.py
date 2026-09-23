@@ -108,10 +108,18 @@ def _disk(path: Path) -> dict[str, object]:
 
 @tool
 def get_current_time(timezone: str = "") -> str:
-    """获取指定时区的当前时间（对齐 WorkBuddy / mcp-server-time）。
+    """获取指定时区的当前日期与时间（对齐 mcp-server-time）。
 
-    ``timezone`` 为 IANA 名（如 ``Asia/Shanghai``、``America/New_York``）。
-    留空则用本机时区（可用环境变量 ``CHATVEIN_LOCAL_TIMEZONE`` 覆盖）。
+    ``timezone`` 填 IANA 时区名（如 ``Asia/Shanghai``、``America/New_York``）；
+    留空则用本机时区。返回 JSON：``timezone`` / ``datetime``（ISO-8601，精确到秒）/ ``is_dst``。
+
+    示例：
+    - 用户问「现在几点」→ ``get_current_time("")``
+      → ``{"timezone": "Asia/Shanghai", "datetime": "2026-09-24T14:05:30+08:00", "is_dst": false}``
+    - 用户问「纽约现在几点」→ ``get_current_time("America/New_York")``
+      → ``{"timezone": "America/New_York", "datetime": "2026-09-24T02:05:30-04:00", "is_dst": true}``
+
+    不要用它做日期推算或时区换算，那种情况用 ``convert_time``。
     """
     label = (timezone or "").strip() or _local_tz_name()
     try:
@@ -123,9 +131,19 @@ def get_current_time(timezone: str = "") -> str:
 
 @tool
 def convert_time(source_timezone: str, time: str, target_timezone: str) -> str:
-    """在两个时区之间转换时刻（对齐 mcp-server-time 的 convert_time）。
+    """把一个时区的时刻换算到另一个时区（对齐 mcp-server-time 的 convert_time）。
 
-    ``time`` 为 24 小时制 ``HH:MM``（相对「今天」）。返回源/目标时间与时差。
+    参数：``source_timezone`` / ``target_timezone`` 均为 IANA 时区名；``time`` 为 24 小时制
+    ``HH:MM``，按源时区的「今天」解析。返回 JSON：源与目标各自的 ``timezone`` / ``datetime``，
+    以及 ``time_difference``（如 ``"+12h"``）。
+
+    示例：
+    - 用户问「北京早上 9 点是纽约几点」→ ``convert_time("Asia/Shanghai", "09:00", "America/New_York")``
+      → 目标为前一天 ``21:00``，``time_difference`` 为 ``"-12h"``
+    - 用户问「伦敦 18:00 对应我这边几点」→ ``convert_time("Europe/London", "18:00", "Asia/Shanghai")``
+      → 目标为次日 ``01:00``，``time_difference`` 为 ``"+7h"``
+
+    只处理时刻换算，不处理日期加减（如「三天后」需你自己算好日期再用本工具）。
     """
     try:
         source_label = (source_timezone or "").strip() or _local_tz_name()
@@ -167,7 +185,17 @@ def convert_time(source_timezone: str, time: str, target_timezone: str) -> str:
 
 @tool
 def calculator(expression: str) -> str:
-    """计算纯算术表达式，如 ``(1+2)*3``。不执行函数调用或属性访问。"""
+    """计算纯算术表达式，返回数值字符串。
+
+    只支持数字与 ``+ - * / ** %`` 和括号（``**`` 为幂、``%`` 为取余）。
+    不支持函数调用、变量、字符串与属性访问；带单位或中文请先转成纯数字算式。
+
+    示例：
+    - 用户问「(1+2)*3 等于多少」→ ``calculator("(1+2)*3")`` → ``9.0``
+    - 用户问「128 的 30% 是多少」→ ``calculator("128*0.3")`` → ``38.4``
+
+    只做数值求值；推导过程、单位换算说明与代数求解请自己完成，再把最终算式交给本工具。
+    """
     try:
         value = _eval_arith(ast.parse(expression.strip(), mode="eval"))
     except Exception as exc:  # noqa: BLE001
@@ -177,7 +205,19 @@ def calculator(expression: str) -> str:
 
 @tool
 def get_system_info() -> str:
-    """本机概况：操作系统、架构、主机名、CPU、Python、工作区与数据目录磁盘占用。"""
+    """查看运行 ChatVein 的这台机器的概况，无需参数。
+
+    返回 JSON：``os`` / ``os_release`` / ``arch`` / ``hostname`` / ``cpu_count`` / ``python`` /
+    ``local_timezone`` / ``workspace``（主空间绝对路径）/ ``workspace_disk``（总容量与剩余，
+    单位字节）/ ``data_dir`` / ``data_disk``。
+
+    示例：
+    - 用户问「我这台机器什么系统、几核」→ ``get_system_info()``
+      → ``{"os": "Windows", "arch": "AMD64", "cpu_count": 16, "python": "3.13.0", ...}``
+    - 用户问「工作区还剩多少空间」→ ``get_system_info()`` 后读 ``workspace_disk.free_bytes``
+
+    磁盘数值单位是字节，回答前请换算成 KB / MB / GB。
+    """
     data_raw = (os.environ.get("CHATVEIN_DATA_DIR") or "").strip()
     try:
         root = workspace_root()
@@ -205,7 +245,18 @@ def get_system_info() -> str:
 
 @tool
 def db_stats() -> str:
-    """返回本地 ChatVein SQLite 概况（路径、schema、会话/消息数）。"""
+    """查看 ChatVein 本地 SQLite 的概况，无需参数。
+
+    返回一行文本：``path``（库文件绝对路径）、``schema`` 版本、``conversations``（会话数）、
+    ``messages``（消息数）。
+
+    示例：
+    - 用户问「数据库里有多少会话」→ ``db_stats()``
+      → ``path=E:/project/chatvein/backend/data/chatvein.db schema=v3 conversations=12 messages=86``
+    - 用户问「库文件在哪、多大」→ 先 ``db_stats()`` 取 ``path``，再用文件系统工具查大小
+
+    只给概况，不查表内容；要看表结构或跑 SELECT 请用 SQLite 分组的只读工具。
+    """
     info = db.info()
     return (
         f"path={info.get('path')} schema=v{info.get('schema_version')} "
@@ -215,7 +266,18 @@ def db_stats() -> str:
 
 @tool
 def list_configured_models() -> str:
-    """列出已配置的 LLM。"""
+    """列出用户已在「模型」页配置好的大语言模型，无需参数。
+
+    每行一个模型，格式为 ``- 名称 (model_id)``；一个都没配时返回「尚未配置任何模型」。
+
+    示例：
+    - 用户问「我现在配了哪些模型」→ ``list_configured_models()``
+      → 两行结果：``- 主模型 (gpt-4o-mini)`` 和 ``- 深度思考 (deepseek-chat)``
+    - 用户问「为什么不能回答」→ 用它确认是否有模型；返回「尚未配置任何模型」时，
+      提示用户先到「模型」页添加模型并在「角色」页绑定
+
+    只列名称与模型 id；不含 API Key、温度等细节，也不负责切换当前使用的模型。
+    """
     models = ModelsService().list_models()
     if not models:
         return "尚未配置任何模型"

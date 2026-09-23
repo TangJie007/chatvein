@@ -77,7 +77,9 @@ def allowed_from_role(role: dict[str, Any] | None) -> list[str] | None:
 #: react 阶段无条件挂进本轮工具列表（模型仍按需调用）。
 #: - load_skill：加载已启用技能正文（目录已注入 role prompt，模型按需拉全文）
 #: - sandbox_run_python（UI 亦称 runcode）：代码沙箱执行 Python
-ALWAYS_ON_TOOLS: tuple[str, ...] = ("load_skill", "sandbox_run_python")
+#: - get_current_time：当前时间 / 时区。时间类问题极常见且必须准确，
+#:   不能依赖选型命中或角色勾选，故常驻（时区换算仍走 convert_time，由选型带上）
+ALWAYS_ON_TOOLS: tuple[str, ...] = ("load_skill", "sandbox_run_python", "get_current_time")
 
 
 def tool_call_fingerprint(name: str, args: Any) -> str:
