@@ -32,6 +32,8 @@ import {
   type InsightThreadItem,
 } from "../chat/InsightPanel";
 import { SessionList, type SessionItem } from "../chat/SessionList";
+import { CreatingOverlay } from "../chat/CreatingOverlay";
+import { ConfirmDialog } from "../ui/confirm-dialog";
 import { openTraceWindow } from "../../lib/openTrace";
 import { VIEW_PATH } from "../../types/view";
 
@@ -40,6 +42,19 @@ dayjs.locale("zh-cn");
 
 /** Survives ChatView remount so sticky newRequestId from App doesn't re-create. */
 let lastHandledNewRequestId = 0;
+
+/**
+ * 新建会话的初始化步骤。后续要加阶段（知识库索引 / 技能挂载 / 沙箱预热等）
+ * 只往这里加文案，驱动逻辑按顺序推进即可。
+ */
+const CREATE_STEPS = ["创建会话", "初始化工作区", "准备就绪"] as const;
+/** 创建请求通常几十毫秒就返回；至少展示 1s，避免加载提示一闪而过。 */
+const CREATE_MIN_MS = 1000;
+
+const sleep = (ms: number) =>
+  new Promise<void>((resolve) => {
+    window.setTimeout(resolve, ms);
+  });
 
 const AVATAR_COLORS = [
   "bg-brand-600",
@@ -219,6 +234,14 @@ export function ChatView({
   const [liveSteps, setLiveSteps] = useState<InsightStep[]>([]);
   /** 本轮回复已就地回填到占位气泡，切换会话 id 时跳过整表重载（否则气泡会被替换成新组件）。 */
   const skipNextLoadRef = useRef<string | null>(null);
+  /** 新建会话进行中的步骤下标；null 表示不在创建中（遮罩隐藏）。 */
+  const [createStep, setCreateStep] = useState<number | null>(null);
+  /** 待二次确认的删除目标。 */
+  const [pendingDelete, setPendingDelete] = useState<{
+    id: string;
+    title: string;
+  } | null>(null);
+  const [deleting, setDeleting] = useState(false);
   /** 发送前主库已落库的最大消息 id；清理时只删 id 更大的本轮。 */
   const lastPersistedIdRef = useRef(0);
   /** 本次 abort 的意图：catch 里用来决定要不要展示「已取消」提示。 */
@@ -278,6 +301,42 @@ export function ChatView({
       setWorkspace(null);
     }
   }, []);
+
+  /**
+   * 新建会话：按 CREATE_STEPS 推进遮罩，且每一步都有最短展示时长
+   * （创建本身通常 <100ms，不兜一下就是一闪而过）。失败时返回 null 并把错误交给 setError。
+   */
+  const creatingRef = useRef(false);
+  const createConversationWithProgress = useCallback(async () => {
+    // 连点「新建」时只跑一次：否则两个会话一起建，遮罩也会被前一个收尾提前关掉。
+    if (creatingRef.current) return null;
+    creatingRef.current = true;
+    setCreateStep(0);
+    try {
+      const [created] = await Promise.all([
+        createConversation(""),
+        sleep(CREATE_MIN_MS),
+      ]);
+      setCreateStep(1);
+      // 工作区目录 / 会话库初始化：等后端真正就绪，也给后续初始化步骤留好位置。
+      const [ws] = await Promise.all([
+        getConversationWorkspace(created.id).catch(() => null),
+        sleep(280),
+      ]);
+      if (ws) setWorkspace(ws);
+      setCreateStep(2);
+      await sleep(220);
+      setCreateStep(CREATE_STEPS.length);
+      await sleep(240);
+      return created;
+    } catch (err) {
+      setError(errorMessage(err));
+      return null;
+    } finally {
+      creatingRef.current = false;
+      setCreateStep(null);
+    }
+  }, [setError]);
 
   useEffect(() => {
     let cancelled = false;
@@ -358,28 +417,23 @@ export function ChatView({
       void (async () => {
         if (cancelled || newRequestId === lastHandledNewRequestId) return;
         lastHandledNewRequestId = newRequestId;
-        try {
-          const created = await createConversation("");
-          if (cancelled) return;
-          await refreshListRef.current();
-          if (cancelled) return;
-          selectConversation(created.id);
-          setMessages([]);
-          setComposerSkills([]);
-          setMetaById((prev) => ({ ...prev, [created.id]: {} }));
-          setError(null);
-        } catch (err) {
-          if (!cancelled) {
-            setError(err instanceof Error ? err.message : String(err));
-          }
-        }
+        // 走带初始化进度的创建流程（至少 1s 的加载提示，成功后才切过去）。
+        const created = await createConversationWithProgress();
+        if (cancelled || !created) return;
+        await refreshListRef.current();
+        if (cancelled) return;
+        selectConversation(created.id);
+        setMessages([]);
+        setComposerSkills([]);
+        setMetaById((prev) => ({ ...prev, [created.id]: {} }));
+        setError(null);
       })();
     }, 0);
     return () => {
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [newRequestId, selectConversation]);
+  }, [newRequestId, selectConversation, createConversationWithProgress]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -680,31 +734,41 @@ export function ChatView({
     return null;
   }, [liveSteps]);
 
-  const handleDelete = useCallback(
-    async (id: string) => {
+  /** 点删除：只打开二次确认，真正删除等用户确认。 */
+  const requestDelete = useCallback(
+    (id: string) => {
       const target = sessions.find((s) => s.id === id);
-      if (!window.confirm(`确定删除会话「${target?.title ?? ""}」？工作区文件也会一并清除。`)) {
-        return;
-      }
-      try {
-        await deleteConversation(id);
-        const rows = await refreshList();
-        if (activeId === id) {
-          const next = rows[0]?.id ?? null;
-          selectConversation(next);
-          if (!next) {
-            setMessages([]);
-            setWorkspace(null);
-            setSelectedTurnId(null);
-          }
-        }
-        setError(null);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : String(err));
-      }
+      setPendingDelete({ id, title: target?.title ?? "该会话" });
     },
-    [activeId, refreshList, selectConversation, sessions]
+    [sessions]
   );
+
+  const confirmDelete = useCallback(async () => {
+    const target = pendingDelete;
+    if (!target || deleting) return;
+    setDeleting(true);
+    try {
+      await deleteConversation(target.id);
+      const rows = await refreshList();
+      if (activeId === target.id) {
+        const next = rows[0]?.id ?? null;
+        selectConversation(next);
+        if (!next) {
+          setMessages([]);
+          setWorkspace(null);
+          setSelectedTurnId(null);
+        }
+      }
+      setError(null);
+      setPendingDelete(null);
+    } catch (err) {
+      // 关掉弹窗，让后端错误显示在会话区（否则被弹窗挡住看不见）。
+      setPendingDelete(null);
+      setError(errorMessage(err));
+    } finally {
+      setDeleting(false);
+    }
+  }, [activeId, deleting, pendingDelete, refreshList, selectConversation, setError]);
 
   return (
     <>
@@ -712,13 +776,11 @@ export function ChatView({
         sessions={filtered}
         activeId={activeId}
         onSelect={(id) => selectConversation(id)}
-        onDelete={(id) => {
-          void handleDelete(id);
-        }}
+        onDelete={requestDelete}
         query={query}
         onQueryChange={setQuery}
       />
-      <div className="flex min-h-0 min-w-0 flex-1">
+      <div className="relative flex min-h-0 min-w-0 flex-1">
         <ChatPanel
           session={session}
           messages={messages}
@@ -771,7 +833,31 @@ export function ChatView({
           onSkillsChange={handleSkillsChange}
           residentSkills={activeRole?.resident_skills ?? []}
         />
+        {/* 新建会话：工作区初始化的分阶段进度（至少展示 1s） */}
+        {createStep !== null ? (
+          <CreatingOverlay steps={CREATE_STEPS} active={createStep} />
+        ) : null}
       </div>
+      {/* 删除会话：应用内二次确认，替代 window.confirm */}
+      <ConfirmDialog
+        open={!!pendingDelete}
+        title="删除会话"
+        description={
+          pendingDelete
+            ? `确定删除「${pendingDelete.title}」？该会话的消息与工作区文件会一并清除，且无法恢复。`
+            : undefined
+        }
+        confirmLabel="删除"
+        cancelLabel="取消"
+        tone="danger"
+        busy={deleting}
+        onConfirm={() => {
+          void confirmDelete();
+        }}
+        onCancel={() => {
+          if (!deleting) setPendingDelete(null);
+        }}
+      />
     </>
   );
 }

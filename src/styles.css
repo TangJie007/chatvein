@@ -124,6 +124,14 @@
   }
 }
 
+/* Radix ScrollArea 会把内容包进一个 `display:table` 的容器（内联样式），宽度按内容
+   自适应；代码块的 <pre> 不换行，于是把容器撑到「最长一行」的宽度，而 viewport 横向
+   是 overflow:hidden —— 气泡超出视口的部分被直接裁掉，只有拉宽应用窗口才看得全。
+   改回 block：容器宽度 = 视口宽度，超长代码在代码块内部自己横向滚动。 */
+[data-radix-scroll-area-viewport] > div {
+  display: block !important;
+}
+
 /* 对话气泡里的 Markdown：压过 Streamdown 默认的大标题间距 */
 .chat-md h1,
 .chat-md h2,
@@ -161,6 +169,30 @@
   background: #dce8f4;
   padding: 0.05rem 0.3rem;
   font-size: 12.5px;
+}
+
+/* 代码块 / 表格：最宽不超过气泡宽度，超长行在块内横向滚动，绝不把气泡撑破。
+   （Streamdown 自带 overflow-x-auto，这里兜住宽度，避免任何祖先按内容撑宽时溢出。） */
+.chat-md [data-streamdown="code-block"],
+.chat-md [data-streamdown="code-block-body"],
+.chat-md [data-streamdown="table-wrapper"],
+.chat-md pre,
+.chat-md table {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.chat-md pre {
+  overflow-x: auto;
+}
+
+/* 正文里的超长串（URL、长内联代码）允许断行，避免顶出气泡 */
+.chat-md p,
+.chat-md li,
+.chat-md blockquote,
+.chat-md td,
+.chat-md th {
+  overflow-wrap: anywhere;
 }
 
 /* 气泡内文本选中高亮用品牌色，避免系统默认深蓝/黑块 */
