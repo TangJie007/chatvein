@@ -22,6 +22,9 @@ export const TOOLSET: { id: string; name: string; desc: string }[] = [
   { id: "mcp-ip", name: "IP 归属地", desc: "公网出口与 IP 查库" },
   { id: "mcp-ocr", name: "OCR 识字", desc: "图片文字识别" },
   { id: "mcp-pdf", name: "PDF 处理", desc: "读取 / 合并 / 拆分 / 生成 / 加解密" },
+  { id: "mcp-docx", name: "Word 文档", desc: "生成 / 编辑 .docx（python-docx）" },
+  { id: "mcp-pptx", name: "PPT 演示", desc: "生成 / 编辑 .pptx（python-pptx）" },
+  { id: "mcp-excel", name: "Excel 表格", desc: "生成 / 编辑 .xlsx（openpyxl）" },
 ];
 
 export const DEFAULT_ENABLED_TOOLS = TOOLSET.map((t) => t.id);
