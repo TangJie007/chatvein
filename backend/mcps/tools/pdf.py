@@ -106,6 +106,9 @@ def _write_pdf(path_str: str, writer: PdfWriter) -> str:
     return f"已写出: {out}"
 
 
+_META_KEYS = ("title", "author", "subject", "creator", "producer", "creation_date")
+
+
 def _summary(reader: PdfReader) -> dict[str, object]:
     """加密文件不读 metadata（会抛 FileNotDecryptedError），只回加密标记。"""
     encrypted = bool(getattr(reader, "is_encrypted", False))
@@ -117,7 +120,7 @@ def _summary(reader: PdfReader) -> dict[str, object]:
     if encrypted:
         return info
     meta = getattr(reader, "metadata", None) or {}
-    for key in ("title", "author", "creator"):
+    for key in _META_KEYS:
         try:
             value = str(meta.get(key) or "").strip()
         except Exception:  # noqa: BLE001
@@ -125,6 +128,28 @@ def _summary(reader: PdfReader) -> dict[str, object]:
         if value:
             info[key] = value
     return info
+
+
+def _page_sizes(reader: PdfReader) -> list[str] | None:
+    """每页尺寸（mediabox 宽 x 高，单位 pt）。加密或异常时返回 None。"""
+    try:
+        from pypdf import PdfReader  # noqa: F401  # 复用已打开的 reader
+    except ImportError:
+        return None
+    try:
+        pages = reader.pages
+    except Exception:  # noqa: BLE001
+        return None
+    sizes: list[str] = []
+    for page in pages:
+        try:
+            box = page.mediabox
+            width = float(box.width)
+            height = float(box.height)
+        except Exception:  # noqa: BLE001
+            continue
+        sizes.append(f"{width:.1f}x{height:.1f}pt")
+    return sizes or None
 
 
 @tool
@@ -139,7 +164,11 @@ def pdf_info(path: str) -> str:
         return err or "解析失败"
     info = _summary(reader)
     lines = [f"- 页数: {'未知（已加密）' if info['encrypted'] else info['pages']}", f"- 加密: {info['encrypted']}"]
-    for key in ("title", "author", "creator"):
+    if not info["encrypted"]:
+        sizes = _page_sizes(reader)
+        if sizes:
+            lines.append(f"- 页面尺寸: {', '.join(sizes)}")
+    for key in _META_KEYS:
         if info.get(key):
             lines.append(f"- {key}: {info[key]}")
     if info["encrypted"]:
@@ -283,6 +312,69 @@ def pdf_split(
     if not result.startswith("已写出"):
         return result
     return f"{result}（保留 {len(selected)} 页）"
+
+
+@tool
+def pdf_split_files(
+    path: Annotated[str, Field(description="源 PDF 路径。会话内相对路径；会话外绝对路径并确认。")],
+    output_prefix: Annotated[
+        str | None,
+        Field(description="可选，输出文件前缀，生成 {前缀}_1.pdf、{前缀}_2.pdf …。默认 output/{原名}。父目录须已存在。"),
+    ] = None,
+    pages: Annotated[
+        str | None,
+        Field(description="可选，只拆分指定页，1-indexed。例：'1-3'、'5'。省略则拆分全部页。"),
+    ] = None,
+) -> str:
+    """把 PDF 按页拆成多个独立文件，每页一个。原文件不被修改。"""
+    reader, err = _open_reader(path)
+    if err or reader is None:
+        return err or "解析失败"
+    if getattr(reader, "is_encrypted", False):
+        return f"文件已加密，请先用 pdf_decrypt 解密: {path}"
+
+    page_count = len(reader.pages)
+    if pages:
+        selected, spec_err = _parse_pages(pages, page_count)
+        if spec_err:
+            return spec_err
+        assert selected is not None
+    else:
+        selected = list(range(page_count))
+    try:
+        from pypdf import PdfWriter
+    except ImportError as exc:  # pragma: no cover
+        return f"缺少依赖 pypdf: {exc}"
+
+    if output_prefix:
+        prefix = output_prefix
+    else:
+        stem = Path(path).name or "source"
+        if stem.lower().endswith(".pdf"):
+            stem = stem[:-4]
+        prefix = f"output/{stem}"
+    target, rerr = _resolve(prefix, action="pdf 输出")
+    if rerr or target is None:
+        return rerr or "路径无效"
+    prefix_path = Path(target)
+    if not prefix_path.parent.is_dir():
+        return f"父目录不存在: {prefix_path.parent}"
+
+    written: list[str] = []
+    for index in selected:
+        writer = PdfWriter()
+        writer.add_page(reader.pages[index])
+        dest = Path(f"{prefix_path}_{index + 1}.pdf")
+        try:
+            with dest.open("wb") as handle:
+                writer.write(handle)
+        except Exception as exc:  # noqa: BLE001
+            return f"写出 PDF 失败: {exc}"
+        written.append(str(dest))
+
+    if len(written) == 1:
+        return f"已写出: {written[0]}"
+    return "已拆分 {} 页为 {} 个文件:\n{}".format(len(written), len(written), "\n".join(f"- {item}" for item in written))
 
 
 @tool
@@ -437,6 +529,7 @@ TOOLS: tuple[BaseTool, ...] = (
     pdf_read,
     pdf_merge,
     pdf_split,
+    pdf_split_files,
     pdf_generate,
     pdf_encrypt,
     pdf_decrypt,
@@ -447,6 +540,8 @@ def heuristic(text: str) -> list[str]:
     lowered = text.lower()
     if any(k in lowered for k in ("合并 pdf", "合并两个 pdf", "pdf 合并", "merge pdf", "合成一个 pdf")):
         return ["pdf_merge"]
+    if any(k in lowered for k in ("拆成多个", "每页一个", "拆成单独", "一页一个文件", "按页拆", "split into pages", "split each page", "拆页")):
+        return ["pdf_split_files"]
     if any(k in lowered for k in ("拆分 pdf", "抽取页", "提取第", "拆 pdf", "split pdf", "pdf 拆分")):
         return ["pdf_split"]
     if any(k in lowered for k in ("生成 pdf", "文字转 pdf", "文本转 pdf", "导出 pdf", "制作 pdf", "pdf 生成")):

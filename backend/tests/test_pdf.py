@@ -25,6 +25,7 @@ from mcps.tools.pdf import (
     pdf_merge,
     pdf_read,
     pdf_split,
+    pdf_split_files,
 )
 
 if TYPE_CHECKING:
@@ -74,6 +75,7 @@ def test_pdf_group_registered() -> None:
         "pdf_read",
         "pdf_merge",
         "pdf_split",
+        "pdf_split_files",
         "pdf_generate",
         "pdf_encrypt",
         "pdf_decrypt",
@@ -83,6 +85,7 @@ def test_pdf_group_registered() -> None:
 def test_heuristic() -> None:
     assert pdf_mod.heuristic("合并两个 pdf 文件") == ["pdf_merge"]
     assert pdf_mod.heuristic("帮我拆 pdf") == ["pdf_split"]
+    assert pdf_mod.heuristic("把每页拆成单独文件") == ["pdf_split_files"]
     assert pdf_mod.heuristic("生成 pdf 文档") == ["pdf_generate"]
     assert pdf_mod.heuristic("把这份 pdf 加密") == ["pdf_encrypt"]
     assert pdf_mod.heuristic("帮我把 pdf 解密") == ["pdf_decrypt"]
@@ -103,6 +106,7 @@ def test_info_and_read(sandbox: Path) -> None:
     info = pdf_info.invoke({"path": "a.pdf"})
     assert "页数: 2" in info
     assert "加密: False" in info
+    assert "页面尺寸:" in info
 
     body = pdf_read.invoke({"path": "a.pdf"})
     assert "Hello PDF One" in body
@@ -145,6 +149,26 @@ def test_split(sandbox: Path) -> None:
     assert target.is_file()
     info = pdf_info.invoke({"path": str(target)})
     assert "页数: 2" in info
+
+
+def test_split_files_all(sandbox: Path) -> None:
+    _build_pdf(sandbox / "a.pdf", ["Page A", "Page B", "Page C"])
+    out = pdf_split_files.invoke({"path": "a.pdf"})
+    assert "已拆分 3 页为 3 个文件" in out
+    targets = [sandbox / "output" / f"a_{i}.pdf" for i in range(1, 4)]
+    assert all(t.is_file() for t in targets)
+    assert "Page A" in pdf_read.invoke({"path": str(targets[0])})
+    assert "Page C" in pdf_read.invoke({"path": str(targets[2])})
+
+
+def test_split_files_pages_and_prefix(sandbox: Path) -> None:
+    _build_pdf(sandbox / "a.pdf", ["Page A", "Page B", "Page C"])
+    out = pdf_split_files.invoke({"path": "a.pdf", "pages": "2,3", "output_prefix": "output/chunk"})
+    assert "已拆分 2 页为 2 个文件" in out
+    assert (sandbox / "output" / "chunk_2.pdf").is_file()
+    assert (sandbox / "output" / "chunk_3.pdf").is_file()
+    assert not (sandbox / "output" / "chunk_1.pdf").exists()
+    assert "Page B" in pdf_read.invoke({"path": "output/chunk_2.pdf"})
 
 
 def test_merge(sandbox: Path) -> None:
