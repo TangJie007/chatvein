@@ -2,6 +2,7 @@ import {
   ArrowRight,
   Ban,
   Check,
+  ChevronRight,
   File,
   FolderOpen,
   Image,
@@ -13,7 +14,7 @@ import {
   TriangleAlert,
   Wrench,
 } from "lucide-react";
-import type { ComponentType, ReactNode } from "react";
+import { useState, type ComponentType, type ReactNode } from "react";
 
 export type InsightToolStatus = "ok" | "blocked";
 
@@ -239,9 +240,26 @@ function ToolNode({
 }) {
   const meta = STEP_STATUS[step.status] || STEP_STATUS.ok;
   const StatusIcon = meta.icon;
+  // 工具返回结果默认折叠：头部始终露出工具名与状态，参数 / 结果通过点击展开。
+  const [open, setOpen] = useState(false);
+  const [expandedFull, setExpandedFull] = useState(false);
+  const resultPreview = step.result.slice(0, 260);
+  const hasMore = step.result.length > 260;
+  const hasArgs = step.args.trim().length > 0 && step.args.trim() !== "{}";
+
   return (
     <div className="w-full min-w-0 rounded-xl bg-surface px-2.5 py-2 shadow-soft">
-      <div className="flex min-w-0 items-center gap-1.5">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        title={open ? "收起详情" : "展开参数与结果"}
+        className="flex min-w-0 w-full items-center gap-1.5 text-left focus-visible:outline-2 focus-visible:outline-brand-600 rounded-md"
+      >
+        <ChevronRight
+          className={`size-3 shrink-0 text-ink-400 transition-transform ${open ? "rotate-90" : ""}`}
+          strokeWidth={2}
+        />
         <span className="truncate font-mono text-[11px] font-medium text-brand-700">
           {step.tool}
         </span>
@@ -254,14 +272,31 @@ function ToolNode({
           <StatusIcon />
           {meta.text}
         </span>
-      </div>
-      <code className="mt-1 block w-full rounded-md bg-tint/80 px-1.5 py-0.5 font-mono text-[10px] leading-4 break-all text-ink-500">
-        {step.args}
-      </code>
-      <div className="mt-1 flex min-w-0 items-start gap-1 text-[11px] leading-4 text-ink-500">
-        <ArrowRight className="mt-0.5 size-3 shrink-0 text-ink-400" strokeWidth={1.75} />
-        <span className="min-w-0 flex-1 break-words">{step.result}</span>
-      </div>
+      </button>
+      {open ? (
+        <div className="mt-1.5 flex flex-col gap-1">
+          {hasArgs ? (
+            <code className="block w-full rounded-md bg-tint/80 px-1.5 py-0.5 font-mono text-[10px] leading-4 break-all text-ink-500">
+              {step.args}
+            </code>
+          ) : null}
+          <div className="flex min-w-0 items-start gap-1 text-[11px] leading-4 text-ink-500">
+            <ArrowRight className="mt-0.5 size-3 shrink-0 text-ink-400" strokeWidth={1.75} />
+            <span className="min-w-0 flex-1 break-words">
+              {expandedFull ? step.result : resultPreview}
+            </span>
+          </div>
+          {hasMore ? (
+            <button
+              type="button"
+              onClick={() => setExpandedFull((v) => !v)}
+              className="ml-4 self-start rounded text-[10.5px] text-brand-600 hover:text-brand-700 focus-visible:outline-2 focus-visible:outline-brand-600"
+            >
+              {expandedFull ? "收起" : "展开全文"}
+            </button>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   );
 }

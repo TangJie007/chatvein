@@ -2,7 +2,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Paperclip, Plus, SendHorizontal, Square, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { listInstalledSkills, listSkills, uploadFiles, type SkillHubItem } from "../../api";
+import { listInstalledSkills, uploadFiles, type InstalledSkill } from "../../api";
 import { cn } from "../../lib/cn";
 
 const LINE_HEIGHT = 20;
@@ -82,65 +82,38 @@ export function Composer({
   const [files, setFiles] = useState<ComposerFile[]>([]);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [keyword, setKeyword] = useState("");
-  const [catalog, setCatalog] = useState<SkillHubItem[]>([]);
+  const [catalog, setCatalog] = useState<InstalledSkill[]>([]);
   const [skillError, setSkillError] = useState<string | null>(null);
   const [skillLoading, setSkillLoading] = useState(false);
   const [dragActive, setDragActive] = useState(false);
 
-  // 技能附件面板打开时：并行拉「已安装」+「SkillHub 搜索」，去重后合成为下拉。
-  // 已安装的在前，用户勾选后走 skill 附件链路（提交时只发 slug 给后端）。
+  // 技能附件面板打开时：只拉「已安装」列表；关键词在本地做前缀 / 包含过滤。
+  // 聊天里不允许临时挂未下载的技能——用户需先在技能市场下载，否则后端查不到 SKILL.md。
   useEffect(() => {
     if (!skillOpen) return;
     let cancelled = false;
     const timer = window.setTimeout(() => {
       setSkillLoading(true);
       setSkillError(null);
-      void Promise.all([
-        listInstalledSkills().catch(() => ({
-          skills: [] as Array<{ slug: string; name: string; description: string }>,
-        })),
-        listSkills({ keyword, page: 1, pageSize: 8 }),
-      ])
-        .then(([installed, data]) => {
+      void listInstalledSkills()
+        .then((res) => {
           if (cancelled) return;
-          const local: SkillHubItem[] = installed.skills.map((s) => ({
-            slug: s.slug,
-            name: s.name,
-            description: s.description || "",
-            category: "installed",
-            category_label: "已安装",
-            sub_categories: [],
-            downloads: 0,
-            installs: 0,
-            stars: 0,
-            version: "",
-            icon_url: null,
-            homepage: "",
-            publisher: "",
-            source: "local",
-            verified: true,
-            updated_at: null,
-          }));
-          const remote = data.skills.filter(
-            (s) => !local.some((l) => l.slug === s.slug)
-          );
-          setCatalog([...local, ...remote]);
+          setCatalog(res.skills);
         })
         .catch((err: unknown) => {
-          if (!cancelled) {
-            setCatalog([]);
-            setSkillError(err instanceof Error ? err.message : "技能目录暂不可用");
-          }
+          if (cancelled) return;
+          setCatalog([]);
+          setSkillError(err instanceof Error ? err.message : "技能目录暂不可用");
         })
         .finally(() => {
           if (!cancelled) setSkillLoading(false);
         });
-    }, 250);
+    }, 200);
     return () => {
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [keyword, skillOpen]);
+  }, [skillOpen]);
 
   useEffect(() => {
     if (!skillOpen) return;
@@ -276,9 +249,21 @@ export function Composer({
     }
   };
 
-  // 勾选一条技能：按 slug 去重追加到已选，然后收起面板、清空搜索词。
+  // 本地按关键词过滤（name / description / slug，忽略大小写）；空关键词展示全部。
+  const filteredCatalog = ((): InstalledSkill[] => {
+    const q = keyword.trim().toLowerCase();
+    if (!q) return catalog;
+    return catalog.filter(
+      (s) =>
+        s.name.toLowerCase().includes(q) ||
+        s.description.toLowerCase().includes(q) ||
+        s.slug.toLowerCase().includes(q)
+    );
+  })();
+
+  // 勾选一条已安装的技能：按 slug 去重追加到已选，然后收起面板、清空搜索词。
   // 已选列表会在 UI 上以 chip 形式展示，发送时随消息一起提交。
-  const attachSkill = (item: SkillHubItem) => {
+  const attachSkill = (item: InstalledSkill) => {
     setSkills((prev) =>
       prev.some((s) => s.slug === item.slug)
         ? prev
@@ -328,7 +313,7 @@ export function Composer({
                 <input
                   value={keyword}
                   onChange={(e) => setKeyword(e.target.value)}
-                  placeholder="搜索技能"
+                  placeholder="搜索已安装的技能"
                   className="w-full rounded-lg bg-page px-2.5 py-1.5 text-[12px] text-ink-900 placeholder:text-ink-400 focus:outline-none"
                 />
                 <ul className="mt-1 max-h-52 overflow-auto">
@@ -336,11 +321,15 @@ export function Composer({
                     <li className="px-2 py-2 text-[12px] text-ink-400">加载中…</li>
                   ) : skillError ? (
                     <li className="px-2 py-2 text-[12px] text-danger-600">{skillError}</li>
-                  ) : catalog.length === 0 ? (
-                    <li className="px-2 py-2 text-[12px] text-ink-400">没有匹配的技能</li>
+                  ) : filteredCatalog.length === 0 ? (
+                    <li className="px-2 py-2 text-[12px] text-ink-400">
+                      {catalog.length === 0
+                        ? "还没有安装技能，去「技能」页下载"
+                        : "没有匹配的技能"}
+                    </li>
                   ) : (
-                    catalog.map((item) => (
-                      <li key={`${item.slug}-${item.version}`}>
+                    filteredCatalog.map((item) => (
+                      <li key={item.slug}>
                         <button
                           type="button"
                           onClick={() => attachSkill(item)}
