@@ -27,6 +27,7 @@ export type McpKind =
   | "browser"
   | "geo"
   | "ocr"
+  | "doc"
   | "custom";
 
 export type McpServer = {

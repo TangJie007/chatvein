@@ -2,6 +2,7 @@ import {
   AppWindow,
   ChevronRight,
   Database,
+  FileText,
   FolderClosed,
   Globe,
   Layers,
@@ -31,6 +32,7 @@ const KIND_ICON: Record<McpKind, LucideIcon> = {
   browser: AppWindow,
   geo: MapPin,
   ocr: ScanText,
+  doc: FileText,
   custom: Plug,
 };
 
