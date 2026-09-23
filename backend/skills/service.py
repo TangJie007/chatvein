@@ -369,11 +369,16 @@ def list_local_skills() -> dict[str, Any]:
 
 
 def skill_prompt_blocks(slugs: list[str] | None) -> str:
-    """接线入口：把已选 slug 集合拼成多段 SKILL.md 文本块，供 main.py 注入 role prompt。
+    """接线入口：把已选 slug 集合拼成"技能目录"文本，供 main.py 注入 role prompt。
 
-    - 忽略空列表和未安装的 slug（load_skill_blocks 已经过滤）；
-    - 按 (1.0, ...) 权重降序拼接，头部技能优先被模型读到；
-    - 超长会按 skill_prompt_max_chars 截断。
+    注入的是目录（name + description + slug），不是 SKILL.md 正文：
+    长技能正文由模型在需要时调用 ``load_skill(slug)`` 工具按需拉取，
+    避免一次性占用上下文。
+
+    - 忽略空列表和未安装的 slug（load_skill_catalog 已经过滤）；
+    - 未启用技能时返回空串；
+    - ``load_skill_blocks`` / ``format_skills_for_prompt`` 全文模式仍保留，
+      供测试与需要全文注入的场景使用。
     """
-    blocks = local_store.load_skill_blocks(slugs)
-    return local_store.format_skills_for_prompt(blocks)
+    catalog = local_store.load_skill_catalog(slugs)
+    return local_store.format_skill_catalog_for_prompt(catalog)

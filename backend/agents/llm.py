@@ -23,7 +23,7 @@ from pydantic import SecretStr
 
 from models.service import ModelsService  # pyright: ignore[reportImplicitRelativeImport]
 
-from trace import active_callbacks  # pyright: ignore[reportMissingImports]
+from trace.recording import active_callbacks
 
 WireProfile = Literal["openai", "deepseek"]
 
@@ -110,6 +110,9 @@ def get_chat_model(
     """按 ``role.model_id`` 构造聊天模型；无 role 或未绑模型时返回 None。
 
     不再回退到「主/默认模型」——未绑定模型由上层判定（通常提示用户先配置模型）。
+
+    技能注入：角色的 ``prompt``（含 main.py 拼好的 SKILL.md 技能块）已由调用方
+    作为 system prompt 传给 LangGraph 的 ``create_agent``，模型请求在此发出。
     """
     if not role or not role.get("model_id"):
         return None

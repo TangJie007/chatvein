@@ -7,7 +7,7 @@ from typing import Any, Literal
 from langgraph.graph import END, START, StateGraph
 
 from .. import router
-from trace import complete, note, tracing  # pyright: ignore[reportMissingImports]
+from trace.recording import complete, note, tracing
 from . import hard as hard_mod
 from . import medium as medium_mod
 from . import simple as simple_mod
@@ -19,7 +19,11 @@ _compiled_pipeline = None
 
 
 def _merged_system(role: dict[str, Any] | None, base: str) -> str:
-    """角色提示叠在能力说明之上，避免丢掉工作区 / 工具约定。"""
+    """角色提示叠在能力说明之上，避免丢掉工作区 / 工具约定。
+
+    技能注入点：main.py 已把 SKILL.md 文本块（skill_prompt_blocks 的产物）
+    追加进 role["prompt"]，这里原样带进 system prompt，因此模型能读到技能说明。
+    """
     role_prompt = ""
     if role:
         role_prompt = str(role.get("prompt") or "").strip()

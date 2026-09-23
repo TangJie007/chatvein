@@ -102,6 +102,8 @@ def build_agent_system(
     body = "\n\n".join(part.strip() for part in parts if part.strip())
     role = (role_prompt or "").strip()
     if role:
+        # role_prompt 来自 main.py 拼好的 role["prompt"]（角色人设 + 技能 SKILL.md），
+        # 以 # Role 段置于宪法最前，保证模型优先读到技能指令。
         return f"# Role\n{role}\n\n{body}"
     return body
 

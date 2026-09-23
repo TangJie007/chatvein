@@ -1,8 +1,14 @@
 """本机已安装技能：落盘 ``CHATVEIN_DATA_DIR/skills/<slug>/``。
 
 数据模型：每个技能一个目录，包含 ``SKILL.md``（正文）+ ``meta.json``（元数据）。
-Agent 运行时通过 :func:`load_skill_blocks` / :func:`format_skills_for_prompt`
-把这些 MD 拼进 system prompt；真正的执行仍走已注册的 MCP 工具，不在此处。
+
+注入策略（目录 + 按需加载）：
+- system prompt 只注入技能目录（:func:`load_skill_catalog` /
+  :func:`format_skill_catalog_for_prompt`：name + description + slug），
+  避免几千米的 SKILL.md 一次性挤爆上下文；
+- 模型认为需要时调用 ``load_skill(slug)`` 工具（``mcps.tools.skills``）
+  把完整正文拉进上下文再执行；
+- 真正的动作仍走已注册的 MCP 工具，不在此处。
 """
 
 from __future__ import annotations
@@ -168,8 +174,20 @@ def uninstall_skill(slug: str) -> bool:
     return True
 
 
+def _read_meta(slug: str) -> dict[str, Any]:
+    """读取技能 meta.json；缺失 / 损坏一律返回空字典（名字退化为 slug）。"""
+    meta_file = _meta_path(slug)
+    if not meta_file.is_file():
+        return {}
+    try:
+        loaded = json.loads(meta_file.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError, UnicodeError):
+        return {}
+    return loaded if isinstance(loaded, dict) else {}
+
+
 def load_skill_blocks(slugs: list[str] | None) -> list[dict[str, str]]:
-    """按 slug 读取已安装技能，供 Agent system 注入。
+    """按 slug 读取已安装技能正文，供 Agent system 全文注入（兼容保留）。
 
     去重规则：按传入顺序去重，未安装的 slug 静默跳过（避免单个缺失让
     整条链中断）；正文超上限按 ``_MAX_SKILL_MD`` 截断，保证 prompt 安全。
@@ -184,15 +202,7 @@ def load_skill_blocks(slugs: list[str] | None) -> list[dict[str, str]]:
         body = read_skill_md(slug)
         if not body:
             continue
-        meta: dict[str, Any] = {}
-        meta_file = _meta_path(slug)
-        if meta_file.is_file():
-            try:
-                loaded = json.loads(meta_file.read_text(encoding="utf-8"))
-                if isinstance(loaded, dict):
-                    meta = loaded
-            except (OSError, json.JSONDecodeError, UnicodeError):
-                meta = {}
+        meta = _read_meta(slug)
         out.append(
             {
                 "slug": slug,
@@ -201,6 +211,79 @@ def load_skill_blocks(slugs: list[str] | None) -> list[dict[str, str]]:
             }
         )
     return out
+
+
+def _extract_description(body: str) -> str:
+    """从 SKILL.md 头部提取一句话简介（meta.description 缺失时兜底）。
+
+    跳过 YAML frontmatter 与标题行，取第一个非空正文段落，截断到 160 字。
+    """
+    text = body.lstrip()
+    if text.startswith("---"):
+        parts = text.split("---", 2)
+        if len(parts) >= 3:
+            text = parts[2]
+    for line in text.splitlines():
+        line = line.strip()
+        if line.startswith("#") or not line:
+            continue
+        cleaned = line.lstrip("-* \t").strip()
+        if cleaned:
+            return cleaned[:160]
+    return ""
+
+
+def load_skill_catalog(slugs: list[str] | None) -> list[dict[str, str]]:
+    """按 slug 生成技能目录（slug / name / description 一行简介）。
+
+    仅收录已安装技能；未安装 / 重复 slug 静默跳过。description 优先取
+    meta.json，缺失时从 SKILL.md 头部提取，保证目录对模型可读。
+    """
+    out: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for raw in slugs or []:
+        slug = str(raw).strip()
+        if not slug or slug in seen:
+            continue
+        seen.add(slug)
+        body = read_skill_md(slug)
+        if body is None:
+            continue
+        meta = _read_meta(slug)
+        description = str(meta.get("description") or "").strip()
+        if not description:
+            description = _extract_description(body)
+        out.append(
+            {
+                "slug": slug,
+                "name": str(meta.get("name") or slug),
+                "description": description,
+            }
+        )
+    return out
+
+
+def format_skill_catalog_for_prompt(catalog: list[dict[str, str]]) -> str:
+    """把技能目录拼成一段 Markdown 提示：只列 name + description + slug。
+
+    明确引导模型在真正需要时调用 ``load_skill(slug)`` 工具加载全文，
+    避免长 SKILL.md 一次性占用上下文。
+    """
+    if not catalog:
+        return ""
+    lines = [
+        "【已启用技能目录 — 仅当任务确实需要下列技能时，"
+        "调用 load_skill(slug) 工具加载其完整说明，再按说明执行】"
+    ]
+    for item in catalog:
+        slug = str(item.get("slug") or "")
+        name = str(item.get("name") or slug)
+        line = f"- {name} (`{slug}`)"
+        description = str(item.get("description") or "").strip()
+        if description:
+            line += f": {description}"
+        lines.append(line)
+    return "\n".join(lines)
 
 
 def format_skills_for_prompt(blocks: list[dict[str, str]]) -> str:

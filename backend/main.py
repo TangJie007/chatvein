@@ -176,7 +176,16 @@ def chat(req: ChatRequest):
         conversation_id=prepared["id"],
         limit=memory_limit,
     )
-    # --- 技能接线 ---
+    # --- 技能接线（目录注入 + load_skill 按需加载）---
+    # 完整链路：前端勾选 slug → /api/chat 的 skills 字段 → skill_prompt_blocks 生成
+    #   技能目录（name + description + slug，不注入正文）→ 追加进 role_runtime["prompt"]
+    #   → run_chat → agents/graphs/pipeline.py 组装 system prompt（# Role 段，
+    #   prompts.py build_agent_system）→ create_agent(system_prompt=...) →
+    #   agents/llm.py get_chat_model 按 role.model_id 发出模型请求。
+    #   模型需要时调用 load_skill(slug) 工具（mcps/tools/skills.py）把 SKILL.md
+    #   完整正文按需拉进上下文，避免几千米的长技能挤爆上下文。
+    #   相关文件：skills/service.py → skills/local_store.py → mcps/tools/skills.py
+    #   → agents/graphs/medium.py & hard.py（react_node 无条件附加 load_skill）。
     # 常驻技能（角色级 resident_skills）与临时技能（消息级 req.skills）去重合并：
     #  * 常驻技能：每次会话都会自动带上，来自角色配置
     #  * 临时技能：仅在单次消息携带，Composer 附件面板里勾选
@@ -184,19 +193,22 @@ def chat(req: ChatRequest):
     resident_slugs = [str(s) for s in (role_runtime.get("resident_skills") or [])] if role_runtime else []
     message_slugs = [str(s) for s in (req.skills or [])]
     merged_slugs = list(dict.fromkeys(resident_slugs + message_slugs))
-    # 1) skill_prompt_blocks 读取本机 <data>/skills/<slug>/SKILL.md 并拼成文本块
-    #    （按权重排序、超长截断；未安装的 slug 会被过滤）
-    # 2) 有角色：把技能正文追加到角色 prompt 之后，模型先看角色再看技能
-    # 3) 无角色：把技能正文直接当 role_runtime.prompt，工具面默认放开
+    # 1) skill_prompt_blocks 生成技能目录文本（未安装的 slug 会被过滤）
+    # 2) _skill_slugs 下传给下游图：medium/hard 的 react_node 据此把 load_skill
+    #    工具无条件挂上，保证"用户勾了技能就一定能按需加载"
+    # 3) 有角色：把技能目录追加到角色 prompt 之后，模型先看角色再看技能
+    # 4) 无角色：把技能目录直接当 role_runtime.prompt，工具面默认放开
     skill_block = skill_prompt_blocks(merged_slugs if merged_slugs else None)
+    skill_ctx = {"_skill_slugs": merged_slugs} if merged_slugs else {}
     if skill_block and role_runtime is not None:
         role_runtime = {
             **role_runtime,
             "prompt": f"{(role_runtime.get('prompt') or '').strip()}\n\n{skill_block}".strip(),
+            **skill_ctx,
         }
     elif skill_block:
-        # 无角色时只注入技能说明；tools 省略表示不限制
-        role_runtime = {"prompt": skill_block}
+        # 无角色时只注入技能目录；tools 省略表示不限制
+        role_runtime = {"prompt": skill_block, **skill_ctx}
     turn_id = uuid.uuid4().hex
     db_path = session_db_path(
         conversations_service.workspace_root_for(prepared["workspace_dir"])

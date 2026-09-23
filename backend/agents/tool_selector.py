@@ -14,7 +14,7 @@ from mcps.registry import (  # pyright: ignore[reportImplicitRelativeImport]
 )
 
 from . import llm as llm_mod
-from trace import span  # pyright: ignore[reportMissingImports]
+from trace.recording import span
 
 _SYSTEM = """你是工具选择 Agent。根据用户问题与工具清单，选出需要的工具名（可多选）。
 不要编造清单外的名字；不需要工具则返回空列表。只输出结构化字段。"""

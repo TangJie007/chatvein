@@ -203,7 +203,7 @@ def invoke_react(
     """
     import contextvars
 
-    from trace import runnable_config  # pyright: ignore[reportMissingImports]
+    from trace.recording import runnable_config
 
     cfg = runnable_config({"recursion_limit": recursion_limit, **(config_extra or {})})
 

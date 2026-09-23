@@ -12,7 +12,7 @@ from mcps import resolve_tools, run_tools  # pyright: ignore[reportImplicitRelat
 from .. import llm as llm_mod
 from .. import tool_selector
 from ..memory import to_lc_messages
-from trace import (  # pyright: ignore[reportMissingImports]
+from trace.recording import (
     note,
     record_tools_if_absent,
     span,
@@ -79,6 +79,10 @@ def build_medium_graph(
     def react_node(state: ChatState) -> dict[str, Any]:
         text = (state.get("rewritten") or state.get("message") or "").strip()
         names = list(state.get("selected_tools") or [])
+        # 本轮启用了技能：把 load_skill 无条件挂进工具列表（技能目录已注入
+        # role prompt，模型据此按需调用加载完整正文），不受角色工具白名单过滤。
+        if (role or {}).get("_skill_slugs"):
+            names = list(dict.fromkeys([*names, "load_skill"]))
         tools = resolve_tools(names)
         model = llm_mod.get_chat_model(
             role=role,

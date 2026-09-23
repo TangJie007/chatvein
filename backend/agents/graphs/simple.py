@@ -9,7 +9,7 @@ from langgraph.graph import END, START, MessagesState, StateGraph
 
 from .. import llm as llm_mod
 from ..memory import to_lc_messages
-from trace import note, runnable_config, span  # pyright: ignore[reportMissingImports]
+from trace.recording import note, runnable_config, span
 
 from .common import last_text
 

@@ -10,12 +10,12 @@ from mcps.bash_runtime import (  # pyright: ignore[reportImplicitRelativeImport]
 )
 from mcps.browser_runtime import browser_available  # pyright: ignore[reportImplicitRelativeImport]
 
-from . import bash, browser, core, fs, ip, kb, ocr, powershell, sandbox, sqlite_tools, web
+from . import bash, browser, core, fs, ip, kb, ocr, powershell, sandbox, skills, sqlite_tools, web
 
 
 def build_tool_groups() -> dict[str, list[BaseTool]]:
     """有 Git Bash 才挂 ``mcp-bash``；Windows 有 PowerShell 才挂 ``mcp-powershell``；
-    Playwright 浏览器就绪才挂 ``mcp-browser``。
+    Playwright 浏览器就绪才挂 ``mcp-browser``；技能加载器常驻 ``mcp-skills``。
     """
     groups: dict[str, list[BaseTool]] = {
         "core": list(core.TOOLS),
@@ -26,6 +26,7 @@ def build_tool_groups() -> dict[str, list[BaseTool]]:
         "mcp-codesandbox": list(sandbox.TOOLS),
         "mcp-ip": list(ip.TOOLS),
         "mcp-ocr": list(ocr.TOOLS),
+        "mcp-skills": list(skills.TOOLS),
     }
     if bash_available():
         groups["mcp-bash"] = list(bash.TOOLS)
@@ -52,7 +53,7 @@ def heuristic_hits(message: str) -> list[str]:
     """按关键词启发式命中工具名（离线回落）。"""
     text = (message or "").lower()
     names: list[str] = []
-    modules = [core, fs, web, sqlite_tools, kb, sandbox, ip, ocr]
+    modules = [core, fs, web, sqlite_tools, kb, sandbox, ip, ocr, skills]
     if bash_available():
         modules.append(bash)
     if powershell_available():
