@@ -20,7 +20,24 @@ from mcps.bash_runtime import (  # pyright: ignore[reportImplicitRelativeImport]
 )
 from mcps.browser_runtime import browser_available  # pyright: ignore[reportImplicitRelativeImport]
 
-from . import bash, browser, core, fs, ip, kb, ocr, pdf, powershell, sandbox, skills, sqlite_tools, web
+from . import (
+    bash,
+    browser,
+    core,
+    excel_tools,
+    fs,
+    ip,
+    kb,
+    ocr,
+    pdf,
+    powershell,
+    pptx_tools,
+    sandbox,
+    skills,
+    sqlite_tools,
+    web,
+    word_tools,
+)
 
 
 def build_tool_groups() -> dict[str, list[BaseTool]]:
@@ -38,6 +55,9 @@ def build_tool_groups() -> dict[str, list[BaseTool]]:
         "mcp-ocr": list(ocr.TOOLS),
         "mcp-pdf": list(pdf.TOOLS),
         "mcp-skills": list(skills.TOOLS),
+        "mcp-docx": list(word_tools.TOOLS),
+        "mcp-pptx": list(pptx_tools.TOOLS),
+        "mcp-excel": list(excel_tools.TOOLS),
     }
     if bash_available():
         groups["mcp-bash"] = list(bash.TOOLS)
@@ -64,7 +84,7 @@ def heuristic_hits(message: str) -> list[str]:
     """按关键词启发式命中工具名（离线回落）。"""
     text = (message or "").lower()
     names: list[str] = []
-    modules = [core, fs, web, sqlite_tools, kb, sandbox, ip, ocr, pdf, skills]
+    modules = [core, fs, web, sqlite_tools, kb, sandbox, ip, ocr, pdf, skills, word_tools, pptx_tools, excel_tools]
     if bash_available():
         modules.append(bash)
     if powershell_available():

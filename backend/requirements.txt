@@ -36,3 +36,8 @@ ipwhois-python>=1.2,<2
 # reportlab 做文本生成 PDF（内置 CID 中文字体，无需字体文件）。见 mcps/tools/pdf.py。
 pypdf>=5.0,<7.0
 reportlab>=4.0,<5.0
+# 办公三件套（mcp-docx / mcp-pptx / mcp-excel）：纯 Python 直接生成 OOXML，
+# 无 MS Office / LibreOffice 依赖；工具实现在 mcps/tools/{word_tools,pptx_tools,excel_tools}.py。
+python-docx>=1.1,<2.0
+python-pptx>=1.0,<2.0
+openpyxl>=3.1,<4.0
