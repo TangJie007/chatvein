@@ -27,6 +27,7 @@ from trace.recording import (
 )
 
 from .common import (
+    ALWAYS_ON_TOOLS,
     allowed_from_role,
     build_react_graph,
     invoke_react,
@@ -232,11 +233,11 @@ def build_hard_graph(
         if focus:
             user_blob = f"{user_blob}\n\n请针对缺口补做：{focus}"
 
-        names = list(state.get("selected_tools") or [])
-        # 本轮启用了技能：把 load_skill 无条件挂进工具列表（技能目录已注入
-        # role prompt，模型据此按需调用加载完整正文），不受角色工具白名单过滤。
-        if (role or {}).get("_skill_slugs"):
-            names = list(dict.fromkeys([*names, "load_skill"]))
+        selected = list(state.get("selected_tools") or [])
+        # 常驻工具：不参与 select_tools 选型 / 角色白名单过滤，无条件挂进工具列表。
+        # （技能目录已注入 role prompt，模型按需调用 load_skill；sandbox_run_python
+        #  同 load_skill 一样始终可用，调用失败时工具会返回引导信息。）
+        names = list(dict.fromkeys([*selected, *ALWAYS_ON_TOOLS]))
         tools = resolve_tools(names)
         model = llm_mod.get_chat_model(
             role=role,
@@ -251,10 +252,10 @@ def build_hard_graph(
         prior_trace = list(state.get("tool_trace") or [])
 
         if model is None:
-            if not names:
+            if not selected:
                 reply = f"（离线）{user_blob}" if user_blob else "（离线）未配置 LLM。"
             else:
-                reply = run_tools(user_blob, names)
+                reply = run_tools(user_blob, selected)
             note(
                 "llm",
                 name="react",
@@ -263,7 +264,7 @@ def build_hard_graph(
                 detail={
                     "reason": (
                         "未配置模型且无需工具"
-                        if not names
+                        if not selected
                         else "未配置模型，改为直接执行筛选出的工具"
                     )
                 },
@@ -306,7 +307,7 @@ def build_hard_graph(
                 "tool_trace": merge_tool_traces(prior_trace, traced),
             }
         except Exception as exc:  # noqa: BLE001
-            fallback = run_tools(user_blob, names) if names else ""
+            fallback = run_tools(user_blob, selected) if selected else ""
             suffix = f"\n{fallback}" if fallback else ""
             return {
                 "reply": f"工具调用失败({exc}){suffix}",

@@ -40,8 +40,8 @@ MCP 工具（执行能力）     ──→  真正"怎么做"
       → run_chat → agents/graphs/pipeline.py 组装 system prompt
           └─ prompts.py build_agent_system → "# Role\n{role}" 段
       → medium / hard 图 react_node：
-          若 role 带 _skill_slugs → 无条件把 load_skill 挂进工具列表
-          （绕开角色工具白名单过滤，保证"勾了技能就一定能按需加载"）
+          load_skill 为常驻工具（graphs/common.ALWAYS_ON_TOOLS），无条件挂进工具列表
+          （不参与 select_tools 选型，绕开角色工具白名单过滤，保证"勾了技能就一定能按需加载"）
       → create_agent(system_prompt=..., tools=[..., load_skill])
       → agents/llm.py get_chat_model 发出模型请求
       → 模型需要时调用 load_skill(slug)
@@ -94,8 +94,9 @@ MCP 工具（执行能力）     ──→  真正"怎么做"
 
 - 有角色：技能目录追加在角色 prompt 之后，模型**先看角色再看技能**。
 - 无角色：技能目录直接作为 `role_runtime.prompt`，此时 tools 省略表示不限制工具面。
-- `_skill_slugs` 是内部字段，随 `role_runtime` 下传到 `medium.py` / `hard.py` 的 react_node，
-  只在非空时触发 `load_skill` 附加，不影响其余请求。
+- `_skill_slugs` 是内部字段，随 `role_runtime` 下传，仅用于标记「本会话已启用技能」；
+  `load_skill` 已是常驻工具（`graphs/common.ALWAYS_ON_TOOLS`），由 `medium.py` / `hard.py`
+  的 react_node 无条件挂载，与是否启用技能无关。
 
 ## 6. `load_skill` 工具
 
@@ -106,7 +107,7 @@ MCP 工具（执行能力）     ──→  真正"怎么做"
 | 返回 | `local_store.read_skill_md(slug)` 的完整正文；超 `_MAX_BODY`(120KB) 截断 |
 | 未安装 | 返回明确错误 + 本机已安装技能清单 |
 | 离线启发式 | `heuristic()` 返回空列表，不参与离线关键词选工具；离线时由 invoke_tools 提示无法自动填参 |
-| 可用性保障 | react_node 无条件附加（有技能时），不受角色工具白名单过滤 |
+| 可用性保障 | 常驻工具（`ALWAYS_ON_TOOLS`），react_node 无条件挂载，不参与选型 / 角色白名单过滤 |
 
 ## 7. 边界与保护
 

@@ -73,6 +73,13 @@ def allowed_from_role(role: dict[str, Any] | None) -> list[str] | None:
     return [str(t) for t in tools if str(t).strip()]
 
 
+#: 常驻工具：不参与 ``select_tools`` 选型，也不受角色工具白名单过滤，
+#: react 阶段无条件挂进本轮工具列表（模型仍按需调用）。
+#: - load_skill：加载已启用技能正文（目录已注入 role prompt，模型按需拉全文）
+#: - sandbox_run_python（UI 亦称 runcode）：代码沙箱执行 Python
+ALWAYS_ON_TOOLS: tuple[str, ...] = ("load_skill", "sandbox_run_python")
+
+
 def tool_call_fingerprint(name: str, args: Any) -> str:
     """同工具 + 同参的稳定指纹（用于去重）。"""
     try:

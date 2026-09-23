@@ -99,7 +99,10 @@ def _run(cmd: list[str], *, cwd: Path, timeout: int, env: dict[str, str] | None 
 
 @tool
 def sandbox_info() -> str:
-    """查看当前会话工作区、``runs/`` 路径，以及 Python 虚拟环境是否已建好。"""
+    """开始沙箱任务前先探查环境：返回当前会话工作区根、``runs/``/``output/`` 路径，以及 Python 虚拟环境是否已就绪。
+
+    示例：不确定沙箱是否可用时先 ``sandbox_info()`` 确认再决定后续步骤。
+    """
     try:
         root = current_sandbox()
         runs = runs_dir()
@@ -119,7 +122,10 @@ def sandbox_info() -> str:
 
 @tool
 def sandbox_create_venv() -> str:
-    """在当前会话 ``runs/`` 下创建 Python 虚拟环境（``.venv``）。已存在则直接返回。"""
+    """在当前会话 ``runs/`` 下创建 Python 虚拟环境（``.venv``），已存在则直接返回。要运行任何 Python 代码必须先调用它。
+
+    示例：首次跑 Python 前 ``sandbox_create_venv()``，成功后即可写脚本、装包、运行。
+    """
     try:
         runs = runs_dir()
     except ValueError as exc:
@@ -139,7 +145,10 @@ def sandbox_create_venv() -> str:
 
 @tool
 def sandbox_write_file(path: str, content: str) -> str:
-    """把文本写入当前会话 ``runs/``。``path`` 可为相对路径（如 ``main.py``）或 ``runs/`` 内绝对路径。不能写进 ``.venv``。用户产物请写到 ``output/``。"""
+    """把 Python 脚本等文本写入当前会话 ``runs/``（执行区，与产物隔离）。``path`` 可为相对路径（如 ``main.py``、``scripts/analyze.py``）或 ``runs/`` 内绝对路径；不能写进 ``.venv``。给用户的交付文件请用文件系统工具写到 ``output/``。
+
+    示例：``sandbox_write_file(path="main.py", content="print('hi')\\n")``；或把 ``sandbox_run_python`` 要用的脚本先写到 ``path="analyze.py"``。
+    """
     try:
         target = resolve_in_runs(path)
     except ValueError as exc:
@@ -159,7 +168,10 @@ def sandbox_write_file(path: str, content: str) -> str:
 
 @tool
 def sandbox_pip_install(packages: str) -> str:
-    """用 ``runs/.venv`` 安装 PyPI 包。``packages`` 为空格或逗号分隔的包名，可带版本如 ``requests==2.32.0``。一次最多 8 个。"""
+    """用 ``runs/.venv`` 给代码沙箱安装 PyPI 包。当脚本运行时 import 报错缺包时先调它。``packages`` 为空格或逗号分隔的包名，可带版本；一次最多 8 个。
+
+    示例：``sandbox_pip_install(packages="requests pandas")``；指定版本 ``sandbox_pip_install(packages="numpy==1.26.0")``。
+    """
     try:
         runs = runs_dir()
     except ValueError as exc:
@@ -184,9 +196,11 @@ def sandbox_pip_install(packages: str) -> str:
 
 @tool
 def sandbox_run_python(path: str = "", code: str = "", timeout_seconds: int = 30) -> str:
-    """用 ``runs/.venv`` 执行 Python。``code`` 非空时先写入 ``path``（默认 ``main.py``，落在 ``runs/``）再运行；否则运行已有的 ``.py``。
+    """用 ``runs/.venv`` 执行 Python 脚本（虚拟环境未建时先 ``sandbox_create_venv()``）。``code`` 非空则先写入 ``path``（默认 ``main.py``，落在 ``runs/``）再运行；否则直接运行 ``runs/`` 下已有的 ``path``。``timeout_seconds`` 上限 120，默认 30。
 
-    工作目录是**当前会话工作区根**（与文件系统工具相同），因此脚本里 ``output/xxx`` 等相对路径会写到会话产物目录；脚本文件本身仍在 ``runs/``。
+    工作目录是**当前会话工作区根**（与文件系统工具相同）：脚本里 ``output/xxx`` 等相对路径会写到会话产物目录（可交付给用户），脚本文件本身仍在 ``runs/``。
+
+    示例：快速跑一段代码 ``sandbox_run_python(code="print(1+1)")``；产出结果文件 ``sandbox_run_python(path="analyze.py", code="open('output/result.json','w').write('{}')\\n")``。
     """
     try:
         root = current_sandbox()
