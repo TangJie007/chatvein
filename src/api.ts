@@ -800,6 +800,8 @@ export interface RoleRecord {
   tools: string[];
   /** 挂载的知识库名称。 */
   kb: string[];
+  /** 常驻技能 slug 列表；每次聊天自动注入 role prompt（可与消息级临时技能叠加）。 */
+  resident_skills: string[];
   /** 在用会话数（后端统计，本地只读）。 */
   sessions: number;
   /** 内置主角色，可改人格与工具，不可删除。 */
@@ -825,6 +827,8 @@ export type CreateRolePayload = {
   enabled?: boolean;
   tools?: string[];
   kb?: string[];
+  /** 常驻技能 slug 列表（可选）；聊天时自动注入角色提示词。 */
+  resident_skills?: string[];
   primary?: boolean;
 };
 

@@ -139,11 +139,18 @@ def chat(req: ChatRequest):
         limit=memory_limit,
     )
     # --- 技能接线 ---
+    # 常驻技能（角色级 resident_skills）与临时技能（消息级 req.skills）去重合并：
+    #  * 常驻技能：每次会话都会自动带上，来自角色配置
+    #  * 临时技能：仅在单次消息携带，Composer 附件面板里勾选
+    # 使用 dict.fromkeys 保序去重，保证 role prompt 里的技能顺序稳定
+    resident_slugs = [str(s) for s in (role_runtime.get("resident_skills") or [])] if role_runtime else []
+    message_slugs = [str(s) for s in (req.skills or [])]
+    merged_slugs = list(dict.fromkeys(resident_slugs + message_slugs))
     # 1) skill_prompt_blocks 读取本机 <data>/skills/<slug>/SKILL.md 并拼成文本块
     #    （按权重排序、超长截断；未安装的 slug 会被过滤）
     # 2) 有角色：把技能正文追加到角色 prompt 之后，模型先看角色再看技能
     # 3) 无角色：把技能正文直接当 role_runtime.prompt，工具面默认放开
-    skill_block = skill_prompt_blocks(req.skills)
+    skill_block = skill_prompt_blocks(merged_slugs if merged_slugs else None)
     if skill_block and role_runtime is not None:
         role_runtime = {
             **role_runtime,

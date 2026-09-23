@@ -21,6 +21,8 @@ class CreateRoleDto(BaseModel):
     enabled: bool | None = None
     tools: list[str] | None = Field(default=None)
     kb: list[str] | None = Field(default=None)
+    # 常驻技能 slug 列表；聊天时自动注入 role prompt（可与消息级临时技能叠加）
+    resident_skills: list[str] | None = Field(default=None)
     primary: bool | None = None
 
 
@@ -43,6 +45,7 @@ class UpdateRoleDto(BaseModel):
     enabled: bool | None = None
     tools: list[str] | None = None
     kb: list[str] | None = None
+    resident_skills: list[str] | None = None
     primary: bool | None = None
 
 
@@ -64,6 +67,7 @@ class RoleResponseDto(BaseModel):
     enabled: bool
     tools: list[str]
     kb: list[str]
+    resident_skills: list[str]
     sessions: int
     primary: bool
     created_at: str

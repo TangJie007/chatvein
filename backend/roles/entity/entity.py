@@ -43,6 +43,8 @@ class Role(SQLModel, table=True):
     tools: str = Field(default="[]")
     # JSON 文本：知识库名称列表
     kb: str = Field(default="[]")
+    # JSON 文本：常驻技能 slug 列表；聊天时自动注入 role prompt
+    resident_skills: str = Field(default="[]")
     # 在用会话数（展示用，目前由聊天侧统计回填）
     sessions: int = Field(default=0)
     # 内置主角色，可改人格与工具，不可删除

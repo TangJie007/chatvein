@@ -21,8 +21,9 @@ from sqlalchemy import Connection, Engine, create_engine, event, text
 from sqlmodel import Session, SQLModel
 
 # v1: 手写 sqlite3；v2: SQLModel；v3: llm_models；v4: conversations.workspace_dir；
-# v5: 主库移除 messages（对话消息只存会话空间 session.sqlite）。
-SCHEMA_VERSION = 5
+# v5: 主库移除 messages（对话消息只存会话空间 session.sqlite）；
+# v6: roles.resident_skills 常驻技能列。
+SCHEMA_VERSION = 6
 DB_FILENAME = "chatvein.db"
 
 _BACKEND_DIR = Path(__file__).resolve().parent
@@ -160,6 +161,16 @@ def _ensure_workspace_dir_column(connection: Connection) -> None:
         ).close()
 
 
+def _ensure_roles_resident_skills_column(connection: Connection) -> None:
+    """v6：给旧库的 ``roles`` 表补上 ``resident_skills`` 列（JSON 文本）。"""
+    rows = connection.exec_driver_sql("PRAGMA table_info(roles)").fetchall()
+    names = {str(row[1]) for row in rows}
+    if names and "resident_skills" not in names:
+        connection.exec_driver_sql(
+            "ALTER TABLE roles ADD COLUMN resident_skills VARCHAR(2048) NOT NULL DEFAULT '[]'"
+        ).close()
+
+
 def _drop_main_messages_table(connection: Connection) -> None:
     """v5：对话消息迁到会话空间后，删除主库 messages 表。"""
     rows = connection.exec_driver_sql(
@@ -223,6 +234,8 @@ def _migrate(connection: Connection) -> None:
     _ensure_workspace_dir_column(connection)
     if current < 5:
         _drop_main_messages_table(connection)
+    if current < 6:
+        _ensure_roles_resident_skills_column(connection)
     if current != SCHEMA_VERSION:
         connection.exec_driver_sql(f"PRAGMA user_version = {SCHEMA_VERSION}").close()
 

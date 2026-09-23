@@ -1,20 +1,25 @@
 import {
   Check,
   ChevronRight,
+  Download,
   Loader2,
   Plus,
   Play,
   Sparkles,
   Trash2,
   Wrench,
+  X,
+  Zap,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import {
   createRole,
   deleteRole,
+  listInstalledSkills,
   listModels,
   listRoles,
   updateRole,
+  type InstalledSkill,
   type LlmModelRecord,
   type RoleRecord,
   type RoleTone,
@@ -139,6 +144,7 @@ export function RolesView() {
       enabled: form.enabled,
       tools: form.tools,
       kb: form.kb,
+      resident_skills: form.resident_skills,
     };
     const saved = await updateRole(active!.id, payload);
     setRoles((prev) => prev.map((r) => (r.id === saved.id ? saved : r)));
@@ -307,6 +313,41 @@ function RoleConfig({ role, models, loadingModels, onSave, onDelete }: RoleConfi
         ? form.tools.filter((t) => t !== id)
         : [...form.tools, id]
     );
+  // 常驻技能：只允许从「已下载技能」中勾选，聊天时会自动带入（可与消息级临时技能叠加）。
+  const [installed, setInstalled] = useState<InstalledSkill[]>([]);
+  const [loadingInstalled, setLoadingInstalled] = useState(true);
+  useEffect(() => {
+    let cancelled = false;
+    listInstalledSkills()
+      .then((r) => {
+        if (!cancelled) setInstalled(r.skills);
+      })
+      .catch(() => {
+        /* 拉取失败时视为暂无已安装技能 */
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingInstalled(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  // 去掉当前表单里已卸载的技能（避免 role 里指向不存在的 slug）
+  const knownSlugs = new Set(installed.map((s) => s.slug));
+  useEffect(() => {
+    setForm((f) => {
+      const next = (f.resident_skills ?? []).filter((s) => knownSlugs.has(s));
+      return next.length === f.resident_skills?.length ? f : { ...f, resident_skills: next };
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [installed]);
+  const toggleResidentSkill = (slug: string) =>
+    set(
+      "resident_skills",
+      form.resident_skills.includes(slug)
+        ? form.resident_skills.filter((s) => s !== slug)
+        : [...form.resident_skills, slug]
+    );
 
   const [saved, setSaved] = useState(false);
   const handleSave = async () => {
@@ -444,6 +485,20 @@ function RoleConfig({ role, models, loadingModels, onSave, onDelete }: RoleConfi
                 );
               })}
             </div>
+          </Collapsible>
+
+          {/* 常驻技能：从已下载技能中多选，聊天时自动注入 role prompt */}
+          <Collapsible
+            title="常驻技能"
+            desc="从已下载技能中挑选，聊天时自动注入角色提示词"
+            badge={`${form.resident_skills.length} 个常驻`}
+          >
+            <ResidentSkillPicker
+              installed={installed}
+              loading={loadingInstalled}
+              selected={form.resident_skills}
+              onToggle={toggleResidentSkill}
+            />
           </Collapsible>
 
           {/* 知识与记忆 */}
@@ -793,6 +848,111 @@ function Select({
       <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-ink-400">
         <ChevronRight className="size-3.5 rotate-90" strokeWidth={1.75} />
       </span>
+    </div>
+  );
+}
+
+/** 常驻技能多选：只列出「已下载技能」，选中项以 chip 形式挂在顶部，剩余项列表可切换。 */
+function ResidentSkillPicker({
+  installed,
+  loading,
+  selected,
+  onToggle,
+}: {
+  installed: InstalledSkill[];
+  loading: boolean;
+  selected: string[];
+  onToggle: (slug: string) => void;
+}) {
+  // 已选中在前，其余按名字排序，便于浏览
+  const selectedSet = new Set(selected);
+  const ordered = [...installed].sort((a, b) => {
+    const aOn = selectedSet.has(a.slug) ? 0 : 1;
+    const bOn = selectedSet.has(b.slug) ? 0 : 1;
+    if (aOn !== bOn) return aOn - bOn;
+    return a.name.localeCompare(b.name, "zh-CN");
+  });
+
+  return (
+    <div className="rounded-xl bg-surface px-3 py-2 shadow-soft">
+      {/* 已选中的技能以 chip 展示，方便一眼看到角色会带上哪些常驻能力 */}
+      {selected.length > 0 && (
+        <div className="mb-2 flex flex-wrap items-center gap-1.5">
+          {selected.map((slug) => {
+            const meta = installed.find((s) => s.slug === slug);
+            return (
+              <span
+                key={slug}
+                className="inline-flex items-center gap-1 rounded-full bg-brand-50 px-2 py-0.5 text-[11px] font-medium text-brand-700"
+              >
+                <Zap className="size-3" strokeWidth={1.75} />
+                {meta?.name ?? slug}
+                <button
+                  type="button"
+                  aria-label={`移除 ${meta?.name ?? slug}`}
+                  onClick={() => onToggle(slug)}
+                  className="text-brand-500 transition-colors hover:text-brand-700"
+                >
+                  <X className="size-3" strokeWidth={2} />
+                </button>
+              </span>
+            );
+          })}
+        </div>
+      )}
+      <div className="max-h-56 overflow-y-auto pr-1">
+        {loading ? (
+          <div className="flex items-center justify-center gap-2 py-3 text-[12px] text-ink-400">
+            <Loader2 className="size-3.5 animate-spin" strokeWidth={1.75} />
+            加载已下载技能…
+          </div>
+        ) : ordered.length === 0 ? (
+          <div className="flex flex-col items-center gap-1.5 py-3 text-center">
+            <span className="flex size-8 items-center justify-center rounded-xl bg-tint text-brand-600">
+              <Download className="size-4" strokeWidth={1.75} />
+            </span>
+            <p className="text-[12px] text-ink-500">还没有已下载的技能</p>
+            <p className="text-[11px] text-ink-400">
+              去「技能」页面下载，然后回这里勾选
+            </p>
+          </div>
+        ) : (
+          <div className="flex flex-col">
+            {ordered.map((s) => {
+              const on = selectedSet.has(s.slug);
+              return (
+                <div
+                  key={s.slug}
+                  className="flex items-center gap-3 rounded-xl px-2 py-1.5 transition-colors hover:bg-tint/50"
+                >
+                  <span
+                    className={cn(
+                      "flex size-6 shrink-0 items-center justify-center rounded-lg",
+                      on ? "bg-tint text-brand-600" : "bg-page text-ink-400"
+                    )}
+                  >
+                    <Zap className="size-3.5" strokeWidth={1.75} />
+                  </span>
+                  <div className="flex min-w-0 flex-1 items-baseline gap-2">
+                    <span className="shrink-0 truncate text-[12px] font-medium text-ink-900">
+                      {s.name}
+                    </span>
+                    <span className="min-w-0 flex-1 truncate font-mono text-[10.5px] text-ink-400">
+                      {s.slug}
+                    </span>
+                  </div>
+                  <Switch checked={on} onCheckedChange={() => onToggle(s.slug)} />
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+      {selected.length > 0 && (
+        <p className="mt-2 border-t border-page pt-2 text-[10.5px] leading-4 text-ink-400">
+          常驻技能在每次会话开始时自动注入角色提示词；对话里临时加的技能仅本次生效。
+        </p>
+      )}
     </div>
   );
 }

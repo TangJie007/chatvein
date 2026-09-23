@@ -67,6 +67,7 @@ class RolesService:
             enabled=entity.enabled,
             tools=_decode_list(entity.tools),
             kb=_decode_list(entity.kb),
+            resident_skills=_decode_list(entity.resident_skills),
             sessions=entity.sessions,
             primary=entity.primary,
             created_at=_iso(entity.created_at),
@@ -106,6 +107,7 @@ class RolesService:
             enabled=dto.enabled if dto.enabled is not None else True,
             tools=_encode_list(dto.tools),
             kb=_encode_list(dto.kb),
+            resident_skills=_encode_list(dto.resident_skills),
             sessions=0,
             primary=bool(dto.primary) if dto.primary is not None else False,
             created_at=now,
@@ -157,6 +159,8 @@ class RolesService:
             entity.tools = _encode_list(data["tools"])
         if data.get("kb") is not None:
             entity.kb = _encode_list(data["kb"])
+        if data.get("resident_skills") is not None:
+            entity.resident_skills = _encode_list(data["resident_skills"])
 
         entity.updated_at = _utc_now()
         saved = self._repo.update(entity)
@@ -188,7 +192,11 @@ class RolesService:
         return self.get_runtime(chosen.id)
 
     def get_runtime(self, role_id: str) -> dict[str, Any] | None:
-        """供 ``/api/chat`` 使用：角色解析后的模型与生成参数。"""
+        """供 ``/api/chat`` 使用：角色解析后的模型与生成参数。
+
+        ``resident_skills`` 是角色级常驻技能 slug 列表，聊天时会自动追加到
+        role prompt（和消息级临时技能去重合并）。
+        """
         entity = self._repo.find_by_id(role_id)
         if entity is None:
             return None
@@ -206,6 +214,7 @@ class RolesService:
             "retries": entity.retries,
             "memory": entity.memory,
             "tools": _decode_list(entity.tools),
+            "resident_skills": _decode_list(entity.resident_skills),
             "primary": entity.primary,
         }
 
