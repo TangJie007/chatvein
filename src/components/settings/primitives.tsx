@@ -1,5 +1,5 @@
 import { ChevronRight, type LucideIcon } from "lucide-react";
-import { type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { cn } from "../../lib/cn";
 
 /** 设置页基础件：与 ModelsView 的卡片语言保持一致（背景色阶 + 柔和阴影，无 border）。 */
@@ -9,29 +9,63 @@ export function Card({
   desc,
   icon,
   action,
+  collapsible = false,
+  defaultOpen = true,
+  className,
   children,
 }: {
   title: string;
   desc?: string;
   icon?: ReactNode;
   action?: ReactNode;
+  /** 头部可点击展开 / 收起内容。 */
+  collapsible?: boolean;
+  /** collapsible 为 true 时的初始展开状态。 */
+  defaultOpen?: boolean;
+  /** 附加到卡片根节点的类名（如纵向撑满布局）。 */
+  className?: string;
   children?: ReactNode;
 }) {
+  const [open, setOpen] = useState(defaultOpen);
+  const header = (
+    <>
+      {icon && (
+        <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-surface shadow-soft">
+          {icon}
+        </span>
+      )}
+      <div className="min-w-0 flex-1">
+        <h2 className="truncate text-[13px] font-semibold text-ink-900">{title}</h2>
+        {desc && <p className="mt-0.5 text-[11.5px] leading-4 text-ink-400">{desc}</p>}
+      </div>
+    </>
+  );
   return (
-    <div className="rounded-2xl bg-page p-1.5 shadow-soft">
+    <div className={cn("rounded-2xl bg-page p-1.5 shadow-soft", className)}>
       <div className="flex items-center gap-2.5 px-3.5 pb-2 pt-3">
-        {icon && (
-          <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-surface shadow-soft">
-            {icon}
-          </span>
+        {collapsible ? (
+          <button
+            type="button"
+            onClick={() => setOpen((v) => !v)}
+            aria-expanded={open}
+            title={open ? "收起" : "展开"}
+            className="flex min-w-0 flex-1 items-center gap-2.5 rounded-lg text-left transition-colors hover:bg-tint/40 focus-visible:outline-2 focus-visible:outline-brand-600"
+          >
+            <ChevronRight
+              className={cn(
+                "size-3.5 shrink-0 text-ink-400 transition-transform",
+                open && "rotate-90"
+              )}
+              strokeWidth={1.75}
+            />
+            {header}
+          </button>
+        ) : (
+          header
         )}
-        <div className="min-w-0 flex-1">
-          <h2 className="truncate text-[13px] font-semibold text-ink-900">{title}</h2>
-          {desc && <p className="mt-0.5 text-[11.5px] leading-4 text-ink-400">{desc}</p>}
-        </div>
         {action}
       </div>
-      {children}
+      {(!collapsible || open) && children}
     </div>
   );
 }

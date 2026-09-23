@@ -195,7 +195,7 @@ function SettingsBody({ section }: { section: SectionKey }) {
         </header>
 
         <div className="flex-1 overflow-y-auto px-6 pb-6">
-          <div className="mx-auto flex max-w-[720px] flex-col gap-3">
+          <div className="mx-auto flex h-full max-w-[720px] flex-col gap-3">
             {section === "app" && <AppSection prefs={prefs} onSet={setPref} />}
             {section === "mcp" && <McpSection servers={servers} />}
             {section === "sqlite" && (

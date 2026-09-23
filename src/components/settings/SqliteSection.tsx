@@ -144,6 +144,8 @@ export function SqliteSection(props: SqliteSectionProps) {
         title="运行时"
         desc="连接层与向量的实时状态"
         icon={<RefreshCw className="size-3.5 text-brand-600" strokeWidth={1.75} />}
+        collapsible
+        defaultOpen={false}
       >
         <div className="grid grid-cols-2 gap-2 px-3.5 pb-3 lg:grid-cols-4">
           <Stat label="引擎版本" value={info?.sqlite_version ?? "—"} />
@@ -261,6 +263,7 @@ function TablesCard() {
       title="表与数据"
       desc="浏览库中的表 / 视图；点开字段定义或前几行数据"
       icon={<Table2 className="size-3.5 text-brand-600" strokeWidth={1.75} />}
+      className="flex min-h-0 flex-1 flex-col"
       action={
         <CardAction
           label={loadingTables ? "加载中…" : "刷新"}
@@ -278,14 +281,14 @@ function TablesCard() {
         </div>
       )}
 
-      <div className="flex gap-3 px-3.5 pb-3">
+      <div className="flex min-h-0 flex-1 gap-3 px-3.5 pb-3">
         {/* 表列表 */}
-        <div className="flex w-[184px] shrink-0 flex-col rounded-xl bg-surface shadow-soft">
+        <div className="flex w-[184px] min-h-0 shrink-0 flex-col rounded-xl bg-surface shadow-soft">
           <div className="flex items-center justify-between px-3 py-2 text-[10.5px] text-ink-400">
             <span>表 / 视图</span>
             <span>{tables.length}</span>
           </div>
-          <div className="max-h-[280px] flex-1 overflow-y-auto p-1">
+          <div className="min-h-0 flex-1 overflow-y-auto p-1">
             {loadingTables && tables.length === 0 && (
               <div className="flex items-center justify-center px-2 py-6 text-[11px] text-ink-400">
                 <Loader2 className="mr-1.5 size-3.5 animate-spin" />
@@ -329,16 +332,16 @@ function TablesCard() {
         </div>
 
         {/* 详情 */}
-        <div className="min-w-0 flex-1">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           {!selected && (
-            <div className="flex h-[280px] items-center justify-center text-[12px] text-ink-400">
+            <div className="flex min-h-0 flex-1 items-center justify-center text-[12px] text-ink-400">
               <Eye className="mr-2 size-4" strokeWidth={1.75} />
               选择左侧的一张表
             </div>
           )}
 
           {selected && loadingDetail && (
-            <div className="flex h-[280px] items-center justify-center text-[12px] text-ink-400">
+            <div className="flex min-h-0 flex-1 items-center justify-center text-[12px] text-ink-400">
               <Loader2 className="mr-2 size-4 animate-spin" strokeWidth={1.75} />
               加载表详情…
             </div>
@@ -358,7 +361,7 @@ function TablesCard() {
           )}
 
           {selected && !loadingDetail && !detail && (
-            <div className="flex h-[280px] items-center justify-center text-[12px] text-warn-600">
+            <div className="flex min-h-0 flex-1 items-center justify-center text-[12px] text-warn-600">
               表详情加载失败
             </div>
           )}
@@ -388,7 +391,7 @@ function DetailPanel({
   columnCount: number;
 }) {
   return (
-    <div className="flex min-w-0 flex-col rounded-xl bg-surface p-2.5 shadow-soft">
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col rounded-xl bg-surface p-2.5 shadow-soft">
       <div className="flex flex-wrap items-center gap-2 px-1 pb-2">
         <span className="rounded-lg bg-tint px-2 py-1 font-mono text-[12px] font-medium text-brand-700">
           {detail.name}
@@ -472,7 +475,7 @@ function TabButton({
 
 function SchemaTable({ columns, sql }: { columns: DbColumnInfo[]; sql?: string }) {
   return (
-    <div className="flex max-h-[360px] flex-col gap-2 overflow-y-auto rounded-xl bg-page p-1.5">
+    <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto rounded-xl bg-page p-1.5">
       <div className="grid grid-cols-[1fr_auto_auto_auto_auto] gap-2 rounded-lg bg-surface px-2.5 py-1.5 text-[10.5px] font-medium text-ink-400 shadow-soft">
         <span>列</span>
         <span>类型</span>
@@ -525,7 +528,7 @@ function DataTable({
 }) {
   if (detail.rows.length === 0) {
     return (
-      <div className="flex h-[180px] items-center justify-center rounded-xl bg-page text-[11.5px] text-ink-400">
+      <div className="flex min-h-0 flex-1 items-center justify-center rounded-xl bg-page text-[11.5px] text-ink-400">
         此表暂无数据
       </div>
     );
@@ -533,8 +536,8 @@ function DataTable({
   const start = detail.offset + 1;
   const end = detail.offset + detail.rows.length;
   return (
-    <div className="flex flex-col gap-1.5">
-      <div className="overflow-x-auto rounded-xl bg-page shadow-soft">
+    <div className="flex min-h-0 flex-1 flex-col gap-1.5">
+      <div className="min-h-0 flex-1 overflow-auto rounded-xl bg-page shadow-soft">
         <table className="w-full border-collapse text-[11px]">
           <thead>
             <tr className="bg-surface">
@@ -581,7 +584,7 @@ function DataTable({
           </tbody>
         </table>
       </div>
-      <div className="flex items-center justify-between px-1 text-[10.5px] text-ink-400">
+      <div className="flex shrink-0 items-center justify-between px-1 text-[10.5px] text-ink-400">
         <span>
           {end < start ? 0 : `${start}–${end} / ${detail.total ?? "?"}`}
         </span>
