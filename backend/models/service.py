@@ -1,4 +1,10 @@
-"""业务逻辑（NestJS Service 对应物）。"""
+"""业务逻辑（NestJS Service 对应物）。
+
+不再区分「主模型 / 默认模型」：
+- 新增模型不会自动打任何特殊标签；
+- 不存在 ``get_runtime_config`` 回退链，聊天路径必须通过角色绑定模型；
+- ``/default`` 端点已从 controller 移除。
+"""
 
 from __future__ import annotations
 
@@ -57,8 +63,6 @@ class ModelsService:
             json_mode=entity.json_mode,
             retries=entity.retries,
             context_window_k=entity.context_window_k,
-            is_default=entity.is_default,
-            is_primary=entity.is_primary,
             enabled=entity.enabled,
             description=entity.description,
             created_at=_iso(entity.created_at),
@@ -91,17 +95,11 @@ class ModelsService:
             json_mode=dto.json_mode,
             retries=dto.retries,
             context_window_k=dto.context_window_k,
-            is_default=dto.is_default,
-            is_primary=dto.is_primary,
             enabled=dto.enabled,
             description=dto.description.strip(),
             created_at=now,
             updated_at=now,
         )
-        # 首条自动设为默认 + 主模型
-        if self._repo.count() == 0:
-            entity.is_default = True
-            entity.is_primary = True
         saved = self._repo.create(entity)
         return self.to_response(saved)
 
@@ -137,16 +135,7 @@ class ModelsService:
         return self.to_response(saved)
 
     def delete_model(self, model_id: str) -> bool:
-        entity = self._repo.find_by_id(model_id)
-        if entity is None:
-            return False
-        if entity.is_primary:
-            raise ValueError("主对话模型不可删除")
         return self._repo.delete(model_id)
-
-    def set_default(self, model_id: str) -> LlmModelResponseDto | None:
-        entity = self._repo.set_default(model_id)
-        return self.to_response(entity) if entity else None
 
     def test_connection(self, model_id: str) -> dict[str, Any] | None:
         """探测 OpenAI 兼容 ``GET {base_url}/models``。"""
@@ -204,20 +193,15 @@ class ModelsService:
                 "url": url,
             }
 
-    def get_runtime_config(self) -> LlmModel | None:
-        """供 agents / chat 使用：优先主模型，其次默认，再取列表第一条。"""
-        return (
-            self._repo.find_primary()
-            or self._repo.find_default()
-            or (self._repo.find_all()[:1] or [None])[0]
-        )
-
     def get_entity(self, model_id: str) -> LlmModel | None:
         """按 id 取模型实体（含 ``api_key``），供角色绑定模型时使用。"""
         return self._repo.find_by_id(model_id)
 
     def seed_from_env_if_empty(self) -> LlmModelResponseDto | None:
-        """库为空且环境有 OPENAI_API_KEY 时，写入一条默认配置。"""
+        """库为空且环境有 OPENAI_API_KEY 时，写入一条基础配置。
+
+        仅写入基础字段，不再标记「主/默认」；是否使用仍取决于角色是否绑定。
+        """
         if self._repo.count() > 0:
             return None
         api_key = os.getenv("OPENAI_API_KEY")
@@ -229,8 +213,6 @@ class ModelsService:
             model_id=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
             base_url=os.getenv("OPENAI_BASE_URL") or None,
             api_key=api_key,
-            is_default=True,
-            is_primary=True,
             description="由环境变量 OPENAI_* 自动导入",
         )
         return self.create_model(dto)

@@ -53,6 +53,7 @@ def build_medium_graph(
         planned = tool_selector.select_tools(
             state.get("rewritten") or state.get("message") or "",
             allowed=allowed_from_role(role),
+            role=role,
         )
         used = bool(state.get("used_llm")) or bool(planned.get("used_llm"))
         selected = list(planned.get("selected_tools") or [])

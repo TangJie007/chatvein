@@ -78,10 +78,12 @@ def select_tools(
     message: str,
     *,
     allowed: list[str] | None = None,
+    role: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """返回 ``{selected_tools, candidate_tools, tool_plan_reason, used_llm}``。
 
     模型明确表示无需工具时，``selected_tools`` 可为空白（不再强行塞一个工具）。
+    ``role`` 用于取聊天模型；未绑定模型时走启发式。
     """
     text = (message or "").strip()
     tools, filter_note = _apply_allowlist(all_tools(), allowed)
@@ -95,7 +97,7 @@ def select_tools(
         }
 
     catalog = "\n".join(f"- {tool.name}: {tool.description}" for tool in tools)
-    model = llm_mod.get_chat_model(temperature=0, streaming=False, thinking=False)
+    model = llm_mod.get_chat_model(role=role, temperature=0, streaming=False, thinking=False)
 
     def _with_note(reason: str) -> str:
         if filter_note:

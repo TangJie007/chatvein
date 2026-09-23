@@ -90,7 +90,7 @@ export function ChatPanel({
   onOpenWorkspace,
   onOpenTrace,
   roleName,
-  modelName = "主对话模型",
+  modelName = "（未配置模型）",
   modelId = "",
   contextPct = 0,
   contextTitle = "上下文已用 0%",

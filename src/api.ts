@@ -507,8 +507,6 @@ export interface LlmModelRecord {
   json_mode: boolean;
   retries: number;
   context_window_k: number;
-  is_default: boolean;
-  is_primary: boolean;
   enabled: boolean;
   description: string;
   created_at: string;
@@ -529,8 +527,6 @@ export type CreateLlmModelPayload = {
   json_mode?: boolean;
   retries?: number;
   context_window_k?: number;
-  is_default?: boolean;
-  is_primary?: boolean;
   enabled?: boolean;
   description?: string;
 };
@@ -569,10 +565,6 @@ export function deleteModel(modelId: string) {
   );
 }
 
-export function setDefaultModel(modelId: string) {
-  return backendRequest<LlmModelRecord>(`/api/models/${modelId}/default`, "POST");
-}
-
 export function testModelConnection(modelId: string) {
   return backendRequest<ModelTestResult>(`/api/models/${modelId}/test`, "POST");
 }
@@ -580,7 +572,6 @@ export function testModelConnection(modelId: string) {
 /* -------------------------------------------------------------------------
  * Built-in MCP catalog (backend/mcps)
  * ---------------------------------------------------------------------- */
-
 export interface McpToolParam {
   name: string;
   type: string;
@@ -637,18 +628,6 @@ export function approveBash(id: string) {
 
 export function denyBash(id: string) {
   return backendRequest<{ ok: boolean }>("/api/bash/deny", "POST", { id });
-}
-
-/** Resolve display model: primary → default → first enabled → first. */
-export function pickActiveModel(models: LlmModelRecord[]): LlmModelRecord | null {
-  if (models.length === 0) return null;
-  return (
-    models.find((m) => m.is_primary && m.enabled) ??
-    models.find((m) => m.is_default && m.enabled) ??
-    models.find((m) => m.enabled) ??
-    models[0] ??
-    null
-  );
 }
 
 /* -------------------------------------------------------------------------
@@ -783,7 +762,7 @@ export interface RoleRecord {
   initial: string;
   /** 系统提示词（人格与行为边界）。 */
   prompt: string;
-  /** 绑定模型 id；空串表示「主对话模型（自动）」。 */
+  /** 绑定模型 id；空串表示尚未配置模型。 */
   model_id: string;
   tone: RoleTone;
   temperature: number;

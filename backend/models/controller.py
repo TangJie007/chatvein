@@ -1,4 +1,7 @@
-"""HTTP 路由（NestJS Controller 对应物）。"""
+"""HTTP 路由（NestJS Controller 对应物）。
+
+不再提供 ``/{model_id}/default`` 端点：模型之间不再有主次之分。
+"""
 
 from fastapi import APIRouter, HTTPException
 
@@ -37,21 +40,10 @@ def update_model(model_id: str, payload: UpdateLlmModelDto):
 
 @models_controller.delete("/{model_id}")
 def delete_model(model_id: str):
-    try:
-        deleted = _service.delete_model(model_id)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    deleted = _service.delete_model(model_id)
     if not deleted:
         raise HTTPException(status_code=404, detail="模型不存在")
     return {"deleted": 1, "id": model_id}
-
-
-@models_controller.post("/{model_id}/default")
-def set_default_model(model_id: str):
-    model = _service.set_default(model_id)
-    if model is None:
-        raise HTTPException(status_code=404, detail="模型不存在")
-    return model
 
 
 @models_controller.post("/{model_id}/test")

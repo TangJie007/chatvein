@@ -9,7 +9,7 @@ import {
   useParams,
   useSearchParams,
 } from "react-router-dom";
-import { listModels, listRoles, pickActiveModel } from "./api";
+import { listModels, listRoles } from "./api";
 import { TitleBar } from "./components/layout/TitleBar";
 import { Sidebar } from "./components/layout/Sidebar";
 import { BashApproval } from "./components/chat/BashApproval";
@@ -25,11 +25,10 @@ import { TraceShell } from "./components/trace/TraceWindow";
 import { viewFromPathname, type NavCounts } from "./types/view";
 
 type MainOutletContext = {
-  defaultModelName: string | null;
   newChatRequestId: number;
   addModelRequestId: number;
   onConversationCount: (n: number) => void;
-  onModelsChange: (info: { count: number; defaultName: string | null }) => void;
+  onModelsChange: (info: { count: number }) => void;
 };
 
 export default function App() {
@@ -74,7 +73,6 @@ function MainLayout() {
     roles: 0,
     models: 0,
   });
-  const [defaultModelName, setDefaultModelName] = useState<string | null>(null);
   const [addModelRequestId, setAddModelRequestId] = useState(0);
   const [newChatRequestId, setNewChatRequestId] = useState(0);
 
@@ -91,9 +89,7 @@ function MainLayout() {
     void listModels()
       .then((models) => {
         if (cancelled) return;
-        const active = pickActiveModel(models);
         setCounts((c) => ({ ...c, models: models.length }));
-        setDefaultModelName(active?.name ?? null);
       })
       .catch(() => {
         /* backend may still be starting */
@@ -108,9 +104,8 @@ function MainLayout() {
   }, []);
 
   const handleModelsChange = useCallback(
-    ({ count, defaultName }: { count: number; defaultName: string | null }) => {
+    ({ count }: { count: number }) => {
       setCounts((c) => ({ ...c, models: count }));
-      setDefaultModelName(defaultName);
     },
     []
   );
@@ -124,7 +119,6 @@ function MainLayout() {
   };
 
   const outletContext: MainOutletContext = {
-    defaultModelName,
     newChatRequestId,
     addModelRequestId,
     onConversationCount: handleConversationCount,
@@ -156,7 +150,6 @@ function ChatOutlet() {
   const ctx = useOutletContext<MainOutletContext>();
   return (
     <ChatView
-      modelName={ctx.defaultModelName ?? undefined}
       newRequestId={ctx.newChatRequestId}
       onConversationCount={ctx.onConversationCount}
     />

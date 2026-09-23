@@ -9,7 +9,7 @@ from agents.service import run_chat
 def test_pipeline_routes_simple(monkeypatch) -> None:
     monkeypatch.setattr(
         "agents.graphs.pipeline.router.understand",
-        lambda _msg: {
+        lambda _msg, **_kwargs: {
             "rewritten": "你好",
             "difficulty": "simple",
             "reason": "闲聊",
@@ -32,7 +32,7 @@ def test_pipeline_routes_simple(monkeypatch) -> None:
 def test_pipeline_routes_medium_react(monkeypatch) -> None:
     monkeypatch.setattr(
         "agents.graphs.pipeline.router.understand",
-        lambda _msg: {
+        lambda _msg, **_kwargs: {
             "rewritten": "现在几点",
             "difficulty": "medium",
             "reason": "需要时间工具",
@@ -62,7 +62,7 @@ def test_pipeline_routes_medium_react(monkeypatch) -> None:
 def test_pipeline_hard_uses_hard_graph(monkeypatch) -> None:
     monkeypatch.setattr(
         "agents.graphs.pipeline.router.understand",
-        lambda _msg: {
+        lambda _msg, **_kwargs: {
             "rewritten": "改代码直到跑通",
             "difficulty": "hard",
             "reason": "多步",
@@ -135,7 +135,7 @@ def test_run_chat_offline_hard_plan_verify(monkeypatch) -> None:
     )
     monkeypatch.setattr(
         "agents.graphs.pipeline.router.understand",
-        lambda _msg: {
+        lambda _msg, **_kwargs: {
             "rewritten": "用沙箱反复改代码直到通过",
             "difficulty": "hard",
             "reason": "测试",

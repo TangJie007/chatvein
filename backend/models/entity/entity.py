@@ -1,6 +1,10 @@
 """LLM 模型表实体（NestJS Entity 对应物）。
 
 表名 ``llm_models``；由 ``db.init_db`` → ``SQLModel.metadata.create_all`` 建表。
+
+设计原则：**每个模型都是平等的配置项**。应用不再区分「主模型 / 默认模型」，
+运行时选择由角色侧的 ``role.model_id`` 决定，没有角色的聊天路径会直接返回
+"暂未给角色配置模型"，而不是走回退链。
 """
 
 import uuid
@@ -36,8 +40,6 @@ class LlmModel(SQLModel, table=True):
     # 上下文窗口（千 tokens），供 UI 展示
     context_window_k: int = Field(default=128)
 
-    is_default: bool = Field(default=False, index=True)
-    is_primary: bool = Field(default=False, index=True)
     enabled: bool = Field(default=True)
 
     description: str = Field(default="", max_length=500)

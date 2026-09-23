@@ -22,8 +22,9 @@ from sqlmodel import Session, SQLModel
 
 # v1: 手写 sqlite3；v2: SQLModel；v3: llm_models；v4: conversations.workspace_dir；
 # v5: 主库移除 messages（对话消息只存会话空间 session.sqlite）；
-# v6: roles.resident_skills 常驻技能列。
-SCHEMA_VERSION = 6
+# v6: roles.resident_skills 常驻技能列；
+# v7: llm_models 移除 is_default / is_primary 列（不再区分主/默认模型）。
+SCHEMA_VERSION = 7
 DB_FILENAME = "chatvein.db"
 
 _BACKEND_DIR = Path(__file__).resolve().parent
@@ -171,6 +172,25 @@ def _ensure_roles_resident_skills_column(connection: Connection) -> None:
         ).close()
 
 
+def _drop_llm_models_flag_columns(connection: Connection) -> None:
+    """v7：删除 ``llm_models.is_default`` / ``is_primary`` 列（SQLite 3.35+ 支持 DROP COLUMN）。"""
+    rows = connection.exec_driver_sql("PRAGMA table_info(llm_models)").fetchall()
+    names = {str(row[1]) for row in rows}
+    if not names:
+        return
+    for column in ("is_default", "is_primary"):
+        if column in names:
+            try:
+                connection.exec_driver_sql(
+                    f"ALTER TABLE llm_models DROP COLUMN {column}"
+                ).close()
+            except Exception as exc:  # noqa: BLE001 — 老 SQLite 不支持 DROP COLUMN
+                print(
+                    f"CHATVEIN migrate drop llm_models.{column} skipped: {exc}",
+                    flush=True,
+                )
+
+
 def _drop_main_messages_table(connection: Connection) -> None:
     """v5：对话消息迁到会话空间后，删除主库 messages 表。"""
     rows = connection.exec_driver_sql(
@@ -236,6 +256,8 @@ def _migrate(connection: Connection) -> None:
         _drop_main_messages_table(connection)
     if current < 6:
         _ensure_roles_resident_skills_column(connection)
+    if current < 7:
+        _drop_llm_models_flag_columns(connection)
     if current != SCHEMA_VERSION:
         connection.exec_driver_sql(f"PRAGMA user_version = {SCHEMA_VERSION}").close()
 

@@ -89,7 +89,7 @@ export function AddModelDialog({
               id="model-name"
               value={form.name}
               onChange={(e) => set("name", e.target.value)}
-              placeholder="例如 主对话模型"
+              placeholder="例如 GPT-4o"
               autoFocus
             />
           </div>

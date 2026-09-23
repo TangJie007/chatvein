@@ -16,8 +16,6 @@ import {
   createModel,
   deleteModel,
   listModels,
-  pickActiveModel,
-  setDefaultModel,
   testModelConnection,
   updateModel,
   type CreateLlmModelPayload,
@@ -26,7 +24,6 @@ import {
 } from "../../api";
 import { cn } from "../../lib/cn";
 import { Button } from "../ui/button";
-import { Switch } from "../ui/switch";
 import { AddModelDialog } from "../models/AddModelDialog";
 
 type ModelsViewProps = {
@@ -34,7 +31,6 @@ type ModelsViewProps = {
   addRequestId?: number;
   onModelsChange?: (info: {
     count: number;
-    defaultName: string | null;
   }) => void;
 };
 
@@ -43,7 +39,6 @@ type ModelForm = {
   baseUrl: string;
   modelId: string;
   apiKey: string;
-  isDefault: boolean;
 };
 
 function toForm(model: LlmModelRecord): ModelForm {
@@ -52,7 +47,6 @@ function toForm(model: LlmModelRecord): ModelForm {
     baseUrl: model.base_url ?? "",
     modelId: model.model_id,
     apiKey: model.key_mask ?? "",
-    isDefault: model.is_default,
   };
 }
 
@@ -61,7 +55,6 @@ function formToPayload(form: ModelForm): UpdateLlmModelPayload {
     name: form.name.trim(),
     model_id: form.modelId.trim(),
     base_url: form.baseUrl.trim() || null,
-    is_default: form.isDefault,
   };
   // 仅当用户改过密钥（不含脱敏星号）时才提交
   if (form.apiKey && !form.apiKey.includes("*") && !form.apiKey.includes("•")) {
@@ -83,10 +76,8 @@ export function ModelsView({ addRequestId = 0, onModelsChange }: ModelsViewProps
   onModelsChangeRef.current = onModelsChange;
 
   const emitChange = useCallback((list: LlmModelRecord[]) => {
-    const active = pickActiveModel(list);
     onModelsChangeRef.current?.({
       count: list.length,
-      defaultName: active?.name ?? null,
     });
   }, []);
 
@@ -136,22 +127,12 @@ export function ModelsView({ addRequestId = 0, onModelsChange }: ModelsViewProps
     await refresh(created.id);
   };
 
-  const handleSetDefault = async (id: string) => {
-    await setDefaultModel(id);
-    await refresh(id);
-  };
-
   const handleSave = async (id: string, form: ModelForm) => {
     await updateModel(id, formToPayload(form));
     await refresh(id);
   };
 
   const handleDelete = async (id: string) => {
-    const target = models.find((m) => m.id === id);
-    if (target?.is_primary) {
-      window.alert("主对话模型不可删除");
-      return;
-    }
     if (!window.confirm("确定删除该模型？此操作不可撤销。")) return;
     await deleteModel(id);
     setStatusById((prev) => {
@@ -254,16 +235,6 @@ export function ModelsView({ addRequestId = 0, onModelsChange }: ModelsViewProps
                     >
                       {m.name}
                     </span>
-                    {m.is_primary && (
-                      <span className="shrink-0 rounded-full bg-brand-50 px-1.5 text-[9.5px] font-medium text-brand-700">
-                        主
-                      </span>
-                    )}
-                    {m.is_default && !m.is_primary && (
-                      <span className="shrink-0 rounded-full bg-brand-600 px-1.5 text-[9.5px] font-medium text-white">
-                        默认
-                      </span>
-                    )}
                     {status && (
                       <span
                         className={cn(
@@ -300,7 +271,6 @@ export function ModelsView({ addRequestId = 0, onModelsChange }: ModelsViewProps
             key={active.id}
             model={active}
             status={statusById[active.id]}
-            onSetDefault={handleSetDefault}
             onSave={handleSave}
             onDelete={handleDelete}
             onTest={handleTest}
@@ -324,7 +294,6 @@ export function ModelsView({ addRequestId = 0, onModelsChange }: ModelsViewProps
 type ModelConfigProps = {
   model: LlmModelRecord;
   status?: "online" | "offline";
-  onSetDefault: (id: string) => Promise<void>;
   onSave: (id: string, form: ModelForm) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
   onTest: (id: string) => Promise<{ ok: boolean; message: string; latency_ms: number }>;
@@ -333,7 +302,6 @@ type ModelConfigProps = {
 function ModelConfig({
   model,
   status,
-  onSetDefault,
   onSave,
   onDelete,
   onTest,
@@ -402,11 +370,6 @@ function ModelConfig({
             <h1 className="truncate text-[15px] font-semibold text-ink-900">
               {model.name}
             </h1>
-            {model.is_primary && (
-              <span className="shrink-0 rounded-full bg-brand-50 px-2 py-0.5 text-[10.5px] font-medium text-brand-700">
-                主对话模型
-              </span>
-            )}
             {status && (
               <span
                 className={cn(
@@ -438,26 +401,15 @@ function ModelConfig({
             )}
             测试连接
           </Button>
-          {!model.is_default && (
-            <Button
-              variant="tint"
-              size="sm"
-              onClick={() => void onSetDefault(model.id)}
-            >
-              设为默认
-            </Button>
-          )}
-          {!model.is_primary && (
-            <Button
-              variant="ghost"
-              size="icon"
-              className="text-ink-400 hover:text-danger-600"
-              title="删除模型"
-              onClick={() => void onDelete(model.id)}
-            >
-              <Trash2 className="size-3.5" strokeWidth={1.75} />
-            </Button>
-          )}
+          <Button
+            variant="ghost"
+            size="icon"
+            className="text-ink-400 hover:text-danger-600"
+            title="删除模型"
+            onClick={() => void onDelete(model.id)}
+          >
+            <Trash2 className="size-3.5" strokeWidth={1.75} />
+          </Button>
         </div>
       </header>
 
@@ -515,13 +467,6 @@ function ModelConfig({
               </div>
             </Field>
           </Card>
-
-          <Row label="设为默认模型" hint="新会话优先使用该模型">
-            <Switch
-              checked={form.isDefault}
-              onCheckedChange={(v) => set("isDefault", v)}
-            />
-          </Row>
         </div>
       </div>
 
@@ -610,26 +555,6 @@ function Field({
       </span>
       {children}
     </label>
-  );
-}
-
-function Row({
-  label,
-  hint,
-  children,
-}: {
-  label: string;
-  hint?: string;
-  children: ReactNode;
-}) {
-  return (
-    <div className="flex items-center gap-4 rounded-xl px-3 py-1.5 transition-colors hover:bg-tint/50">
-      <div className="flex min-w-0 flex-1 items-baseline gap-2">
-        <p className="shrink-0 text-[12.5px] font-medium text-ink-900">{label}</p>
-        {hint && <p className="truncate text-[11px] text-ink-400">{hint}</p>}
-      </div>
-      <div className="shrink-0">{children}</div>
-    </div>
   );
 }
 

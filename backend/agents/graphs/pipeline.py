@@ -30,7 +30,7 @@ def _merged_system(role: dict[str, Any] | None, base: str) -> str:
 
 def _understand(state: ChatState) -> dict[str, Any]:
     text = (state.get("message") or "").strip()
-    understood = router.understand(text)
+    understood = router.understand(text, role=state.get("role"))
     rewritten = str(understood.get("rewritten") or text)
     difficulty = str(understood.get("difficulty") or "simple")
     reason = str(understood.get("reason") or "")

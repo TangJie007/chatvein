@@ -127,6 +127,44 @@ def chat(req: ChatRequest):
     from skills.service import skill_prompt_blocks  # pyright: ignore[reportImplicitRelativeImport]
 
     role_runtime = RolesService().resolve_for_chat(req.role_id)
+    # 角色已选但未绑定模型：直接给出提示，不走理解/路由/工具链。
+    # 未选角色（req.role_id 为空）保持原有行为：走离线/无模型链路。
+    if role_runtime is not None and not (role_runtime.get("model_id") or "").strip():
+        reply = "暂未给角色配置模型"
+        turn_id = uuid.uuid4().hex
+        conversation_id, user_msg, assistant_msg = conversations_service.save_exchange(
+            prepared["id"],
+            req.message,
+            reply,
+            used_llm=False,
+            route="simple",
+            turn_id=turn_id,
+            tokens=0,
+            duration_ms=0,
+            tool_trace=[],
+            route_reason="角色未配置模型",
+            tool_plan=None,
+        )
+        insight = conversations_service.workspace_insight(conversation_id)
+        return {
+            "reply": reply,
+            "from": "agents",
+            "difficulty": "simple",
+            "rewritten": None,
+            "route": "simple",
+            "route_reason": "角色未配置模型",
+            "tool_plan_reason": None,
+            "selected_tools": [],
+            "tool_trace": [],
+            "used_llm": False,
+            "turn_id": turn_id,
+            "tokens": 0,
+            "duration_ms": 0,
+            "conversation_id": conversation_id,
+            "user_message": user_msg,
+            "assistant_message": assistant_msg,
+            "workspace": insight,
+        }
     memory_limit = 24
     if role_runtime and role_runtime.get("memory") is not None:
         try:

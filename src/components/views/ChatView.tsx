@@ -14,7 +14,6 @@ import {
   listRoles,
   openArtifactLocation,
   openConversationWorkspace,
-  pickActiveModel,
   sendChat,
   type ConversationRecord,
   type ConversationWorkspace,
@@ -119,13 +118,11 @@ function isAbortError(err: unknown): boolean {
 }
 
 type ChatViewProps = {
-  modelName?: string;
   newRequestId?: number;
   onConversationCount?: (n: number) => void;
 };
 
 export function ChatView({
-  modelName,
   newRequestId = 0,
   onConversationCount,
 }: ChatViewProps) {
@@ -320,9 +317,8 @@ export function ChatView({
   const boundModel = activeRole?.model_id
     ? models.find((model) => model.id === activeRole.model_id) ?? null
     : null;
-  const displayModel = boundModel ?? pickActiveModel(models);
-  const resolvedModelName = displayModel?.name ?? modelName ?? "主对话模型";
-  const contextTotal = Math.max(1, (displayModel?.context_window_k ?? 128) * 1000);
+  const resolvedModelName = boundModel?.name ?? "（未配置模型）";
+  const contextTotal = Math.max(1, (boundModel?.context_window_k ?? 128) * 1000);
   const contextUsed = messages.reduce((sum, message) => sum + estimateTokens(message.content), 0);
   const contextPct = Math.min(100, Math.round((contextUsed / contextTotal) * 100));
   const contextTitle = `上下文已用 ${contextPct}% · ${formatTokenCount(contextUsed)} / ${formatTokenCount(contextTotal)} tokens`;
@@ -540,7 +536,7 @@ export function ChatView({
           insightOpen={insightOpen}
           onToggleInsight={() => setInsightOpen((v) => !v)}
           modelName={resolvedModelName}
-          modelId={displayModel?.model_id ?? ""}
+          modelId={boundModel?.model_id ?? ""}
           roleName={activeRole?.name}
           contextPct={contextPct}
           contextTitle={contextTitle}

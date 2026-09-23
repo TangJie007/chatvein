@@ -199,6 +199,7 @@ def build_hard_graph(
         planned = tool_selector.select_tools(
             query,
             allowed=allowed_from_role(role),
+            role=role,
         )
         used = bool(state.get("used_llm")) or bool(planned.get("used_llm"))
         selected = list(planned.get("selected_tools") or [])

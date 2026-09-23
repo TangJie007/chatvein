@@ -220,7 +220,7 @@ def list_configured_models() -> str:
     if not models:
         return "尚未配置任何模型"
     return "\n".join(
-        f"- {m.name} ({m.model_id})" + (" [primary]" if m.is_primary else "") for m in models
+        f"- {m.name} ({m.model_id})" for m in models
     )
 
 

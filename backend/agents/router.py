@@ -1,4 +1,4 @@
-"""理解 / 路由：改写用户输入 + 判定难度（主模型 structured output）。"""
+"""理解 / 路由：改写用户输入 + 判定难度（用角色绑定的模型 structured output）。"""
 
 from __future__ import annotations
 
@@ -35,10 +35,10 @@ class UnderstandDecision(BaseModel):
     reason: str = Field(description="难度判定的简短理由")
 
 
-def understand(message: str) -> dict[str, Any]:
-    """返回 ``{rewritten, difficulty, reason, used_llm}``。全程主模型。"""
+def understand(message: str, *, role: dict[str, Any] | None = None) -> dict[str, Any]:
+    """返回 ``{rewritten, difficulty, reason, used_llm}``。用角色绑定的模型；未绑定走离线启发式。"""
     text = (message or "").strip()
-    model = llm_mod.get_router_model()
+    model = llm_mod.get_chat_model(role=role, temperature=0, streaming=False, thinking=False)
     if model is None:
         return _offline(text)
 
@@ -66,7 +66,7 @@ def understand(message: str) -> dict[str, Any]:
 
 
 def _offline(text: str) -> dict[str, Any]:
-    """无主模型时：不改写，有工具意图则 medium，否则 simple。"""
+    """无可用模型时：不改写，有工具意图则 medium，否则 simple。"""
     names = heuristic_tool_names(text)
     if names:
         return {

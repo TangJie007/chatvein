@@ -1,4 +1,7 @@
-"""请求 / 响应 DTO（NestJS DTO 对应物）。"""
+"""请求 / 响应 DTO（NestJS DTO 对应物）。
+
+模型之间没有主次之分，配置项不再包含 ``is_default`` / ``is_primary`` 字段。
+"""
 
 from pydantic import BaseModel, Field
 
@@ -17,8 +20,6 @@ class CreateLlmModelDto(BaseModel):
     json_mode: bool = False
     retries: int = Field(default=2, ge=0, le=10)
     context_window_k: int = Field(default=128, ge=1, le=10_000)
-    is_default: bool = False
-    is_primary: bool = False
     enabled: bool = True
     description: str = Field(default="", max_length=500)
 
@@ -39,8 +40,6 @@ class UpdateLlmModelDto(BaseModel):
     json_mode: bool | None = None
     retries: int | None = Field(default=None, ge=0, le=10)
     context_window_k: int | None = Field(default=None, ge=1, le=10_000)
-    is_default: bool | None = None
-    is_primary: bool | None = None
     enabled: bool | None = None
     description: str | None = Field(default=None, max_length=500)
 
@@ -62,8 +61,6 @@ class LlmModelResponseDto(BaseModel):
     json_mode: bool
     retries: int
     context_window_k: int
-    is_default: bool
-    is_primary: bool
     enabled: bool
     description: str
     created_at: str

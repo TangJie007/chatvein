@@ -16,7 +16,7 @@ def test_mask_api_key() -> None:
     assert masked.endswith("-key")
 
 
-def test_create_model_does_not_return_raw_key_and_marks_first_primary() -> None:
+def test_create_model_does_not_return_raw_key() -> None:
     created = ModelsService().create_model(
         CreateLlmModelDto(
             name="本地",
@@ -25,7 +25,5 @@ def test_create_model_does_not_return_raw_key_and_marks_first_primary() -> None:
         )
     )
     assert created.has_api_key is True
-    assert created.is_primary is True
-    assert created.is_default is True
     assert created.key_mask != "sk-test-secret-key"
     assert "secret" not in (created.key_mask or "")

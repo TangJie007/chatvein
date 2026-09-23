@@ -1,6 +1,7 @@
-"""Chat 模型工厂：读 ModelsService 运行时配置，可被角色覆盖。
+"""Chat 模型工厂：按角色绑定的模型 ID 构造 langchain 客户端。
 
-默认假定 **OpenAI Chat Completions 兼容**网关；不为每个模型名写分支。
+不再有「主模型 / 默认模型」的概念；调用方必须显式传入 role（含 ``model_id``）。
+角色未绑定模型时返回 None，由上层决定是否降级或提示用户。
 
 仅两种线路协议：
 - ``openai``（默认）：出站剥掉 ``reasoning`` / ``reasoning_content``（多数网关只允许回传 content）；
@@ -100,26 +101,21 @@ def resolve_wire_profile(cfg: Any) -> WireProfile:
 
 def get_chat_model(
     *,
-    temperature: float | None = None,
     role: dict[str, Any] | None = None,
+    temperature: float | None = None,
     streaming: bool | None = None,
     thinking: bool | None = None,
     timeout: float | None = None,
 ) -> BaseChatModel | None:
-    """返回聊天模型实例。
+    """按 ``role.model_id`` 构造聊天模型；无 role 或未绑模型时返回 None。
 
-    - 角色 ``role`` 提供 ``model_id`` 时，优先用该模型连接；
-    - 否则回退到运行时配置（主 → 默认 → 首条启用）。
-
-    ``thinking=False``：仅 deepseek 线路发 ``thinking.disabled``；openai 线路不塞额外字段。
+    不再回退到「主/默认模型」——未绑定模型由上层判定（通常提示用户先配置模型）。
     """
+    if not role or not role.get("model_id"):
+        return None
     try:
         svc = ModelsService()
-        cfg = None
-        if role and role.get("model_id"):
-            cfg = svc.get_entity(role["model_id"])
-        if cfg is None:
-            cfg = svc.get_runtime_config()
+        cfg = svc.get_entity(role["model_id"])
     except Exception:  # noqa: BLE001
         return None
     if cfg is None or not cfg.enabled or not (cfg.api_key or "").strip():
@@ -129,15 +125,14 @@ def get_chat_model(
     max_tokens = cfg.max_tokens
     presence = cfg.presence_penalty
     frequency = cfg.frequency_penalty
-    if role:
-        if role.get("temperature") is not None:
-            gen_temperature = float(role["temperature"])
-        if role.get("max_tokens"):
-            max_tokens = int(role["max_tokens"])
-        if role.get("presence_penalty") is not None:
-            presence = float(role["presence_penalty"])
-        if role.get("frequency_penalty") is not None:
-            frequency = float(role["frequency_penalty"])
+    if role.get("temperature") is not None:
+        gen_temperature = float(role["temperature"])
+    if role.get("max_tokens"):
+        max_tokens = int(role["max_tokens"])
+    if role.get("presence_penalty") is not None:
+        presence = float(role["presence_penalty"])
+    if role.get("frequency_penalty") is not None:
+        frequency = float(role["frequency_penalty"])
 
     if temperature is not None:
         gen_temperature = temperature
@@ -170,11 +165,6 @@ def get_chat_model(
     if profile == "deepseek":
         return ChatDeepSeekReact(**kwargs)
     return ChatOpenAICompat(**kwargs)
-
-
-def get_router_model() -> BaseChatModel | None:
-    """路由 Agent：主模型连接信息 + 温度 0 / 非流式；按线路安全关思考。"""
-    return get_chat_model(temperature=0, streaming=False, thinking=False)
 
 
 def invoke_structured(model: BaseChatModel, schema: type, messages: list[Any]) -> Any:
