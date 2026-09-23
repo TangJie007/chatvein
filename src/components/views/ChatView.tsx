@@ -15,6 +15,7 @@ import {
   openArtifactLocation,
   openConversationWorkspace,
   sendChat,
+  updateConversationSkills,
   type ConversationRecord,
   type ConversationWorkspace,
   type ChatMessageRecord,
@@ -22,6 +23,7 @@ import {
   type RoleRecord,
 } from "../../api";
 import { ChatPanel, type ChatMessage } from "../chat/ChatPanel";
+import type { ComposerSkill } from "../chat/Composer";
 import type { InsightArtifact, InsightThreadItem } from "../chat/InsightPanel";
 import { SessionList, type SessionItem } from "../chat/SessionList";
 import { openTraceWindow } from "../../lib/openTrace";
@@ -168,6 +170,8 @@ export function ChatView({
   } | null>(null);
   /** 编辑时回灌到输入框的原文（null 表示无需回灌）。 */
   const [restoreText, setRestoreText] = useState<string | null>(null);
+  /** 当前会话级技能（Composer 受控）：勾选 / 移除即持久化，切换会话随 loadConversation 刷新。 */
+  const [composerSkills, setComposerSkills] = useState<ComposerSkill[]>([]);
   const [roles, setRoles] = useState<RoleRecord[]>([]);
   const [models, setModels] = useState<LlmModelRecord[]>([]);
   const [roleId, setRoleId] = useState<string | null>(null);
@@ -204,6 +208,7 @@ export function ChatView({
     lastPersistedIdRef.current = maxId;
     const lastAgent = [...msgs].reverse().find((m) => m.role === "agent" && m.turnId);
     setSelectedTurnId(lastAgent?.turnId ?? null);
+    setComposerSkills((data.conversation.skills ?? []).map((slug) => ({ slug, name: slug })));
     try {
       setWorkspace(await getConversationWorkspace(id));
     } catch {
@@ -253,6 +258,7 @@ export function ChatView({
     if (!activeId) {
       setMessages([]);
       setWorkspace(null);
+      setComposerSkills([]);
       return;
     }
     let cancelled = false;
@@ -287,6 +293,7 @@ export function ChatView({
           if (cancelled) return;
           selectConversation(created.id);
           setMessages([]);
+          setComposerSkills([]);
           setMetaById((prev) => ({ ...prev, [created.id]: {} }));
           setError(null);
         } catch (err) {
@@ -369,6 +376,22 @@ export function ChatView({
       });
     },
     [activeId]
+  );
+
+  /** Composer 勾选 / 移除技能时：更新本地状态并即时持久化到当前会话（会话级生效）。 */
+  const handleSkillsChange = useCallback(
+    (next: ComposerSkill[]) => {
+      setComposerSkills(next);
+      if (activeId) {
+        void updateConversationSkills(
+          activeId,
+          next.map((s) => s.slug)
+        ).catch((err: unknown) => {
+          setError(errorMessage(err));
+        });
+      }
+    },
+    [activeId, setError]
   );
 
   const handleSend = async (
@@ -571,6 +594,9 @@ export function ChatView({
           onSend={(text, skills) => {
             void handleSend(text, skills);
           }}
+          skills={composerSkills}
+          onSkillsChange={handleSkillsChange}
+          residentSkills={activeRole?.resident_skills ?? []}
         />
       </div>
     </>

@@ -19,3 +19,5 @@ class Conversation(SQLModel, table=True):
     workspace_dir: str = Field(default="", max_length=64)
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
+    # 会话级技能 slug 列表（JSON 文本）。常驻技能存角色 resident_skills，不在此列。
+    skills: str = Field(default="[]", max_length=4096)

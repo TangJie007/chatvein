@@ -184,3 +184,74 @@ def test_messages_live_only_in_session_db() -> None:
             ).fetchall()
         }
     assert "messages" not in tables
+
+
+def test_conversation_skills_are_persisted_and_cleaned() -> None:
+    """会话级技能：覆盖写入、清洗 + 保序去重、全量清空、未知会话安全。"""
+    service = ConversationsService()
+    conversation_id, _, _ = service.save_exchange(None, "hi", "hello")
+
+    saved = service.set_conversation_skills(
+        conversation_id, ["code-review", "", "code-review", "api-guide", "  "]
+    )
+    assert saved == ["code-review", "api-guide"]
+    assert service.get_conversation_skills(conversation_id) == ["code-review", "api-guide"]
+
+    stored = service.get_conversation(conversation_id)
+    assert stored is not None
+    assert stored["skills"] == ["code-review", "api-guide"]
+
+    assert service.set_conversation_skills(conversation_id, []) == []
+    assert service.get_conversation_skills(conversation_id) == []
+
+    assert service.set_conversation_skills("missing", ["x"]) == []
+    assert service.get_conversation_skills("missing") == []
+
+
+def test_conversation_skills_are_isolated_per_conversation() -> None:
+    """技能集随会话隔离：A 会话勾选不影响 B 会话。"""
+    service = ConversationsService()
+    a, _, _ = service.save_exchange(None, "hi", "hello")
+    b, _, _ = service.save_exchange(None, "yo", "yo")
+    service.set_conversation_skills(a, ["skill-a"])
+    assert service.get_conversation_skills(a) == ["skill-a"]
+    assert service.get_conversation_skills(b) == []
+
+    rows = service.list_conversations(10)
+    by_id = {row["id"]: row for row in rows}
+    assert by_id[a]["skills"] == ["skill-a"]
+    assert by_id[b]["skills"] == []
+
+
+def test_v8_migration_adds_conversations_skills_column(tmp_path: Path, monkeypatch) -> None:
+    """v7 旧库（conversations 无 skills 列）打开时自动补列并升到 v8。"""
+    import db as db_module
+
+    old_db = tmp_path / "old.sqlite"
+    with sqlite3.connect(old_db) as conn:
+        conn.executescript(
+            """
+            CREATE TABLE conversations (
+                id VARCHAR(36) PRIMARY KEY,
+                title VARCHAR(200) NOT NULL,
+                workspace_dir VARCHAR(1024) NOT NULL,
+                created_at DATETIME NOT NULL,
+                updated_at DATETIME NOT NULL
+            );
+            PRAGMA user_version = 7;
+            """
+        )
+
+    monkeypatch.setenv("CHATVEIN_DB_PATH", str(old_db))
+    db_module._engine = None
+    db_module._db_path_cache = None
+    db_module.init_db()
+
+    with sqlite3.connect(old_db) as conn:
+        cols = {str(row[1]) for row in conn.execute("PRAGMA table_info(conversations)")}
+        version = int(conn.execute("PRAGMA user_version").fetchone()[0])
+    assert "skills" in cols
+    assert version == db_module.SCHEMA_VERSION
+
+    db_module._engine = None
+    db_module._db_path_cache = None

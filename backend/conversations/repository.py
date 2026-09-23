@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any, cast
 
 from sqlalchemy import ColumnElement, UnaryExpression, delete, func
@@ -29,6 +30,30 @@ def _desc(column: object) -> UnaryExpression[Any]:
     return _col(column).desc()
 
 
+def _decode_skills(raw: str | None) -> list[str]:
+    """把会话 skills 列（JSON 文本）解析为 slug 列表；损坏回退空列表。"""
+    try:
+        loaded = json.loads(raw or "[]")
+    except (TypeError, ValueError):
+        return []
+    if not isinstance(loaded, list):
+        return []
+    return [str(item).strip() for item in loaded if str(item).strip()]
+
+
+def _encode_skills(skills: list[str] | None) -> list[str]:
+    """清洗 + 保序去重，供持久化使用（空串 / 空白 slug 被丢弃）。"""
+    out: list[str] = []
+    seen: set[str] = set()
+    for raw in skills or []:
+        slug = str(raw).strip()
+        if not slug or slug in seen:
+            continue
+        seen.add(slug)
+        out.append(slug)
+    return out
+
+
 def _conversation_dict(
     conversation: Conversation,
     message_count: int = 0,
@@ -42,6 +67,7 @@ def _conversation_dict(
         updated_at=iso(conversation.updated_at),
         message_count=message_count,
         last_message=last_message,
+        skills=_decode_skills(conversation.skills),
     )
 
 
@@ -91,6 +117,23 @@ class ConversationsRepository:
             if conversation is None:
                 return None
             return _conversation_dict(conversation)
+
+    def get_skills(self, conversation_id: str) -> list[str]:
+        with session_scope() as session:
+            conversation = session.get(Conversation, conversation_id)
+            return _decode_skills(conversation.skills) if conversation else []
+
+    def set_skills(self, conversation_id: str, skills: list[str] | None) -> list[str]:
+        """覆盖会话级技能集合并持久化（清洗 + 保序去重）；会话不存在返回空列表。"""
+        cleaned = _encode_skills(skills)
+        with session_scope() as session:
+            conversation = session.get(Conversation, conversation_id)
+            if conversation is None:
+                return []
+            conversation.skills = json.dumps(cleaned, ensure_ascii=False)
+            conversation.updated_at = utc_now()
+            session.flush()
+        return cleaned
 
     def delete(self, conversation_id: str) -> bool:
         name = ""

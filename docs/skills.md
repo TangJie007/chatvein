@@ -19,17 +19,18 @@ load_skill(slug) 工具    ──→  按需加载技能正文（几千米 SKILL
 MCP 工具（执行能力）     ──→  真正"怎么做"
 ```
 
-范围限定：`load_skill` 只允许加载**用户本轮已选择**（角色常驻 + 消息级勾选合并）的技能，
+范围限定：`load_skill` 只允许加载**用户已启用**（角色常驻 + 会话级勾选合并）的技能，
 不能越权读取未启用技能。这是「prompt 目录 + 按需加载 + 工具兜底」的混合方案。
 
 ## 2. 全链路
 
 ```text
-前端（Composer 附件面板勾选 slug）
-  → POST /api/chat { message, conversation_id?, role_id?, skills[] }
+前端（Composer 附件面板勾选 slug，勾选即会话级持久化）
+  → PUT /api/conversations/{id}/skills   # Composer 勾选/移除时即时落盘
+  → POST /api/chat { message, conversation_id?, role_id?, skills[] }  # 发送时兜底同步
   → main.py 技能接线：
-      常驻技能 role_runtime.resident_skills  +  临时技能 req.skills
-      → dict.fromkeys 保序去重（常驻在前、临时在后）
+      常驻技能 role_runtime.resident_skills  +  会话级技能 conversations.skills
+      → dict.fromkeys 保序去重（常驻在前、会话在后）
       → skill_prompt_blocks(merged_slugs)
           └─ skills/service.py
               ├─ local_store.load_skill_catalog(slugs)     # 只读已安装技能，生成目录
@@ -70,10 +71,14 @@ MCP 工具（执行能力）     ──→  真正"怎么做"
 | 来源 | 位置 | 生命周期 | 说明 |
 | --- | --- | --- | --- |
 | 常驻技能 | `roles.resident_skills`（角色配置） | 每次会话自动带上 | 与人格相关，需稳定在目录里 |
-| 临时技能 | `req.skills`（单条消息） | 仅本次消息携带 | Composer 附件面板手动勾选 |
+| 会话级技能 | `conversations.skills`（会话配置） | 当前会话持续生效，跨轮保留 | Composer 附件面板手动勾选；已常驻的技能在面板中隐藏，不重复勾选 |
 
-合并规则（`main.py`）：`dict.fromkeys(常驻 + 临时)` 保序去重，保证 role prompt 里的
-技能顺序稳定——**常驻技能在前，临时技能在后**；重复 slug 只保留第一个。
+合并规则（`main.py`）：`dict.fromkeys(常驻 + 会话级)` 保序去重，保证 role prompt 里的
+技能顺序稳定——**常驻技能在前，会话级技能在后**；重复 slug 只保留第一个。
+
+> 说明：Composer 勾选/移除技能时即时写入 `PUT /api/conversations/{id}/skills`；
+> `POST /api/chat` 发送时若携带 `skills` 也会兜底同步（`null` = 不改动，`[]` = 清空会话技能）。
+> 发送后 chip 保留在 Composer，供当前会话后续轮次继续生效。
 
 ## 5. 注入细节
 
@@ -139,5 +144,6 @@ MCP 工具（执行能力）     ──→  真正"怎么做"
 | `agents/graphs/medium.py` / `hard.py` | react_node 按 `_skill_slugs` 无条件附加 `load_skill` |
 | `main.py` 技能接线段 | slug 合并 → 目录注入 → `_skill_slugs` 下传 |
 | `roles/` | `resident_skills` 常驻技能字段 |
-| `POST /api/chat` | `skills[]` 字段携带临时技能 |
-| 前端 `Composer.tsx` | 附件面板勾选已安装技能 |
+| `conversations/` | `conversations.skills` 会话级技能列；`PUT /api/conversations/{id}/skills` 落盘 |
+| `POST /api/chat` | `skills[]` 字段兜底同步会话级技能（`null`=不改动 / `[]`=清空 / 列表=覆盖） |
+| 前端 `Composer.tsx` | 附件面板勾选已安装技能（排除常驻技能，勾选即会话级持久化） |

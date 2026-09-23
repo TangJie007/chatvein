@@ -37,6 +37,7 @@ class ConversationsService:
                     updated_at=row["updated_at"],
                     message_count=count,
                     last_message=last,
+                    skills=row.get("skills") or [],
                 )
             )
         return enriched
@@ -57,6 +58,7 @@ class ConversationsService:
             updated_at=row["updated_at"],
             message_count=count,
             last_message=last,
+            skills=row.get("skills") or [],
         )
 
     def delete_conversation(self, conversation_id: str) -> bool:
@@ -180,6 +182,13 @@ class ConversationsService:
 
     def open_for_chat(self, conversation_id: str | None, title_hint: str) -> ConversationRecord:
         return self._repo.open_for_chat(conversation_id, title_hint)
+
+    def set_conversation_skills(self, conversation_id: str, skills: list[str] | None) -> list[str]:
+        """覆盖会话级技能集（Composer 勾选 / 移除时即时持久化）。"""
+        return self._repo.set_skills(conversation_id, skills)
+
+    def get_conversation_skills(self, conversation_id: str) -> list[str]:
+        return self._repo.get_skills(conversation_id)
 
     def save_exchange(
         self,

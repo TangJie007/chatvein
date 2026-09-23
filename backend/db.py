@@ -23,8 +23,9 @@ from sqlmodel import Session, SQLModel
 # v1: 手写 sqlite3；v2: SQLModel；v3: llm_models；v4: conversations.workspace_dir；
 # v5: 主库移除 messages（对话消息只存会话空间 session.sqlite）；
 # v6: roles.resident_skills 常驻技能列；
-# v7: llm_models 移除 is_default / is_primary 列（不再区分主/默认模型）。
-SCHEMA_VERSION = 7
+# v7: llm_models 移除 is_default / is_primary 列（不再区分主/默认模型）；
+# v8: conversations.skills 会话级技能列（JSON slug 列表，Composer 勾选、当前会话持续生效）。
+SCHEMA_VERSION = 8
 DB_FILENAME = "chatvein.db"
 
 _BACKEND_DIR = Path(__file__).resolve().parent
@@ -172,6 +173,16 @@ def _ensure_roles_resident_skills_column(connection: Connection) -> None:
         ).close()
 
 
+def _ensure_conversations_skills_column(connection: Connection) -> None:
+    """v8：给旧库的 ``conversations`` 表补上 ``skills`` 列（会话级技能 slug，JSON 文本）。"""
+    rows = connection.exec_driver_sql("PRAGMA table_info(conversations)").fetchall()
+    names = {str(row[1]) for row in rows}
+    if names and "skills" not in names:
+        connection.exec_driver_sql(
+            "ALTER TABLE conversations ADD COLUMN skills VARCHAR(4096) NOT NULL DEFAULT '[]'"
+        ).close()
+
+
 def _drop_llm_models_flag_columns(connection: Connection) -> None:
     """v7：删除 ``llm_models.is_default`` / ``is_primary`` 列（SQLite 3.35+ 支持 DROP COLUMN）。"""
     rows = connection.exec_driver_sql("PRAGMA table_info(llm_models)").fetchall()
@@ -258,6 +269,8 @@ def _migrate(connection: Connection) -> None:
         _ensure_roles_resident_skills_column(connection)
     if current < 7:
         _drop_llm_models_flag_columns(connection)
+    if current < 8:
+        _ensure_conversations_skills_column(connection)
     if current != SCHEMA_VERSION:
         connection.exec_driver_sql(f"PRAGMA user_version = {SCHEMA_VERSION}").close()
 

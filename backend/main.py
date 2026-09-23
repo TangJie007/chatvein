@@ -123,6 +123,13 @@ def _collect_tokens(usage: Any) -> int:
 @app.post("/api/chat", tags=["chat"], summary="改写 + 难度路由 + 工具选择")
 def chat(req: ChatRequest):
     prepared = conversations_service.open_for_chat(req.conversation_id, req.message)
+    # 会话级技能：req.skills 非 None 时覆盖会话技能集合并持久化。前端 Composer
+    # 勾选 / 移除时已通过 PUT /api/conversations/{id}/skills 即时保存，发送时再兜底
+    # 同步一次（空数组 = 清空会话技能）。技能在本会话内持续生效，不随单条消息消失。
+    if req.skills is not None:
+        conversations_service.set_conversation_skills(
+            prepared["id"], [str(s) for s in req.skills]
+        )
     from roles.service import RolesService  # pyright: ignore[reportImplicitRelativeImport]
     from skills.service import skill_prompt_blocks  # pyright: ignore[reportImplicitRelativeImport]
 
@@ -177,8 +184,9 @@ def chat(req: ChatRequest):
         limit=memory_limit,
     )
     # --- 技能接线（目录注入 + load_skill 按需加载）---
-    # 完整链路：前端勾选 slug → /api/chat 的 skills 字段 → skill_prompt_blocks 生成
-    #   技能目录（name + description + slug，不注入正文）→ 追加进 role_runtime["prompt"]
+    # 完整链路：前端勾选 slug → PUT /api/conversations/{id}/skills 持久化到会话
+    #   → /api/chat 读取会话技能 → skill_prompt_blocks 生成技能目录
+    #   （name + description + slug，不注入正文）→ 追加进 role_runtime["prompt"]
     #   → run_chat → agents/graphs/pipeline.py 组装 system prompt（# Role 段，
     #   prompts.py build_agent_system）→ create_agent(system_prompt=...) →
     #   agents/llm.py get_chat_model 按 role.model_id 发出模型请求。
@@ -186,13 +194,13 @@ def chat(req: ChatRequest):
     #   完整正文按需拉进上下文，避免几千米的长技能挤爆上下文。
     #   相关文件：skills/service.py → skills/local_store.py → mcps/tools/skills.py
     #   → agents/graphs/medium.py & hard.py（react_node 无条件附加 load_skill）。
-    # 常驻技能（角色级 resident_skills）与临时技能（消息级 req.skills）去重合并：
-    #  * 常驻技能：每次会话都会自动带上，来自角色配置
-    #  * 临时技能：仅在单次消息携带，Composer 附件面板里勾选
+    # 常驻技能（角色级 resident_skills）与会话级技能（conversations.skills）去重合并：
+    #  * 常驻技能：每次会话都会自动带上，来自角色配置；Composer 面板中不重复勾选
+    #  * 会话级技能：Composer 勾选后持久化到当前会话，本会话内持续生效
     # 使用 dict.fromkeys 保序去重，保证 role prompt 里的技能顺序稳定
     resident_slugs = [str(s) for s in (role_runtime.get("resident_skills") or [])] if role_runtime else []
-    message_slugs = [str(s) for s in (req.skills or [])]
-    merged_slugs = list(dict.fromkeys(resident_slugs + message_slugs))
+    session_slugs = conversations_service.get_conversation_skills(prepared["id"])
+    merged_slugs = list(dict.fromkeys(resident_slugs + session_slugs))
     # 1) skill_prompt_blocks 生成技能目录文本（未安装的 slug 会被过滤）
     # 2) _skill_slugs 下传给下游图：medium/hard 的 react_node 据此把 load_skill
     #    工具无条件挂上，保证"用户勾了技能就一定能按需加载"

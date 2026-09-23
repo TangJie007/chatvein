@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter, HTTPException, Body
 
-from .entity import CreateConversationDto
+from .entity import CreateConversationDto, UpdateConversationSkillsDto
 from .service import ConversationsService
 
 conversations_controller = APIRouter()
@@ -45,6 +45,15 @@ def delete_conversation(conversation_id: str):
 @conversations_controller.get("/{conversation_id}/messages")
 def list_messages(conversation_id: str):
     return {"messages": _service.list_messages(conversation_id)}
+
+
+@conversations_controller.put("/{conversation_id}/skills")
+def update_conversation_skills(conversation_id: str, payload: UpdateConversationSkillsDto):
+    """覆盖会话级技能集：Composer 勾选 / 移除时即时持久化，后续每轮对话都生效。"""
+    if _service.get_conversation(conversation_id) is None:
+        raise HTTPException(status_code=404, detail="会话不存在")
+    skills = _service.set_conversation_skills(conversation_id, payload.skills)
+    return {"conversation_id": conversation_id, "skills": skills}
 
 
 @conversations_controller.post("/{conversation_id}/open-workspace")

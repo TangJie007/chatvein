@@ -141,6 +141,8 @@ export interface ConversationRecord {
   updated_at: string;
   message_count: number;
   last_message: string | null;
+  /** 会话级技能 slug 列表：Composer 勾选，当前会话内持续生效。 */
+  skills?: string[];
 }
 
 export interface DbVectorInfo {
@@ -228,6 +230,15 @@ export function createConversation(title = "") {
   });
 }
 
+/** 覆盖会话级技能集：Composer 勾选 / 移除 chip 时即时持久化（当前会话持续生效）。 */
+export function updateConversationSkills(conversationId: string, skills: string[]) {
+  return backendRequest<{ conversation_id: string; skills: string[] }>(
+    `/api/conversations/${conversationId}/skills`,
+    "PUT",
+    { skills }
+  );
+}
+
 /** Run one chat turn against the agent pipeline. */
 export function sendChat(
   message: string,
@@ -264,7 +275,8 @@ export function sendChat(
     message,
     conversation_id: conversationId ?? null,
     role_id: roleId ?? null,
-    skills: skills?.length ? skills : null,
+    // 会话级技能：空数组 = 清空会话技能集；null = 不改动（保留既有会话技能）
+    skills: skills ?? null,
   }, signal);
 }
 

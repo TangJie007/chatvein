@@ -37,6 +37,12 @@ type ComposerProps = {
   /** 消费 restoreText 后回调，父组件据此清空。 */
   onRestored?: () => void;
   conversationId?: string | null;
+  /** 会话级已选技能（受控）：勾选 / 移除后持久化到当前会话，切换会话由父组件刷新。 */
+  skills?: ComposerSkill[];
+  /** 受控更新：勾选 / 移除 chip 时回调，由父组件负责持久化。 */
+  onSkillsChange?: (skills: ComposerSkill[]) => void;
+  /** 角色常驻技能 slug：勾选面板中隐藏（已由角色自动注入，无需重复勾选）。 */
+  residentSkills?: string[];
 };
 
 type UploadItemInput =
@@ -71,6 +77,9 @@ export function Composer({
   restoreText = null,
   onRestored,
   conversationId = null,
+  skills = [],
+  onSkillsChange,
+  residentSkills = [],
 }: ComposerProps) {
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -78,7 +87,6 @@ export function Composer({
   const dropRef = useRef<HTMLDivElement>(null);
   const [draft, setDraft] = useState("");
   const [skillOpen, setSkillOpen] = useState(false);
-  const [skills, setSkills] = useState<ComposerSkill[]>([]);
   const [files, setFiles] = useState<ComposerFile[]>([]);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [keyword, setKeyword] = useState("");
@@ -193,12 +201,12 @@ export function Composer({
   }, [restoreText, onRestored]);
 
   // 发送：拼出带本地文件路径的最终文案，并把 skills（含 slug）交给父组件。
-  // 发送后立即清空 skills / files / skillOpen，避免下一条消息误带旧附件。
+  // 技能是会话级的：发送后保留 chip（当前会话持续生效），移除需在 chip 上手动操作；
+  // files 仍是单次性的，发送后清空。
   const submit = () => {
     const text = draft.trim();
     if (!text || sending) return;
     onSend(composeOutgoing(text, files), skills);
-    setSkills([]);
     setFiles([]);
     setSkillOpen(false);
     resetInput();
@@ -250,25 +258,31 @@ export function Composer({
   };
 
   // 本地按关键词过滤（name / description / slug，忽略大小写）；空关键词展示全部。
+  // 常驻技能（residentSkills）已由角色自动注入，不出现在勾选面板里。
   const filteredCatalog = ((): InstalledSkill[] => {
     const q = keyword.trim().toLowerCase();
-    if (!q) return catalog;
-    return catalog.filter(
-      (s) =>
-        s.name.toLowerCase().includes(q) ||
-        s.description.toLowerCase().includes(q) ||
-        s.slug.toLowerCase().includes(q)
-    );
+    let list = catalog;
+    if (q) {
+      list = catalog.filter(
+        (s) =>
+          s.name.toLowerCase().includes(q) ||
+          s.description.toLowerCase().includes(q) ||
+          s.slug.toLowerCase().includes(q)
+      );
+    }
+    const residentSet = new Set(residentSkills);
+    return list.filter((s) => !residentSet.has(s.slug));
   })();
 
-  // 勾选一条已安装的技能：按 slug 去重追加到已选，然后收起面板、清空搜索词。
-  // 已选列表会在 UI 上以 chip 形式展示，发送时随消息一起提交。
+  // 勾选一条已安装的技能：按 slug 去重追加到已选（会话级，持久化由父组件负责），
+  // 然后收起面板、清空搜索词。已选列表以 chip 形式展示，随消息提交 slug。
   const attachSkill = (item: InstalledSkill) => {
-    setSkills((prev) =>
-      prev.some((s) => s.slug === item.slug)
-        ? prev
-        : [...prev, { slug: item.slug, name: item.name }]
-    );
+    if (skills.some((s) => s.slug === item.slug)) {
+      setSkillOpen(false);
+      setKeyword("");
+      return;
+    }
+    onSkillsChange?.([...skills, { slug: item.slug, name: item.name }]);
     setSkillOpen(false);
     setKeyword("");
   };
@@ -325,7 +339,9 @@ export function Composer({
                     <li className="px-2 py-2 text-[12px] text-ink-400">
                       {catalog.length === 0
                         ? "还没有安装技能，去「技能」页下载"
-                        : "没有匹配的技能"}
+                        : keyword.trim()
+                          ? "没有匹配的技能"
+                          : "当前角色已常驻全部技能，无需重复勾选"}
                     </li>
                   ) : (
                     filteredCatalog.map((item) => (
@@ -396,9 +412,9 @@ export function Composer({
             {skills.map((skill) => (
               <Chip
                 key={skill.slug}
-                label={skill.name}
+                label={catalog.find((c) => c.slug === skill.slug)?.name ?? skill.name}
                 onRemove={() =>
-                  setSkills((prev) => prev.filter((s) => s.slug !== skill.slug))
+                  onSkillsChange?.(skills.filter((s) => s.slug !== skill.slug))
                 }
               />
             ))}

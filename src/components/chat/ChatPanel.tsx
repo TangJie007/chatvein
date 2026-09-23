@@ -3,7 +3,7 @@ import { Bot, Check, Copy, PanelRight, Pencil, Undo2, User } from "lucide-react"
 import { Badge } from "../ui/badge";
 import { ScrollArea } from "../ui/scroll-area";
 import { cn } from "../../lib/cn";
-import { Composer } from "./Composer";
+import { Composer, type ComposerSkill } from "./Composer";
 import { MarkdownMessage } from "./MarkdownMessage";
 import { WaitingBubble } from "./WaitingBubble";
 import type { SessionItem } from "./SessionList";
@@ -74,6 +74,12 @@ type ChatPanelProps = {
   restoreText?: string | null;
   /** Composer 消费 restoreText 后回调，父组件据此清空。 */
   onRestored?: () => void;
+  /** 会话级已选技能（透传给 Composer，受控）。 */
+  skills?: ComposerSkill[];
+  /** 勾选 / 移除技能回调（透传给 Composer，父组件负责持久化到会话）。 */
+  onSkillsChange?: (skills: ComposerSkill[]) => void;
+  /** 角色常驻技能 slug：Composer 勾选面板中隐藏（已由角色自动注入）。 */
+  residentSkills?: string[];
   meta?: {
     difficulty?: string;
     selectedTools?: string[];
@@ -109,6 +115,9 @@ export function ChatPanel({
   onRecallMessage,
   restoreText,
   onRestored,
+  skills = [],
+  onSkillsChange,
+  residentSkills = [],
   meta,
 }: ChatPanelProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -407,6 +416,9 @@ export function ChatPanel({
           restoreText={restoreText}
           onRestored={onRestored}
           conversationId={session?.id}
+          skills={skills}
+          onSkillsChange={onSkillsChange}
+          residentSkills={residentSkills}
         />
       </div>
       {insightOpen ? (
