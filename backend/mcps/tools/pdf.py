@@ -16,12 +16,16 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
-from typing import Annotated
+from typing import TYPE_CHECKING, Annotated
 
 from langchain_core.tools import BaseTool, tool
 from pydantic import Field
 
 from mcps.path_access import resolve_agent_path  # pyright: ignore[reportImplicitRelativeImport]
+
+if TYPE_CHECKING:
+    from pypdf import PdfReader, PdfWriter
+    from reportlab.platypus import Flowable
 
 _MAX_BYTES = 100 * 1024 * 1024
 _MAX_PAGES = 400
@@ -37,7 +41,7 @@ def _resolve(path: str, *, action: str) -> tuple[Path, None] | tuple[None, str]:
         return None, str(exc)
 
 
-def _open_reader(path_str: str) -> tuple[object, None] | tuple[None, str]:
+def _open_reader(path_str: str) -> tuple[PdfReader, None] | tuple[None, str]:
     """打开 PDF 并校验大小 / 页数 / 加密（加密需先解密，由调用方处理）。"""
     try:
         from pypdf import PdfReader
@@ -87,7 +91,7 @@ def _parse_pages(spec: str, page_count: int) -> tuple[list[int], None] | tuple[N
     return sorted(selected), None
 
 
-def _write_pdf(path_str: str, writer: object) -> str:
+def _write_pdf(path_str: str, writer: PdfWriter) -> str:
     target, err = _resolve(path_str, action="pdf 输出")
     if err or target is None:
         return err or "路径无效"
@@ -102,7 +106,7 @@ def _write_pdf(path_str: str, writer: object) -> str:
     return f"已写出: {out}"
 
 
-def _summary(reader: object) -> dict[str, object]:
+def _summary(reader: PdfReader) -> dict[str, object]:
     """加密文件不读 metadata（会抛 FileNotDecryptedError），只回加密标记。"""
     encrypted = bool(getattr(reader, "is_encrypted", False))
     try:
@@ -171,6 +175,7 @@ def pdf_read(
         selected, spec_err = _parse_pages(pages, page_count)
         if spec_err:
             return spec_err
+        assert selected is not None
     else:
         selected = list(range(page_count))
 
@@ -257,6 +262,7 @@ def pdf_split(
     selected, spec_err = _parse_pages(pages, len(reader.pages))
     if spec_err:
         return spec_err
+    assert selected is not None
     try:
         from pypdf import PdfWriter
     except ImportError as exc:  # pragma: no cover
@@ -323,7 +329,7 @@ def pdf_generate(
         doc = SimpleDocTemplate(
             str(out), pagesize=A4, topMargin=2 * cm, bottomMargin=2 * cm, leftMargin=2.5 * cm, rightMargin=2.5 * cm
         )
-        story: list[object] = []
+        story: list[Flowable] = []
         for raw in body.split("\n\n"):
             para = raw.strip()
             if not para:
@@ -407,7 +413,7 @@ def pdf_decrypt(
     except ImportError as exc:  # pragma: no cover
         return f"缺少依赖 pypdf: {exc}"
 
-    if reader.decrypt(password) == 0:  # type: ignore[attr-defined]
+    if reader.decrypt(password) == 0:
         return "口令错误，无法解密"
 
     writer = PdfWriter()
