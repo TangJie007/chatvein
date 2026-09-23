@@ -76,7 +76,7 @@ export async function backendRequest<T = unknown>(
       /* keep raw text when not JSON */
     }
     if (!res.ok) {
-      throw new Error(`Backend ${res.status}: ${text}`);
+      throw new Error(httpErrorMessage(res.status, text));
     }
     return data as T;
   } catch (err) {
@@ -87,6 +87,21 @@ export async function backendRequest<T = unknown>(
     }
     throw err;
   }
+}
+
+/** 非 2xx：优先取 FastAPI 的 ``detail``（或 message），避免只显示裸 JSON / 状态码。 */
+function httpErrorMessage(status: number, text: string): string {
+  let detail = text;
+  try {
+    const parsed = JSON.parse(text) as { detail?: unknown; message?: unknown };
+    if (typeof parsed?.detail === "string") detail = parsed.detail;
+    else if (Array.isArray(parsed?.detail)) detail = parsed.detail.map(String).join("；");
+    else if (typeof parsed?.message === "string") detail = parsed.message;
+  } catch {
+    /* 非 JSON：保留原文 */
+  }
+  const body = detail.trim();
+  return body ? `请求失败（${status}）：${body}` : `请求失败（${status}）`;
 }
 
 function isHttpAbort(err: unknown): boolean {

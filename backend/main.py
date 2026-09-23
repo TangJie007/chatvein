@@ -11,6 +11,7 @@ import secrets
 import shutil
 import sys
 import time
+import traceback
 import uuid
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
@@ -122,6 +123,21 @@ def _collect_tokens(usage: Any) -> int:
 
 @app.post("/api/chat", tags=["chat"], summary="改写 + 难度路由 + 工具选择")
 def chat(req: ChatRequest):
+    """对话主入口。
+
+    对话过程中抛出的异常一律转成可读的 HTTP detail，避免前端只拿到裸
+    ``Internal Server Error`` 而无从提示用户。
+    """
+    try:
+        return _chat_turn(req)
+    except HTTPException:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"对话失败：{exc}") from exc
+
+
+def _chat_turn(req: ChatRequest) -> dict[str, object]:
     prepared = conversations_service.open_for_chat(req.conversation_id, req.message)
     # 会话级技能：req.skills 非 None 时覆盖会话技能集合并持久化。前端 Composer
     # 勾选 / 移除时已通过 PUT /api/conversations/{id}/skills 即时保存，发送时再兜底

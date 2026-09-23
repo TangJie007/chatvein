@@ -150,9 +150,12 @@ export function ChatView({
   const [sending, setSending] = useState(false);
   const [error, setErrorState] = useState<string | null>(null);
   const [errorTone, setErrorTone] = useState<"danger" | "muted">("danger");
+  /** 本轮异常挂在哪个气泡下面（提问气泡 id）；null 表示错误不挂载到具体气泡。 */
+  const [errorAnchorId, setErrorAnchorId] = useState<string | null>(null);
   const setError = useCallback((message: string | null, tone: "danger" | "muted" = "danger") => {
     setErrorTone(tone);
     setErrorState(message);
+    if (!message) setErrorAnchorId(null);
   }, []);
   /** 当前在途请求的取消控制器；非 null 表示 Agent 正在生成。 */
   const abortRef = useRef<AbortController | null>(null);
@@ -259,8 +262,11 @@ export function ChatView({
       setMessages([]);
       setWorkspace(null);
       setComposerSkills([]);
+      setError(null);
       return;
     }
+    // 切换会话：清掉上一个会话残留的错误（含挂在提问气泡下的那条）。
+    setError(null);
     let cancelled = false;
     void (async () => {
       try {
@@ -274,7 +280,7 @@ export function ChatView({
     return () => {
       cancelled = true;
     };
-  }, [activeId, loadConversation]);
+  }, [activeId, loadConversation, setError]);
 
   useEffect(() => {
     // App keeps newRequestId sticky; remounting ChatView (leave/return 对话)
@@ -451,8 +457,10 @@ export function ChatView({
         }
         return;
       }
-      setMessages((prev) => prev.filter((m) => m.id !== optimisticId && m.id !== pendingId));
+      // 保留提问气泡（错误挂在它下面），只移除那个空的助手气泡。
+      setMessages((prev) => prev.filter((m) => m.id !== pendingId));
       setError(errorMessage(err));
+      setErrorAnchorId(optimisticId);
     } finally {
       if (abortRef.current === controller) abortRef.current = null;
       setSending(false);
@@ -502,6 +510,8 @@ export function ChatView({
       );
       pendingRef.current = null;
       setSending(false);
+      // 气泡已被移除，错误不能再挂在原提问上，否则提示会消失。
+      setErrorAnchorId(null);
       // 停止：立刻给中性提示；编辑 / 撤回不额外打扰。
       if (mode === "stop") setError("已取消本次生成", "muted");
       else setError(null);
@@ -566,6 +576,7 @@ export function ChatView({
           sending={sending}
           error={error}
           errorTone={errorTone}
+          errorAnchorId={errorAnchorId}
           meta={lastMeta}
           onStop={() => cancelCurrent("stop")}
           onEditMessage={() => cancelCurrent("edit")}

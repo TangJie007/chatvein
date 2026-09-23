@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Bot, Check, Copy, PanelRight, Pencil, Undo2, User } from "lucide-react";
+import { AlertCircle, Bot, Check, Copy, PanelRight, Pencil, Undo2, User } from "lucide-react";
 import { Badge } from "../ui/badge";
 import { ScrollArea } from "../ui/scroll-area";
 import { cn } from "../../lib/cn";
@@ -56,6 +56,8 @@ type ChatPanelProps = {
   error?: string | null;
   /** danger=失败（红）；muted=用户取消等提示（中性）。 */
   errorTone?: "danger" | "muted";
+  /** 错误挂在哪个气泡下面（一般是本次提问的气泡 id）；null 则退回列表底部展示。 */
+  errorAnchorId?: string | null;
   workspaceDir?: string;
   conversationId?: string | null;
   insightThread?: InsightThreadItem[];
@@ -103,6 +105,7 @@ export function ChatPanel({
   sending = false,
   error = null,
   errorTone = "danger",
+  errorAnchorId = null,
   workspaceDir,
   conversationId,
   insightThread = [],
@@ -163,7 +166,8 @@ export function ChatPanel({
       root.querySelector<HTMLElement>("[data-radix-scroll-area-viewport]") ??
       (root.firstElementChild as HTMLElement | null);
     if (viewport) viewport.scrollTop = viewport.scrollHeight;
-  }, [messages]);
+    // error 变化（含「已取消」这类不改动 messages 的提示）也要滚到底，否则提示在视口外。
+  }, [messages, error]);
 
   useEffect(() => {
     return () => {
@@ -314,6 +318,23 @@ export function ChatPanel({
                           m.content
                         )}
                       </div>
+                      {/* 本轮异常：直接挂在提问气泡下方，用户一眼看到是哪一句失败了。 */}
+                      {error && m.id === errorAnchorId ? (
+                        <p
+                          className={cn(
+                            "flex max-w-full items-start gap-1.5 rounded-xl px-3 py-2 text-[12.5px]",
+                            errorTone === "muted"
+                              ? "bg-tint text-ink-500"
+                              : "bg-red-50 text-red-700"
+                          )}
+                        >
+                          <AlertCircle
+                            className="mt-0.5 size-3.5 shrink-0"
+                            strokeWidth={1.75}
+                          />
+                          <span className="min-w-0 break-words">{error}</span>
+                        </p>
+                      ) : null}
                       {isActiveTask ? (
                         <div
                           className={cn(
@@ -390,7 +411,7 @@ export function ChatPanel({
                 );
               })
             )}
-            {error ? (
+            {error && !errorAnchorId ? (
               <p
                 className={cn(
                   "rounded-xl px-3 py-2 text-[12.5px]",
