@@ -17,13 +17,20 @@ from __future__ import annotations
 import os
 import threading
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any, Callable, Sequence
 
 from .entity import EmbeddingStatusDto
 
 # 国内镜像站；可用 CHATVEIN_HF_ENDPOINT 覆盖。
 # 若用户已显式设置过 HF_ENDPOINT（自建代理等），则不再覆盖。
 DEFAULT_HF_ENDPOINT = "https://hf-mirror.com"
+
+# ModelScope 国内下载源；镜像了部分 HF 仓库（含 Xenova/bge-base-zh-v1.5）。
+# 走阿里云链路，实测吞吐比 hf-mirror 高一到两个数量级。
+DEFAULT_MODELSCOPE_BASE = "https://modelscope.cn"
+
+# 下载源偏好：auto（默认，有 ms_source 走 ModelScope）/ modelscope / huggingface。
+_MIRROR_PREF_ENV = "CHATVEIN_EMBED_MIRROR"
 
 # 768 维、中文专项（C-MTEB 中文榜第一梯队），对称模型 —— query 与文档无需任何前缀。
 # 注意它不在 fastembed 内置列表里，需要显式注册。
@@ -46,6 +53,9 @@ _CUSTOM_MODELS: dict[str, dict[str, Any]] = {
         "dim": 768,
         "model_file": "onnx/model.onnx",
         "hf_source": "Xenova/bge-base-zh-v1.5",
+        # ModelScope 上同仓库的国内镜像（阿里云链路）：下载速度远好于 hf-mirror。
+        # 有 ms_source 的模型默认走 ModelScope，失败自动回退 HF。
+        "ms_source": "Xenova/bge-base-zh-v1.5",
         "pooling": "cls",
         "symmetric": True,
     },
@@ -152,6 +162,90 @@ def _register_custom(model_name: str) -> None:
     _registered.add(model_name)
 
 
+# fastembed 缓存校验 / 推理必需的小文件（与 fastembed 的 allow_patterns 对齐）。
+_MODELSCOPE_SMALL_FILES = (
+    "config.json",
+    "tokenizer.json",
+    "tokenizer_config.json",
+    "special_tokens_map.json",
+)
+
+
+def _modelscope_url(repo: str, rel_path: str) -> str:
+    base = os.environ.get("CHATVEIN_MODELSCOPE_BASE") or DEFAULT_MODELSCOPE_BASE
+    return f"{base}/models/{repo}/resolve/master/{rel_path}"
+
+
+def _download_via_modelscope(
+    spec: dict[str, Any],
+    cache: Path,
+    progress_cb: Callable[[float], None],
+) -> Path:
+    """从 ModelScope（阿里云国内）下载模型权重，并按 fastembed 的缓存布局落盘。
+
+    布局必须与 huggingface_hub 的 snapshot 缓存一致：:
+
+        <cache>/models--<hf_source>/
+            refs/main                 -> <sha>
+            snapshots/<sha>/config.json / tokenizer.json / ... / onnx/model.onnx
+            files_metadata.json       -> {rel: {size, blob_id}}（offline 校验只看 size）
+
+    这样 ``TextEmbedding`` 加载时命中 ``download_model`` 的
+    ``local_files_only=True`` 分支，**完全不联网**，也不依赖 HF_ENDPOINT。
+
+    Raises:
+        requests.HTTPError / OSError：任一文件下载失败即抛出，由调用方回退 HF。
+    """
+    import hashlib
+    import json as _json
+
+    import requests
+
+    hf_source = str(spec["hf_source"])
+    ms_source = str(spec["ms_source"])
+    model_file = str(spec["model_file"])
+    snapshot_root = cache / f"models--{hf_source.replace('/', '--')}"
+    sha = hashlib.sha256(ms_source.encode("utf-8")).hexdigest()
+    snap_dir = snapshot_root / "snapshots" / sha
+    (snapshot_root / "refs").mkdir(parents=True, exist_ok=True)
+    (snapshot_root / "refs" / "main").write_text(sha, encoding="utf-8")
+
+    # 权重文件在前：首个 GET 响应即有 Content-Length，进度基准立刻准确。
+    # 不预 HEAD——个别网络（如系统代理）对 HEAD 支持差，会导致 total 拿不到。
+    files = [model_file, *_MODELSCOPE_SMALL_FILES]
+    sizes: dict[str, int] = {}
+    done_bytes = 0
+    total_bytes = 0  # 已探明总字节（随下载推进递增补全）
+    for rel in files:
+        url = _modelscope_url(ms_source, rel)
+        dest = snap_dir / rel
+        with requests.get(url, stream=True, timeout=(15, 300)) as resp:
+            resp.raise_for_status()
+            size = int(resp.headers.get("Content-Length") or 0)
+            if size:
+                total_bytes += size
+            if dest.is_file() and size and dest.stat().st_size == size:
+                sizes[rel] = size
+                done_bytes += size
+                continue
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            with open(dest, "wb") as fh:
+                for chunk in resp.iter_content(chunk_size=1 << 18):
+                    if chunk:
+                        fh.write(chunk)
+                        done_bytes += len(chunk)
+                        if total_bytes:
+                            progress_cb(min(100.0, done_bytes / total_bytes * 100.0))
+            sizes[rel] = dest.stat().st_size
+
+    # offline 校验只比对 size，blob_id 填 sha 即可通过 fastembed 的元数据校验
+    meta: dict[str, dict[str, Any]] = {}
+    for rel, size in sizes.items():
+        meta[str(Path("snapshots") / sha / rel)] = {"size": size, "blob_id": sha}
+    (snapshot_root / "files_metadata.json").write_text(_json.dumps(meta), encoding="utf-8")
+    return snap_dir
+
+
 class EmbeddingService:
     """向量模型的安装与推理。"""
 
@@ -223,35 +317,40 @@ class EmbeddingService:
                 self._marker().unlink(missing_ok=True)
 
             _register_custom(self.model_name)
+            spec = _CUSTOM_MODELS.get(self.model_name, {})
+
+            # 下载源优先级：CHATVEIN_EMBED_MIRROR 显式指定 > auto（有 ms_source 走
+            # ModelScope 国内直连）> 回退 huggingface（HF_ENDPOINT 镜像）。
+            # ModelScope 实测吞吐比 hf-mirror 高一到两个数量级，失败时自动回退，
+            # 不影响原有 hf-mirror / 自建代理路径。
+            pref = os.environ.get(_MIRROR_PREF_ENV, "auto").strip().lower()
+            use_ms = pref == "modelscope" or (pref in ("", "auto") and bool(spec.get("ms_source")))
+            if use_ms:
+                try:
+                    _download_via_modelscope(
+                        spec,
+                        cache,
+                        progress_cb=lambda p: setattr(self, "_progress", p),
+                    )
+                    self._progress = 100.0
+                except Exception as ms_exc:  # noqa: BLE001 — 回退到 HF
+                    print(
+                        f"CHATVEIN_EMBED modelscope download failed, "
+                        f"falling back to huggingface: {ms_exc}",
+                        flush=True,
+                    )
+                    self._error = None
+                    self._progress = 0.0
+                    self._download_via_huggingface(spec, cache)
+
+            if not use_ms:
+                self._download_via_huggingface(spec, cache)
+                self._progress = 100.0
 
             # fastembed 的 TextEmbedding 不暴露进度回调，这里先手动下载权重并
             # 捕获百分比；下载完成后 TextEmbedding 会复用 HF 缓存，不会重复下载。
             # download_files_from_huggingface 内部走 snapshot_download，其聚合进度
             # 条就是用这里的 tqdm_class 实例化的，update() 会被持续调用。
-            from fastembed.common.model_management import ModelManagement
-            from tqdm import tqdm as _tqdm
-
-            spec = _CUSTOM_MODELS.get(self.model_name, {})
-            hf_source = str(spec.get("hf_source", self.model_name))
-            extra_patterns = [str(spec["model_file"])] if spec.get("model_file") else []
-            svc = self
-
-            class _ProgressTqdm(_tqdm):  # noqa: N801
-                def update(self, n: int = 1) -> bool | None:
-                    result = super().update(n)
-                    total = self.total
-                    if total:
-                        svc._progress = min(100.0, self.n / total * 100.0)
-                    return result
-
-            ModelManagement.download_files_from_huggingface(
-                hf_source_repo=hf_source,
-                cache_dir=str(cache),
-                extra_patterns=extra_patterns,
-                tqdm_class=_ProgressTqdm,
-            )
-            self._progress = 100.0
-
             from fastembed import TextEmbedding
 
             model = TextEmbedding(model_name=self.model_name, cache_dir=str(cache))
@@ -265,6 +364,30 @@ class EmbeddingService:
             self._error = f"{type(exc).__name__}: {exc}"
         finally:
             self._downloading = False
+
+    def _download_via_huggingface(self, spec: dict[str, Any], cache: Path) -> None:
+        """走 huggingface_hub / fastembed 原下载路径（HF_ENDPOINT 镜像）。"""
+        from fastembed.common.model_management import ModelManagement
+        from tqdm import tqdm as _tqdm
+
+        hf_source = str(spec.get("hf_source", self.model_name))
+        extra_patterns = [str(spec["model_file"])] if spec.get("model_file") else []
+        svc = self
+
+        class _ProgressTqdm(_tqdm):  # noqa: N801
+            def update(self, n: int = 1) -> bool | None:
+                result = super().update(n)
+                total = self.total
+                if total:
+                    svc._progress = min(100.0, self.n / total * 100.0)
+                return result
+
+        ModelManagement.download_files_from_huggingface(
+            hf_source_repo=hf_source,
+            cache_dir=str(cache),
+            extra_patterns=extra_patterns,
+            tqdm_class=_ProgressTqdm,
+        )
 
     def _ensure_model(self) -> Any:
         if self._model is None:
