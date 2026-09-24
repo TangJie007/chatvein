@@ -1,4 +1,3 @@
-import { Loader2 } from "lucide-react";
 import {
   createContext,
   useCallback,
@@ -14,15 +13,6 @@ import {
   prepareEmbedding,
   type EmbeddingStatus,
 } from "../../api";
-import { cn } from "../../lib/cn";
-import { Button } from "../ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "../ui/dialog";
 
 /** 工作区就绪结果：ready=false 表示下载失败（status.error 为原因）。 */
 export type ReadyResult = { ready: boolean; status: EmbeddingStatus };
@@ -34,8 +24,14 @@ type EmbeddingContextValue = {
   installed: boolean;
   /** 下载进度 0-100；未在下载时为 null，安装完成后为 100。 */
   progress: number | null;
+  /** 「工作区初始化」弹窗是否打开（由调用方在自身内容区内渲染）。 */
+  initOpen: boolean;
+  /** 「工作区初始化」错误信息；null 表示无错误（下载/准备中）。 */
+  initError: string | null;
+  /** 手动关闭「工作区初始化」弹窗（仅下载失败时可供调用方使用）。 */
+  dismissInit: () => void;
   /**
-   * 请求「工作区就绪」：模型未就绪时弹出全局「工作区初始化」弹窗并等待
+   * 请求「工作区就绪」：模型未就绪时打开「工作区初始化」弹窗并等待
    * 下载完成。并发调用共享同一等待（不重复弹窗）。永不 reject。
    */
   ensureReady: () => Promise<ReadyResult>;
@@ -195,6 +191,11 @@ export function EmbeddingProvider({ children }: { children: ReactNode }) {
     return promise;
   }, [applyStatus, ensurePolling]);
 
+  const dismissInit = useCallback(() => {
+    setDialogOpen(false);
+    setDialogError(null);
+  }, []);
+
   const value = useMemo<EmbeddingContextValue>(
     () => ({
       status,
@@ -206,75 +207,17 @@ export function EmbeddingProvider({ children }: { children: ReactNode }) {
             ? 100
             : null
         : null,
+      initOpen: dialogOpen,
+      initError: dialogError,
+      dismissInit,
       ensureReady,
     }),
-    [status, ensureReady]
+    [status, dialogOpen, dialogError, dismissInit, ensureReady]
   );
-
-  const downloading = !!status?.downloading;
-  const pct = Math.round(Math.min(100, Math.max(0, status?.progress ?? 0)));
 
   return (
     <EmbeddingContext.Provider value={value}>
       {children}
-      <Dialog open={dialogOpen} onOpenChange={(open) => !open && setDialogOpen(false)}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle>工作区初始化</DialogTitle>
-            <DialogDescription>
-              本地向量模型首次使用需下载权重，下载完成后知识库与历史检索即可工作。
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="flex flex-col gap-2.5">
-            {downloading ? (
-              <>
-                <div className="flex items-center gap-2">
-                  <Loader2 className="size-3.5 animate-spin text-brand-600" strokeWidth={2} />
-                  <span className="text-[12.5px] text-ink-700">正在下载模型权重…</span>
-                  <span className="ml-auto font-mono text-[12px] font-medium text-ink-900">
-                    {pct}%
-                  </span>
-                </div>
-                <div className="h-1.5 overflow-hidden rounded-full bg-page">
-                  <div
-                    className="h-full rounded-full bg-brand-500 transition-[width] duration-300"
-                    style={{ width: `${pct}%` }}
-                  />
-                </div>
-                <p className="text-[10.5px] text-ink-400">
-                  受网络影响可能较慢，可前往「模型管理」查看详情；此窗口可关闭，下载在后台继续。
-                </p>
-              </>
-            ) : dialogError ? (
-              <>
-                <p className="rounded-xl bg-warn-50 px-3 py-2 text-[12px] leading-5 text-warn-600">
-                  {dialogError}
-                </p>
-                <p className="text-[10.5px] text-ink-400">
-                  下载失败，可关闭后重试，或到「模型管理」检查网络与镜像配置。
-                </p>
-                <Button
-                  variant="primary"
-                  size="sm"
-                  className="mt-1 self-end"
-                  onClick={() => {
-                    setDialogOpen(false);
-                    setDialogError(null);
-                  }}
-                >
-                  关闭
-                </Button>
-              </>
-            ) : (
-              <div className="flex items-center gap-2 py-1">
-                <Loader2 className="size-3.5 animate-spin text-brand-600" strokeWidth={2} />
-                <span className={cn("text-[12.5px] text-ink-700")}>正在准备本地模型…</span>
-              </div>
-            )}
-          </div>
-        </DialogContent>
-      </Dialog>
     </EmbeddingContext.Provider>
   );
 }

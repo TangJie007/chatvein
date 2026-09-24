@@ -699,16 +699,16 @@ function LocalModelConfig() {
 
           <Card title="模型信息" desc="FastEmbed + ONNX Runtime 本地推理，数据不出本机">
             <Field label="模型标识">
-              <TextInput mono value={embed.model} onChange={() => {}} />
+              <TextInput mono disabled value={embed.model} onChange={() => {}} />
             </Field>
             <Field label="向量维度">
-              <TextInput mono value={`${embed.dim}`} onChange={() => {}} />
+              <TextInput mono disabled value={`${embed.dim}`} onChange={() => {}} />
             </Field>
             <Field label="缓存路径">
-              <TextInput mono value={embed.cache_dir} onChange={() => {}} />
+              <TextInput mono disabled value={embed.cache_dir} onChange={() => {}} />
             </Field>
             <Field label="下载镜像">
-              <TextInput mono value={embed.endpoint} onChange={() => {}} />
+              <TextInput mono disabled value={embed.endpoint} onChange={() => {}} />
             </Field>
           </Card>
         </div>
@@ -791,23 +791,28 @@ function TextInput({
   mono,
   type = "text",
   placeholder,
+  disabled = false,
 }: {
   value: string;
   onChange: (v: string) => void;
   mono?: boolean;
   type?: string;
   placeholder?: string;
+  disabled?: boolean;
 }) {
   return (
     <input
       type={type}
       value={value}
       placeholder={placeholder}
+      disabled={disabled}
+      readOnly={disabled}
       onChange={(e) => onChange(e.target.value)}
       className={cn(
         "w-full min-w-0 rounded-xl bg-surface px-3 py-1.5 text-[12.5px] text-ink-900 placeholder-ink-400 shadow-soft transition-shadow",
         "focus:outline-none focus-visible:shadow-lift",
-        mono && "font-mono text-[11.5px]"
+        mono && "font-mono text-[11.5px]",
+        disabled && "cursor-not-allowed bg-tint/40 text-ink-600 opacity-90"
       )}
     />
   );

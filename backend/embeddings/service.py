@@ -128,9 +128,39 @@ def hf_endpoint() -> str:
 
 
 def _apply_endpoint() -> str:
-    """把镜像端点写入 HF_ENDPOINT（不覆盖用户已显式设置的值）。"""
+    """固定模型下载的网络参数（在 huggingface_hub / fastembed 首次联网前调用）。
+
+    - ``HF_ENDPOINT``：指向国内镜像（不覆盖用户已显式设置的值）。
+    - ``HF_HUB_DISABLE_XET=1``：关闭 huggingface_hub 的 Xet 加速。Xet 的大文件
+      走海外 ``*.xethub.hf.co`` 域名，国内解析 / 连接不可靠，是
+      ``getaddrinfo failed`` / 连接拒绝类错误的常见来源。
+    - ``NO_PROXY``：把模型相关域名追加进直连白名单。Windows 上 requests /
+      httpx 默认读系统代理（PAC / Clash 等），代理节点对部分域名不可用时，
+      huggingface_hub 会直接连接被拒或 DNS 失败（Errno 11001）。
+    """
     endpoint = hf_endpoint()
     os.environ.setdefault("HF_ENDPOINT", endpoint)
+
+    os.environ.setdefault("HF_HUB_DISABLE_XET", "1")
+
+    no_proxy = {
+        p.strip()
+        for p in os.environ.get("NO_PROXY", "") + "," + os.environ.get("no_proxy", "")
+        if p.strip()
+    }
+    no_proxy.update(
+        {
+            "hf-mirror.com",
+            "huggingface.co",
+            "*.huggingface.co",
+            "modelscope.cn",
+            "*.modelscope.cn",
+            "*.xethub.hf.co",
+        }
+    )
+    joined = ",".join(sorted(no_proxy))
+    os.environ["NO_PROXY"] = joined
+    os.environ["no_proxy"] = joined
     return os.environ["HF_ENDPOINT"]
 
 
@@ -200,6 +230,8 @@ def _download_via_modelscope(
     import json as _json
 
     import requests
+    from requests.adapters import HTTPAdapter
+    from urllib3.util.retry import Retry
 
     hf_source = str(spec["hf_source"])
     ms_source = str(spec["ms_source"])
@@ -210,6 +242,24 @@ def _download_via_modelscope(
     (snapshot_root / "refs").mkdir(parents=True, exist_ok=True)
     (snapshot_root / "refs" / "main").write_text(sha, encoding="utf-8")
 
+    # 绕过系统代理直连（阿里云国内链路）：Windows 系统代理（PAC / Clash）可能
+    # 拦截 Python 请求，导致连接被拒或 getaddrinfo failed（Errno 11001）。
+    # 连接类错误重试 3 次，容忍 DNS / 网络的瞬态抖动。
+    session = requests.Session()
+    session.trust_env = False
+    retry = Retry(
+        total=4,
+        connect=3,
+        read=0,
+        status=1,
+        backoff_factor=1.0,
+        status_forcelist=(429, 500, 502, 503, 504),
+        allowed_methods=frozenset({"GET", "HEAD"}),
+    )
+    adapter = HTTPAdapter(max_retries=retry)
+    session.mount("https://", adapter)
+    session.mount("http://", adapter)
+
     # 权重文件在前：首个 GET 响应即有 Content-Length，进度基准立刻准确。
     # 不预 HEAD——个别网络（如系统代理）对 HEAD 支持差，会导致 total 拿不到。
     files = [model_file, *_MODELSCOPE_SMALL_FILES]
@@ -219,7 +269,7 @@ def _download_via_modelscope(
     for rel in files:
         url = _modelscope_url(ms_source, rel)
         dest = snap_dir / rel
-        with requests.get(url, stream=True, timeout=(15, 300)) as resp:
+        with session.get(url, stream=True, timeout=(15, 300)) as resp:
             resp.raise_for_status()
             size = int(resp.headers.get("Content-Length") or 0)
             if size:
