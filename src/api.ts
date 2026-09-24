@@ -642,6 +642,26 @@ export function testModelConnection(modelId: string) {
 }
 
 /* -------------------------------------------------------------------------
+ * Local embeddings (backend/embeddings)
+ * ---------------------------------------------------------------------- */
+
+/** 本机向量模型（ONNX 本地推理，供知识库 / 历史消息检索）。 */
+export interface EmbeddingStatus {
+  model: string;
+  dim: number;
+  installed: boolean;
+  cache_dir: string;
+  endpoint: string;
+  downloading: boolean;
+  error: string | null;
+}
+
+/** 只读查询：本地向量模型的安装 / 下载状态。 */
+export function getEmbeddingStatus() {
+  return backendRequest<EmbeddingStatus>("/api/embeddings/status");
+}
+
+/* -------------------------------------------------------------------------
  * Built-in MCP catalog (backend/mcps)
  * ---------------------------------------------------------------------- */
 export interface McpToolParam {

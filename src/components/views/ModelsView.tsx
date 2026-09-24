@@ -1,5 +1,6 @@
 import {
   Cloud,
+  Cpu,
   Loader2,
   Play,
   Plus,
@@ -15,10 +16,12 @@ import {
 import {
   createModel,
   deleteModel,
+  getEmbeddingStatus,
   listModels,
   testModelConnection,
   updateModel,
   type CreateLlmModelPayload,
+  type EmbeddingStatus,
   type LlmModelRecord,
   type UpdateLlmModelPayload,
 } from "../../api";
@@ -72,8 +75,27 @@ export function ModelsView({ addRequestId = 0, onModelsChange }: ModelsViewProps
   const [error, setError] = useState<string | null>(null);
   const [addOpen, setAddOpen] = useState(false);
   const [statusById, setStatusById] = useState<Record<string, "online" | "offline">>({});
+  const [embed, setEmbed] = useState<EmbeddingStatus | null>(null);
+  const [embedFailed, setEmbedFailed] = useState(false);
   const onModelsChangeRef = useRef(onModelsChange);
   onModelsChangeRef.current = onModelsChange;
+
+  useEffect(() => {
+    let cancelled = false;
+    getEmbeddingStatus()
+      .then((s) => {
+        if (!cancelled) {
+          setEmbed(s);
+          setEmbedFailed(false);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setEmbedFailed(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const emitChange = useCallback((list: LlmModelRecord[]) => {
     onModelsChangeRef.current?.({
@@ -182,7 +204,12 @@ export function ModelsView({ addRequestId = 0, onModelsChange }: ModelsViewProps
   return (
     <>
       <section className="flex w-[220px] shrink-0 flex-col bg-list select-none">
-        <div className="shrink-0 px-3 pb-1.5 pt-3.5">
+        <div className="shrink-0 px-3 pb-2 pt-3.5">
+          <p className="px-1 pb-2 text-[11px] font-medium text-ink-400">本地模型</p>
+          <LocalModelInfo embed={embed} failed={embedFailed} />
+        </div>
+
+        <div className="shrink-0 px-3 pb-1.5 pt-1.5">
           <div className="flex items-center justify-between px-1 pb-2">
             <p className="text-[11px] font-medium text-ink-400">
               线上模型 · {models.length}
@@ -487,6 +514,87 @@ function ModelConfig({
         </Button>
       </div>
     </>
+  );
+}
+
+/* ---------------- 本地模型（纯信息展示，不可操作） ---------------- */
+
+function LocalModelInfo({
+  embed,
+  failed,
+}: {
+  embed: EmbeddingStatus | null;
+  failed: boolean;
+}) {
+  return (
+    <div className="rounded-xl bg-surface p-2.5 shadow-soft">
+      {failed || !embed ? (
+        <div className="flex items-center gap-2">
+          <span className="flex size-5 shrink-0 items-center justify-center rounded-md bg-page text-ink-400">
+            <Cpu className="size-3" strokeWidth={1.75} />
+          </span>
+          <span className="min-w-0 flex-1 text-[12px] text-ink-500">
+            状态读取失败
+          </span>
+        </div>
+      ) : (
+        <>
+          <div className="flex items-center gap-2">
+            <span className="flex size-5 shrink-0 items-center justify-center rounded-md bg-tint text-brand-600">
+              <Cpu className="size-3" strokeWidth={1.75} />
+            </span>
+            <span className="min-w-0 flex-1 truncate text-[12px] font-medium text-ink-900">
+              {embed.model}
+            </span>
+            <LocalBadge embed={embed} />
+          </div>
+          <p className="mt-1 truncate font-mono text-[10px] text-ink-400">
+            {embed.dim} 维 · ONNX 本地推理
+          </p>
+          <p className="mt-0.5 truncate font-mono text-[10px] text-ink-400" title={embed.cache_dir}>
+            {embed.cache_dir}
+          </p>
+          {embed.error && (
+            <p
+              className="mt-1.5 truncate rounded-lg bg-warn-50 px-2 py-1 text-[10px] text-warn-600"
+              title={embed.error}
+            >
+              {embed.error}
+            </p>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+function LocalBadge({ embed }: { embed: EmbeddingStatus }) {
+  if (embed.downloading) {
+    return (
+      <span className="flex shrink-0 items-center gap-1 rounded-full bg-warn-50 px-1.5 py-0.5 text-[10px] font-medium text-warn-600">
+        <Loader2 className="size-2.5 animate-spin" strokeWidth={2} />
+        下载中
+      </span>
+    );
+  }
+  if (embed.error) {
+    return (
+      <span className="shrink-0 rounded-full bg-warn-50 px-1.5 py-0.5 text-[10px] font-medium text-warn-600">
+        异常
+      </span>
+    );
+  }
+  if (!embed.installed) {
+    return (
+      <span className="shrink-0 rounded-full bg-page px-1.5 py-0.5 text-[10px] font-medium text-ink-500">
+        未安装
+      </span>
+    );
+  }
+  return (
+    <span className="shrink-0 rounded-full bg-ok-50 px-1.5 py-0.5 text-[10px] font-medium text-ok-600">
+      已就绪
+    </span>
   );
 }
 

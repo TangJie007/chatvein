@@ -156,7 +156,7 @@ Rust 只负责把真实后端 URL 交给前端，新增接口无需改动 Rust �
 的 `sqlite-vec`，约 300KB 的纯二进制 wheel），业务侧直接建 `vec0` 虚拟表：
 
 ```sql
-CREATE VIRTUAL TABLE message_vec USING vec0(embedding float[384]);
+CREATE VIRTUAL TABLE message_vec USING vec0(embedding float[768]);
 ```
 
 - 写入：`INSERT INTO message_vec(rowid, embedding) VALUES (:rid, :vec)`，`vec` 用

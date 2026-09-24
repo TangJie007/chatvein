@@ -14,12 +14,16 @@ import db  # pyright: ignore[reportImplicitRelativeImport]
 from embeddings.service import get_service  # pyright: ignore[reportImplicitRelativeImport]
 from mcps.sandbox import current_sandbox  # pyright: ignore[reportImplicitRelativeImport]
 
-_DIM = 384
 _MAX_HITS = 8
 
 
 def _kb_db_path() -> Path:
     return db.resolve_db_path().parent / "kb.sqlite"
+
+
+def _embed_dim() -> int:
+    """当前向量模型的维度（切换模型后向量表按新维度重建）。"""
+    return get_service().dimension
 
 
 def _ensure_kb() -> sqlite3.Connection:
@@ -46,8 +50,16 @@ def _ensure_kb() -> sqlite3.Connection:
 
             sqlite_vec.load(conn)
             conn.enable_load_extension(False)
+            dim = _embed_dim()
+            # 模型维度变更时（如 384 -> 768）旧向量表维度不匹配，直接重建。
+            # 索引数据可从 kb_docs 重新生成，不是唯一事实源。
+            row = conn.execute(
+                "SELECT sql FROM sqlite_master WHERE type='table' AND name='kb_vec'"
+            ).fetchone()
+            if row and f"float[{dim}]" not in (row["sql"] or ""):
+                conn.execute("DROP TABLE IF EXISTS kb_vec")
             conn.execute(
-                f"CREATE VIRTUAL TABLE IF NOT EXISTS kb_vec USING vec0(embedding float[{_DIM}])"
+                f"CREATE VIRTUAL TABLE IF NOT EXISTS kb_vec USING vec0(embedding float[{dim}])"
             )
             conn.commit()
         except Exception:  # noqa: BLE001 — 向量表可选
@@ -177,7 +189,7 @@ def _try_index_vec(conn: sqlite3.Connection, doc_id: str, text: str) -> None:
         return
     try:
         vec = svc.embed_passages([text[:4000]])[0]
-        if len(vec) != _DIM:
+        if len(vec) != _embed_dim():
             return
         # rowid 用 doc 哈希的稳定整数
         rowid = int(doc_id[:8], 16) % (2**31 - 1)

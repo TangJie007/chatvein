@@ -7,6 +7,7 @@ class EmbeddingStatusDto(BaseModel):
     """向量模型的安装 / 下载状态。"""
 
     model: str
+    dim: int
     installed: bool
     cache_dir: str
     endpoint: str

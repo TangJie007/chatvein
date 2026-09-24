@@ -25,15 +25,29 @@ from .entity import EmbeddingStatusDto
 # 若用户已显式设置过 HF_ENDPOINT（自建代理等），则不再覆盖。
 DEFAULT_HF_ENDPOINT = "https://hf-mirror.com"
 
-# 384 维、94 语言含中文。注意它不在 fastembed 内置列表里，需要显式注册。
-DEFAULT_MODEL = "intfloat/multilingual-e5-small"
+# 768 维、中文专项（C-MTEB 中文榜第一梯队），对称模型 —— query 与文档无需任何前缀。
+# 注意它不在 fastembed 内置列表里，需要显式注册。
+DEFAULT_MODEL = "BAAI/bge-base-zh-v1.5"
 
-# 内置列表之外的模型：model_file 必须是仓库里真实存在的路径。
-# multilingual-e5-small 仓库的 ONNX 产物是 onnx/model_O4.onnx，不是 onnx/model.onnx。
+# 内置列表之外的模型：model_file 必须是仓库里真实存在的路径，hf_source 默认等于模型名。
+# - intfloat/multilingual-e5-small：384 维、94 语言含中文；仓库 ONNX 产物是
+#   onnx/model_O4.onnx（不是 onnx/model.onnx）；非对称，query/文档需加前缀；MEAN 池化。
+# - BAAI/bge-base-zh-v1.5：官方仓库无 ONNX 产物，fastembed 内置列表也没有，这里指向
+#   Xenova/bge-base-zh-v1.5（onnx/model.onnx，单文件 fp32）。bge v1.5 是对称模型，
+#   无需前缀；池化用 CLS（取 [CLS] token 向量），与 e5 的 MEAN 不同。
 _CUSTOM_MODELS: dict[str, dict[str, Any]] = {
     "intfloat/multilingual-e5-small": {
         "dim": 384,
         "model_file": "onnx/model_O4.onnx",
+        "pooling": "mean",
+        "symmetric": False,
+    },
+    "BAAI/bge-base-zh-v1.5": {
+        "dim": 768,
+        "model_file": "onnx/model.onnx",
+        "hf_source": "Xenova/bge-base-zh-v1.5",
+        "pooling": "cls",
+        "symmetric": True,
     },
 }
 
@@ -111,7 +125,11 @@ def _apply_endpoint() -> str:
 
 
 def _register_custom(model_name: str) -> None:
-    """注册内置列表之外的模型（幂等）。"""
+    """注册内置列表之外的模型（幂等）。
+
+    池化方式与 ONNX 源仓库按模型配置：bge 系列用 CLS 池化且源仓库
+    与模型名不同（官方仓库无 ONNX 产物，需指向 Xenova 转换版）。
+    """
     if model_name not in _CUSTOM_MODELS or model_name in _registered:
         return
     spec = _CUSTOM_MODELS[model_name]
@@ -120,11 +138,14 @@ def _register_custom(model_name: str) -> None:
     from fastembed import TextEmbedding
     from fastembed.common.model_description import ModelSource, PoolingType
 
+    pooling = (
+        PoolingType.CLS if spec.get("pooling") == "cls" else PoolingType.MEAN
+    )
     TextEmbedding.add_custom_model(
         model=model_name,
-        pooling=PoolingType.MEAN,
+        pooling=pooling,
         normalization=True,
-        sources=ModelSource(hf=model_name),
+        sources=ModelSource(hf=spec.get("hf_source", model_name)),
         dim=spec["dim"],
         model_file=spec["model_file"],
     )
@@ -150,7 +171,12 @@ class EmbeddingService:
         spec = _CUSTOM_MODELS.get(self.model_name)
         if spec:
             return int(spec["dim"])
-        return 384
+        return 768
+
+    def _is_symmetric(self) -> bool:
+        """当前模型是否对称（query / 文档无需加前缀）。"""
+        spec = _CUSTOM_MODELS.get(self.model_name)
+        return bool(spec and spec.get("symmetric"))
 
     def _marker(self) -> Path:
         """下载完成标记。
@@ -165,6 +191,7 @@ class EmbeddingService:
     def status(self) -> EmbeddingStatusDto:
         return EmbeddingStatusDto(
             model=self.model_name,
+            dim=self.dimension,
             installed=self.is_installed(),
             cache_dir=str(cache_dir()),
             endpoint=hf_endpoint(),
@@ -227,13 +254,18 @@ class EmbeddingService:
     def embed_query(self, text: str) -> list[float]:
         """查询侧向量。
 
-        e5 系列是非对称模型：query 必须带 ``query: `` 前缀，
-        被索引的文档必须带 ``passage: `` 前缀，否则效果断崖式下跌。
+        前缀策略随模型而异（见 ``_CUSTOM_MODELS`` 的 ``symmetric`` 字段）：
+        - e5 系列是非对称模型：query 必须带 ``query: `` 前缀，否则效果断崖式下跌。
+        - bge v1.5 系列是对称模型：query 与文档同分布，无需任何前缀。
         """
+        if self._is_symmetric():
+            return self.embed([text])[0]
         return self.embed([f"query: {text}"])[0]
 
     def embed_passages(self, texts: Sequence[str]) -> list[list[float]]:
-        """文档侧向量，自动补 ``passage: `` 前缀。"""
+        """文档侧向量；非对称模型自动补 ``passage: `` 前缀。"""
+        if self._is_symmetric():
+            return self.embed(list(texts))
         return self.embed([f"passage: {t}" for t in texts])
 
 
