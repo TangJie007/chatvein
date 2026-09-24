@@ -9,6 +9,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             // 立刻拉起 Python；就绪探测放到后台线程，不阻塞窗口显示。
             backend::spawn_backend(app.handle());

@@ -1,5 +1,6 @@
 import type { ComponentProps } from "react";
 import { Streamdown, type Components } from "streamdown";
+import { openExternal } from "../../lib/openExternal";
 import { cjk } from "@streamdown/cjk";
 import { createCodePlugin } from "@streamdown/code";
 import "streamdown/styles.css";
@@ -73,7 +74,7 @@ function MarkdownLink({
         if (!href || href.startsWith("streamdown:")) return;
         event.preventDefault();
         event.stopPropagation();
-        window.open(href, "_blank", "noopener,noreferrer");
+        void openExternal(href);
       }}
     >
       {children}

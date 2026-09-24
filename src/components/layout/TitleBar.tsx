@@ -3,6 +3,7 @@ import { getVersion } from "@tauri-apps/api/app";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { type ReactNode, useEffect, useState } from "react";
 import { cn } from "../../lib/cn";
+import { openExternal } from "../../lib/openExternal";
 import {
   Dialog,
   DialogContent,
@@ -154,14 +155,14 @@ function HelpMenu() {
         <DropdownMenu.Content align="start" sideOffset={4} className={menuContentClass}>
           <DropdownMenu.Item
             className={menuItemClass}
-            onSelect={() => window.open("https://gitee.com/wetspace/chatvein", "_blank")}
+            onSelect={() => void openExternal("https://gitee.com/wetspace/chatvein")}
           >
             使用文档
           </DropdownMenu.Item>
           <DropdownMenu.Item
             className={menuItemClass}
             onSelect={() =>
-              window.open("https://gitee.com/wetspace/chatvein/issues", "_blank")
+              void openExternal("https://gitee.com/wetspace/chatvein/issues")
             }
           >
             反馈问题

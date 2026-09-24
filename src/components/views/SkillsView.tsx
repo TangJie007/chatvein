@@ -15,6 +15,7 @@ import {
   type SkillHubItem,
 } from "../../api";
 import { cn } from "../../lib/cn";
+import { openExternal } from "../../lib/openExternal";
 import { SkillDetailDrawer } from "../skills/SkillDetailDrawer";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
@@ -66,7 +67,7 @@ function SkillCard({
           onOpen(skill);
         }
       }}
-      className="flex cursor-pointer flex-col gap-2.5 rounded-2xl bg-tint/50 p-3.5 shadow-soft transition-colors hover:bg-tint focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/40"
+      className="flex cursor-pointer flex-col gap-2.5 rounded-2xl border border-transparent bg-white p-3.5 shadow-lift transition-colors hover:border-ink-900/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/40"
     >
       <div className="flex items-start gap-3">
         <div className="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-surface shadow-soft">
@@ -154,7 +155,7 @@ function SkillCard({
             title="在 SkillHub 打开"
             onClick={(e) => {
               e.stopPropagation();
-              window.open(skill.homepage, "_blank", "noopener,noreferrer");
+              void openExternal(skill.homepage);
             }}
           >
             <ExternalLink className="size-3.5" strokeWidth={1.75} />
@@ -320,14 +321,11 @@ export function SkillsView() {
                 SkillHub
               </span>
             </div>
-            <p className="mt-0.5 text-[12.5px] text-ink-400">
-              浏览腾讯 SkillHub；详情可安装到本机，对话里选用后会注入 SKILL.md
-            </p>
           </div>
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => window.open(website, "_blank", "noopener,noreferrer")}
+            onClick={() => void openExternal(website)}
           >
             <ExternalLink className="size-3.5" strokeWidth={1.75} />
             官网

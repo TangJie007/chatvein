@@ -13,6 +13,7 @@ import {
   type SkillHubDetail,
   type SkillHubItem,
 } from "../../api";
+import { openExternal } from "../../lib/openExternal";
 import { Button } from "../ui/button";
 import {
   Sheet,
@@ -262,11 +263,7 @@ export function SkillDetailDrawer({
                                 type="button"
                                 className="truncate text-brand-700 hover:underline"
                                 onClick={() =>
-                                  window.open(
-                                    report.report_url,
-                                    "_blank",
-                                    "noopener,noreferrer"
-                                  )
+                                  void openExternal(report.report_url)
                                 }
                               >
                                 {report.status_text || report.status || "查看报告"}
@@ -316,9 +313,7 @@ export function SkillDetailDrawer({
                         <Button
                           variant="ghost"
                           size="sm"
-                          onClick={() =>
-                            window.open(homepage, "_blank", "noopener,noreferrer")
-                          }
+                          onClick={() => void openExternal(homepage)}
                         >
                           <ExternalLink className="size-3.5" strokeWidth={1.75} />
                           SkillHub
