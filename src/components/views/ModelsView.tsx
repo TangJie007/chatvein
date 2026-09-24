@@ -270,17 +270,6 @@ export function ModelsView({ addRequestId = 0, onModelsChange }: ModelsViewProps
             })}
           </div>
         </div>
-
-        <div className="shrink-0 px-3 pb-3">
-          <button
-            type="button"
-            onClick={() => setAddOpen(true)}
-            className="flex w-full items-center justify-center gap-1.5 rounded-xl bg-tint px-3 py-1.5 text-[12.5px] font-medium text-brand-700 shadow-soft transition-colors hover:bg-tint-deep focus-visible:outline-2 focus-visible:outline-brand-600"
-          >
-            <Plus className="size-3.5" strokeWidth={1.75} />
-            添加线上模型
-          </button>
-        </div>
       </section>
 
       <section className="flex min-w-0 flex-1 flex-col bg-surface">
@@ -384,7 +373,7 @@ function ModelConfig({
 
   return (
     <>
-      <header className="flex items-center gap-3 px-6 pb-3 pt-4">
+      <header className="flex items-center gap-3 px-[25px] pb-3 pt-4">
         <div className="min-w-0 flex-1">
           <div className="flex min-w-0 items-center gap-2.5">
             <h1 className="truncate text-[15px] font-semibold text-ink-900">
@@ -433,8 +422,8 @@ function ModelConfig({
         </div>
       </header>
 
-      <div className="flex-1 overflow-y-auto px-6 pb-20">
-        <div className="mx-auto flex max-w-[720px] flex-col gap-3">
+      <div className="flex-1 overflow-y-auto px-[25px] py-2 pb-20">
+        <div className="flex flex-1 flex-col gap-4">
           {banner && (
             <p
               className={cn(
@@ -490,7 +479,7 @@ function ModelConfig({
         </div>
       </div>
 
-      <div className="flex shrink-0 items-center gap-3 bg-surface px-6 py-2.5">
+      <div className="flex shrink-0 items-center gap-3 bg-surface px-[25px] py-2.5">
         <span className="min-w-0 flex-1 truncate text-[11.5px] text-ink-400">
           修改仅作用于该模型 · 保存后对新建会话生效
         </span>
@@ -642,7 +631,7 @@ function LocalModelConfig() {
 
   return (
     <>
-      <header className="flex items-center gap-3 px-6 pb-3 pt-4">
+      <header className="flex items-center gap-3 px-[25px] pb-3 pt-4">
         <div className="min-w-0 flex-1">
           <div className="flex min-w-0 items-center gap-2.5">
             <h1 className="truncate text-[15px] font-semibold text-ink-900">
@@ -670,8 +659,8 @@ function LocalModelConfig() {
         )}
       </header>
 
-      <div className="flex-1 overflow-y-auto px-6 pb-20">
-        <div className="mx-auto flex max-w-[720px] flex-col gap-3">
+      <div className="flex-1 overflow-y-auto px-[25px] py-2 pb-20">
+        <div className="flex flex-1 flex-col gap-4">
           {banner && (
             <p className="rounded-xl bg-tint px-3 py-2 text-[12px] text-brand-700">
               {banner}
@@ -759,12 +748,12 @@ function Card({
   children: ReactNode;
 }) {
   return (
-    <div className="rounded-2xl bg-page p-1.5 shadow-soft">
-      <div className="px-3.5 pb-1.5 pt-2.5">
+    <div className="rounded-2xl bg-page p-2 shadow-soft">
+      <div className="px-4 pb-2 pt-3">
         <h2 className="text-[12.5px] font-semibold text-ink-900">{title}</h2>
-        {desc && <p className="mt-0.5 text-[11px] text-ink-400">{desc}</p>}
+        {desc && <p className="mt-1 text-[11px] text-ink-400">{desc}</p>}
       </div>
-      <div className="flex flex-col gap-2 px-3 pb-2.5">{children}</div>
+      <div className="flex flex-col gap-4 px-4 pb-3">{children}</div>
     </div>
   );
 }
@@ -779,7 +768,7 @@ function Field({
   children: ReactNode;
 }) {
   return (
-    <label className="flex flex-col gap-1">
+    <label className="flex flex-col gap-1.5">
       <span className="flex min-w-0 items-baseline gap-1.5">
         <span className="shrink-0 text-[12px] font-medium text-ink-700">
           {label}

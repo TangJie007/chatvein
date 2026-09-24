@@ -23,13 +23,15 @@ const NAV: {
   label: string;
   icon: typeof MessagesSquare;
   badgeKey?: keyof NavCounts;
+  /** 入口专属色：导航图标各占一个色彩锚点 */
+  ic: string;
 }[] = [
-  { key: "chat", label: "对话", icon: MessagesSquare, badgeKey: "chat" },
-  { key: "group", label: "群组", icon: Users, badgeKey: "group" },
-  { key: "kb", label: "知识库", icon: BookOpen, badgeKey: "kb" },
-  { key: "skills", label: "技能", icon: Sparkles, badgeKey: "skills" },
-  { key: "roles", label: "角色", icon: UserCog, badgeKey: "roles" },
-  { key: "models", label: "模型", icon: Bot, badgeKey: "models" },
+  { key: "chat", label: "对话", icon: MessagesSquare, badgeKey: "chat", ic: "text-ic-blue" },
+  { key: "group", label: "群组", icon: Users, badgeKey: "group", ic: "text-ic-green" },
+  { key: "kb", label: "知识库", icon: BookOpen, badgeKey: "kb", ic: "text-ic-violet" },
+  { key: "skills", label: "技能", icon: Sparkles, badgeKey: "skills", ic: "text-peach-400" },
+  { key: "roles", label: "角色", icon: UserCog, badgeKey: "roles", ic: "text-brand-500" },
+  { key: "models", label: "模型", icon: Bot, badgeKey: "models", ic: "text-ic-amber" },
 ];
 
 const NEW_LABEL: Partial<Record<AppView, string>> = {
@@ -54,7 +56,7 @@ export function Sidebar({ counts = {}, onNew }: SidebarProps) {
       <div className="px-3 pt-1.5">
         <Button
           variant="tint"
-          className="w-full"
+          className="w-full text-brand-700"
           disabled={!canNew}
           onClick={onNew}
         >
@@ -64,7 +66,7 @@ export function Sidebar({ counts = {}, onNew }: SidebarProps) {
       </div>
 
       <nav className="mt-3 flex flex-col gap-0.5 px-3">
-        {NAV.map(({ key, label, icon: Icon, badgeKey }) => {
+        {NAV.map(({ key, label, icon: Icon, badgeKey, ic }) => {
           const badge = badgeKey ? counts[badgeKey] : undefined;
           return (
             <NavLink
@@ -80,10 +82,10 @@ export function Sidebar({ counts = {}, onNew }: SidebarProps) {
                 )
               }
             >
-              <Icon className="size-3.5 shrink-0" strokeWidth={1.75} />
+              <Icon className={cn("size-3.5 shrink-0", ic)} strokeWidth={1.75} />
               <span className="flex-1 text-left">{label}</span>
               {!!badge && (
-                <span className="rounded-full bg-tint px-1.5 py-px text-[10.5px] font-medium text-ink-500">
+                <span className="rounded-full bg-tint px-1.5 py-px text-[10.5px] font-medium text-brand-700">
                   {badge}
                 </span>
               )}

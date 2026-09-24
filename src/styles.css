@@ -4,28 +4,28 @@
 @source "../node_modules/@streamdown/cjk/dist/*.js";
 
 @theme {
-  /* ---- 中性色：冷灰蓝 H≈212 ---- */
-  --color-page: #f2f5f9;
-  --color-panel: #f7fafd;
-  --color-surface: #ffffff;
-  --color-list: #fafcfe;
-  --color-tint: #e8f0f8;
-  --color-tint-deep: #dce8f4;
-  --color-ink-900: #1b2430;
-  --color-ink-700: #3d4c5f;
-  --color-ink-500: #64748b;
-  --color-ink-400: #8fa1b3;
-  --color-ink-300: #b7c6d4;
-  --color-ink-200: #d5dee8;
+  /* ---- 中性色：冷灰蓝，页面底取自参考图 #F6F9FC（H207）---- */
+  --color-page: #f6f9fc;        /* 页面底 / 列表区 */
+  --color-panel: #f9fbfd;       /* 侧栏面板 */
+  --color-surface: #ffffff;     /* 内容主区 */
+  --color-list: #fafcfe;        /* 内容壳内的列表列（比窗口底略浅，形成分层）*/
+  --color-tint: #e2f5f4;        /* 选中态 tint：主色薄荷青的浅底 */
+  --color-tint-deep: #d1ecea;   /* hover tint */
+  --color-ink-900: #1b2430;     /* 主文字 */
+  --color-ink-700: #3d4c5f;     /* 次级文字 */
+  --color-ink-500: #55637b;     /* 说明文字（6.1:1） */
+  --color-ink-400: #667184;     /* meta / 标签（4.9:1，旧值 #8fa1b3 仅 2.8:1，是"发灰"主因） */
+  --color-ink-300: #9fb0c0;     /* 分隔线 / 图标弱态 */
+  --color-ink-200: #cfdbe5;     /* 边框 / 轨道底 */
 
-  /* ---- 主强调色 ---- */
-  --color-brand-50: #eaf3fe;
-  --color-brand-100: #dcebfd;
-  --color-brand-500: #4998ee;
-  --color-brand-600: #2e7fe6;
-  --color-brand-700: #1d63c4;
+  /* ---- 主强调色：参考图薄荷青 H≈177（#75CDC8 系），按用途加深保对比度 ---- */
+  --color-brand-50: #e4f7f5;    /* tint 底 */
+  --color-brand-100: #cdf0ed;
+  --color-brand-500: #2fa39c;   /* 图标 / 小面积装饰（白底 ≥3:1） */
+  --color-brand-600: #1d807a;   /* 填充 + 白字（4.7:1） */
+  --color-brand-700: #17635f;   /* 白底文字（6.9:1） */
 
-  /* ---- 状态色 ---- */
+  /* ---- 状态色（参考图红 #D84C43 校准）---- */
   --color-ok-50: #e7f8ec;
   --color-ok-500: #17bd3a;
   --color-ok-600: #0c9430;
@@ -34,16 +34,22 @@
   --color-warn-600: #de5a38;
   --color-danger-50: #fdecea;
   --color-danger-500: #fa7367;
-  --color-danger-600: #d94538;
+  --color-danger-600: #d8453c;
   --color-amber-400: #f7b856;
 
-  /* ---- 头像 / 装饰 ---- */
-  --color-teal-50: #e8f7f7;
-  --color-teal-400: #62bbbc;
-  --color-teal-600: #2f8f90;
-  --color-violet-50: #f6eefb;
+  /* ---- 导航图标多彩色（参考图侧栏：每个入口一个专属色）---- */
+  --color-ic-blue: #4a9de8;     /* 对话 */
+  --color-ic-green: #43ae85;    /* 群组 */
+  --color-ic-violet: #a385d6;   /* 知识库 */
+  --color-ic-amber: #de9a2e;    /* 模型 */
+
+  /* ---- 头像 / 装饰多彩色 ---- */
+  --color-teal-400: #5fc0bb;
+  --color-teal-50: #e4f7f6;
+  --color-teal-600: #1d807a;
   --color-violet-400: #ba8cdd;
-  --color-violet-600: #8a5cb8;
+  --color-violet-50: #f1ebfa;
+  --color-violet-600: #7c55c0;
   --color-peach-400: #f9b499;
 
   /* ---- 分层阴影（替代 border）---- */
@@ -55,11 +61,11 @@
   /* Streamdown 沿用 shadcn 色名，映射到本应用色板 */
   --color-background: #ffffff;
   --color-foreground: #1b2430;
-  --color-border: #d5dee8;
-  --color-muted: #e8f0f8;
-  --color-muted-foreground: #64748b;
-  --color-sidebar: #f7fafd;
-  --color-primary: #2e7fe6;
+  --color-border: #cfdbe5;
+  --color-muted: #e2f5f4;
+  --color-muted-foreground: #55637b;
+  --color-sidebar: #f9fbfd;
+  --color-primary: #1d807a;
 
   --animate-view: view-in 0.18s ease-out;
   --animate-sheet-in: sheet-in 0.22s ease-out;
@@ -166,7 +172,7 @@
 
 .chat-md :not(pre) > code {
   border-radius: 0.25rem;
-  background: #dce8f4;
+  background: #d1ecea;
   padding: 0.05rem 0.3rem;
   font-size: 12.5px;
 }

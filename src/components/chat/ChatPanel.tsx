@@ -274,7 +274,7 @@ export function ChatPanel({
                       <div
                         className={cn(
                           "mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full",
-                          isUser ? "bg-brand-600 text-white" : "bg-violet-500 text-white"
+                          isUser ? "bg-brand-600 text-white" : "bg-brand-500 text-white"
                         )}
                       >
                         {isUser ? (
@@ -344,7 +344,7 @@ export function ChatPanel({
                             "flex max-w-full items-start gap-1.5 rounded-xl px-3 py-2 text-[12.5px]",
                             errorTone === "muted"
                               ? "bg-tint text-ink-500"
-                              : "bg-red-50 text-red-700"
+                              : "bg-danger-50 text-danger-600"
                           )}
                         >
                           <AlertCircle
@@ -436,7 +436,7 @@ export function ChatPanel({
                   "rounded-xl px-3 py-2 text-[12.5px]",
                   errorTone === "muted"
                     ? "bg-tint text-ink-500"
-                    : "bg-red-50 text-red-700"
+                    : "bg-danger-50 text-danger-600"
                 )}
               >
                 {error}

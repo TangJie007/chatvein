@@ -57,11 +57,11 @@ const sleep = (ms: number) =>
   });
 
 const AVATAR_COLORS = [
-  "bg-brand-600",
+  "bg-brand-500",
   "bg-violet-400",
-  "bg-sky-500",
-  "bg-emerald-500",
-  "bg-amber-500",
+  "bg-teal-400",
+  "bg-peach-400",
+  "bg-amber-400",
 ];
 
 function toSessionItem(c: ConversationRecord): SessionItem {

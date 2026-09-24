@@ -1,6 +1,7 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { type ReactNode } from "react";
 import { cn } from "../../lib/cn";
+import logo from "../../assets/logo.png";
 
 async function withWindow(fn: (win: ReturnType<typeof getCurrentWindow>) => Promise<void>) {
   try {
@@ -30,8 +31,8 @@ function WinButton({
         "flex w-[46px] items-center justify-center text-ink-400 transition-colors",
         "focus-visible:outline-2 focus-visible:outline-brand-600",
         danger
-          ? "hover:bg-danger-600 hover:text-white"
-          : "hover:bg-tint-deep hover:text-ink-700"
+          ? "hover:bg-danger-500 hover:text-white"
+          : "hover:bg-tint hover:text-ink-700"
       )}
     >
       {children}
@@ -94,12 +95,13 @@ export function TitleBar({ title = "ChatVein" }: { title?: string }) {
     <header className="flex h-9 shrink-0 items-stretch bg-page">
       <div className="flex min-w-0 flex-1 items-center pl-3" data-tauri-drag-region>
         <span className="flex items-center gap-1.5" data-tauri-drag-region>
-          <span
-            className="flex size-5 shrink-0 items-center justify-center rounded-md bg-brand-600 text-[10px] font-bold text-white"
+          <img
+            src={logo}
+            alt="ChatVein"
+            className="size-5 shrink-0 rounded-[6px] object-cover"
+            draggable={false}
             data-tauri-drag-region
-          >
-            C
-          </span>
+          />
           <span className="text-[11.5px] font-medium text-ink-500" data-tauri-drag-region>
             {title}
           </span>

@@ -370,7 +370,7 @@ function RoleConfig({ role, models, loadingModels, onSave, onDelete }: RoleConfi
   return (
     <>
       {/* 顶栏 */}
-      <header className="flex shrink-0 items-center gap-3 px-6 pb-2.5 pt-4">
+      <header className="flex shrink-0 items-center gap-3 px-[25px] pb-2.5 pt-4">
         <span
           className={cn(
             "flex size-9 shrink-0 items-center justify-center rounded-xl text-[14px] font-semibold text-white shadow-soft",
@@ -416,8 +416,8 @@ function RoleConfig({ role, models, loadingModels, onSave, onDelete }: RoleConfi
         </div>
       </header>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-4">
-        <div className="mx-auto flex max-w-[720px] flex-col gap-2">
+      <div className="min-h-0 flex-1 overflow-y-auto px-[25px] py-2 pb-4">
+        <div className="flex flex-1 flex-col gap-4">
           {/* 基础设置 */}
           <Collapsible title="基础设置" desc="名称、模型与启停状态" defaultOpen>
             <Row label="角色名称" hint="列表与会话头部展示">
@@ -612,7 +612,7 @@ function RoleConfig({ role, models, loadingModels, onSave, onDelete }: RoleConfi
       </div>
 
       {/* 底部固定操作条 */}
-      <div className="flex shrink-0 items-center gap-3 bg-surface px-6 py-2.5">
+      <div className="flex shrink-0 items-center gap-3 bg-surface px-[25px] py-2.5">
         <span className="min-w-0 flex-1 truncate text-[11.5px] text-ink-400">
           {role.primary
             ? "内置角色 · 可调整人格与工具，不可删除"
@@ -704,7 +704,7 @@ function Collapsible({
           <ChevronRight className="size-3.5" strokeWidth={1.75} />
         </span>
       </button>
-      {open && <div className="mt-px flex flex-col gap-1 px-1 pb-1">{children}</div>}
+      {open && <div className="mt-px flex flex-col gap-3 px-1 pb-1">{children}</div>}
     </div>
   );
 }
@@ -719,7 +719,7 @@ function Row({
   children: React.ReactNode;
 }) {
   return (
-    <div className="flex items-center gap-4 rounded-xl bg-surface px-3 py-1.5 transition-shadow hover:shadow-lift">
+    <div className="flex items-center gap-4 rounded-xl bg-surface px-4 py-3 transition-shadow hover:shadow-lift">
       <div className="flex min-w-0 flex-1 items-baseline gap-2">
         <p className="shrink-0 text-[12.5px] font-medium text-ink-900">{label}</p>
         {hint && <p className="truncate text-[11px] text-ink-400">{hint}</p>}
@@ -749,7 +749,7 @@ function Slider({
   format?: (v: number) => string;
 }) {
   return (
-    <div className="rounded-xl bg-surface px-3 py-1.5 transition-shadow hover:shadow-lift">
+    <div className="rounded-xl bg-surface px-4 py-3 transition-shadow hover:shadow-lift">
       <div className="flex min-w-0 items-baseline gap-2">
         <p className="shrink-0 text-[12.5px] font-medium text-ink-900">{label}</p>
         {hint && (

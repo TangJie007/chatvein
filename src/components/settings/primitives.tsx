@@ -41,8 +41,8 @@ export function Card({
     </>
   );
   return (
-    <div className={cn("rounded-2xl bg-page p-1.5 shadow-soft", className)}>
-      <div className="flex items-center gap-2.5 px-3.5 pb-2 pt-3">
+    <div className={cn("rounded-2xl bg-page p-2 shadow-soft", className)}>
+      <div className="flex items-center gap-2.5 px-4 pb-2.5 pt-3">
         {collapsible ? (
           <button
             type="button"
@@ -105,7 +105,7 @@ export function Row({
   children: ReactNode;
 }) {
   return (
-    <div className="flex items-center gap-4 rounded-xl px-3 py-1.5 transition-colors hover:bg-tint/50">
+    <div className="flex items-center gap-4 rounded-xl px-4 py-3 transition-colors hover:bg-tint/50">
       <div className="flex min-w-0 flex-1 items-baseline gap-2">
         <p className="shrink-0 text-[12.5px] font-medium text-ink-900">{label}</p>
         {hint && <p className="truncate text-[11px] text-ink-400">{hint}</p>}

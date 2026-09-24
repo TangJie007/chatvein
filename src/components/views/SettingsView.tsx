@@ -177,7 +177,7 @@ function SettingsBody({ section }: { section: SectionKey }) {
 
       {/* 内容区 */}
       <section className="flex min-w-0 flex-1 flex-col bg-surface">
-        <header className="flex items-center gap-3 px-6 pb-3 pt-4">
+        <header className="flex items-center gap-3 px-[25px] pb-3 pt-4">
           <div className="min-w-0 flex-1">
             <h1 className="truncate text-[15px] font-semibold text-ink-900">
               {meta.label}
@@ -194,8 +194,8 @@ function SettingsBody({ section }: { section: SectionKey }) {
           </div>
         </header>
 
-        <div className="flex-1 overflow-y-auto px-6 pb-6">
-          <div className="mx-auto flex h-full max-w-[720px] flex-col gap-3">
+        <div className="flex-1 overflow-y-auto px-[25px] py-2 pb-6">
+          <div className="flex flex-1 flex-col gap-4">
             {section === "app" && <AppSection prefs={prefs} onSet={setPref} />}
             {section === "mcp" && <McpSection servers={servers} />}
             {section === "sqlite" && (
