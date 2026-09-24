@@ -87,10 +87,11 @@ Agent 图细节见 [`agent-graphs.md`](./agent-graphs.md)；工具矩阵见 [`ag
 | 输入区 | 模型名、上下文占比、添加技能、添加文件、拖放上传 | `Composer` |
 | Bash/PowerShell 确认 | 危险或写盘命令弹窗批准 | `BashApproval` |
 | 追踪窗口 | 独立窗看整轮 path / LLM / 工具 / token | `TraceWindow` |
+| 群组 | 群组切换 + 成员（=角色）+ 共享会话（=会话），右栏复用对话引擎；群组本身存 localStorage | `GroupView` |
 | 设置 | 应用偏好（本地）、内置 MCP 状态、SQLite 信息 / VACUUM / 备份 | |
 | Tauri 消息层 | 启停 Python、注入 `CHATVEIN_DATA_DIR`、推送后端 URL | `src-tauri` |
 
-占位页（未做产品逻辑）：群组、独立知识库管理 UI。应用偏好里的托盘 / 开机启动 / 自动更新尚未接 Tauri 插件。
+占位页（未做产品逻辑）：独立知识库管理 UI。群组只做前端分组（无后端群组表）。应用偏好里的托盘 / 开机启动 / 自动更新尚未接 Tauri 插件。
 
 ---
 

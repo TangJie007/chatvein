@@ -26,8 +26,10 @@ import { viewFromPathname, type NavCounts } from "./types/view";
 
 type MainOutletContext = {
   newChatRequestId: number;
+  newGroupRequestId: number;
   addModelRequestId: number;
   onConversationCount: (n: number) => void;
+  onGroupCount: (n: number) => void;
   onModelsChange: (info: { count: number }) => void;
 };
 
@@ -40,7 +42,7 @@ export default function App() {
           <Route index element={<Navigate to="/chat" replace />} />
           <Route path="/chat" element={<ChatOutlet />} />
           <Route path="/chat/:conversationId" element={<ChatOutlet />} />
-          <Route path="/group" element={<GroupView />} />
+          <Route path="/group" element={<GroupOutlet />} />
           <Route path="/kb" element={<KnowledgeView />} />
           <Route path="/skills" element={<SkillsView />} />
           <Route path="/roles" element={<RolesView />} />
@@ -75,6 +77,7 @@ function MainLayout() {
   });
   const [addModelRequestId, setAddModelRequestId] = useState(0);
   const [newChatRequestId, setNewChatRequestId] = useState(0);
+  const [newGroupRequestId, setNewGroupRequestId] = useState(0);
 
   useEffect(() => {
     void listRoles()
@@ -103,6 +106,10 @@ function MainLayout() {
     setCounts((c) => (c.chat === n ? c : { ...c, chat: n }));
   }, []);
 
+  const handleGroupCount = useCallback((n: number) => {
+    setCounts((c) => (c.group === n ? c : { ...c, group: n }));
+  }, []);
+
   const handleModelsChange = useCallback(
     ({ count }: { count: number }) => {
       setCounts((c) => ({ ...c, models: count }));
@@ -115,13 +122,17 @@ function MainLayout() {
       setAddModelRequestId((n) => n + 1);
     } else if (view === "chat") {
       setNewChatRequestId((n) => n + 1);
+    } else if (view === "group") {
+      setNewGroupRequestId((n) => n + 1);
     }
   };
 
   const outletContext: MainOutletContext = {
     newChatRequestId,
+    newGroupRequestId,
     addModelRequestId,
     onConversationCount: handleConversationCount,
+    onGroupCount: handleGroupCount,
     onModelsChange: handleModelsChange,
   };
 
@@ -152,6 +163,16 @@ function ChatOutlet() {
     <ChatView
       newRequestId={ctx.newChatRequestId}
       onConversationCount={ctx.onConversationCount}
+    />
+  );
+}
+
+function GroupOutlet() {
+  const ctx = useOutletContext<MainOutletContext>();
+  return (
+    <GroupView
+      newGroupRequestId={ctx.newGroupRequestId}
+      onGroupCount={ctx.onGroupCount}
     />
   );
 }

@@ -14,7 +14,8 @@ export type SessionItem = {
   unread?: boolean;
 };
 
-const CHIP: Record<NonNullable<SessionItem["tagTone"]>, string> = {
+/** 会话状态 chip 配色；群组左栏的「共享会话」复用同一套口径。 */
+export const SESSION_CHIP: Record<NonNullable<SessionItem["tagTone"]>, string> = {
   neutral: "bg-tint text-ink-500",
   brand: "bg-brand-50 text-brand-700",
   ok: "bg-ok-50 text-ok-600",
@@ -112,7 +113,7 @@ export function SessionList({
                     <span
                       className={cn(
                         "shrink-0 rounded-full px-2 py-0.5 text-[10.5px] font-medium",
-                        CHIP[s.tagTone ?? "neutral"]
+                        SESSION_CHIP[s.tagTone ?? "neutral"]
                       )}
                     >
                       {s.running ? (

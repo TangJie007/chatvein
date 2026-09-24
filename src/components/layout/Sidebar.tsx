@@ -50,7 +50,7 @@ export function Sidebar({ counts = {}, onNew }: SidebarProps) {
   const location = useLocation();
   const view = viewFromPathname(location.pathname);
   const newLabel = NEW_LABEL[view] ?? "新建对话";
-  const canNew = view === "chat" || view === "models";
+  const canNew = view === "chat" || view === "group" || view === "models";
 
   return (
     <aside className="flex w-[138px] shrink-0 flex-col select-none pb-[15px]">

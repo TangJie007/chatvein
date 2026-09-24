@@ -64,7 +64,7 @@ const AVATAR_COLORS = [
   "bg-amber-400",
 ];
 
-function toSessionItem(c: ConversationRecord): SessionItem {
+export function toSessionItem(c: ConversationRecord): SessionItem {
   const title = c.title.trim() || "新会话";
   const idx =
     Math.abs(
@@ -122,7 +122,7 @@ function toChatMessages(rows: ChatMessageRecord[]): ChatMessage[] {
 }
 
 /** 抽取任意抛错上的可读文案（Tauri invoke 可能是 string，不是 Error）。 */
-function errorMessage(err: unknown): string {
+export function errorMessage(err: unknown): string {
   if (typeof err === "string") return err;
   if (err instanceof Error) return err.message;
   if (err && typeof err === "object" && "message" in err) {
@@ -186,24 +186,42 @@ function isAbortError(err: unknown): boolean {
 type ChatViewProps = {
   newRequestId?: number;
   onConversationCount?: (n: number) => void;
+  /** 列表刷新后的最新会话行（群组视图据此刷新左栏「共享会话」的预览）。 */
+  onConversationsChange?: (rows: ConversationRecord[]) => void;
+  /** 群组视图复用：会话 id 由外部受控，不再读路由参数。 */
+  fixedConversationId?: string | null;
+  /** 群组视图复用：隐藏左侧会话列表（列表由 GroupList 承担）。 */
+  showList?: boolean;
+  /** 群组视图复用：切换会话走回调，不再 push 到 /chat/:id。 */
+  onSelectConversation?: (id: string | null) => void;
 };
 
 export function ChatView({
   newRequestId = 0,
   onConversationCount,
+  onConversationsChange,
+  fixedConversationId,
+  showList = true,
+  onSelectConversation,
 }: ChatViewProps) {
   const navigate = useNavigate();
   const { conversationId: routeConversationId } = useParams<{
     conversationId?: string;
   }>();
-  const activeId = routeConversationId ?? null;
+  /** 受控模式（群组视图）：会话由 GroupList 选择，路由参数不参与。 */
+  const controlled = fixedConversationId !== undefined;
+  const activeId = controlled ? fixedConversationId : routeConversationId ?? null;
   const routeIdRef = useRef(routeConversationId);
   routeIdRef.current = routeConversationId;
   const selectConversation = useCallback(
     (id: string | null, replace = false) => {
+      if (onSelectConversation) {
+        onSelectConversation(id);
+        return;
+      }
       navigate(id ? `${VIEW_PATH.chat}/${id}` : VIEW_PATH.chat, { replace });
     },
-    [navigate]
+    [navigate, onSelectConversation]
   );
   const [sessions, setSessions] = useState<SessionItem[]>([]);
   const [query, setQuery] = useState("");
@@ -277,8 +295,9 @@ export function ChatView({
     const rows = await listConversations(80);
     setSessions(rows.map(toSessionItem));
     onConversationCount?.(rows.length);
+    onConversationsChange?.(rows);
     return rows;
-  }, [onConversationCount]);
+  }, [onConversationCount, onConversationsChange]);
 
   const refreshListRef = useRef(refreshList);
   refreshListRef.current = refreshList;
@@ -366,7 +385,8 @@ export function ChatView({
       try {
         const rows = await refreshList();
         if (cancelled) return;
-        if (!routeIdRef.current && rows.length > 0) {
+        // 受控模式（群组视图）：选中哪个共享会话由外层决定，这里只补列表、不抢选。
+        if (!controlled && !routeIdRef.current && rows.length > 0) {
           selectConversation(rows[0]!.id, true);
         }
       } catch {
@@ -376,7 +396,7 @@ export function ChatView({
     return () => {
       cancelled = true;
     };
-  }, [refreshList, selectConversation]);
+  }, [controlled, refreshList, selectConversation]);
 
   useEffect(() => {
     if (!activeId) {
@@ -774,14 +794,16 @@ export function ChatView({
 
   return (
     <>
-      <SessionList
-        sessions={filtered}
-        activeId={activeId}
-        onSelect={(id) => selectConversation(id)}
-        onDelete={requestDelete}
-        query={query}
-        onQueryChange={setQuery}
-      />
+      {showList ? (
+        <SessionList
+          sessions={filtered}
+          activeId={activeId}
+          onSelect={(id) => selectConversation(id)}
+          onDelete={requestDelete}
+          query={query}
+          onQueryChange={setQuery}
+        />
+      ) : null}
       <div className="relative flex min-h-0 min-w-0 flex-1">
         <ChatPanel
           session={session}
