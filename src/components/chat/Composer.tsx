@@ -1,6 +1,6 @@
 import { open } from "@tauri-apps/plugin-dialog";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { Paperclip, Plus, SendHorizontal, Square, X } from "lucide-react";
+import { AtSign, Paperclip, Plus, SendHorizontal, Square, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { listInstalledSkills, uploadFiles, type InstalledSkill } from "../../api";
 import { cn } from "../../lib/cn";
@@ -23,13 +23,24 @@ export type ComposerFile = {
   name: string;
 };
 
+/** 群组成员最小展示信息：气泡头像 + @ 指派弹层共用。 */
+export type MemberAvatar = {
+  id: string;
+  name: string;
+  colorClass: string;
+  avatarUrl?: string;
+};
+
 type ComposerProps = {
-  modelName: string;
+  /** chat=对话视图（模型 / 用量 / 技能齐全）；group=群组视图（无模型、无技能）。 */
+  variant?: "chat" | "group";
+  modelName?: string;
   modelId?: string;
-  contextPct: number;
-  contextTitle: string;
+  contextPct?: number;
+  contextTitle?: string;
   sending?: boolean;
-  onSend: (text: string, skills?: ComposerSkill[]) => void;
+  /** mentionId 为群组 @ 指派的成员 id；null / 缺省表示交给默认角色。 */
+  onSend: (text: string, skills?: ComposerSkill[], mentionId?: string | null) => void;
   /** 生成中点击：主动停止当前 LLM 推理。 */
   onStop?: () => void;
   /** 由父组件回灌的待编辑原文（null 表示无需回灌）。 */
@@ -43,6 +54,8 @@ type ComposerProps = {
   onSkillsChange?: (skills: ComposerSkill[]) => void;
   /** 角色常驻技能 slug：勾选面板中隐藏（已由角色自动注入，无需重复勾选）。 */
   residentSkills?: string[];
+  /** 群组变体：可 @ 指派的对象；缺省时不显示指派入口。 */
+  mentionOptions?: MemberAvatar[];
 };
 
 type UploadItemInput =
@@ -67,10 +80,11 @@ function composeOutgoing(
 }
 
 export function Composer({
-  modelName,
+  variant = "chat",
+  modelName = "",
   modelId = "",
-  contextPct,
-  contextTitle,
+  contextPct = 0,
+  contextTitle = "",
   sending = false,
   onSend,
   onStop,
@@ -80,13 +94,17 @@ export function Composer({
   skills = [],
   onSkillsChange,
   residentSkills = [],
+  mentionOptions,
 }: ComposerProps) {
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const barRef = useRef<HTMLDivElement>(null);
+  const mentionRef = useRef<HTMLDivElement>(null);
   const dropRef = useRef<HTMLDivElement>(null);
   const [draft, setDraft] = useState("");
   const [skillOpen, setSkillOpen] = useState(false);
+  const [mentionOpen, setMentionOpen] = useState(false);
+  const [mentionId, setMentionId] = useState<string | null>(null);
   const [files, setFiles] = useState<ComposerFile[]>([]);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [keyword, setKeyword] = useState("");
@@ -131,6 +149,24 @@ export function Composer({
     window.addEventListener("mousedown", onPointer);
     return () => window.removeEventListener("mousedown", onPointer);
   }, [skillOpen]);
+
+  useEffect(() => {
+    if (!mentionOpen) return;
+    const onPointer = (event: MouseEvent) => {
+      if (!mentionRef.current?.contains(event.target as Node)) setMentionOpen(false);
+    };
+    window.addEventListener("mousedown", onPointer);
+    return () => window.removeEventListener("mousedown", onPointer);
+  }, [mentionOpen]);
+
+  // 切换群 / 会话后，上次的指派对象没有意义，重置为默认角色。
+  useEffect(() => {
+    setMentionId(null);
+    setMentionOpen(false);
+  }, [conversationId]);
+
+  const mention =
+    (mentionId && mentionOptions?.find((m) => m.id === mentionId)) || null;
 
   useEffect(() => {
     let cancelled = false;
@@ -206,9 +242,10 @@ export function Composer({
   const submit = () => {
     const text = draft.trim();
     if (!text || sending) return;
-    onSend(composeOutgoing(text, files), skills);
+    onSend(composeOutgoing(text, files), skills, mentionId);
     setFiles([]);
     setSkillOpen(false);
+    setMentionOpen(false);
     resetInput();
   };
 
@@ -287,32 +324,42 @@ export function Composer({
     setKeyword("");
   };
 
+  // 模型名 + 上下文用量：只属于对话视图；群组视图没有模型 / 技能的概念。
+  const modelBar =
+    variant === "chat" ? (
+      <>
+        <span
+          title={modelId ? `${modelName} · ${modelId}` : modelName}
+          className="flex min-w-0 items-center gap-1.5 rounded-full bg-page px-2.5 py-1 text-[11.5px] text-ink-500"
+        >
+          <span className="size-1.5 shrink-0 rounded-full bg-ok-500" />
+          <span className="min-w-0 truncate font-medium text-ink-700">{modelName}</span>
+          {modelId ? (
+            <span className="min-w-0 truncate font-mono text-[10.5px] text-ink-400">
+              {modelId}
+            </span>
+          ) : null}
+        </span>
+
+        <span
+          title={contextTitle}
+          className="flex shrink-0 items-center gap-1.5 rounded-full bg-page px-2.5 py-1 text-[11.5px] text-ink-400"
+        >
+          <ContextRing pct={contextPct} />
+          <span className="font-mono font-medium text-ink-700">{contextPct}%</span>
+        </span>
+      </>
+    ) : null;
+
   return (
     <footer className="px-6 pb-5 pt-1">
       <div ref={barRef} className="mx-auto max-w-[760px]">
         <div className="flex items-center gap-2 pb-2">
-          <span
-            title={modelId ? `${modelName} · ${modelId}` : modelName}
-            className="flex min-w-0 items-center gap-1.5 rounded-full bg-page px-2.5 py-1 text-[11.5px] text-ink-500"
-          >
-            <span className="size-1.5 shrink-0 rounded-full bg-ok-500" />
-            <span className="min-w-0 truncate font-medium text-ink-700">{modelName}</span>
-            {modelId ? (
-              <span className="min-w-0 truncate font-mono text-[10.5px] text-ink-400">
-                {modelId}
-              </span>
-            ) : null}
-          </span>
+          {modelBar}
 
-          <span
-            title={contextTitle}
-            className="flex shrink-0 items-center gap-1.5 rounded-full bg-page px-2.5 py-1 text-[11.5px] text-ink-400"
-          >
-            <ContextRing pct={contextPct} />
-            <span className="font-mono font-medium text-ink-700">{contextPct}%</span>
-          </span>
-
-          <div className="relative ml-auto">
+          <div className="ml-auto flex items-center gap-2">
+            {variant === "chat" ? (
+              <div className="relative">
             <button
               type="button"
               title="添加 Skill"
@@ -363,12 +410,74 @@ export function Composer({
                   )}
                 </ul>
               </div>
+              ) : null}
+              </div>
             ) : null}
-          </div>
 
-          <button
-            type="button"
-            title="添加文件"
+            {variant === "group" && mentionOptions && mentionOptions.length > 0 ? (
+              <div ref={mentionRef} className="relative">
+                <button
+                  type="button"
+                  title={mention ? `指派给 @${mention.name}` : "指派给某个成员"}
+                  onClick={() => {
+                    setSkillOpen(false);
+                    setMentionOpen((open) => !open);
+                  }}
+                  className={cn(
+                    "flex shrink-0 items-center gap-1 rounded-full px-2.5 py-1 text-[11.5px] transition-colors focus-visible:outline-2 focus-visible:outline-brand-600",
+                    mention
+                      ? "bg-brand-50 text-brand-700 hover:bg-brand-100"
+                      : "bg-page text-ink-500 hover:bg-tint hover:text-brand-700"
+                  )}
+                >
+                  <AtSign className="size-3" strokeWidth={1.75} />
+                  {mention ? `@${mention.name}` : "指派"}
+                </button>
+                {mentionOpen ? (
+                  <div className="absolute right-0 bottom-full z-20 mb-1 w-56 rounded-xl bg-surface p-1.5 shadow-lift">
+                    <ul className="max-h-56 overflow-auto">
+                      {mentionOptions.map((mb) => (
+                        <li key={mb.id}>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setMentionId(mb.id === mentionId ? null : mb.id);
+                              setMentionOpen(false);
+                            }}
+                            className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left hover:bg-tint"
+                          >
+                            {mb.avatarUrl ? (
+                              <img
+                                src={mb.avatarUrl}
+                                alt=""
+                                draggable={false}
+                                className="size-5 shrink-0 rounded-full object-cover"
+                              />
+                            ) : (
+                              <span
+                                className={cn(
+                                  "flex size-5 shrink-0 items-center justify-center rounded-full text-[10px] font-medium text-white",
+                                  mb.colorClass
+                                )}
+                              >
+                                {mb.name.slice(0, 1)}
+                              </span>
+                            )}
+                            <span className="min-w-0 truncate text-[12.5px] font-medium text-ink-900">
+                              {mb.name}
+                            </span>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+
+            <button
+              type="button"
+              title="添加文件"
             onClick={() => {
               void pickFiles();
             }}
@@ -405,19 +514,31 @@ export function Composer({
               })();
             }}
           />
+          </div>
         </div>
 
-        {skills.length > 0 || files.length > 0 ? (
+        {(variant === "chat" && skills.length > 0) ||
+        files.length > 0 ||
+        (variant === "group" && mention) ? (
           <div className="flex flex-wrap gap-1.5 pb-2">
-            {skills.map((skill) => (
+            {variant === "chat"
+              ? skills.map((skill) => (
+                  <Chip
+                    key={skill.slug}
+                    label={catalog.find((c) => c.slug === skill.slug)?.name ?? skill.name}
+                    onRemove={() =>
+                      onSkillsChange?.(skills.filter((s) => s.slug !== skill.slug))
+                    }
+                  />
+                ))
+              : null}
+            {variant === "group" && mention ? (
               <Chip
-                key={skill.slug}
-                label={catalog.find((c) => c.slug === skill.slug)?.name ?? skill.name}
-                onRemove={() =>
-                  onSkillsChange?.(skills.filter((s) => s.slug !== skill.slug))
-                }
+                label={`指派给 @${mention.name}`}
+                title={`本轮任务由 @${mention.name} 执行`}
+                onRemove={() => setMentionId(null)}
               />
-            ))}
+            ) : null}
             {files.map((file) => (
               <Chip
                 key={file.path}
@@ -530,7 +651,8 @@ function Chip({
   );
 }
 
-function ContextRing({ pct, size = 14 }: { pct: number; size?: number }) {
+/** 上下文用量环；群组视图把它放在气泡上方，因此对外导出。 */
+export function ContextRing({ pct, size = 14 }: { pct: number; size?: number }) {
   const r = (size - 2) / 2;
   const c = 2 * Math.PI * r;
   const tone = pct >= 80 ? "text-danger-500" : "text-brand-500";

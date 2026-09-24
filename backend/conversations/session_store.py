@@ -42,6 +42,7 @@ CREATE TABLE IF NOT EXISTS messages (
     tool_plan TEXT,
     tokens INTEGER NOT NULL DEFAULT 0,
     duration_ms INTEGER NOT NULL DEFAULT 0,
+    actor_id TEXT,
     created_at TEXT NOT NULL
 );
 """ + _TOOL_CALLS_DDL.replace("CREATE TABLE", "CREATE TABLE IF NOT EXISTS", 1) + """
@@ -81,6 +82,7 @@ def ensure_session_db(db_path: Path) -> Path:
         _add_column(conn, "messages", "tool_plan", "TEXT")
         _add_column(conn, "messages", "tokens", "INTEGER NOT NULL DEFAULT 0")
         _add_column(conn, "messages", "duration_ms", "INTEGER NOT NULL DEFAULT 0")
+        _add_column(conn, "messages", "actor_id", "TEXT")
         cols = {
             str(r[1]): str(r[2])
             for r in conn.execute("PRAGMA table_info(tool_calls)").fetchall()
@@ -127,13 +129,14 @@ def append_message(
     tool_plan: str | None = None,
     tokens: int = 0,
     duration_ms: int = 0,
+    actor_id: str | None = None,
 ) -> int:
     ensure_session_db(db_path)
     with _connect(db_path) as conn:
         cur = conn.execute(
             "INSERT INTO messages(role, content, route, used_llm, turn_id, "
-            "route_reason, tool_plan, tokens, duration_ms, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "route_reason, tool_plan, tokens, duration_ms, actor_id, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 role,
                 content,
@@ -144,6 +147,7 @@ def append_message(
                 tool_plan,
                 int(tokens or 0),
                 int(duration_ms or 0),
+                actor_id or None,
                 _iso_now(),
             ),
         )
@@ -198,7 +202,7 @@ def list_messages(db_path: Path, *, limit: int = 200) -> list[dict[str, Any]]:
     with _connect(db_path) as conn:
         rows = conn.execute(
             "SELECT id, role, content, route, used_llm, turn_id, "
-            "tokens, duration_ms, created_at "
+            "tokens, duration_ms, actor_id, created_at "
             "FROM messages ORDER BY id DESC LIMIT ?",
             (limit,),
         ).fetchall()
@@ -213,6 +217,7 @@ def list_messages(db_path: Path, *, limit: int = 200) -> list[dict[str, Any]]:
             "turn_id": str(r["turn_id"] or ""),
             "tokens": int(r["tokens"] or 0),
             "duration_ms": int(r["duration_ms"] or 0),
+            "actor_id": r["actor_id"],
             "created_at": str(r["created_at"]),
         }
         for r in ordered

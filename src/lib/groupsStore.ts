@@ -1,8 +1,8 @@
 /** 群组（本地持久化）。
 
  * 后端暂无群组表，这里沿用 settings/prefs 的方式落到 localStorage：
- * - 成员 = 角色 id（/api/roles）
- * - 共享会话 = 会话 id（/api/conversations）
+ * - 成员 = 角色 id（/api/roles），建群时选定
+ * - 群组即群对话：一个群组独占一条会话（/api/conversations），不再挂共享会话列表
  * 实体数据仍以后端为唯一数据源，角色 / 会话被删除时这里只在展示层过滤，
  * 不留悬挂引用。
  */
@@ -25,8 +25,8 @@ export type ChatGroup = {
   color: string;
   /** 成员 = 角色 id。 */
   memberIds: string[];
-  /** 共享会话 = 会话 id。 */
-  conversationIds: string[];
+  /** 群对话：本群独占的那条会话（建群时创建，缺失时会补建）。 */
+  conversationId: string | null;
   createdAt: string;
 };
 
@@ -36,7 +36,8 @@ function asStringArray(value: unknown): string[] {
     : [];
 }
 
-/** 单条记录的容错解析：缺字段回落默认值，坏数据直接丢弃。 */
+/** 单条记录的容错解析：缺字段回落默认值，坏数据直接丢弃。
+ *  旧结构（conversationIds 数组）在这里收敛成独占的 conversationId。 */
 function normalize(raw: unknown): ChatGroup | null {
   if (!raw || typeof raw !== "object") return null;
   const g = raw as Record<string, unknown>;
@@ -46,7 +47,10 @@ function normalize(raw: unknown): ChatGroup | null {
     name: typeof g.name === "string" && g.name.trim() ? g.name : "未命名群组",
     color: typeof g.color === "string" && g.color ? g.color : GROUP_COLORS[0],
     memberIds: asStringArray(g.memberIds),
-    conversationIds: asStringArray(g.conversationIds),
+    conversationId:
+      typeof g.conversationId === "string" && g.conversationId
+        ? g.conversationId
+        : asStringArray(g.conversationIds)[0] ?? null,
     createdAt:
       typeof g.createdAt === "string" ? g.createdAt : new Date().toISOString(),
   };
@@ -87,7 +91,8 @@ export function makeGroup(name: string, index: number): ChatGroup {
     name: name.trim() || "新群组",
     color: GROUP_COLORS[index % GROUP_COLORS.length] ?? GROUP_COLORS[0],
     memberIds: [],
-    conversationIds: [],
+    // 群对话由调用方在建群时创建后回填，避免这里依赖后端。
+    conversationId: null,
     createdAt: new Date().toISOString(),
   };
 }

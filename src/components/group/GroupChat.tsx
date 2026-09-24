@@ -52,7 +52,7 @@ export function GroupChat({ name, colorClass, members, error, children }: GroupC
           )}
         </span>
         <span className="shrink-0 text-[11.5px] text-ink-400">
-          {members.length} 名成员 · 共享上下文
+          {members.length} 名成员 · 群对话
         </span>
       </div>
 

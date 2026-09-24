@@ -1,5 +1,38 @@
+import dayjs from "dayjs";
+import relativeTime from "dayjs/plugin/relativeTime";
+import "dayjs/locale/zh-cn";
 import { Search, Trash2 } from "lucide-react";
+import type { ConversationRecord } from "../../api";
 import { cn } from "../../lib/cn";
+
+dayjs.extend(relativeTime);
+dayjs.locale("zh-cn");
+
+const AVATAR_COLORS = [
+  "bg-brand-500",
+  "bg-violet-400",
+  "bg-teal-400",
+  "bg-peach-400",
+  "bg-amber-400",
+];
+
+/** 后端会话记录 → 列表行。对话列表与群组左栏的群对话行共用。 */
+export function toSessionItem(c: ConversationRecord): SessionItem {
+  const title = c.title.trim() || "新会话";
+  const idx =
+    Math.abs([...c.id].reduce((acc, ch) => acc + ch.charCodeAt(0), 0)) %
+    AVATAR_COLORS.length;
+  return {
+    id: c.id,
+    title,
+    preview: c.last_message?.trim() || c.workspace_dir || "尚无消息",
+    time: c.updated_at ? dayjs(c.updated_at).fromNow() : "",
+    avatar: title.slice(0, 1).toUpperCase(),
+    colorClass: AVATAR_COLORS[idx] ?? "bg-brand-600",
+    tagLabel: c.message_count > 0 ? "进行中" : "空闲",
+    tagTone: c.message_count > 0 ? "brand" : "ok",
+  };
+}
 
 export type SessionItem = {
   id: string;
@@ -14,7 +47,7 @@ export type SessionItem = {
   unread?: boolean;
 };
 
-/** 会话状态 chip 配色；群组左栏的「共享会话」复用同一套口径。 */
+/** 会话状态 chip 配色；群组左栏的群对话行复用同一套口径。 */
 export const SESSION_CHIP: Record<NonNullable<SessionItem["tagTone"]>, string> = {
   neutral: "bg-tint text-ink-500",
   brand: "bg-brand-50 text-brand-700",

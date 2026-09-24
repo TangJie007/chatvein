@@ -87,7 +87,7 @@ Agent 图细节见 [`agent-graphs.md`](./agent-graphs.md)；工具矩阵见 [`ag
 | 输入区 | 模型名、上下文占比、添加技能、添加文件、拖放上传 | `Composer` |
 | Bash/PowerShell 确认 | 危险或写盘命令弹窗批准 | `BashApproval` |
 | 追踪窗口 | 独立窗看整轮 path / LLM / 工具 / token | `TraceWindow` |
-| 群组 | 群组切换 + 成员（=角色）+ 共享会话（=会话），右栏复用对话引擎；群组本身存 localStorage | `GroupView` |
+| 群组 | 左栏整栏是群对话列表（一行 = 一个群组），建群时选成员并开好群对话；右栏是独立的群聊面板：无模型条、无技能，上下文用量放在气泡上方；输入区可「@ 指派」给某个成员，由该成员绑定模型单独执行，气泡与指派记录按成员显示 | `GroupView` / `GroupChatView` |
 | 设置 | 应用偏好（本地）、内置 MCP 状态、SQLite 信息 / VACUUM / 备份 | |
 | Tauri 消息层 | 启停 Python、注入 `CHATVEIN_DATA_DIR`、推送后端 URL | `src-tauri` |
 

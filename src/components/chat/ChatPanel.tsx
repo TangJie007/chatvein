@@ -4,7 +4,7 @@ import { Badge } from "../ui/badge";
 import { ScrollArea } from "../ui/scroll-area";
 import { cn } from "../../lib/cn";
 import { avatarUrl, USER_AVATAR } from "../../lib/rolesStore";
-import { Composer, type ComposerSkill } from "./Composer";
+import { Composer, ContextRing, type ComposerSkill, type MemberAvatar } from "./Composer";
 import { MarkdownMessage } from "./MarkdownMessage";
 import { WaitingBubble } from "./WaitingBubble";
 import type { SessionItem } from "./SessionList";
@@ -26,7 +26,11 @@ export type ChatMessage = {
   tokens?: number | null;
   /** 本轮真实耗时（毫秒）。 */
   durationMs?: number | null;
+  /** 执行者角色 id：群组 @ 指派到某成员时，用户与助手气泡都归属该成员。 */
+  actorId?: string | null;
 };
+
+export type { MemberAvatar };
 
 function formatTokens(tokens?: number | null): string {
   if (!tokens || tokens <= 0) return "—";
@@ -42,11 +46,18 @@ function formatDuration(ms?: number | null): string {
 }
 
 type ChatPanelProps = {
-  session: SessionItem | null;
+  /** chat=对话视图（会话头 + 模型条 + 技能）；group=群组视图（用量在气泡上方，无模型 / 技能）。 */
+  variant?: "chat" | "group";
+  session?: SessionItem | null;
   messages: ChatMessage[];
   insightOpen: boolean;
   onToggleInsight: () => void;
-  onSend?: (text: string, skills?: { slug: string; name: string }[]) => void;
+  /** mentionId 为群组 @ 指派的成员 id；null / 缺省表示交给默认角色。 */
+  onSend?: (
+    text: string,
+    skills?: { slug: string; name: string }[],
+    mentionId?: string | null
+  ) => void;
   onOpenWorkspace?: () => void;
   onOpenTrace?: () => void;
   roleName?: string;
@@ -90,6 +101,12 @@ type ChatPanelProps = {
   onSkillsChange?: (skills: ComposerSkill[]) => void;
   /** 角色常驻技能 slug：Composer 勾选面板中隐藏（已由角色自动注入）。 */
   residentSkills?: string[];
+  /** 群组变体：成员头像信息，气泡按执行者（@ 指派对象）渲染。 */
+  members?: MemberAvatar[];
+  /** 群组变体：默认执行者（组长 / 主成员）id；@ 指派给它的用户气泡不显示「指派给」标签。 */
+  defaultMemberId?: string;
+  /** 群组变体：可 @ 指派的对象（透传给 Composer 的指派弹层）。 */
+  mentionOptions?: MemberAvatar[];
   meta?: {
     difficulty?: string;
     selectedTools?: string[];
@@ -98,7 +115,8 @@ type ChatPanelProps = {
 };
 
 export function ChatPanel({
-  session,
+  variant = "chat",
+  session = null,
   messages,
   insightOpen,
   onToggleInsight,
@@ -132,6 +150,9 @@ export function ChatPanel({
   skills = [],
   onSkillsChange,
   residentSkills = [],
+  members,
+  defaultMemberId,
+  mentionOptions,
   meta,
 }: ChatPanelProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -186,7 +207,8 @@ export function ChatPanel({
     };
   }, []);
 
-  if (!session) {
+  // 群组的群对话由建群流程保证存在，不需要「选一个会话」的占位态。
+  if (!session && variant !== "group") {
     return (
       <section className="flex min-h-0 min-w-0 flex-1 items-center justify-center bg-surface">
         <p className="text-[13px] text-ink-400">选择或新建一个会话开始对话</p>
@@ -203,13 +225,39 @@ export function ChatPanel({
   return (
     <section className="flex min-h-0 min-w-0 flex-1 flex-row bg-surface">
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-        <header className="flex items-center gap-3 px-6 pt-5 pb-4">
+        {variant === "group" ? (
+          // 群组视图：会话头由上层群组信息条承担，这里只放上下文用量（气泡上方）+ 洞察开关。
+          <div className="flex shrink-0 items-center gap-2 px-6 pt-5 pb-2">
+            <span
+              title={contextTitle}
+              className="flex shrink-0 items-center gap-1.5 rounded-full bg-page px-2.5 py-1 text-[11.5px] text-ink-400"
+            >
+              <ContextRing pct={contextPct} />
+              <span className="font-mono font-medium text-ink-700">{contextPct}%</span>
+              <span>上下文</span>
+            </span>
+            <button
+              type="button"
+              onClick={onToggleInsight}
+              title={insightOpen ? "收起执行洞察" : "展开执行洞察"}
+              className={cn(
+                "ml-auto flex size-8 items-center justify-center rounded-lg transition-colors focus-visible:outline-2 focus-visible:outline-brand-600",
+                insightOpen
+                  ? "bg-brand-50 text-brand-600"
+                  : "text-ink-400 hover:bg-tint hover:text-ink-700"
+              )}
+            >
+              <PanelRight className="size-4" strokeWidth={1.75} />
+            </button>
+          </div>
+        ) : (
+          <header className="flex items-center gap-3 px-6 pt-5 pb-4">
           <div className="min-w-0 flex-1">
             <div className="flex min-w-0 items-center gap-2.5">
               <h1 className="truncate text-[16px] font-semibold text-ink-900">
-                {session.title}
+                {session?.title}
               </h1>
-              <Badge tone={session.tagTone ?? "neutral"}>{session.tagLabel}</Badge>
+              <Badge tone={session?.tagTone ?? "neutral"}>{session?.tagLabel}</Badge>
             </div>
             <p className="mt-0.5 truncate text-[12px] text-ink-400">
               {subtitleParts.join(" · ")}
@@ -246,7 +294,8 @@ export function ChatPanel({
               <PanelRight className="size-4" strokeWidth={1.75} />
             </button>
           </div>
-        </header>
+          </header>
+        )}
 
         <ScrollArea ref={scrollRef} className="flex-1 px-6 pb-2">
           <div className="mx-auto flex max-w-[760px] flex-col gap-0.5 pb-4">
@@ -260,6 +309,16 @@ export function ChatPanel({
                 const isSystem = m.role === "system";
                 const isAgent = m.role === "agent";
                 const canInspect = isAgent && !!m.turnId;
+                // 群组：按消息归属的执行者（@ 指派对象）渲染头像 / 名字。
+                const actor = m.actorId
+                  ? members?.find((mb) => mb.id === m.actorId) ?? null
+                  : null;
+                // 用户气泡只在指派人不是「默认执行者（组长）」时标注「指派给」，避免噪音。
+                const showDirected =
+                  variant === "group" &&
+                  isUser &&
+                  !!actor &&
+                  actor.id !== defaultMemberId;
                 // 生成中的占位气泡也算「当前回答」，同样高亮，避免用户以为焦点还在上一轮。
                 const selected =
                   !!m.streaming || (canInspect && m.turnId === selectedTurnId);
@@ -284,16 +343,21 @@ export function ChatPanel({
                         />
                       ) : (
                         (() => {
-                          const url = avatarUrl(roleAvatar);
+                          const url = actor?.avatarUrl || avatarUrl(roleAvatar);
                           return url ? (
                             <img
                               src={url}
-                              alt={roleName || "助手"}
+                              alt={actor?.name ?? roleName ?? "助手"}
                               draggable={false}
                               className="mt-0.5 size-8 shrink-0 rounded-full object-cover ring-1 ring-ink-200/60"
                             />
                           ) : (
-                            <div className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full bg-brand-500 text-white">
+                            <div
+                              className={cn(
+                                "mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full text-white",
+                                actor?.colorClass ?? "bg-brand-500"
+                              )}
+                            >
                               <Bot className="size-4" strokeWidth={2} />
                             </div>
                           );
@@ -308,9 +372,20 @@ export function ChatPanel({
                     >
                       {isAgent && !m.streaming ? (
                         <div className="flex items-center gap-1.5 px-1 text-[11px] text-ink-400">
+                          {/* 群组：回复者名字，跟 tokens / 耗时排在同一行。 */}
+                          {variant === "group" ? (
+                            <span className="font-medium text-ink-500">
+                              {actor?.name ?? roleName ?? "成员"}
+                            </span>
+                          ) : null}
                           <span>{formatTokens(m.tokens)}</span>
                           <span aria-hidden="true">·</span>
                           <span>{formatDuration(m.durationMs)}</span>
+                        </div>
+                      ) : null}
+                      {showDirected ? (
+                        <div className="self-end px-1 text-[11px] text-ink-400">
+                          指派给 @{actor?.name}
                         </div>
                       ) : null}
                       <div
@@ -462,19 +537,23 @@ export function ChatPanel({
         </ScrollArea>
 
         <Composer
+          variant={variant}
           modelName={modelName}
           modelId={modelId}
           contextPct={contextPct}
           contextTitle={contextTitle}
           sending={sending}
-          onSend={(text, skills) => onSend?.(text, skills)}
+          onSend={(text, nextSkills, mentionId) =>
+            onSend?.(text, nextSkills, mentionId)
+          }
           onStop={onStop}
           restoreText={restoreText}
           onRestored={onRestored}
-          conversationId={session?.id}
-          skills={skills}
-          onSkillsChange={onSkillsChange}
+          conversationId={conversationId ?? session?.id}
+          skills={variant === "chat" ? skills : []}
+          onSkillsChange={variant === "chat" ? onSkillsChange : undefined}
           residentSkills={residentSkills}
+          mentionOptions={variant === "group" ? mentionOptions : undefined}
         />
       </div>
       {insightOpen ? (

@@ -205,6 +205,7 @@ class ConversationsService:
         tool_trace: list[dict[str, Any]] | None = None,
         route_reason: str | None = None,
         tool_plan: str | None = None,
+        actor_id: str | None = None,
     ) -> tuple[str, MessageRecord, MessageRecord]:
         """更新会话元数据，并把本轮消息写入会话空间库。"""
         hint = title_hint or user_text
@@ -214,7 +215,9 @@ class ConversationsService:
         turn_id = turn_id or uuid.uuid4().hex
         root = self.workspace_root_for(workspace_dir)
         db = session_db_path(root)
-        user_id = session_store.append_message(db, "user", user_text, route=route)
+        user_id = session_store.append_message(
+            db, "user", user_text, route=route, actor_id=actor_id
+        )
         assistant_id = session_store.append_message(
             db,
             "assistant",
@@ -226,6 +229,7 @@ class ConversationsService:
             tool_plan=tool_plan,
             tokens=tokens,
             duration_ms=duration_ms,
+            actor_id=actor_id,
         )
         for item in tool_trace or []:
             session_store.append_tool_call(
@@ -249,6 +253,7 @@ class ConversationsService:
             turn_id="",
             tokens=0,
             duration_ms=0,
+            actor_id=actor_id,
         )
         assistant_msg = MessageRecord(
             id=assistant_id,
@@ -261,6 +266,7 @@ class ConversationsService:
             turn_id=turn_id,
             tokens=int(tokens or 0),
             duration_ms=int(duration_ms or 0),
+            actor_id=actor_id,
         )
         return cid, user_msg, assistant_msg
 

@@ -170,6 +170,7 @@ def _chat_turn(req: ChatRequest) -> dict[str, object]:
             tool_trace=[],
             route_reason="角色未配置模型",
             tool_plan=None,
+            actor_id=role_runtime.get("id"),
         )
         insight = conversations_service.workspace_insight(conversation_id)
         return {
@@ -272,6 +273,7 @@ def _chat_turn(req: ChatRequest) -> dict[str, object]:
         tool_trace=tool_trace,
         route_reason=result.get("route_reason"),
         tool_plan=result.get("tool_plan_reason"),
+        actor_id=(role_runtime or {}).get("id"),
     )
     insight = conversations_service.workspace_insight(conversation_id)
     return {

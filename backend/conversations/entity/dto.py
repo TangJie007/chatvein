@@ -18,6 +18,8 @@ class MessageRecord(TypedDict):
     turn_id: str
     tokens: int
     duration_ms: int
+    # 执行者（角色 id）：群组 @ 指派 / 按角色单独下达任务时标识由谁回复
+    actor_id: str | None
 
 
 class ConversationRecord(TypedDict):

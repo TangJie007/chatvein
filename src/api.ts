@@ -146,6 +146,8 @@ export interface ChatMessageRecord {
   turn_id?: string | null;
   tokens?: number | null;
   duration_ms?: number | null;
+  /** 执行者角色 id：群组 @ 指派时标识由哪个成员回复 */
+  actor_id?: string | null;
 }
 
 export interface ConversationRecord {
