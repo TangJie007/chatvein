@@ -791,6 +791,7 @@ export function ChatView({
           modelName={resolvedModelName}
           modelId={boundModel?.model_id ?? ""}
           roleName={activeRole?.name}
+          roleAvatar={activeRole?.avatar}
           contextPct={contextPct}
           contextTitle={contextTitle}
           sending={sending}

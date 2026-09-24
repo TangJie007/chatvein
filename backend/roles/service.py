@@ -53,6 +53,7 @@ class RolesService:
             id=entity.id,
             name=entity.name,
             initial=entity.initial,
+            avatar=entity.avatar,
             prompt=entity.prompt,
             model_id=entity.model_id,
             tone=entity.tone,
@@ -93,6 +94,7 @@ class RolesService:
             id=_new_id(),
             name=name,
             initial=initial,
+            avatar=(dto.avatar or "").strip(),
             prompt=dto.prompt or "",
             model_id=(dto.model_id or "").strip(),
             tone=(dto.tone or "brand").strip() or "brand",
@@ -131,6 +133,8 @@ class RolesService:
             entity.name = str(data["name"]).strip() or entity.name
         if data.get("initial") is not None:
             entity.initial = (str(data["initial"]).strip()[:1]) or entity.initial
+        if data.get("avatar") is not None:
+            entity.avatar = (str(data["avatar"]).strip()) or entity.avatar
 
         scalars = (
             "prompt",
@@ -203,6 +207,7 @@ class RolesService:
         return {
             "id": entity.id,
             "name": entity.name,
+            "avatar": entity.avatar,
             "prompt": entity.prompt,
             "model_id": entity.model_id,
             "temperature": entity.temperature,
@@ -227,6 +232,7 @@ class RolesService:
         dto = CreateRoleDto(
             name="主对话角色",
             initial="主",
+            avatar="avatar-11.png",
             prompt=(
                 "你是 ChatVein 的主对话助手，擅长日常问答、写作与资料整理。\n"
                 "保持简洁、友好、专业，必要时给出结构化建议。"

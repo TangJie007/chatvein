@@ -24,6 +24,8 @@ class Role(SQLModel, table=True):
     name: str = Field(max_length=120)
     # 列表头像上的单字，缺省取 name 首字
     initial: str = Field(default="", max_length=8)
+    # 头像图标文件名（如 avatar-11.png / avatar-user.png），空串表示用 initial 色块
+    avatar: str = Field(default="", max_length=64)
     # 系统提示词（人格与行为边界）
     prompt: str = Field(default="")
     # 绑定模型 id；空串表示「主对话模型（自动）」

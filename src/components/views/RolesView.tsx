@@ -26,6 +26,7 @@ import {
 } from "../../api";
 import { cn } from "../../lib/cn";
 import { makeNewRole, TOOLSET } from "../../lib/rolesStore";
+import { AvatarPicker, RoleAvatar } from "../ui/avatar-picker";
 import { Button } from "../ui/button";
 import { Switch } from "../ui/switch";
 
@@ -129,6 +130,7 @@ export function RolesView() {
     const payload: UpdateRolePayload = {
       name: form.name,
       initial: form.initial,
+      avatar: form.avatar,
       prompt: form.prompt,
       model_id: form.model_id,
       tone: form.tone,
@@ -222,14 +224,11 @@ export function RolesView() {
                   )}
                 >
                   <span className="flex min-w-0 items-center gap-2">
-                    <span
-                      className={cn(
-                        "flex size-5 shrink-0 items-center justify-center rounded-md text-[10px] font-semibold text-white",
-                        tone.avatar
-                      )}
-                    >
-                      {r.initial}
-                    </span>
+                    <RoleAvatar
+                      name={r.avatar}
+                      initial={r.initial}
+                      toneClass={tone.avatar}
+                    />
                     <span
                       className={cn(
                         "min-w-0 flex-1 truncate text-[12.5px]",
@@ -371,13 +370,13 @@ function RoleConfig({ role, models, loadingModels, onSave, onDelete }: RoleConfi
     <>
       {/* 顶栏 */}
       <header className="flex shrink-0 items-center gap-3 px-[25px] pb-2.5 pt-4">
-        <span
-          className={cn(
-            "flex size-9 shrink-0 items-center justify-center rounded-xl text-[14px] font-semibold text-white shadow-soft",
-            tone.avatar
-          )}
-        >
-          {role.initial}
+        <span className="shrink-0">
+          <RoleAvatar
+            name={role.avatar}
+            initial={role.initial}
+            toneClass={tone.avatar}
+            sizeClass="size-9 text-[14px] rounded-xl shadow-soft"
+          />
         </span>
         <div className="flex min-w-0 flex-1 items-center gap-2">
           <h1 className="max-w-[240px] shrink-0 truncate text-[15px] font-semibold text-ink-900">
@@ -422,6 +421,12 @@ function RoleConfig({ role, models, loadingModels, onSave, onDelete }: RoleConfi
           <Collapsible title="基础设置" desc="名称、模型与启停状态" defaultOpen>
             <Row label="角色名称" hint="列表与会话头部展示">
               <TextInput compact value={form.name} onChange={(v) => set("name", v)} />
+            </Row>
+            <Row label="头像图标" hint="聊天与角色列表展示的头像">
+              <AvatarPicker
+                value={form.avatar}
+                onChange={(v) => set("avatar", v)}
+              />
             </Row>
             <Row label="绑定模型" hint="该角色默认调用的模型">
               <ModelSelect

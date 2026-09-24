@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { AlertCircle, Bot, Check, Copy, PanelRight, Pencil, Undo2, User } from "lucide-react";
+import { AlertCircle, Bot, Check, Copy, PanelRight, Pencil, Undo2 } from "lucide-react";
 import { Badge } from "../ui/badge";
 import { ScrollArea } from "../ui/scroll-area";
 import { cn } from "../../lib/cn";
+import { avatarUrl, USER_AVATAR } from "../../lib/rolesStore";
 import { Composer, type ComposerSkill } from "./Composer";
 import { MarkdownMessage } from "./MarkdownMessage";
 import { WaitingBubble } from "./WaitingBubble";
@@ -49,6 +50,8 @@ type ChatPanelProps = {
   onOpenWorkspace?: () => void;
   onOpenTrace?: () => void;
   roleName?: string;
+  /** 角色绑定的头像文件名（如 avatar-11.png）；空串则用 Bot 图标。 */
+  roleAvatar?: string;
   modelName?: string;
   modelId?: string;
   contextPct?: number;
@@ -103,6 +106,7 @@ export function ChatPanel({
   onOpenWorkspace,
   onOpenTrace,
   roleName,
+  roleAvatar,
   modelName = "（未配置模型）",
   modelId = "",
   contextPct = 0,
@@ -271,18 +275,30 @@ export function ChatPanel({
                     )}
                   >
                     {!isSystem ? (
-                      <div
-                        className={cn(
-                          "mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full",
-                          isUser ? "bg-brand-600 text-white" : "bg-brand-500 text-white"
-                        )}
-                      >
-                        {isUser ? (
-                          <User className="size-4" strokeWidth={2} />
-                        ) : (
-                          <Bot className="size-4" strokeWidth={2} />
-                        )}
-                      </div>
+                      isUser ? (
+                        <img
+                          src={avatarUrl(USER_AVATAR)}
+                          alt="我"
+                          draggable={false}
+                          className="mt-0.5 size-8 shrink-0 rounded-full object-cover ring-1 ring-ink-200/60"
+                        />
+                      ) : (
+                        (() => {
+                          const url = avatarUrl(roleAvatar);
+                          return url ? (
+                            <img
+                              src={url}
+                              alt={roleName || "助手"}
+                              draggable={false}
+                              className="mt-0.5 size-8 shrink-0 rounded-full object-cover ring-1 ring-ink-200/60"
+                            />
+                          ) : (
+                            <div className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full bg-brand-500 text-white">
+                              <Bot className="size-4" strokeWidth={2} />
+                            </div>
+                          );
+                        })()
+                      )
                     ) : null}
                     <div
                       className={cn(

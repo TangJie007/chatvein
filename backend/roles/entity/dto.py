@@ -6,6 +6,8 @@ from pydantic import BaseModel, Field
 class CreateRoleDto(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     initial: str | None = Field(default=None, max_length=8)
+    # 头像图标文件名；None / 空串用 initial 色块
+    avatar: str | None = Field(default=None, max_length=64)
     prompt: str | None = Field(default=None)
     # 绑定模型 id；空串 / None 表示「主对话模型（自动）」
     model_id: str | None = Field(default=None, max_length=64)
@@ -31,6 +33,7 @@ class UpdateRoleDto(BaseModel):
 
     name: str | None = Field(default=None, min_length=1, max_length=120)
     initial: str | None = Field(default=None, max_length=8)
+    avatar: str | None = Field(default=None, max_length=64)
     prompt: str | None = None
     model_id: str | None = None
     tone: str | None = None
@@ -53,6 +56,7 @@ class RoleResponseDto(BaseModel):
     id: str
     name: str
     initial: str
+    avatar: str
     prompt: str
     model_id: str
     tone: str

@@ -26,7 +26,8 @@ from sqlmodel import Session, SQLModel
 # v6: roles.resident_skills 常驻技能列；
 # v7: llm_models 移除 is_default / is_primary 列（不再区分主/默认模型）；
 # v8: conversations.skills 会话级技能列（JSON slug 列表，Composer 勾选、当前会话持续生效）。
-SCHEMA_VERSION = 8
+# v9: roles.avatar 角色头像图标文件名列（空串用 initial 色块）。
+SCHEMA_VERSION = 9
 DB_FILENAME = "chatvein.db"
 
 _BACKEND_DIR = Path(__file__).resolve().parent
@@ -174,6 +175,20 @@ def _ensure_roles_resident_skills_column(connection: Connection) -> None:
         ).close()
 
 
+def _ensure_roles_avatar_column(connection: Connection) -> None:
+    """v9：给旧库的 ``roles`` 表补上 ``avatar`` 列（头像图标文件名）。"""
+    rows = connection.exec_driver_sql("PRAGMA table_info(roles)").fetchall()
+    names = {str(row[1]) for row in rows}
+    if names and "avatar" not in names:
+        connection.exec_driver_sql(
+            "ALTER TABLE roles ADD COLUMN avatar VARCHAR(64) NOT NULL DEFAULT ''"
+        ).close()
+        # 内置主角色缺省绑定默认头像，其余角色保持空串（前端回退 initial 色块）。
+        connection.exec_driver_sql(
+            "UPDATE roles SET avatar = 'avatar-11.png' WHERE [primary] = 1 AND avatar = ''"
+        ).close()
+
+
 def _ensure_conversations_skills_column(connection: Connection) -> None:
     """v8：给旧库的 ``conversations`` 表补上 ``skills`` 列（会话级技能 slug，JSON 文本）。"""
     rows = connection.exec_driver_sql("PRAGMA table_info(conversations)").fetchall()
@@ -272,6 +287,8 @@ def _migrate(connection: Connection) -> None:
         _drop_llm_models_flag_columns(connection)
     if current < 8:
         _ensure_conversations_skills_column(connection)
+    if current < 9:
+        _ensure_roles_avatar_column(connection)
     if current != SCHEMA_VERSION:
         connection.exec_driver_sql(f"PRAGMA user_version = {SCHEMA_VERSION}").close()
 

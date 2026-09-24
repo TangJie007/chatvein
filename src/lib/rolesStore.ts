@@ -8,6 +8,36 @@ export type { RoleRecord, RoleTone, CreateRolePayload } from "../api";
 
 import type { CreateRolePayload, RoleTone } from "../api";
 
+/* eslint-disable @typescript-eslint/no-require-imports */
+/** src/assets/users 下的全部头像图片（文件名 → 打包后 URL）。 */
+const AVATAR_MODULES = import.meta.glob<string>("../assets/users/*.png", {
+  eager: true,
+  import: "default",
+}) as Record<string, string>;
+
+/** 头像图标文件名（如 avatar-11.png）→ 打包后的图片 URL。 */
+export const AVATAR_URLS: Record<string, string> = Object.fromEntries(
+  Object.entries(AVATAR_MODULES).map(([path, url]) => [
+    path.split("/").pop() as string,
+    url,
+  ])
+);
+
+/** 按文件名取头像 URL；未知 / 空文件名返回空串（调用方回退到 initial 色块）。 */
+export function avatarUrl(name: string | undefined | null): string {
+  return (name && AVATAR_URLS[name]) || "";
+}
+
+/** 角色默认头像文件名。 */
+export const DEFAULT_ROLE_AVATAR = "avatar-11.png";
+/** 用户方固定头像文件名。 */
+export const USER_AVATAR = "avatar-user.png";
+
+/** 全部可选的角色头像文件名（不含用户头像），供角色配置页挑选。 */
+export const AVATAR_OPTIONS: string[] = Object.keys(AVATAR_URLS).filter(
+  (n) => n !== USER_AVATAR
+);
+
 /** 该角色可用的内置工具分组（与 ``prefs.MCP_SERVERS`` / 后端 ``tool_groups`` 对齐）。 */
 export const TOOLSET: { id: string; name: string; desc: string }[] = [
   { id: "core", name: "时间 / 计算 / 本机", desc: "当前时间、时区换算、计算器、系统概况" },
@@ -37,6 +67,7 @@ export function makeNewRole(count: number): CreateRolePayload {
   return {
     name: "新角色",
     initial: "新",
+    avatar: DEFAULT_ROLE_AVATAR,
     prompt: "你是一个专注特定场景的助手，按下列约束提供服务。",
     model_id: "",
     tone,

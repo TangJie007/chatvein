@@ -17,6 +17,7 @@ import {
   type AppView,
   type NavCounts,
 } from "../../types/view";
+import topImg from "../../assets/top.png";
 
 const NAV: {
   key: Exclude<AppView, "settings">;
@@ -53,6 +54,14 @@ export function Sidebar({ counts = {}, onNew }: SidebarProps) {
 
   return (
     <aside className="flex w-[138px] shrink-0 flex-col select-none pb-[15px]">
+      <div className="flex justify-center px-3 pt-2.5">
+        <img
+          src={topImg}
+          alt=""
+          className="size-[84px] object-contain drop-shadow-sm"
+          draggable={false}
+        />
+      </div>
       <div className="px-3 pt-1.5">
         <Button
           variant="tint"

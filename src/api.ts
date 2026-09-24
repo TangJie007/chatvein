@@ -861,6 +861,8 @@ export interface RoleRecord {
   name: string;
   /** 列表头像上的单字。 */
   initial: string;
+  /** 头像图标文件名（如 avatar-11.png / avatar-user.png），空串用 initial 色块。 */
+  avatar: string;
   /** 系统提示词（人格与行为边界）。 */
   prompt: string;
   /** 绑定模型 id；空串表示尚未配置模型。 */
@@ -893,6 +895,8 @@ export interface RoleRecord {
 export type CreateRolePayload = {
   name: string;
   initial?: string;
+  /** 头像图标文件名；空串 / 缺省用 initial 色块。 */
+  avatar?: string;
   prompt?: string;
   model_id?: string;
   tone?: RoleTone;
