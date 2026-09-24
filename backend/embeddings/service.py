@@ -158,6 +158,7 @@ class EmbeddingService:
     def __init__(self) -> None:
         self._lock = threading.Lock()
         self._downloading = False
+        self._progress: float | None = None
         self._error: str | None = None
         self._model: Any = None
 
@@ -196,6 +197,7 @@ class EmbeddingService:
             cache_dir=str(cache_dir()),
             endpoint=hf_endpoint(),
             downloading=self._downloading,
+            progress=self._progress,
             error=self._error,
         )
 
@@ -207,6 +209,7 @@ class EmbeddingService:
             if self.is_installed() and not force:
                 return self.status()
             self._downloading = True
+            self._progress = 0.0
             self._error = None
         threading.Thread(target=self._download, args=(force,), daemon=True).start()
         return self.status()
@@ -220,6 +223,35 @@ class EmbeddingService:
                 self._marker().unlink(missing_ok=True)
 
             _register_custom(self.model_name)
+
+            # fastembed 的 TextEmbedding 不暴露进度回调，这里先手动下载权重并
+            # 捕获百分比；下载完成后 TextEmbedding 会复用 HF 缓存，不会重复下载。
+            # download_files_from_huggingface 内部走 snapshot_download，其聚合进度
+            # 条就是用这里的 tqdm_class 实例化的，update() 会被持续调用。
+            from fastembed.common.model_management import ModelManagement
+            from tqdm import tqdm as _tqdm
+
+            spec = _CUSTOM_MODELS.get(self.model_name, {})
+            hf_source = str(spec.get("hf_source", self.model_name))
+            extra_patterns = [str(spec["model_file"])] if spec.get("model_file") else []
+            svc = self
+
+            class _ProgressTqdm(_tqdm):  # noqa: N801
+                def update(self, n: int = 1) -> bool | None:
+                    result = super().update(n)
+                    total = self.total
+                    if total:
+                        svc._progress = min(100.0, self.n / total * 100.0)
+                    return result
+
+            ModelManagement.download_files_from_huggingface(
+                hf_source_repo=hf_source,
+                cache_dir=str(cache),
+                extra_patterns=extra_patterns,
+                tqdm_class=_ProgressTqdm,
+            )
+            self._progress = 100.0
+
             from fastembed import TextEmbedding
 
             model = TextEmbedding(model_name=self.model_name, cache_dir=str(cache))

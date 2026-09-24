@@ -34,6 +34,7 @@ import {
 import { SessionList, type SessionItem } from "../chat/SessionList";
 import { CreatingOverlay } from "../chat/CreatingOverlay";
 import { ConfirmDialog } from "../ui/confirm-dialog";
+import { useEmbedding } from "../embedding/EmbeddingProvider";
 import { openTraceWindow } from "../../lib/openTrace";
 import { VIEW_PATH } from "../../types/view";
 
@@ -193,6 +194,7 @@ export function ChatView({
   onConversationCount,
 }: ChatViewProps) {
   const navigate = useNavigate();
+  const { ensureReady } = useEmbedding();
   const { conversationId: routeConversationId } = useParams<{
     conversationId?: string;
   }>();
@@ -313,6 +315,13 @@ export function ChatView({
     creatingRef.current = true;
     setCreateStep(0);
     try {
+      // 本地向量模型未就绪时，这里会弹出全局「工作区初始化」弹窗并等待下载完成；
+      // 已就绪则立即返回，不引入额外延迟。
+      const ready = await ensureReady();
+      if (!ready.ready) {
+        setError(ready.status.error || "本地向量模型未就绪，无法初始化工作区");
+        return null;
+      }
       const [created] = await Promise.all([
         createConversation(""),
         sleep(CREATE_MIN_MS),
@@ -336,7 +345,7 @@ export function ChatView({
       creatingRef.current = false;
       setCreateStep(null);
     }
-  }, [setError]);
+  }, [setError, ensureReady]);
 
   useEffect(() => {
     let cancelled = false;

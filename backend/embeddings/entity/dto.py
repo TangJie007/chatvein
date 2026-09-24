@@ -12,6 +12,7 @@ class EmbeddingStatusDto(BaseModel):
     cache_dir: str
     endpoint: str
     downloading: bool = False
+    progress: float | None = None
     error: str | None = None
 
 

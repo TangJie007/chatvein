@@ -16,8 +16,8 @@ import {
 import {
   createModel,
   deleteModel,
-  getEmbeddingStatus,
   listModels,
+  prepareEmbedding,
   testModelConnection,
   updateModel,
   type CreateLlmModelPayload,
@@ -26,6 +26,7 @@ import {
   type UpdateLlmModelPayload,
 } from "../../api";
 import { cn } from "../../lib/cn";
+import { useEmbedding } from "../embedding/EmbeddingProvider";
 import { Button } from "../ui/button";
 import { AddModelDialog } from "../models/AddModelDialog";
 
@@ -70,32 +71,15 @@ function formToPayload(form: ModelForm): UpdateLlmModelPayload {
 
 export function ModelsView({ addRequestId = 0, onModelsChange }: ModelsViewProps) {
   const [models, setModels] = useState<LlmModelRecord[]>([]);
-  const [activeId, setActiveId] = useState<string | null>(null);
+  const [selected, setSelected] = useState<
+    { kind: "local" } | { kind: "online"; id: string } | null
+  >({ kind: "local" });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [addOpen, setAddOpen] = useState(false);
   const [statusById, setStatusById] = useState<Record<string, "online" | "offline">>({});
-  const [embed, setEmbed] = useState<EmbeddingStatus | null>(null);
-  const [embedFailed, setEmbedFailed] = useState(false);
   const onModelsChangeRef = useRef(onModelsChange);
   onModelsChangeRef.current = onModelsChange;
-
-  useEffect(() => {
-    let cancelled = false;
-    getEmbeddingStatus()
-      .then((s) => {
-        if (!cancelled) {
-          setEmbed(s);
-          setEmbedFailed(false);
-        }
-      })
-      .catch(() => {
-        if (!cancelled) setEmbedFailed(true);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   const emitChange = useCallback((list: LlmModelRecord[]) => {
     onModelsChangeRef.current?.({
@@ -108,10 +92,12 @@ export function ModelsView({ addRequestId = 0, onModelsChange }: ModelsViewProps
       setError(null);
       const list = await listModels();
       setModels(list);
-      setActiveId((prev) => {
-        const next = preferId ?? prev;
-        if (next && list.some((m) => m.id === next)) return next;
-        return list[0]?.id ?? null;
+      setSelected((prev) => {
+        // 本地模型选中不受线上列表变化影响
+        if (prev?.kind === "local") return prev;
+        const next = preferId ?? (prev?.kind === "online" ? prev.id : null);
+        if (next && list.some((m) => m.id === next)) return { kind: "online", id: next };
+        return list[0] ? { kind: "online", id: list[0].id } : null;
       });
       emitChange(list);
       return list;
@@ -142,7 +128,9 @@ export function ModelsView({ addRequestId = 0, onModelsChange }: ModelsViewProps
     if (addRequestId > 0) setAddOpen(true);
   }, [addRequestId]);
 
-  const active = models.find((m) => m.id === activeId) ?? models[0] ?? null;
+  const showLocal = selected?.kind === "local";
+  const active =
+    selected?.kind === "online" ? (models.find((m) => m.id === selected.id) ?? null) : null;
 
   const handleCreate = async (payload: CreateLlmModelPayload) => {
     const created = await createModel(payload);
@@ -206,7 +194,10 @@ export function ModelsView({ addRequestId = 0, onModelsChange }: ModelsViewProps
       <section className="flex w-[220px] shrink-0 flex-col bg-list select-none">
         <div className="shrink-0 px-3 pb-2 pt-3.5">
           <p className="px-1 pb-2 text-[11px] font-medium text-ink-400">本地模型</p>
-          <LocalModelInfo embed={embed} failed={embedFailed} />
+          <LocalModelInfo
+            active={showLocal}
+            onSelect={() => setSelected({ kind: "local" })}
+          />
         </div>
 
         <div className="shrink-0 px-3 pb-1.5 pt-1.5">
@@ -234,7 +225,7 @@ export function ModelsView({ addRequestId = 0, onModelsChange }: ModelsViewProps
                 <button
                   key={m.id}
                   type="button"
-                  onClick={() => setActiveId(m.id)}
+                  onClick={() => setSelected({ kind: "online", id: m.id })}
                   className={cn(
                     "flex w-full flex-col gap-0.5 rounded-xl px-2.5 py-1.5 text-left transition-colors",
                     "focus-visible:outline-2 focus-visible:outline-brand-600",
@@ -293,7 +284,9 @@ export function ModelsView({ addRequestId = 0, onModelsChange }: ModelsViewProps
       </section>
 
       <section className="flex min-w-0 flex-1 flex-col bg-surface">
-        {active ? (
+        {showLocal ? (
+          <LocalModelConfig />
+        ) : active ? (
           <ModelConfig
             key={active.id}
             model={active}
@@ -517,18 +510,28 @@ function ModelConfig({
   );
 }
 
-/* ---------------- 本地模型（纯信息展示，不可操作） ---------------- */
+/* ---------------- 本地模型 ---------------- */
 
 function LocalModelInfo({
-  embed,
-  failed,
+  active,
+  onSelect,
 }: {
-  embed: EmbeddingStatus | null;
-  failed: boolean;
+  active: boolean;
+  onSelect: () => void;
 }) {
+  const { status: embed } = useEmbedding();
+  const failed = !embed;
   return (
-    <div className="rounded-xl bg-surface p-2.5 shadow-soft">
-      {failed || !embed ? (
+    <button
+      type="button"
+      onClick={onSelect}
+      className={cn(
+        "w-full rounded-xl p-2.5 text-left transition-colors",
+        "focus-visible:outline-2 focus-visible:outline-brand-600",
+        active ? "bg-surface shadow-soft" : "hover:bg-tint/60"
+      )}
+    >
+      {failed ? (
         <div className="flex items-center gap-2">
           <span className="flex size-5 shrink-0 items-center justify-center rounded-md bg-page text-ink-400">
             <Cpu className="size-3" strokeWidth={1.75} />
@@ -564,16 +567,17 @@ function LocalModelInfo({
           )}
         </>
       )}
-    </div>
+    </button>
   );
 }
 
 function LocalBadge({ embed }: { embed: EmbeddingStatus }) {
   if (embed.downloading) {
+    const pct = Math.round(Math.min(100, Math.max(0, embed.progress ?? 0)));
     return (
       <span className="flex shrink-0 items-center gap-1 rounded-full bg-warn-50 px-1.5 py-0.5 text-[10px] font-medium text-warn-600">
         <Loader2 className="size-2.5 animate-spin" strokeWidth={2} />
-        下载中
+        {pct > 0 ? `下载中 ${pct}%` : "下载中"}
       </span>
     );
   }
@@ -595,6 +599,121 @@ function LocalBadge({ embed }: { embed: EmbeddingStatus }) {
     <span className="shrink-0 rounded-full bg-ok-50 px-1.5 py-0.5 text-[10px] font-medium text-ok-600">
       已就绪
     </span>
+  );
+}
+
+/** 本地向量模型详情：信息 + 安装进度（百分比）。 */
+function LocalModelConfig() {
+  const { status: embed, progress } = useEmbedding();
+  const [banner, setBanner] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const handleDownload = async (force: boolean) => {
+    setBusy(true);
+    setBanner(null);
+    try {
+      await prepareEmbedding(force);
+      setBanner(force ? "已开始重新下载" : "已开始下载");
+    } catch (err) {
+      setBanner(err instanceof Error ? err.message : "操作失败");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const pct = Math.round(Math.min(100, Math.max(0, progress ?? 0)));
+
+  if (!embed) {
+    return (
+      <div className="flex flex-1 items-center justify-center gap-2 text-[13px] text-ink-400">
+        <Loader2 className="size-4 animate-spin" strokeWidth={1.75} />
+        正在获取本地模型状态…
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <header className="flex items-center gap-3 px-6 pb-3 pt-4">
+        <div className="min-w-0 flex-1">
+          <div className="flex min-w-0 items-center gap-2.5">
+            <h1 className="truncate text-[15px] font-semibold text-ink-900">
+              {embed.model}
+            </h1>
+            <LocalBadge embed={embed} />
+          </div>
+          <p className="mt-0.5 truncate text-[11.5px] text-ink-400">
+            {embed.dim} 维 · ONNX 本地推理 · 镜像 {embed.endpoint}
+          </p>
+        </div>
+        {embed.downloading ? (
+          <Button variant="secondary" size="sm" disabled>
+            下载中…
+          </Button>
+        ) : (
+          <Button
+            variant="secondary"
+            size="sm"
+            disabled={busy}
+            onClick={() => void handleDownload(true)}
+          >
+            {busy ? "处理中…" : "重新下载"}
+          </Button>
+        )}
+      </header>
+
+      <div className="flex-1 overflow-y-auto px-6 pb-20">
+        <div className="mx-auto flex max-w-[720px] flex-col gap-3">
+          {banner && (
+            <p className="rounded-xl bg-tint px-3 py-2 text-[12px] text-brand-700">
+              {banner}
+            </p>
+          )}
+
+          {embed.downloading && (
+            <Card title="安装进度" desc="权重下载完成后即可用于知识库检索">
+              <div className="flex items-center gap-2 px-1 pt-1">
+                <Loader2 className="size-3.5 animate-spin text-brand-600" strokeWidth={2} />
+                <span className="text-[12.5px] text-ink-700">正在下载模型权重…</span>
+                <span className="ml-auto font-mono text-[12.5px] font-semibold text-ink-900">
+                  {pct}%
+                </span>
+              </div>
+              <div className="h-1.5 overflow-hidden rounded-full bg-page">
+                <div
+                  className="h-full rounded-full bg-brand-500 transition-[width] duration-300"
+                  style={{ width: `${pct}%` }}
+                />
+              </div>
+              <p className="px-1 pb-1 text-[10.5px] text-ink-400">
+                受网络影响可能较慢；切换页面进度在后台继续。
+              </p>
+            </Card>
+          )}
+
+          {embed.error && (
+            <div className="rounded-2xl bg-warn-50 p-3 text-[12px] leading-5 text-warn-600">
+              安装失败：{embed.error}
+            </div>
+          )}
+
+          <Card title="模型信息" desc="FastEmbed + ONNX Runtime 本地推理，数据不出本机">
+            <Field label="模型标识">
+              <TextInput mono value={embed.model} onChange={() => {}} />
+            </Field>
+            <Field label="向量维度">
+              <TextInput mono value={`${embed.dim}`} onChange={() => {}} />
+            </Field>
+            <Field label="缓存路径">
+              <TextInput mono value={embed.cache_dir} onChange={() => {}} />
+            </Field>
+            <Field label="下载镜像">
+              <TextInput mono value={embed.endpoint} onChange={() => {}} />
+            </Field>
+          </Card>
+        </div>
+      </div>
+    </>
   );
 }
 

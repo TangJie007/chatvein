@@ -653,12 +653,19 @@ export interface EmbeddingStatus {
   cache_dir: string;
   endpoint: string;
   downloading: boolean;
+  /** 下载进度 0-100；未在下载时为 null。 */
+  progress: number | null;
   error: string | null;
 }
 
 /** 只读查询：本地向量模型的安装 / 下载状态。 */
 export function getEmbeddingStatus() {
   return backendRequest<EmbeddingStatus>("/api/embeddings/status");
+}
+
+/** 触发本地向量模型下载（幂等：已在下载则直接返回当前状态）。 */
+export function prepareEmbedding(force = false) {
+  return backendRequest<EmbeddingStatus>("/api/embeddings/prepare", "POST", { force });
 }
 
 /* -------------------------------------------------------------------------
