@@ -1,4 +1,5 @@
 import { Check } from "lucide-react";
+import type { CSSProperties } from "react";
 import { avatarUrl, AVATAR_OPTIONS } from "../../lib/rolesStore";
 import { cn } from "../../lib/cn";
 
@@ -55,17 +56,20 @@ export function RoleAvatar({
   toneClass,
   sizeClass = "size-5 text-[10px]",
   className,
+  style,
 }: {
   name: string;
   initial: string;
   toneClass: string;
   sizeClass?: string;
   className?: string;
+  style?: CSSProperties;
 }) {
   const url = avatarUrl(name);
   if (url) {
     return (
       <span
+        style={style}
         className={cn(
           "shrink-0 overflow-hidden rounded-md",
           sizeClass,
@@ -83,6 +87,7 @@ export function RoleAvatar({
   }
   return (
     <span
+      style={style}
       className={cn(
         "flex shrink-0 items-center justify-center font-semibold text-white",
         sizeClass,

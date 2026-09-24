@@ -806,7 +806,7 @@ function TextInput({
       readOnly={disabled}
       onChange={(e) => onChange(e.target.value)}
       className={cn(
-        "w-full min-w-0 rounded-xl bg-surface px-3 py-1.5 text-[12.5px] text-ink-900 placeholder-ink-400 shadow-soft transition-shadow",
+        "w-full min-w-0 rounded-xl bg-surface px-3 py-2.5 text-[12.5px] text-ink-900 placeholder-ink-400 shadow-soft transition-shadow",
         "focus:outline-none focus-visible:shadow-lift",
         mono && "font-mono text-[11.5px]",
         disabled && "cursor-not-allowed bg-tint/40 text-ink-600 opacity-90"

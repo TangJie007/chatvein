@@ -372,10 +372,11 @@ function RoleConfig({ role, models, loadingModels, onSave, onDelete }: RoleConfi
       <header className="flex shrink-0 items-center gap-3 px-[25px] pb-2.5 pt-4">
         <span className="shrink-0">
           <RoleAvatar
+            style={{ display: "block"}}
             name={role.avatar}
             initial={role.initial}
             toneClass={tone.avatar}
-            sizeClass="size-9 text-[14px] rounded-xl shadow-soft"
+            sizeClass="size-12 text-[14px] rounded-xl shadow-soft"
           />
         </span>
         <div className="flex min-w-0 flex-1 items-center gap-2">
@@ -422,7 +423,7 @@ function RoleConfig({ role, models, loadingModels, onSave, onDelete }: RoleConfi
             <Row label="角色名称" hint="列表与会话头部展示">
               <TextInput compact value={form.name} onChange={(v) => set("name", v)} />
             </Row>
-            <Row label="头像图标" hint="聊天与角色列表展示的头像">
+            <Row label="头像图标" hint="">
               <AvatarPicker
                 value={form.avatar}
                 onChange={(v) => set("avatar", v)}
@@ -683,7 +684,7 @@ function Collapsible({
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center gap-2.5 rounded-xl px-3 py-1 text-left transition-colors hover:bg-tint/50 focus-visible:outline-2 focus-visible:outline-brand-600"
+        className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-left transition-colors hover:bg-tint/50 focus-visible:outline-2 focus-visible:outline-brand-600"
       >
         <div className="flex min-w-0 flex-1 items-baseline gap-2">
           <h2 className="shrink-0 text-[12.5px] font-semibold text-ink-900">
