@@ -100,6 +100,9 @@ class ChatRequest(BaseModel):
     # 前端预先生成的本轮 id：追踪每完成一步就落库，UI 可用它轮询「思考流」进度。
     # 缺省时后端自行生成，行为与之前一致。
     turn_id: str | None = Field(default=None, max_length=64)
+    # 群里 @ 多人时前端按成员依次发起一轮：只有第一轮需要落用户消息，
+    # 后续轮次置 False，避免同一句提问在会话里重复出现 N 份。
+    append_user_message: bool = Field(default=True)
 
 
 try:  # langchain-core 版本差异：拿不到用量回调就退化为不统计
@@ -171,6 +174,7 @@ def _chat_turn(req: ChatRequest) -> dict[str, object]:
             route_reason="角色未配置模型",
             tool_plan=None,
             actor_id=role_runtime.get("id"),
+            append_user=req.append_user_message,
         )
         insight = conversations_service.workspace_insight(conversation_id)
         return {
@@ -274,6 +278,7 @@ def _chat_turn(req: ChatRequest) -> dict[str, object]:
         route_reason=result.get("route_reason"),
         tool_plan=result.get("tool_plan_reason"),
         actor_id=(role_runtime or {}).get("id"),
+        append_user=req.append_user_message,
     )
     insight = conversations_service.workspace_insight(conversation_id)
     return {

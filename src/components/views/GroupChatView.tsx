@@ -155,11 +155,10 @@ export function GroupChatView({
       restoreText={restoreText}
       onRestored={onRestored}
       members={memberAvatars}
-      defaultMemberId={activeRole?.id}
       mentionOptions={memberAvatars}
-      onSend={(text, _skills, mentionId) => {
-        // @ 指派到某个成员：本轮任务由该成员的绑定模型执行（后端按 role_id 落 actor_id）。
-        void send(text, undefined, mentionId ?? undefined);
+      onSend={(text, _skills, mentionIds) => {
+        // @ 点名到的成员各答一轮；没人被点名时交给组长（默认角色）。
+        void send(text, undefined, mentionIds);
       }}
     />
   );

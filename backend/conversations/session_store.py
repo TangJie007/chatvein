@@ -160,15 +160,19 @@ def delete_last_exchange(
     user_content: str | None = None,
     after_message_id: int | None = None,
 ) -> int:
-    """撤回 / 停止：删除最近一轮（用户句 + 助手句 + 该轮工具轨迹）。
+    """撤回 / 停止：删除最近一轮（助手句，必要时连带它前面的用户句 + 该轮工具轨迹）。
 
-    防护：``user_content`` 须匹配；``after_message_id`` 须小于最近用户句 id。
+    群里 @ 多人时同一句提问只落一次，尾部会连续出现多条助手回复，因此这里
+    以「最后一条消息」为准：它是助手就先删它；只有它前面紧邻着本轮用户句时
+    才一并删掉用户句（连续调用即可逐条清掉多轮，最后顺带清掉提问）。
+
+    防护：``user_content`` 须匹配最近的用户句；``after_message_id`` 须小于它。
     返回删除的消息条数（0 / 1 / 2）。
     """
     ensure_session_db(db_path)
     with _connect(db_path) as conn:
         rows = conn.execute(
-            "SELECT id, role, content, turn_id FROM messages ORDER BY id DESC LIMIT 2"
+            "SELECT id, role, content, turn_id FROM messages ORDER BY id DESC LIMIT 8"
         ).fetchall()
         if not rows:
             return 0
@@ -183,10 +187,15 @@ def delete_last_exchange(
             if int(last_user["id"]) <= int(after_message_id):
                 return 0
 
-        assistant = next((r for r in rows if str(r["role"]) == "assistant"), None)
-        ids = [int(r["id"]) for r in rows]
+        # 先删最后一条（助手回复）；它前面若就是本轮用户句，一并删掉。
+        ids = [int(rows[0]["id"])]
+        prev = rows[1] if len(rows) > 1 else None
+        if prev is not None and str(prev["role"]) == "user":
+            if user_content is None or str(prev["content"] or "").strip() == user_content.strip():
+                ids.append(int(prev["id"]))
         placeholders = ",".join("?" * len(ids))
         conn.execute(f"DELETE FROM messages WHERE id IN ({placeholders})", ids)
+        assistant = next((r for r in rows if str(r["role"]) == "assistant"), None)
         if assistant is not None and assistant["turn_id"]:
             conn.execute(
                 "DELETE FROM tool_calls WHERE turn_id = ?",

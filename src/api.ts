@@ -298,14 +298,16 @@ export function updateConversationSkills(conversationId: string, skills: string[
 }
 
 /** Run one chat turn against the agent pipeline.
- *  ``turnId`` 由前端预先生成：后端按它逐步落追踪，UI 可边等边轮询思考流进度。 */
+ *  ``turnId`` 由前端预先生成：后端按它逐步落追踪，UI 可边等边轮询思考流进度。
+ *  ``appendUser=false`` 用于群里 @ 多人时的第 2 个及之后的成员：同一句提问只落一次用户消息。 */
 export function sendChat(
   message: string,
   conversationId?: string | null,
   roleId?: string | null,
   skills?: string[] | null,
   turnId?: string | null,
-  signal?: AbortSignal | null
+  signal?: AbortSignal | null,
+  appendUser: boolean = true
 ) {
   return backendRequest<{
     reply: string;
@@ -339,6 +341,8 @@ export function sendChat(
     skills: skills ?? null,
     // 前端生成的本轮 id：追踪逐步落库，UI 轮询时按它取在途进度
     turn_id: turnId ?? null,
+    // 群里 @ 多人时只有第一轮需要落用户消息，后续轮次只落各自的助手回复
+    append_user_message: appendUser,
   }, signal ?? undefined);
 }
 

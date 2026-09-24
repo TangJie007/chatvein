@@ -1,9 +1,20 @@
 import { open } from "@tauri-apps/plugin-dialog";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { AtSign, Paperclip, Plus, SendHorizontal, Square, X } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  AtSign,
+  Check,
+  Paperclip,
+  Plus,
+  SendHorizontal,
+  Square,
+  X,
+} from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { listInstalledSkills, uploadFiles, type InstalledSkill } from "../../api";
 import { cn } from "../../lib/cn";
+import { escapeRegExp, parseMentionIds, type MemberAvatar } from "./mentions";
+
+export type { MemberAvatar };
 
 const LINE_HEIGHT = 20;
 const PADDING_Y = 12;
@@ -23,14 +34,6 @@ export type ComposerFile = {
   name: string;
 };
 
-/** 群组成员最小展示信息：气泡头像 + @ 指派弹层共用。 */
-export type MemberAvatar = {
-  id: string;
-  name: string;
-  colorClass: string;
-  avatarUrl?: string;
-};
-
 type ComposerProps = {
   /** chat=对话视图（模型 / 用量 / 技能齐全）；group=群组视图（无模型、无技能）。 */
   variant?: "chat" | "group";
@@ -39,8 +42,8 @@ type ComposerProps = {
   contextPct?: number;
   contextTitle?: string;
   sending?: boolean;
-  /** mentionId 为群组 @ 指派的成员 id；null / 缺省表示交给默认角色。 */
-  onSend: (text: string, skills?: ComposerSkill[], mentionId?: string | null) => void;
+  /** mentionIds 为文本里 @ 到的成员（按出现顺序）；空 / 缺省表示交给默认角色。 */
+  onSend: (text: string, skills?: ComposerSkill[], mentionIds?: string[]) => void;
   /** 生成中点击：主动停止当前 LLM 推理。 */
   onStop?: () => void;
   /** 由父组件回灌的待编辑原文（null 表示无需回灌）。 */
@@ -54,7 +57,7 @@ type ComposerProps = {
   onSkillsChange?: (skills: ComposerSkill[]) => void;
   /** 角色常驻技能 slug：勾选面板中隐藏（已由角色自动注入，无需重复勾选）。 */
   residentSkills?: string[];
-  /** 群组变体：可 @ 指派的对象；缺省时不显示指派入口。 */
+  /** 群组变体：可 @ 点名的成员；缺省时不显示点名入口。 */
   mentionOptions?: MemberAvatar[];
 };
 
@@ -101,10 +104,15 @@ export function Composer({
   const barRef = useRef<HTMLDivElement>(null);
   const mentionRef = useRef<HTMLDivElement>(null);
   const dropRef = useRef<HTMLDivElement>(null);
+  const atRef = useRef<HTMLDivElement>(null);
+  const atListRef = useRef<HTMLUListElement>(null);
   const [draft, setDraft] = useState("");
   const [skillOpen, setSkillOpen] = useState(false);
   const [mentionOpen, setMentionOpen] = useState(false);
-  const [mentionId, setMentionId] = useState<string | null>(null);
+  /** 输入框里键入 @ 触发的候选状态：null=未触发；start 为 @ 在草稿中的下标，query 为 @ 后的筛选词。 */
+  const [atTrigger, setAtTrigger] = useState<{ start: number; query: string } | null>(null);
+  /** 键盘 / 悬停高亮的候选下标。 */
+  const [atIndex, setAtIndex] = useState(0);
   const [files, setFiles] = useState<ComposerFile[]>([]);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [keyword, setKeyword] = useState("");
@@ -159,14 +167,58 @@ export function Composer({
     return () => window.removeEventListener("mousedown", onPointer);
   }, [mentionOpen]);
 
-  // 切换群 / 会话后，上次的指派对象没有意义，重置为默认角色。
+  // 点名完全由草稿文本决定（和微信一样：正文里写了 @谁，就是点名谁）。
+  const mentionIds = useMemo<string[]>(
+    () => (variant === "group" ? parseMentionIds(draft, mentionOptions ?? []) : []),
+    [draft, mentionOptions, variant]
+  );
+  const mentioned = useMemo<MemberAvatar[]>(
+    () =>
+      mentionIds
+        .map((id) => mentionOptions?.find((m) => m.id === id))
+        .filter((m): m is MemberAvatar => !!m),
+    [mentionIds, mentionOptions]
+  );
+
+  /** 只有群组变体且有成员时才支持 @ 点名；@ 后输入的内容按名字做包含匹配。 */
+  const atCandidates = useMemo<MemberAvatar[]>(() => {
+    if (variant !== "group" || !atTrigger) return [];
+    const list = mentionOptions ?? [];
+    const q = atTrigger.query.trim().toLowerCase();
+    if (!q) return list;
+    return list.filter((m) => m.name.toLowerCase().includes(q));
+  }, [atTrigger, mentionOptions, variant]);
+
+  /** @ 候选面板是否可见：已触发且有匹配成员。 */
+  const atOpen = !!atTrigger && atCandidates.length > 0;
+
   useEffect(() => {
-    setMentionId(null);
+    if (!atOpen) return;
+    const onPointer = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (atRef.current?.contains(target)) return;
+      if (inputRef.current === target) return;
+      setAtTrigger(null);
+    };
+    window.addEventListener("mousedown", onPointer);
+    return () => window.removeEventListener("mousedown", onPointer);
+  }, [atOpen]);
+
+  // 切换群 / 会话后清空草稿，点名随文本一起失效，只需收起弹层。
+  useEffect(() => {
     setMentionOpen(false);
+    setAtTrigger(null);
+    setAtIndex(0);
   }, [conversationId]);
 
-  const mention =
-    (mentionId && mentionOptions?.find((m) => m.id === mentionId)) || null;
+  // 高亮项随键盘移动时滚动到可视区。
+  useEffect(() => {
+    if (!atOpen) return;
+    const el = atListRef.current?.querySelector<HTMLElement>(
+      `[data-at-index="${atIndex}"]`
+    );
+    el?.scrollIntoView({ block: "nearest" });
+  }, [atIndex, atOpen]);
 
   useEffect(() => {
     let cancelled = false;
@@ -215,10 +267,93 @@ export function Composer({
 
   const resetInput = () => {
     setDraft("");
+    setAtTrigger(null);
+    setAtIndex(0);
     const el = inputRef.current;
     if (!el) return;
     el.style.height = `${MIN_H}px`;
     el.style.overflowY = "hidden";
+  };
+
+  // 扫描光标前的文本，判断是否处于「@筛选词」输入态：
+  // @ 必须在开头或空白之后（避免邮箱 / 正文里的 @ 误触发），且 @ 后未出现空白。
+  const detectAt = (el: HTMLTextAreaElement) => {
+    if (variant !== "group" || !mentionOptions || mentionOptions.length === 0) {
+      setAtTrigger(null);
+      return;
+    }
+    const caret = el.selectionStart ?? el.value.length;
+    const before = el.value.slice(0, caret);
+    const at = before.lastIndexOf("@");
+    if (at < 0) {
+      setAtTrigger(null);
+      return;
+    }
+    const prev = at > 0 ? before[at - 1] : "";
+    const query = before.slice(at + 1);
+    if ((prev && !/\s/.test(prev)) || /\s/.test(query)) {
+      setAtTrigger(null);
+      return;
+    }
+    setAtTrigger({ start: at, query });
+    setAtIndex(0);
+  };
+
+  /** 把草稿改成 next 并把光标放到 caret：统一在这里收尾（高度自适应 + 弹层收起 + 回焦）。 */
+  const commitDraft = (next: string, caret: number) => {
+    setDraft(next);
+    setAtTrigger(null);
+    setAtIndex(0);
+    setMentionOpen(false);
+    window.requestAnimationFrame(() => {
+      const node = inputRef.current;
+      if (!node) return;
+      node.focus();
+      node.setSelectionRange(caret, caret);
+      autoGrow(node);
+    });
+  };
+
+  // 键入 @ 后选中某个成员：把「@筛选词」整体替换成「@昵称 」，可继续 @ 下一个人。
+  const applyMention = (member: MemberAvatar) => {
+    const el = inputRef.current;
+    if (!el || !atTrigger) return;
+    const caret = el.selectionStart ?? el.value.length;
+    const token = `@${member.name} `;
+    const next = el.value.slice(0, atTrigger.start) + token + el.value.slice(caret);
+    commitDraft(next, atTrigger.start + token.length);
+  };
+
+  // 「@ 成员」按钮：在光标处插入 @昵称（前后按需补空格），已点名则取消。
+  const toggleMentionFromBar = (member: MemberAvatar) => {
+    const el = inputRef.current;
+    if (!el) return;
+    if (mentionIds.includes(member.id)) {
+      removeMention(member);
+      setMentionOpen(false);
+      return;
+    }
+    const caret = el.selectionStart ?? el.value.length;
+    const head = el.value.slice(0, caret);
+    const tail = el.value.slice(caret);
+    const lead = head && !/\s$/.test(head) ? " " : "";
+    const token = `@${member.name} `;
+    commitDraft(`${head}${lead}${token}${tail}`, caret + lead.length + token.length);
+  };
+
+  // 取消点名：把文本里的 @昵称 删掉（文本是唯一事实来源，删了就等于取消）。
+  const removeMention = (member: MemberAvatar) => {
+    const el = inputRef.current;
+    const caret = el?.selectionStart ?? draft.length;
+    // 与解析口径保持一致：@昵称 后面必须接空白 / 标点 / 结尾，避免误删昵称前缀相同的正文。
+    const next = draft.replace(
+      new RegExp(
+        `\\s?@${escapeRegExp(member.name)}(?=[\\s，。！？、；：,.!?;:'"’”)\\]}]|$)`,
+        "g"
+      ),
+      ""
+    );
+    commitDraft(next, Math.min(caret, next.length));
   };
 
   // 编辑 / 撤回后把原文回灌到输入框，便于继续修改后重发。
@@ -242,7 +377,7 @@ export function Composer({
   const submit = () => {
     const text = draft.trim();
     if (!text || sending) return;
-    onSend(composeOutgoing(text, files), skills, mentionId);
+    onSend(composeOutgoing(text, files), skills, mentionIds);
     setFiles([]);
     setSkillOpen(false);
     setMentionOpen(false);
@@ -418,20 +553,24 @@ export function Composer({
               <div ref={mentionRef} className="relative">
                 <button
                   type="button"
-                  title={mention ? `指派给 @${mention.name}` : "指派给某个成员"}
+                  title={
+                    mentioned.length > 0
+                      ? `已点名 ${mentioned.map((m) => m.name).join("、")}`
+                      : "点名某个成员"
+                  }
                   onClick={() => {
                     setSkillOpen(false);
                     setMentionOpen((open) => !open);
                   }}
                   className={cn(
                     "flex shrink-0 items-center gap-1 rounded-full px-2.5 py-1 text-[11.5px] transition-colors focus-visible:outline-2 focus-visible:outline-brand-600",
-                    mention
+                    mentioned.length > 0
                       ? "bg-brand-50 text-brand-700 hover:bg-brand-100"
                       : "bg-page text-ink-500 hover:bg-tint hover:text-brand-700"
                   )}
                 >
                   <AtSign className="size-3" strokeWidth={1.75} />
-                  {mention ? `@${mention.name}` : "指派"}
+                  {mentioned.length > 0 ? `@ ${mentioned.length}` : "点名"}
                 </button>
                 {mentionOpen ? (
                   <div className="absolute right-0 bottom-full z-20 mb-1 w-56 rounded-xl bg-surface p-1.5 shadow-lift">
@@ -440,10 +579,7 @@ export function Composer({
                         <li key={mb.id}>
                           <button
                             type="button"
-                            onClick={() => {
-                              setMentionId(mb.id === mentionId ? null : mb.id);
-                              setMentionOpen(false);
-                            }}
+                            onClick={() => toggleMentionFromBar(mb)}
                             className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left hover:bg-tint"
                           >
                             {mb.avatarUrl ? (
@@ -519,7 +655,7 @@ export function Composer({
 
         {(variant === "chat" && skills.length > 0) ||
         files.length > 0 ||
-        (variant === "group" && mention) ? (
+        mentioned.length > 0 ? (
           <div className="flex flex-wrap gap-1.5 pb-2">
             {variant === "chat"
               ? skills.map((skill) => (
@@ -532,13 +668,14 @@ export function Composer({
                   />
                 ))
               : null}
-            {variant === "group" && mention ? (
+            {mentioned.map((mb) => (
               <Chip
-                label={`指派给 @${mention.name}`}
-                title={`本轮任务由 @${mention.name} 执行`}
-                onRemove={() => setMentionId(null)}
+                key={mb.id}
+                label={`@${mb.name}`}
+                title={`将点名 ${mb.name}，本轮由 TA 回复`}
+                onRemove={() => removeMention(mb)}
               />
-            ) : null}
+            ))}
             {files.map((file) => (
               <Chip
                 key={file.path}
@@ -571,11 +708,65 @@ export function Composer({
             setDragActive(false);
           }}
           className={cn(
-            "flex items-end gap-2 rounded-2xl bg-page p-2.5 pl-4 shadow-soft transition-shadow focus-within:shadow-lift",
+            "relative flex items-end gap-2 rounded-2xl bg-page p-2.5 pl-4 shadow-soft transition-shadow focus-within:shadow-lift",
             dragActive &&
               "outline-2 outline-dashed outline-brand-500 bg-tint"
           )}
         >
+          {atOpen ? (
+            <div
+              ref={atRef}
+              className="absolute left-3 bottom-full z-30 mb-2 w-64 rounded-xl bg-surface p-1.5 shadow-lift"
+            >
+              <p className="px-2 pb-1 text-[10.5px] text-ink-400">
+                选择成员（↑↓ 切换，Enter 选中，Esc 关闭）
+              </p>
+              <ul ref={atListRef} className="max-h-56 overflow-auto">
+                {atCandidates.map((mb, index) => (
+                  <li key={mb.id}>
+                    <button
+                      type="button"
+                      data-at-index={index}
+                      onMouseEnter={() => setAtIndex(index)}
+                      // 在 mousedown 阶段处理并阻止默认行为：输入框不会失焦，后续选中态与光标位置才稳定。
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        applyMention(mb);
+                      }}
+                      className={cn(
+                        "flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left",
+                        index === atIndex ? "bg-tint" : "hover:bg-tint"
+                      )}
+                    >
+                      {mb.avatarUrl ? (
+                        <img
+                          src={mb.avatarUrl}
+                          alt=""
+                          draggable={false}
+                          className="size-5 shrink-0 rounded-full object-cover"
+                        />
+                      ) : (
+                        <span
+                          className={cn(
+                            "flex size-5 shrink-0 items-center justify-center rounded-full text-[10px] font-medium text-white",
+                            mb.colorClass
+                          )}
+                        >
+                          {mb.name.slice(0, 1)}
+                        </span>
+                      )}
+                      <span className="min-w-0 flex-1 truncate text-[12.5px] font-medium text-ink-900">
+                        {mb.name}
+                      </span>
+                      {mentionIds.includes(mb.id) ? (
+                        <Check className="size-3.5 shrink-0 text-brand-600" strokeWidth={2} />
+                      ) : null}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
           <textarea
             ref={inputRef}
             rows={1}
@@ -584,15 +775,47 @@ export function Composer({
             onChange={(e) => {
               setDraft(e.target.value);
               autoGrow(e.target);
+              detectAt(e.target);
             }}
+            onSelect={(e) => detectAt(e.currentTarget)}
             onKeyDown={(e) => {
+              if (atOpen) {
+                if (e.key === "ArrowDown") {
+                  e.preventDefault();
+                  setAtIndex((i) => (i + 1) % atCandidates.length);
+                  return;
+                }
+                if (e.key === "ArrowUp") {
+                  e.preventDefault();
+                  setAtIndex((i) => (i - 1 + atCandidates.length) % atCandidates.length);
+                  return;
+                }
+                if (e.key === "Enter" || e.key === "Tab") {
+                  const target = atCandidates[atIndex];
+                  if (target) {
+                    e.preventDefault();
+                    applyMention(target);
+                    return;
+                  }
+                }
+                if (e.key === "Escape") {
+                  e.preventDefault();
+                  setAtTrigger(null);
+                  return;
+                }
+              }
               if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault();
                 submit();
               }
             }}
+            onBlur={() => setAtTrigger(null)}
             placeholder={
-              sending ? "Agent 处理中…" : "给 Agent 下达指令…（Enter 发送，Shift+Enter 换行）"
+              sending
+                ? "Agent 处理中…"
+                : variant === "group"
+                  ? "给群组下达指令…（输入 @ 指派成员，Enter 发送）"
+                  : "给 Agent 下达指令…（Enter 发送，Shift+Enter 换行）"
             }
             className="flex-1 resize-none overflow-y-hidden bg-transparent py-1.5 text-[13px] leading-5 text-ink-900 placeholder:text-ink-400 focus:outline-none disabled:opacity-60"
             style={{ height: MIN_H, maxHeight: MAX_H }}

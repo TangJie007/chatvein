@@ -4,8 +4,10 @@ import { Badge } from "../ui/badge";
 import { ScrollArea } from "../ui/scroll-area";
 import { cn } from "../../lib/cn";
 import { avatarUrl, USER_AVATAR } from "../../lib/rolesStore";
-import { Composer, ContextRing, type ComposerSkill, type MemberAvatar } from "./Composer";
+import { Composer, ContextRing, type ComposerSkill } from "./Composer";
 import { MarkdownMessage } from "./MarkdownMessage";
+import { MentionText } from "./MentionText";
+import type { MemberAvatar } from "./mentions";
 import { WaitingBubble } from "./WaitingBubble";
 import type { SessionItem } from "./SessionList";
 import {
@@ -52,11 +54,11 @@ type ChatPanelProps = {
   messages: ChatMessage[];
   insightOpen: boolean;
   onToggleInsight: () => void;
-  /** mentionId 为群组 @ 指派的成员 id；null / 缺省表示交给默认角色。 */
+  /** mentionIds 为文本里 @ 到的成员（按出现顺序）；空 / 缺省表示交给默认角色。 */
   onSend?: (
     text: string,
     skills?: { slug: string; name: string }[],
-    mentionId?: string | null
+    mentionIds?: string[]
   ) => void;
   onOpenWorkspace?: () => void;
   onOpenTrace?: () => void;
@@ -103,9 +105,7 @@ type ChatPanelProps = {
   residentSkills?: string[];
   /** 群组变体：成员头像信息，气泡按执行者（@ 指派对象）渲染。 */
   members?: MemberAvatar[];
-  /** 群组变体：默认执行者（组长 / 主成员）id；@ 指派给它的用户气泡不显示「指派给」标签。 */
-  defaultMemberId?: string;
-  /** 群组变体：可 @ 指派的对象（透传给 Composer 的指派弹层）。 */
+  /** 群组变体：可 @ 点名的成员（透传给 Composer 的 @ 候选弹层）。 */
   mentionOptions?: MemberAvatar[];
   meta?: {
     difficulty?: string;
@@ -151,7 +151,6 @@ export function ChatPanel({
   onSkillsChange,
   residentSkills = [],
   members,
-  defaultMemberId,
   mentionOptions,
   meta,
 }: ChatPanelProps) {
@@ -313,12 +312,6 @@ export function ChatPanel({
                 const actor = m.actorId
                   ? members?.find((mb) => mb.id === m.actorId) ?? null
                   : null;
-                // 用户气泡只在指派人不是「默认执行者（组长）」时标注「指派给」，避免噪音。
-                const showDirected =
-                  variant === "group" &&
-                  isUser &&
-                  !!actor &&
-                  actor.id !== defaultMemberId;
                 // 生成中的占位气泡也算「当前回答」，同样高亮，避免用户以为焦点还在上一轮。
                 const selected =
                   !!m.streaming || (canInspect && m.turnId === selectedTurnId);
@@ -383,11 +376,7 @@ export function ChatPanel({
                           <span>{formatDuration(m.durationMs)}</span>
                         </div>
                       ) : null}
-                      {showDirected ? (
-                        <div className="self-end px-1 text-[11px] text-ink-400">
-                          指派给 @{actor?.name}
-                        </div>
-                      ) : null}
+
                       <div
                         onClick={
                           canInspect
@@ -425,7 +414,12 @@ export function ChatPanel({
                             </div>
                           )
                         ) : (
-                          m.content
+                          // 用户 / 系统消息：正文里的「@昵称」高亮，和微信群的点名观感一致。
+                          <MentionText
+                            content={m.content}
+                            members={members}
+                            tone={isUser ? "onDark" : "onLight"}
+                          />
                         )}
                       </div>
                       {/* 本轮异常：直接挂在提问气泡下方，用户一眼看到是哪一句失败了。 */}
@@ -543,8 +537,8 @@ export function ChatPanel({
           contextPct={contextPct}
           contextTitle={contextTitle}
           sending={sending}
-          onSend={(text, nextSkills, mentionId) =>
-            onSend?.(text, nextSkills, mentionId)
+          onSend={(text, nextSkills, mentionIds) =>
+            onSend?.(text, nextSkills, mentionIds)
           }
           onStop={onStop}
           restoreText={restoreText}

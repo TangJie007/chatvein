@@ -206,6 +206,8 @@ class ConversationsService:
         route_reason: str | None = None,
         tool_plan: str | None = None,
         actor_id: str | None = None,
+        # 群里 @ 多人时同一句提问只落一次：后续轮次传 False，只写助手回复。
+        append_user: bool = True,
     ) -> tuple[str, MessageRecord, MessageRecord]:
         """更新会话元数据，并把本轮消息写入会话空间库。"""
         hint = title_hint or user_text
@@ -215,8 +217,12 @@ class ConversationsService:
         turn_id = turn_id or uuid.uuid4().hex
         root = self.workspace_root_for(workspace_dir)
         db = session_db_path(root)
-        user_id = session_store.append_message(
-            db, "user", user_text, route=route, actor_id=actor_id
+        user_id = (
+            session_store.append_message(
+                db, "user", user_text, route=route, actor_id=actor_id
+            )
+            if append_user
+            else None
         )
         assistant_id = session_store.append_message(
             db,
@@ -243,7 +249,8 @@ class ConversationsService:
             )
         now = ""
         user_msg = MessageRecord(
-            id=user_id,
+            # 未落用户消息时（群里 @ 多人的后续轮次）用 0 表示「本轮没有新的用户消息」
+            id=user_id or 0,
             conversation_id=cid,
             role="user",
             content=user_text,

@@ -140,10 +140,13 @@ export function useChatSession({
   /** 本轮乐观插入的用户 / 助手气泡 id 与原文，便于停止 / 撤回时精确移除。 */
   const pendingRef = useRef<{
     userId: string;
-    agentId: string;
+    /** 助手气泡 id：@ 多人时每个成员一个（按点名顺序）。 */
+    agentIds: string[];
     text: string;
     /** 发送前主库最大消息 id；清理只删比它新的。 */
     afterMessageId: number;
+    /** 本轮拆成了几轮生成（= 被点名人数）；撤回时按它删同样多轮。 */
+    turnCount: number;
   } | null>(null);
   /** 本轮回复已就地回填到占位气泡，切换会话 id 时跳过整表重载（否则气泡会被替换成新组件）。 */
   const skipNextLoadRef = useRef<string | null>(null);
@@ -233,19 +236,19 @@ export function useChatSession({
     async (
       text: string,
       nextSkills?: ComposerSkill[],
-      roleOverride?: string | null
+      /** 群聊里被 @ 点名的成员：每个人都各答一轮；为空则交给默认角色。 */
+      mentionIds?: string[] | null
     ) => {
       if (sending) return;
       setSending(true);
       setError(null);
-      // 群组 @ 指派：roleOverride 覆盖本轮执行角色（其绑定模型即回复模型）。
-      const effectiveRoleId = roleOverride ?? roleId;
+      // 群组 @ 点名：被点名的成员各生成一轮（其绑定模型即回复模型）。
+      const targets: (string | null)[] =
+        mentionIds && mentionIds.length > 0 ? mentionIds : [roleId];
       // 思考流立刻锁定到本轮问题：占位气泡此时还没有 turn_id，
       // 若不锁定，右侧洞察会继续显示上一轮轨迹，看起来像"没在思考"。
       setPendingQuestion(text);
       setSelectedTurnId(null);
-      // 本轮 id 由前端生成：后端按它逐步落追踪，思考流可边等边轮询。
-      const turnId = crypto.randomUUID().replace(/-/g, "");
       // 没有当前会话时先建一个（仅对话视图）：否则拿不到轮询追踪所需的 conversation_id。
       let activeConversationId = conversationId;
       if (!activeConversationId) {
@@ -269,96 +272,115 @@ export function useChatSession({
           return;
         }
       }
-      setLiveTurn({ conversationId: activeConversationId, turnId });
       const optimisticId = crypto.randomUUID();
-      const pendingId = crypto.randomUUID();
+      const agentIds = targets.map(() => crypto.randomUUID());
       pendingRef.current = {
         userId: optimisticId,
-        agentId: pendingId,
+        agentIds,
         text,
         afterMessageId: lastPersistedIdRef.current,
+        turnCount: targets.length,
       };
-      const controller = new AbortController();
-      abortRef.current = controller;
+      // 只点名了一个人时用户气泡归属 TA；点了多个人时没有单一执行者，留空。
+      const soleActor = targets.length === 1 ? (targets[0] ?? null) : null;
       setMessages((prev) => [
         ...prev,
-        { id: optimisticId, role: "user", content: text, actorId: effectiveRoleId ?? null },
-        {
-          id: pendingId,
-          role: "agent",
+        { id: optimisticId, role: "user", content: text, actorId: soleActor },
+        // 每个被点名的成员一个占位气泡，按点名顺序依次填充。
+        ...targets.map((id, index) => ({
+          id: agentIds[index] as string,
+          role: "agent" as const,
           content: "",
           streaming: true,
-          actorId: effectiveRoleId ?? null,
-        },
+          actorId: id,
+        })),
       ]);
       // Composer 把带 slug 的技能数组回传过来；这里只发 slug（后端按 slug 找到
       // 本机 <data>/skills/<slug>/SKILL.md 注入 role prompt）。用户看到的 chip 名字
       // 只是本地 UI，不进入 API 请求体。
       const slugs = nextSkills?.length ? nextSkills.map((s) => s.slug) : null;
+      let failure: string | null = null;
       try {
-        const result = await sendChat(
-          text,
-          activeConversationId,
-          effectiveRoleId,
-          slugs,
-          turnId,
-          controller.signal
-        );
-        // 兜底：后端换了会话（理论上不会），切过去时同样跳过整表重载。
-        if (result.conversation_id !== activeConversationId) {
-          skipNextLoadRef.current = result.conversation_id;
-          onSelectConversation?.(result.conversation_id);
-        }
-        setMetaById((prev) => ({
-          ...prev,
-          [result.conversation_id]: {
-            difficulty: result.difficulty,
-            selectedTools: result.selected_tools,
-            routeReason: result.route_reason,
-            toolPlan: result.tool_plan_reason,
-          },
-        }));
-        if (result.workspace) setWorkspace(result.workspace);
-        setSelectedTurnId(result.turn_id);
-        // 结果写回那一个占位气泡：id（React key）不变，只换内容，
-        // 避免整表重载把气泡换成新组件（视觉上像"整块跳变"）。
-        setMessages((prev) =>
-          prev.map((m) =>
-            m.id === pendingId
-              ? {
-                  ...m,
-                  content: result.reply,
-                  streaming: false,
-                  turnId: result.turn_id,
-                  tokens: result.tokens ?? null,
-                  durationMs: result.duration_ms ?? null,
-                }
-              : m
-          )
-        );
-        // 本轮已落库：抬高清理基线，之后撤回 / 停止只删这条之后的记录。
-        lastPersistedIdRef.current = Math.max(
-          lastPersistedIdRef.current,
-          Number(result.assistant_message?.id) || 0,
-          Number(result.user_message?.id) || 0
-        );
-        onRefreshList?.();
-      } catch (err) {
-        // Rust 抛 string "Request canceled"（非 Error）；以 signal / 文案双保险，绝不能落到红字。
-        if (controller.signal.aborted || isAbortError(err)) {
-          const mode = cancelModeRef.current;
-          cancelModeRef.current = null;
-          if (mode === "stop" || mode == null) {
-            setError("已取消本次生成", "muted");
+        for (let index = 0; index < targets.length; index++) {
+          // 本轮 id 由前端生成：后端按它逐步落追踪，思考流可边等边轮询。
+          const turnId = crypto.randomUUID().replace(/-/g, "");
+          const pendingId = agentIds[index] as string;
+          setLiveTurn({ conversationId: activeConversationId, turnId });
+          const controller = new AbortController();
+          abortRef.current = controller;
+          try {
+            const result = await sendChat(
+              text,
+              activeConversationId,
+              targets[index] ?? null,
+              slugs,
+              turnId,
+              controller.signal,
+              // 同一句提问只在第一轮落库，后续成员只追加各自那条助手回复。
+              index === 0
+            );
+            // 兜底：后端换了会话（理论上不会），切过去时同样跳过整表重载。
+            if (result.conversation_id !== activeConversationId) {
+              skipNextLoadRef.current = result.conversation_id;
+              onSelectConversation?.(result.conversation_id);
+              activeConversationId = result.conversation_id;
+            }
+            setMetaById((prev) => ({
+              ...prev,
+              [result.conversation_id]: {
+                difficulty: result.difficulty,
+                selectedTools: result.selected_tools,
+                routeReason: result.route_reason,
+                toolPlan: result.tool_plan_reason,
+              },
+            }));
+            if (result.workspace) setWorkspace(result.workspace);
+            setSelectedTurnId(result.turn_id);
+            // 结果写回那一个占位气泡：id（React key）不变，只换内容，
+            // 避免整表重载把气泡换成新组件（视觉上像"整块跳变"）。
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === pendingId
+                  ? {
+                      ...m,
+                      content: result.reply,
+                      streaming: false,
+                      turnId: result.turn_id,
+                      tokens: result.tokens ?? null,
+                      durationMs: result.duration_ms ?? null,
+                    }
+                  : m
+              )
+            );
+            // 本轮已落库：抬高清理基线，之后撤回 / 停止只删这条之后的记录。
+            lastPersistedIdRef.current = Math.max(
+              lastPersistedIdRef.current,
+              Number(result.assistant_message?.id) || 0,
+              Number(result.user_message?.id) || 0
+            );
+            onRefreshList?.();
+          } catch (err) {
+            // Rust 抛 string "Request canceled"（非 Error）；以 signal / 文案双保险，绝不能落到红字。
+            if (controller.signal.aborted || isAbortError(err)) {
+              const mode = cancelModeRef.current;
+              cancelModeRef.current = null;
+              if (mode === "stop" || mode == null) {
+                setError("已取消本次生成", "muted");
+              }
+              return;
+            }
+            // 群里某位成员失败不影响其他人：只摘掉 TA 的占位气泡，记下错误继续。
+            setMessages((prev) => prev.filter((m) => m.id !== pendingId));
+            failure = failure ?? errorMessage(err);
           }
-          return;
         }
-        // 保留提问气泡（错误挂在它下面），只移除那个空的助手气泡。
-        setMessages((prev) => prev.filter((m) => m.id !== pendingId));
-        setError(errorMessage(err));
-        setErrorAnchorId(optimisticId);
+        // 保留提问气泡（错误挂在它下面），助手气泡已在上面逐个摘掉 / 填充。
+        if (failure) {
+          setError(failure);
+          setErrorAnchorId(optimisticId);
+        }
       } finally {
-        if (abortRef.current === controller) abortRef.current = null;
+        abortRef.current = null;
         setSending(false);
         setPendingQuestion(null);
         // 本轮结束：停掉追踪轮询，思考流交回已完成轮次的轨迹。
@@ -381,18 +403,32 @@ export function useChatSession({
    *  否则本轮未落库时会误删上一轮历史（相同文案连发时仅靠原文也不够）。 */
   const cleanupInFlight = useRef(false);
   const cleanupLastTurn = useCallback(
-    async (id: string, userContent: string, afterMessageId: number) => {
+    async (
+      id: string,
+      userContent: string,
+      afterMessageId: number,
+      /** 要删除的轮数：群里 @ 了 N 个人就落了 N 轮（用户句只落一次）。 */
+      turns: number = 1
+    ) => {
       if (cleanupInFlight.current) return;
       cleanupInFlight.current = true;
       try {
-        for (let i = 0; i < 8; i++) {
-          try {
-            const res = await deleteLastTurn(id, { userContent, afterMessageId });
-            if (res.deleted > 0) return;
-          } catch {
-            /* 会话可能已被切换或删除，忽略 */
+        for (let turn = 0; turn < Math.max(1, turns); turn++) {
+          let deleted = false;
+          for (let i = 0; i < 8; i++) {
+            try {
+              const res = await deleteLastTurn(id, { userContent, afterMessageId });
+              if (res.deleted > 0) {
+                deleted = true;
+                break;
+              }
+            } catch {
+              /* 会话可能已被切换或删除，忽略 */
+            }
+            await new Promise((resolve) => setTimeout(resolve, 800));
           }
-          await new Promise((resolve) => setTimeout(resolve, 800));
+          // 本轮已经没有残留（例如只落了一轮就被停止）：别再往下试，免得白等。
+          if (!deleted) break;
         }
       } finally {
         cleanupInFlight.current = false;
@@ -411,7 +447,9 @@ export function useChatSession({
       const pending = pendingRef.current;
       setMessages((prev) =>
         pending
-          ? prev.filter((m) => m.id !== pending.userId && m.id !== pending.agentId)
+          ? prev.filter(
+              (m) => m.id !== pending.userId && !pending.agentIds.includes(m.id)
+            )
           : prev
       );
       pendingRef.current = null;
@@ -426,7 +464,12 @@ export function useChatSession({
       if (mode === "edit" && pending) setRestoreText(pending.text);
       // 只清理本轮；无 pending 时不要动历史。
       if (conversationId && pending?.text) {
-        void cleanupLastTurn(conversationId, pending.text, pending.afterMessageId);
+        void cleanupLastTurn(
+          conversationId,
+          pending.text,
+          pending.afterMessageId,
+          pending.turnCount
+        );
       }
     },
     [cleanupLastTurn, conversationId, setError]
