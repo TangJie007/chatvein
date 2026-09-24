@@ -602,6 +602,14 @@ function LocalBadge({ embed }: { embed: EmbeddingStatus }) {
   );
 }
 
+/** 实际下载源的展示文案（后端 source：modelscope / huggingface）。 */
+function mirrorLabel(embed: EmbeddingStatus): string {
+  if (embed.source === "modelscope") {
+    return "ModelScope 国内源（modelscope.cn · 阿里云链路）";
+  }
+  return `HuggingFace 镜像（${embed.endpoint}）`;
+}
+
 /** 本地向量模型详情：信息 + 安装进度（百分比）。 */
 function LocalModelConfig() {
   const { status: embed, progress } = useEmbedding();
@@ -643,7 +651,7 @@ function LocalModelConfig() {
             <LocalBadge embed={embed} />
           </div>
           <p className="mt-0.5 truncate text-[11.5px] text-ink-400">
-            {embed.dim} 维 · ONNX 本地推理 · 镜像 {embed.endpoint}
+            {embed.dim} 维 · ONNX 本地推理 · {mirrorLabel(embed)}
           </p>
         </div>
         {embed.downloading ? (
@@ -707,8 +715,8 @@ function LocalModelConfig() {
             <Field label="缓存路径">
               <TextInput mono disabled value={embed.cache_dir} onChange={() => {}} />
             </Field>
-            <Field label="下载镜像">
-              <TextInput mono disabled value={embed.endpoint} onChange={() => {}} />
+            <Field label="下载源">
+              <TextInput mono disabled value={mirrorLabel(embed)} onChange={() => {}} />
             </Field>
           </Card>
         </div>

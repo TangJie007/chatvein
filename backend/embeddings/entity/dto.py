@@ -11,6 +11,8 @@ class EmbeddingStatusDto(BaseModel):
     installed: bool
     cache_dir: str
     endpoint: str
+    # 实际下载源：modelscope（阿里云国内链路）/ huggingface（HF_ENDPOINT 镜像）
+    source: str
     downloading: bool = False
     progress: float | None = None
     error: str | None = None

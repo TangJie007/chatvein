@@ -304,6 +304,7 @@ class EmbeddingService:
         self._downloading = False
         self._progress: float | None = None
         self._error: str | None = None
+        self._source: str | None = None  # 最近一次实际使用的下载源
         self._model: Any = None
 
     @property
@@ -333,6 +334,17 @@ class EmbeddingService:
     def is_installed(self) -> bool:
         return self._marker().exists()
 
+    def _effective_source(self) -> str:
+        """实际生效的下载源：已下载过则按记录，否则按当前配置推断。"""
+        if self._source:
+            return self._source
+        pref = os.environ.get(_MIRROR_PREF_ENV, "auto").strip().lower()
+        spec = _CUSTOM_MODELS.get(self.model_name, {})
+        use_ms = pref == "modelscope" or (
+            pref in ("", "auto") and bool(spec.get("ms_source"))
+        )
+        return "modelscope" if use_ms else "huggingface"
+
     def status(self) -> EmbeddingStatusDto:
         return EmbeddingStatusDto(
             model=self.model_name,
@@ -340,6 +352,7 @@ class EmbeddingService:
             installed=self.is_installed(),
             cache_dir=str(cache_dir()),
             endpoint=hf_endpoint(),
+            source=self._effective_source(),
             downloading=self._downloading,
             progress=self._progress,
             error=self._error,
@@ -382,6 +395,7 @@ class EmbeddingService:
                         cache,
                         progress_cb=lambda p: setattr(self, "_progress", p),
                     )
+                    self._source = "modelscope"
                     self._progress = 100.0
                 except Exception as ms_exc:  # noqa: BLE001 — 回退到 HF
                     print(
@@ -391,9 +405,11 @@ class EmbeddingService:
                     )
                     self._error = None
                     self._progress = 0.0
+                    self._source = "huggingface"
                     self._download_via_huggingface(spec, cache)
 
             if not use_ms:
+                self._source = "huggingface"
                 self._download_via_huggingface(spec, cache)
                 self._progress = 100.0
 

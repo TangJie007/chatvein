@@ -652,6 +652,8 @@ export interface EmbeddingStatus {
   installed: boolean;
   cache_dir: string;
   endpoint: string;
+  /** 实际下载源：modelscope（阿里云国内链路）/ huggingface（HF_ENDPOINT 镜像）。 */
+  source?: string;
   downloading: boolean;
   /** 下载进度 0-100；未在下载时为 null。 */
   progress: number | null;
