@@ -29,6 +29,7 @@ import { cn } from "../../lib/cn";
 import { makeNewRole, TOOLSET } from "../../lib/rolesStore";
 import { AvatarPicker, RoleAvatar } from "../ui/avatar-picker";
 import { Button } from "../ui/button";
+import { MarkdownMessage } from "../chat/MarkdownMessage";
 import {
   Dialog,
   DialogContent,
@@ -1180,16 +1181,16 @@ function TryRunDialog({
           {error ? (
             <p className="text-[12px] leading-5 text-danger-600">{error}</p>
           ) : null}
-          <div className="min-h-24 rounded-xl bg-page px-3 py-2.5 text-[13px] leading-6 whitespace-pre-wrap text-ink-800 shadow-soft">
+          <div className="min-h-24 rounded-xl bg-page px-3 py-2.5 shadow-soft">
             {loading ? (
-              <span className="flex items-center gap-2 text-ink-400">
+              <span className="flex items-center gap-2 text-[13px] text-ink-400">
                 <Loader2 className="size-3.5 animate-spin" strokeWidth={1.75} />
                 思考中…
               </span>
             ) : reply ? (
-              reply
+              <MarkdownMessage content={reply} />
             ) : (
-              <span className="text-ink-400">
+              <span className="text-[13px] leading-6 text-ink-400">
                 发送一句试试，看看这个角色的回复风格
               </span>
             )}
