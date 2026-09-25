@@ -23,6 +23,7 @@ import { buildInsightArtifacts, buildInsightThread } from "../chat/insightData";
 import { SessionList, toSessionItem, type SessionItem } from "../chat/SessionList";
 import { CreatingOverlay } from "../chat/CreatingOverlay";
 import { useChatSession } from "../chat/useChatSession";
+import { loadGroups } from "../../lib/groupsStore";
 import { ConfirmDialog } from "../ui/confirm-dialog";
 
 /** Survives ChatView remount so sticky newRequestId from App doesn't re-create. */
@@ -79,9 +80,14 @@ export function ChatView({ newRequestId = 0, onConversationCount }: ChatViewProp
 
   const refreshList = useCallback(async () => {
     const rows = await listConversations(80);
-    setSessions(rows.map(toSessionItem));
-    onConversationCount?.(rows.length);
-    return rows;
+    // 群组是独立的群对话，不属于普通会话列表：过滤掉群组已占用的会话。
+    const groupConversationIds = new Set(
+      loadGroups().flatMap((g) => (g.conversationId ? [g.conversationId] : []))
+    );
+    const visible = rows.filter((c) => !groupConversationIds.has(c.id));
+    setSessions(visible.map(toSessionItem));
+    onConversationCount?.(visible.length);
+    return visible;
   }, [onConversationCount]);
 
   const refreshListRef = useRef(refreshList);

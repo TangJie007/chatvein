@@ -84,16 +84,6 @@ export function GroupView({ newGroupRequestId = 0, onGroupCount }: GroupViewProp
       setRoles(roleRows);
       setConversations(convRows);
       setError(null);
-      // 首次进入：兜一个默认群组（全体成员），群对话随后补建。
-      setGroups((prev) => {
-        if (prev.length > 0) return prev;
-        return [
-          {
-            ...makeGroup("我的群组", 0),
-            memberIds: roleRows.map((r) => r.id),
-          },
-        ];
-      });
     } catch (err) {
       setError(errorMessage(err));
     } finally {

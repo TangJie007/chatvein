@@ -7,13 +7,11 @@ import { BackendGate } from "./components/layout/BackendGate";
 import "./styles.css";
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
-  <React.StrictMode>
-    <HashRouter>
-      <BackendGate>
-        <EmbeddingProvider>
-          <App />
-        </EmbeddingProvider>
-      </BackendGate>
-    </HashRouter>
-  </React.StrictMode>
+  <HashRouter>
+    <BackendGate>
+      <EmbeddingProvider>
+        <App />
+      </EmbeddingProvider>
+    </BackendGate>
+  </HashRouter>
 );

@@ -4,7 +4,7 @@ import { Badge } from "../ui/badge";
 import { ScrollArea } from "../ui/scroll-area";
 import { cn } from "../../lib/cn";
 import { avatarUrl, USER_AVATAR } from "../../lib/rolesStore";
-import { Composer, ContextRing, type ComposerSkill } from "./Composer";
+import { Composer, type ComposerSkill } from "./Composer";
 import { MarkdownMessage } from "./MarkdownMessage";
 import { MentionText } from "./MentionText";
 import type { MemberAvatar } from "./mentions";
@@ -225,22 +225,15 @@ export function ChatPanel({
     <section className="flex min-h-0 min-w-0 flex-1 flex-row bg-surface">
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         {variant === "group" ? (
-          // 群组视图：会话头由上层群组信息条承担，这里只放上下文用量（气泡上方）+ 洞察开关。
-          <div className="flex shrink-0 items-center gap-2 px-6 pt-5 pb-2">
-            <span
-              title={contextTitle}
-              className="flex shrink-0 items-center gap-1.5 rounded-full bg-page px-2.5 py-1 text-[11.5px] text-ink-400"
-            >
-              <ContextRing pct={contextPct} />
-              <span className="font-mono font-medium text-ink-700">{contextPct}%</span>
-              <span>上下文</span>
-            </span>
+          // 群组视图：会话头由上层群组信息条承担；上下文用量已跟随气泡（排在时间后），
+          // 这里只留洞察开关。
+          <div className="flex shrink-0 items-center justify-end px-6 pt-5 pb-2">
             <button
               type="button"
               onClick={onToggleInsight}
               title={insightOpen ? "收起执行洞察" : "展开执行洞察"}
               className={cn(
-                "ml-auto flex size-8 items-center justify-center rounded-lg transition-colors focus-visible:outline-2 focus-visible:outline-brand-600",
+                "flex size-8 items-center justify-center rounded-lg transition-colors focus-visible:outline-2 focus-visible:outline-brand-600",
                 insightOpen
                   ? "bg-brand-50 text-brand-600"
                   : "text-ink-400 hover:bg-tint hover:text-ink-700"
@@ -363,6 +356,32 @@ export function ChatPanel({
                         isAgent ? "max-w-[min(92%,720px)]" : "max-w-[78%]"
                       )}
                     >
+                      {/* 本轮 token / 耗时 / 上下文用量：标注在气泡上方，时间排在最后。 */}
+                      {isAgent && !m.streaming ? (
+                        <div className="flex items-center gap-1.5 px-1 text-[11px] text-ink-400">
+                          {/* 群组：回复者名字，跟 tokens / 耗时排在同一行。 */}
+                          {variant === "group" ? (
+                            <span className="font-medium text-ink-500">
+                              {actor?.name ?? roleName ?? "成员"}
+                            </span>
+                          ) : null}
+                          <span>{formatTokens(m.tokens)}</span>
+                          <span aria-hidden="true">·</span>
+                          <span>{formatDuration(m.durationMs)}</span>
+                          {/* 群组：上下文用量跟随气泡走，排在时间后面。 */}
+                          {variant === "group" ? (
+                            <>
+                              <span aria-hidden="true">·</span>
+                              <span
+                                title={contextTitle}
+                                className="font-mono font-medium text-ink-500"
+                              >
+                                {contextPct}% 上下文
+                              </span>
+                            </>
+                          ) : null}
+                        </div>
+                      ) : null}
                       <div
                         onClick={
                           canInspect
@@ -408,20 +427,6 @@ export function ChatPanel({
                           />
                         )}
                       </div>
-                      {/* 耗时与 token 用量：紧跟气泡末尾标注本轮花费（时间在内容后面）。 */}
-                      {isAgent && !m.streaming ? (
-                        <div className="flex items-center gap-1.5 px-1 text-[11px] text-ink-400">
-                          {/* 群组：回复者名字，跟 tokens / 耗时排在同一行。 */}
-                          {variant === "group" ? (
-                            <span className="font-medium text-ink-500">
-                              {actor?.name ?? roleName ?? "成员"}
-                            </span>
-                          ) : null}
-                          <span>{formatTokens(m.tokens)}</span>
-                          <span aria-hidden="true">·</span>
-                          <span>{formatDuration(m.durationMs)}</span>
-                        </div>
-                      ) : null}
                       {/* 本轮异常：直接挂在提问气泡下方，用户一眼看到是哪一句失败了。 */}
                       {error && m.id === errorAnchorId ? (
                         <p
