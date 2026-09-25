@@ -244,8 +244,7 @@ export function Composer({
             setDragActive(false);
           }
         });
-        // 若组件在异步注册完成前已卸载（StrictMode 双重挂载），立即反注册，
-        // 避免重复注册导致一次拖放触发多次上传。
+        // 若注册完成前组件已卸载，立即反注册，避免拖放监听器泄漏。
         if (cancelled) fn();
         else unlisten = fn;
       } catch {

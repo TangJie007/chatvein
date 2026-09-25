@@ -22,17 +22,9 @@ import { CREATE_MIN_MS, CREATE_STEPS, sleep } from "../../lib/creationSteps";
 import { CreatingOverlay } from "../chat/CreatingOverlay";
 import { GroupChat } from "../group/GroupChat";
 import { GroupList, type GroupMemberItem, type GroupSummary } from "../group/GroupList";
-import { PickerOptionList, type PickerItem } from "../group/PickerOptionList";
-import { Button } from "../ui/button";
+import { CreateGroupDialog } from "../group/CreateGroupDialog";
+import type { PickerItem } from "../group/PickerOptionList";
 import { ConfirmDialog } from "../ui/confirm-dialog";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "../ui/dialog";
-import { Input } from "../ui/input";
 import { toSessionItem, type SessionItem } from "../chat/SessionList";
 import { GroupChatView } from "./GroupChatView";
 
@@ -314,66 +306,24 @@ export function GroupView({ newGroupRequestId = 0, onGroupCount }: GroupViewProp
         </section>
       )}
 
-      <Dialog
+      <CreateGroupDialog
         open={createOpen}
+        name={newName}
+        members={newMembers}
+        options={memberOptions}
+        error={createError}
+        creating={creating}
         onOpenChange={(open) => {
           if (!open) setCreateOpen(false);
         }}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>新建群组</DialogTitle>
-            <DialogDescription>
-              一个群组就是一条群对话，成员在这里一次选好。
-            </DialogDescription>
-          </DialogHeader>
-
-          <Input
-            value={newName}
-            autoFocus
-            placeholder="群组名称"
-            onChange={(e) => setNewName(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") void handleCreateGroup();
-            }}
-          />
-
-          <div className="mt-3">
-            <p className="mb-1.5 px-1 text-[11px] font-medium text-ink-400">
-              成员（已选 {newMembers.length} 个角色）
-            </p>
-            <PickerOptionList
-              items={memberOptions}
-              picked={newMembers}
-              onToggle={(id) =>
-                setNewMembers((prev) =>
-                  prev.includes(id) ? prev.filter((p) => p !== id) : [...prev, id]
-                )
-              }
-              emptyText="还没有可添加的角色，请先在「角色」里创建"
-            />
-          </div>
-
-          {createError ? (
-            <p className="mt-2 rounded-xl bg-danger-50 px-3 py-2 text-[12.5px] text-danger-600">
-              {createError}
-            </p>
-          ) : null}
-
-          <div className="mt-4 flex justify-end gap-2">
-            <Button variant="ghost" onClick={() => setCreateOpen(false)}>
-              取消
-            </Button>
-            <Button
-              variant="primary"
-              disabled={!newName.trim() || creating}
-              onClick={() => void handleCreateGroup()}
-            >
-              {creating ? "创建中…" : "创建"}
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
+        onNameChange={setNewName}
+        onToggleMember={(id) =>
+          setNewMembers((prev) =>
+            prev.includes(id) ? prev.filter((p) => p !== id) : [...prev, id]
+          )
+        }
+        onCreate={() => void handleCreateGroup()}
+      />
 
       {/* 新建群组：与创建工作区一致的分阶段初始化进度（至少展示 1s） */}
       {createStep !== null ? (

@@ -188,29 +188,18 @@ export function ChatView({ newRequestId = 0, onConversationCount }: ChatViewProp
   }, [setError, setWorkspace]);
 
   useEffect(() => {
-    // App keeps newRequestId sticky; remounting ChatView (leave/return 对话)
-    // must not treat the same id as another create request.
+    // App 的 newRequestId 是 sticky 的：重进对话视图时，同一 id 不应再次触发新建。
     if (!newRequestId || newRequestId === lastHandledNewRequestId) return;
-    let cancelled = false;
-    // StrictMode 会立刻清理再执行一次；推迟到清理之后再请求，避免点一次建两个。
-    const timer = window.setTimeout(() => {
-      void (async () => {
-        if (cancelled || newRequestId === lastHandledNewRequestId) return;
-        lastHandledNewRequestId = newRequestId;
-        // 走带初始化进度的创建流程（至少 1s 的加载提示，成功后才切过去）。
-        const created = await createConversationWithProgress();
-        if (cancelled || !created) return;
-        await refreshListRef.current();
-        if (cancelled) return;
-        selectConversation(created.id);
-        setSkills([]);
-        setError(null);
-      })();
-    }, 0);
-    return () => {
-      cancelled = true;
-      window.clearTimeout(timer);
-    };
+    lastHandledNewRequestId = newRequestId;
+    void (async () => {
+      // 走带初始化进度的创建流程（至少 1s 的加载提示，成功后才切过去）。
+      const created = await createConversationWithProgress();
+      if (!created) return;
+      await refreshListRef.current();
+      selectConversation(created.id);
+      setSkills([]);
+      setError(null);
+    })();
   }, [newRequestId, selectConversation, createConversationWithProgress, setError, setSkills]);
 
   const filtered = useMemo(() => {

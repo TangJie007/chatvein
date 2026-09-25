@@ -11,7 +11,9 @@
     "app:dev": "tauri dev",
     "prepare:runtime": "powershell -ExecutionPolicy Bypass -File tools/build_backend.ps1",
     "prepare:backend": "powershell -ExecutionPolicy Bypass -File tools/build_backend.ps1",
-    "test:backend": ".venv/Scripts/python.exe -m pytest"
+    "test:backend": ".venv/Scripts/python.exe -m pytest",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@radix-ui/react-dialog": "^1.1.23",
@@ -42,11 +44,15 @@
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.3",
     "@tauri-apps/cli": "^2.1.0",
+    "@testing-library/dom": "^10.4.2",
+    "@testing-library/react": "^16.3.3",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.4",
+    "jsdom": "^30.1.1",
     "tailwindcss": "^4.3.3",
     "typescript": "^5.6.3",
-    "vite": "^5.4.11"
+    "vite": "^5.4.11",
+    "vitest": "^3.2.7"
   }
 }
