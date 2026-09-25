@@ -24,23 +24,11 @@ import { SessionList, toSessionItem, type SessionItem } from "../chat/SessionLis
 import { CreatingOverlay } from "../chat/CreatingOverlay";
 import { useChatSession } from "../chat/useChatSession";
 import { loadGroups } from "../../lib/groupsStore";
+import { CREATE_MIN_MS, CREATE_STEPS, sleep } from "../../lib/creationSteps";
 import { ConfirmDialog } from "../ui/confirm-dialog";
 
 /** Survives ChatView remount so sticky newRequestId from App doesn't re-create. */
 let lastHandledNewRequestId = 0;
-
-/**
- * 新建会话的初始化步骤。后续要加阶段（知识库索引 / 技能挂载 / 沙箱预热等）
- * 只往这里加文案，驱动逻辑按顺序推进即可。
- */
-const CREATE_STEPS = ["创建会话", "初始化工作区", "准备就绪"] as const;
-/** 创建请求通常几十毫秒就返回；至少展示 1s，避免加载提示一闪而过。 */
-const CREATE_MIN_MS = 1000;
-
-const sleep = (ms: number) =>
-  new Promise<void>((resolve) => {
-    window.setTimeout(resolve, ms);
-  });
 
 type ChatViewProps = {
   newRequestId?: number;

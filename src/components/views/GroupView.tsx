@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   createConversation,
   deleteConversation,
+  getConversationWorkspace,
   listConversations,
   listRoles,
   type ConversationRecord,
@@ -16,6 +17,8 @@ import {
 } from "../../lib/groupsStore";
 import { errorMessage } from "../../lib/errors";
 import { avatarUrl } from "../../lib/rolesStore";
+import { CREATE_MIN_MS, CREATE_STEPS, sleep } from "../../lib/creationSteps";
+import { CreatingOverlay } from "../chat/CreatingOverlay";
 import { GroupChat } from "../group/GroupChat";
 import { GroupList, type GroupMemberItem, type GroupSummary } from "../group/GroupList";
 import { PickerOptionList, type PickerItem } from "../group/PickerOptionList";
@@ -61,6 +64,8 @@ export function GroupView({ newGroupRequestId = 0, onGroupCount }: GroupViewProp
   const [newMembers, setNewMembers] = useState<string[]>([]);
   const [createError, setCreateError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+  /** 建群初始化进行中的步骤下标；null 表示不在创建中（遮罩隐藏）。 */
+  const [createStep, setCreateStep] = useState<number | null>(null);
   const [pendingDelete, setPendingDelete] = useState<{ id: string; name: string } | null>(
     null
   );
@@ -202,14 +207,33 @@ export function GroupView({ newGroupRequestId = 0, onGroupCount }: GroupViewProp
     [roles]
   );
 
+  const creatingRef = useRef(false);
   const handleCreateGroup = useCallback(async () => {
     const name = newName.trim();
-    if (!name || creating) return;
+    // 连点「创建」时只跑一次：否则两个群一起建，遮罩也会被前一个收尾提前关掉。
+    if (!name || creating || creatingRef.current) return;
+    creatingRef.current = true;
     setCreating(true);
     setCreateError(null);
+    // 关掉弹窗，改由全屏遮罩展示初始化进度（与创建工作区一致）。
+    setCreateOpen(false);
+    setCreateStep(0);
     try {
-      // 群组即群对话：建群的同时开好这条群对话。
-      const conv = await createConversation(name);
+      // 群组即群对话：建群的同时开好这条群对话，并初始化工作区。
+      const [conv] = await Promise.all([
+        createConversation(name),
+        sleep(CREATE_MIN_MS),
+      ]);
+      setCreateStep(1);
+      // 工作区目录 / 会话库初始化：等后端真正就绪。
+      await Promise.all([
+        getConversationWorkspace(conv.id).catch(() => null),
+        sleep(280),
+      ]);
+      setCreateStep(2);
+      await sleep(220);
+      setCreateStep(CREATE_STEPS.length);
+      await sleep(240);
       const group: ChatGroup = {
         ...makeGroup(name, groups.length),
         memberIds: newMembers,
@@ -218,11 +242,14 @@ export function GroupView({ newGroupRequestId = 0, onGroupCount }: GroupViewProp
       setConversations((prev) => [conv, ...prev]);
       setGroups((prev) => [...prev, group]);
       setActiveGroupId(group.id);
-      setCreateOpen(false);
     } catch (err) {
+      // 失败时重新打开弹窗，保留输入与错误提示。
+      setCreateOpen(true);
       setCreateError(errorMessage(err));
     } finally {
+      creatingRef.current = false;
       setCreating(false);
+      setCreateStep(null);
     }
   }, [creating, groups.length, newMembers, newName]);
 
@@ -243,7 +270,7 @@ export function GroupView({ newGroupRequestId = 0, onGroupCount }: GroupViewProp
   }, [activeGroupId, groups, pendingDelete]);
 
   return (
-    <>
+    <div className="relative flex min-h-0 min-w-0 flex-1">
       <GroupList
         groups={summaries}
         activeId={activeGroup?.id ?? null}
@@ -344,6 +371,11 @@ export function GroupView({ newGroupRequestId = 0, onGroupCount }: GroupViewProp
         </DialogContent>
       </Dialog>
 
+      {/* 新建群组：与创建工作区一致的分阶段初始化进度（至少展示 1s） */}
+      {createStep !== null ? (
+        <CreatingOverlay steps={CREATE_STEPS} active={createStep} />
+      ) : null}
+
       <ConfirmDialog
         open={!!pendingDelete}
         title="删除群组"
@@ -360,6 +392,6 @@ export function GroupView({ newGroupRequestId = 0, onGroupCount }: GroupViewProp
         }}
         onCancel={() => setPendingDelete(null)}
       />
-    </>
+    </div>
   );
 }
