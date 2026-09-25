@@ -5,6 +5,8 @@ from pydantic import BaseModel, Field
 
 class CreateRoleDto(BaseModel):
     name: str = Field(min_length=1, max_length=120)
+    # 一句话描述（列表副标题 / 群组花名册）
+    description: str | None = Field(default=None, max_length=200)
     initial: str | None = Field(default=None, max_length=8)
     # 头像图标文件名；None / 空串用 initial 色块
     avatar: str | None = Field(default=None, max_length=64)
@@ -32,6 +34,7 @@ class UpdateRoleDto(BaseModel):
     """部分更新：未传字段保持原值。"""
 
     name: str | None = Field(default=None, min_length=1, max_length=120)
+    description: str | None = Field(default=None, max_length=200)
     initial: str | None = Field(default=None, max_length=8)
     avatar: str | None = Field(default=None, max_length=64)
     prompt: str | None = None
@@ -55,6 +58,7 @@ class UpdateRoleDto(BaseModel):
 class RoleResponseDto(BaseModel):
     id: str
     name: str
+    description: str
     initial: str
     avatar: str
     prompt: str

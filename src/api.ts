@@ -288,6 +288,22 @@ export function createConversation(title = "") {
   });
 }
 
+/** 补注册群组成员：把参与角色 id 合并进会话（与现有成员去重，chats 模块）。 */
+export function registerGroupMembers(conversationId: string, groupMembers: string[]) {
+  return backendRequest<{ conversation_id: string; group_members: string[] }>(
+    `/api/chats/${conversationId}/group-members`,
+    "POST",
+    { group_members: groupMembers }
+  );
+}
+
+/** 读取会话群组成员（角色 id 列表，chats 模块）。 */
+export function getGroupMembers(conversationId: string) {
+  return backendRequest<{ conversation_id: string; group_members: string[] }>(
+    `/api/chats/${conversationId}/group-members`
+  );
+}
+
 /** 覆盖会话级技能集：Composer 勾选 / 移除 chip 时即时持久化（当前会话持续生效）。 */
 export function updateConversationSkills(conversationId: string, skills: string[]) {
   return backendRequest<{ conversation_id: string; skills: string[] }>(
@@ -307,7 +323,8 @@ export function sendChat(
   skills?: string[] | null,
   turnId?: string | null,
   signal?: AbortSignal | null,
-  appendUser: boolean = true
+  appendUser: boolean = true,
+  groupMembers?: string[] | null
 ) {
   return backendRequest<{
     reply: string;
@@ -343,6 +360,8 @@ export function sendChat(
     turn_id: turnId ?? null,
     // 群里 @ 多人时只有第一轮需要落用户消息，后续轮次只落各自的助手回复
     append_user_message: appendUser,
+    // 群组成员：随消息透传，后端注册 / 补注册到 chats 群组表（合并去重）
+    group_members: groupMembers ?? null,
   }, signal ?? undefined);
 }
 
@@ -865,6 +884,8 @@ export type RoleTone = "brand" | "violet" | "teal" | "amber" | "peach";
 export interface RoleRecord {
   id: string;
   name: string;
+  /** 一句话描述（列表副标题 / 群组花名册）。 */
+  description: string;
   /** 列表头像上的单字。 */
   initial: string;
   /** 头像图标文件名（如 avatar-11.png / avatar-user.png），空串用 initial 色块。 */
@@ -900,6 +921,8 @@ export interface RoleRecord {
 
 export type CreateRolePayload = {
   name: string;
+  /** 一句话描述（可选）。 */
+  description?: string;
   initial?: string;
   /** 头像图标文件名；空串 / 缺省用 initial 色块。 */
   avatar?: string;

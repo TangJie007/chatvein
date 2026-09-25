@@ -66,6 +66,7 @@ export function makeNewRole(count: number): CreateRolePayload {
   const tone = TONE_CYCLE[count % TONE_CYCLE.length];
   return {
     name: "新角色",
+    description: "",
     initial: "新",
     avatar: DEFAULT_ROLE_AVATAR,
     prompt: "你是一个专注特定场景的助手，按下列约束提供服务。",

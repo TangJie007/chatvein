@@ -204,17 +204,31 @@ def delete_last_exchange(
         return len(ids)
 
 
-def list_messages(db_path: Path, *, limit: int = 200) -> list[dict[str, Any]]:
-    """按时间正序返回最近 ``limit`` 条。"""
+def list_messages(
+    db_path: Path, *, limit: int = 200, actor_id: str | None = None
+) -> list[dict[str, Any]]:
+    """按时间正序返回最近 ``limit`` 条。
+
+    ``actor_id`` 非空时只返回该角色名下消息——团队模式下每个成员按
+    ``actor_id`` 隔离短期记忆，互不串线。
+    """
     ensure_session_db(db_path)
     limit = max(1, min(int(limit), 500))
     with _connect(db_path) as conn:
-        rows = conn.execute(
-            "SELECT id, role, content, route, used_llm, turn_id, "
-            "tokens, duration_ms, actor_id, created_at "
-            "FROM messages ORDER BY id DESC LIMIT ?",
-            (limit,),
-        ).fetchall()
+        if actor_id:
+            rows = conn.execute(
+                "SELECT id, role, content, route, used_llm, turn_id, "
+                "tokens, duration_ms, actor_id, created_at "
+                "FROM messages WHERE actor_id = ? ORDER BY id DESC LIMIT ?",
+                (actor_id, limit),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT id, role, content, route, used_llm, turn_id, "
+                "tokens, duration_ms, actor_id, created_at "
+                "FROM messages ORDER BY id DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
     ordered = list(reversed(rows))
     return [
         {

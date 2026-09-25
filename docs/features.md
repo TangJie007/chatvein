@@ -69,7 +69,7 @@ Agent 图细节见 [`agent-graphs.md`](./agent-graphs.md)；工具矩阵见 [`ag
 | 功能 | 说明 |
 | --- | --- |
 | 模型配置 | 多模型、启用/默认、API Key、上下文窗口等；主模型供 Agent | `models/` |
-| 角色管理 | 人格提示、绑定模型、生成参数、工具分组、记忆轮数；主角色不可删 | `roles/` + `RolesView` |
+| 角色管理 | 人格提示、绑定模型、生成参数、工具分组、记忆轮数、一句话描述（列表副标题 / 花名册）；主角色不可删 | `roles/` + `RolesView` |
 | SkillHub 浏览 | 列表 / 搜索 / 详情 / `SKILL.md` 代理 | `skills/service.py` |
 | Skill 安装 | 落到 `CHATVEIN_DATA_DIR/skills/<slug>/`；可卸载 | `skills/local_store.py` |
 | Composer 选用技能 | 优先展示已安装；发送时带 `skills` 注入 | `Composer.tsx` |
@@ -88,10 +88,15 @@ Agent 图细节见 [`agent-graphs.md`](./agent-graphs.md)；工具矩阵见 [`ag
 | Bash/PowerShell 确认 | 危险或写盘命令弹窗批准 | `BashApproval` |
 | 追踪窗口 | 独立窗看整轮 path / LLM / 工具 / token | `TraceWindow` |
 | 群组 | 左栏整栏是群对话列表（一行 = 一个群组），建群时选成员并开好群对话；右栏是独立的群聊面板：无模型条、无技能，上下文用量放在气泡上方；输入区可「@ 指派」给某个成员，由该成员绑定模型单独执行，气泡与指派记录按成员显示 | `GroupView` / `GroupChatView` |
+| 群组注册 | 会话持久化 `group_members`（角色 id 列表）：创建注册 / 补注册 / 随 `/api/chat` 消息透传，合并去重 | `conversations/` + `main.py` |
+| 团队模式 | `group_members` 非空时主 agent 自动进入团队模式：花名册注入 prompt，挂 `delegate_to_agent` 工具；成员用自己绑定的模型 / 工具 / 按 `actor_id` 隔离的独立短期记忆完成子任务，回复写回成员名下；小任务主 agent 直接完成不派发 | `agents/delegation.py` + `agents/graphs/medium|hard.py` + `main.py` |
+| 气泡耗时 | 对话气泡 100% 完整展示上下文（不压缩代码块高度）；tokens · 耗时显示在气泡内容之后 | `ChatPanel.tsx` / `MarkdownMessage.tsx` |
 | 设置 | 应用偏好（本地）、内置 MCP 状态、SQLite 信息 / VACUUM / 备份 | |
 | Tauri 消息层 | 启停 Python、注入 `CHATVEIN_DATA_DIR`、推送后端 URL | `src-tauri` |
 
-占位页（未做产品逻辑）：独立知识库管理 UI。群组只做前端分组（无后端群组表）。应用偏好里的托盘 / 开机启动 / 自动更新尚未接 Tauri 插件。
+占位页（未做产品逻辑）：独立知识库管理 UI。应用偏好里的托盘 / 开机启动 / 自动更新尚未接 Tauri 插件。
+
+团队模式能力边界见 [`team-mode-design.md`](./team-mode-design.md)：成员角色无模型 / 主 agent 无模型时退化，不支持嵌套派发（子 agent 不挂 `delegate_to_agent`）。
 
 ---
 
@@ -125,4 +130,5 @@ Agent 图细节见 [`agent-graphs.md`](./agent-graphs.md)；工具矩阵见 [`ag
 | [`agent-graphs.md`](./agent-graphs.md) | Agent 图设计（总图 / 三挡位 / 状态 / 接线） |
 | [`agents.md`](./agents.md) | 流水线摘要 + MCP 工具矩阵 + 边界 |
 | [`workspace.md`](./workspace.md) | 主工作区 vs 会话工作区 |
+| [`team-mode-design.md`](./team-mode-design.md) | 团队模式 + 群组注册 + 角色描述 + UI 气泡耗时 实现设计 |
 | [`README.md`](../README.md) | 快速开始与打包 |

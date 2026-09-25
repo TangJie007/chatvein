@@ -240,6 +240,11 @@ def build_hard_graph(
         #  让时间类问题无需选型命中、也无需角色勾选 core 分组即可拿到准确时间。）
         names = list(dict.fromkeys([*selected, *ALWAYS_ON_TOOLS]))
         tools = resolve_tools(names)
+        # 团队模式：把 delegate_to_agent 工具挂进本轮（主 agent 派发子任务给成员）。
+        if (role or {}).get("_team_mode"):
+            from agents.delegation import DELEGATE_TOOL  # pyright: ignore[reportImplicitRelativeImport]
+
+            tools = [*tools, DELEGATE_TOOL]
         model = llm_mod.get_chat_model(
             role=role,
             timeout=_LLM_TIMEOUT,

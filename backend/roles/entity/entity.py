@@ -22,6 +22,8 @@ class Role(SQLModel, table=True):
 
     id: str = Field(primary_key=True, max_length=64)
     name: str = Field(max_length=120)
+    # 一句话描述（列表副标题 / 群组花名册 / 委托任务派发参考）
+    description: str = Field(default="", max_length=200)
     # 列表头像上的单字，缺省取 name 首字
     initial: str = Field(default="", max_length=8)
     # 头像图标文件名（如 avatar-11.png / avatar-user.png），空串表示用 initial 色块

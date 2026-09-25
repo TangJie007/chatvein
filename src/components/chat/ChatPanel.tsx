@@ -363,20 +363,6 @@ export function ChatPanel({
                         isAgent ? "max-w-[min(92%,720px)]" : "max-w-[78%]"
                       )}
                     >
-                      {isAgent && !m.streaming ? (
-                        <div className="flex items-center gap-1.5 px-1 text-[11px] text-ink-400">
-                          {/* 群组：回复者名字，跟 tokens / 耗时排在同一行。 */}
-                          {variant === "group" ? (
-                            <span className="font-medium text-ink-500">
-                              {actor?.name ?? roleName ?? "成员"}
-                            </span>
-                          ) : null}
-                          <span>{formatTokens(m.tokens)}</span>
-                          <span aria-hidden="true">·</span>
-                          <span>{formatDuration(m.durationMs)}</span>
-                        </div>
-                      ) : null}
-
                       <div
                         onClick={
                           canInspect
@@ -422,6 +408,20 @@ export function ChatPanel({
                           />
                         )}
                       </div>
+                      {/* 耗时与 token 用量：紧跟气泡末尾标注本轮花费（时间在内容后面）。 */}
+                      {isAgent && !m.streaming ? (
+                        <div className="flex items-center gap-1.5 px-1 text-[11px] text-ink-400">
+                          {/* 群组：回复者名字，跟 tokens / 耗时排在同一行。 */}
+                          {variant === "group" ? (
+                            <span className="font-medium text-ink-500">
+                              {actor?.name ?? roleName ?? "成员"}
+                            </span>
+                          ) : null}
+                          <span>{formatTokens(m.tokens)}</span>
+                          <span aria-hidden="true">·</span>
+                          <span>{formatDuration(m.durationMs)}</span>
+                        </div>
+                      ) : null}
                       {/* 本轮异常：直接挂在提问气泡下方，用户一眼看到是哪一句失败了。 */}
                       {error && m.id === errorAnchorId ? (
                         <p

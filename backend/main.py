@@ -25,6 +25,10 @@ from pydantic import BaseModel, Field
 
 import db  # pyright: ignore[reportImplicitRelativeImport]
 from agents.service import run_chat  # pyright: ignore[reportImplicitRelativeImport]
+from chats.module import (  # pyright: ignore[reportImplicitRelativeImport]
+    chats_router,
+    chats_service,
+)
 from conversations.module import (  # pyright: ignore[reportImplicitRelativeImport]
     conversations_router,
     conversations_service,
@@ -85,6 +89,7 @@ app.add_middleware(
 app.include_router(models_router)
 app.include_router(roles_router)
 app.include_router(embeddings_router)
+app.include_router(chats_router)
 app.include_router(conversations_router)
 app.include_router(trace_router)
 app.include_router(skills_router)
@@ -103,6 +108,9 @@ class ChatRequest(BaseModel):
     # 群里 @ 多人时前端按成员依次发起一轮：只有第一轮需要落用户消息，
     # 后续轮次置 False，避免同一句提问在会话里重复出现 N 份。
     append_user_message: bool = Field(default=True)
+    # 群组成员（角色 id 列表）：随消息透传，注册 / 补注册到 chats.chat_groups（合并去重）。
+    # 团队模式 / 群组 @ 时前端把当前选中成员带上，后端持久化到独立群组表。
+    group_members: list[str] | None = Field(default=None, max_length=50)
 
 
 try:  # langchain-core 版本差异：拿不到用量回调就退化为不统计
@@ -145,6 +153,12 @@ def chat(req: ChatRequest):
 
 def _chat_turn(req: ChatRequest) -> dict[str, object]:
     prepared = conversations_service.open_for_chat(req.conversation_id, req.message)
+    # 群组注册：req.group_members 非空时随消息透传补注册（合并去重）。
+    # 角色 id 列表持久化到 chats.chat_groups 独立表，团队模式 / 群组 @ 依赖它。
+    if req.group_members:
+        chats_service.register_group_members(
+            prepared["id"], [str(m) for m in req.group_members]
+        )
     # 会话级技能：req.skills 非 None 时覆盖会话技能集合并持久化。前端 Composer
     # 勾选 / 移除时已通过 PUT /api/conversations/{id}/skills 即时保存，发送时再兜底
     # 同步一次（空数组 = 清空会话技能）。技能在本会话内持续生效，不随单条消息消失。
@@ -241,6 +255,16 @@ def _chat_turn(req: ChatRequest) -> dict[str, object]:
     elif skill_block:
         # 无角色时只注入技能目录；tools 省略表示不限制
         role_runtime = {"prompt": skill_block, **skill_ctx}
+    # --- 团队模式：主 agent 花名册注入 + delegate_to_agent 工具（chats 模块）---
+    # chats_service.assemble_team 是团队装配的唯一入口：req.group_members 非空时把
+    # 成员（名字 + 描述 + role id）注入主 agent 的 role prompt（告知可派发对象），打
+    # _team_mode 标记（medium/hard 据此挂 delegate_to_agent 工具），并把团队上下文
+    # 写入 ContextVar；未开启团队模式时原样返回 role_runtime。
+    role_runtime = chats_service.assemble_team(
+        role_runtime,
+        req.group_members,
+        workspace_dir=prepared["workspace_dir"],
+    )
     # 优先用前端带来的 turn_id（UI 边生成边轮询追踪）；缺失 / 非法时退回后端生成。
     turn_id = (req.turn_id or "").strip() or uuid.uuid4().hex
     db_path = session_db_path(

@@ -41,7 +41,6 @@ export function MarkdownMessage({ content, streaming = false }: MarkdownMessageP
       caret={streaming ? "block" : undefined}
       animated={streaming ? { animation: "fadeIn", duration: 140, sep: "word" } : false}
       lineNumbers={false}
-      codeBlockMaxHeight={320}
       controls={{ code: { copy: true, download: false }, table: { copy: true, download: false, fullscreen: false } }}
       translations={{
         copyCode: "复制代码",

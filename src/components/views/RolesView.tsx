@@ -138,6 +138,7 @@ export function RolesView() {
   const handleSave = async (form: RoleForm) => {
     const payload: UpdateRolePayload = {
       name: form.name,
+      description: form.description,
       initial: form.initial,
       avatar: form.avatar,
       prompt: form.prompt,
@@ -259,7 +260,7 @@ export function RolesView() {
                     />
                   </span>
                   <span className="truncate pl-[28px] text-[10px] text-ink-400">
-                    {modelLabel(r.model_id, models)}
+                    {r.description || modelLabel(r.model_id, models)}
                   </span>
                 </button>
               );
@@ -446,6 +447,14 @@ function RoleConfig({ role, models, loadingModels, onSave, onDelete }: RoleConfi
           <Collapsible title="基础设置" desc="名称、模型与启停状态" defaultOpen>
             <Row label="角色名称" hint="列表与会话头部展示">
               <TextInput compact value={form.name} onChange={(v) => set("name", v)} />
+            </Row>
+            <Row label="角色描述" hint="一句话说明用途，列表与群组花名册展示">
+              <TextInput
+                compact
+                value={form.description}
+                placeholder="例如：负责代码审查与重构"
+                onChange={(v) => set("description", v)}
+              />
             </Row>
             <Row label="头像图标" hint="">
               <AvatarPicker

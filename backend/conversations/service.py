@@ -295,11 +295,16 @@ class ConversationsService:
         *,
         conversation_id: str | None = None,
         limit: int = 24,
+        actor_id: str | None = None,
     ) -> list[dict[str, Any]]:
-        """从会话 ``logs/session.sqlite`` 读取短期记忆。"""
+        """从会话 ``logs/session.sqlite`` 读取短期记忆。
+
+        ``actor_id`` 非空时只取该角色名下消息：团队模式下每个成员（含主 agent）
+        按 ``actor_id`` 隔离自己的记忆链。
+        """
         _ = conversation_id
         db = session_db_path(self.workspace_root_for(workspace_dir))
-        return session_store.list_messages(db, limit=limit)
+        return session_store.list_messages(db, limit=limit, actor_id=actor_id)
 
     def record_turn(
         self,
@@ -315,11 +320,13 @@ class ConversationsService:
         turn_id: str | None = None,
         tokens: int = 0,
         duration_ms: int = 0,
+        # 团队模式下写回成员名下（actor_id=role_id），形成各自独立的记忆链。
+        actor_id: str | None = None,
     ) -> None:
         """写入会话库：消息 + 本轮工具轨迹 + 本轮推理。"""
         root = self.workspace_root_for(workspace_dir)
         db = session_db_path(root)
-        session_store.append_message(db, "user", user_text, route=route)
+        session_store.append_message(db, "user", user_text, route=route, actor_id=actor_id)
         turn_id = turn_id or uuid.uuid4().hex
         session_store.append_message(
             db,
@@ -332,6 +339,7 @@ class ConversationsService:
             tool_plan=tool_plan,
             tokens=tokens,
             duration_ms=duration_ms,
+            actor_id=actor_id,
         )
         for item in tool_trace or []:
             session_store.append_tool_call(

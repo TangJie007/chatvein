@@ -27,7 +27,10 @@ from sqlmodel import Session, SQLModel
 # v7: llm_models 移除 is_default / is_primary 列（不再区分主/默认模型）；
 # v8: conversations.skills 会话级技能列（JSON slug 列表，Composer 勾选、当前会话持续生效）。
 # v9: roles.avatar 角色头像图标文件名列（空串用 initial 色块）。
-SCHEMA_VERSION = 9
+# v10: roles.description 角色一句话描述列（列表副标题 / 群组花名册）。
+# v11: conversations.group_members 群组成员列（JSON 角色 id 列表，@ 指派 / 团队模式）。
+# v12: 群组 / 团队功能独立成 chats 模块：成员数据迁入独立表 chat_groups，删除 conversations.group_members 列。
+SCHEMA_VERSION = 12
 DB_FILENAME = "chatvein.db"
 
 _BACKEND_DIR = Path(__file__).resolve().parent
@@ -135,11 +138,12 @@ def register_entities() -> None:
     global _entities_registered
     if _entities_registered:
         return
+    from chats.entity import ChatGroup  # noqa: F401
     from conversations.entity import Conversation  # noqa: F401
     from models.entity import LlmModel  # noqa: F401
     from roles.entity import Role  # noqa: F401
 
-    _ = (Conversation, LlmModel, Role)
+    _ = (Conversation, LlmModel, Role, ChatGroup)
     _entities_registered = True
 
 
@@ -189,6 +193,16 @@ def _ensure_roles_avatar_column(connection: Connection) -> None:
         ).close()
 
 
+def _ensure_roles_description_column(connection: Connection) -> None:
+    """v10：给旧库的 ``roles`` 表补上 ``description`` 列（一句话描述）。"""
+    rows = connection.exec_driver_sql("PRAGMA table_info(roles)").fetchall()
+    names = {str(row[1]) for row in rows}
+    if names and "description" not in names:
+        connection.exec_driver_sql(
+            "ALTER TABLE roles ADD COLUMN description VARCHAR(200) NOT NULL DEFAULT ''"
+        ).close()
+
+
 def _ensure_conversations_skills_column(connection: Connection) -> None:
     """v8：给旧库的 ``conversations`` 表补上 ``skills`` 列（会话级技能 slug，JSON 文本）。"""
     rows = connection.exec_driver_sql("PRAGMA table_info(conversations)").fetchall()
@@ -197,6 +211,52 @@ def _ensure_conversations_skills_column(connection: Connection) -> None:
         connection.exec_driver_sql(
             "ALTER TABLE conversations ADD COLUMN skills VARCHAR(4096) NOT NULL DEFAULT '[]'"
         ).close()
+
+
+def _split_group_members_to_chat_groups(connection: Connection) -> None:
+    """v12：把 conversations.group_members 存量数据搬到独立表 chat_groups 后删列。
+
+    群组 / 团队（chats）模块自 v12 起独立管理成员花名册，不再占用 conversations 列。
+    v11 之前的库没有该列（v11 才引入），探测到列存在才执行；新库由实体定义直接建新表。
+    """
+    import json
+
+    rows = connection.exec_driver_sql("PRAGMA table_info(conversations)").fetchall()
+    names = {str(row[1]) for row in rows}
+    if "group_members" not in names:
+        return
+    now = utc_now().strftime("%Y-%m-%d %H:%M:%S")
+    for cid, raw in connection.exec_driver_sql(
+        "SELECT id, group_members FROM conversations"
+    ).fetchall():
+        try:
+            loaded = json.loads(raw or "[]")
+        except (TypeError, ValueError):
+            continue
+        if not isinstance(loaded, list):
+            continue
+        cleaned: list[str] = []
+        seen: set[str] = set()
+        for item in loaded:
+            slug = str(item).strip()
+            if not slug or slug in seen:
+                continue
+            seen.add(slug)
+            cleaned.append(slug)
+        if not cleaned:
+            continue
+        connection.exec_driver_sql(
+            "INSERT OR IGNORE INTO chat_groups(conversation_id, members, created_at, updated_at) "
+            "VALUES (?, ?, ?, ?)",
+            (str(cid), json.dumps(cleaned, ensure_ascii=False), now, now),
+        ).close()
+    try:
+        connection.exec_driver_sql("ALTER TABLE conversations DROP COLUMN group_members").close()
+    except Exception as exc:  # noqa: BLE001 — 老 SQLite 不支持 DROP COLUMN
+        print(
+            f"CHATVEIN migrate drop conversations.group_members skipped: {exc}",
+            flush=True,
+        )
 
 
 def _drop_llm_models_flag_columns(connection: Connection) -> None:
@@ -289,6 +349,10 @@ def _migrate(connection: Connection) -> None:
         _ensure_conversations_skills_column(connection)
     if current < 9:
         _ensure_roles_avatar_column(connection)
+    if current < 10:
+        _ensure_roles_description_column(connection)
+    if current < 12:
+        _split_group_members_to_chat_groups(connection)
     if current != SCHEMA_VERSION:
         connection.exec_driver_sql(f"PRAGMA user_version = {SCHEMA_VERSION}").close()
 

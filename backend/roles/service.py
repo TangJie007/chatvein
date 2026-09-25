@@ -52,6 +52,7 @@ class RolesService:
         return RoleResponseDto(
             id=entity.id,
             name=entity.name,
+            description=entity.description,
             initial=entity.initial,
             avatar=entity.avatar,
             prompt=entity.prompt,
@@ -93,6 +94,7 @@ class RolesService:
         entity = Role(
             id=_new_id(),
             name=name,
+            description=(dto.description or "").strip(),
             initial=initial,
             avatar=(dto.avatar or "").strip(),
             prompt=dto.prompt or "",
@@ -131,6 +133,8 @@ class RolesService:
 
         if data.get("name") is not None:
             entity.name = str(data["name"]).strip() or entity.name
+        if data.get("description") is not None:
+            entity.description = str(data["description"]).strip()
         if data.get("initial") is not None:
             entity.initial = (str(data["initial"]).strip()[:1]) or entity.initial
         if data.get("avatar") is not None:
@@ -207,6 +211,7 @@ class RolesService:
         return {
             "id": entity.id,
             "name": entity.name,
+            "description": entity.description,
             "avatar": entity.avatar,
             "prompt": entity.prompt,
             "model_id": entity.model_id,
