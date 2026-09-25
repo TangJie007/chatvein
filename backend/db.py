@@ -539,8 +539,8 @@ def table_detail(name: str, limit: int = 50, offset: int = 0) -> dict[str, objec
         if is_table:
             pragma_rows = session.execute(text(f"PRAGMA table_info({safe})")).fetchall()
             columns: list[dict[str, object]] = []
-            for i, row in enumerate(pragma_rows):
-                values = tuple(row)
+            for i, pragma_row in enumerate(pragma_rows):
+                values = tuple(pragma_row)
                 columns.append({
                     "cid": int(values[0]) if values[0] is not None else i,
                     "name": str(values[1]),
@@ -599,8 +599,9 @@ def _coerce_cell(value: object) -> object:
     if isinstance(value, (int, float, str, bool)):
         return value
     # datetime / date 等对象兜底
+    iso = getattr(value, "isoformat", None)
     try:
-        return value.isoformat() if hasattr(value, "isoformat") else str(value)
+        return iso() if callable(iso) else str(value)
     except Exception:  # noqa: BLE001
         return str(value)
 
