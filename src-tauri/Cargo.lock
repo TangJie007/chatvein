@@ -480,6 +480,7 @@ dependencies = [
 name = "chatvein"
 version = "0.1.0"
 dependencies = [
+ "rand",
  "serde",
  "tauri",
  "tauri-build",

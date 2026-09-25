@@ -10,6 +10,25 @@ use tauri::{AppHandle, Emitter, Manager};
 /// - Release builds (`tauri build`): a dynamically picked free port >= `3000`.
 static BACKEND_PORT: OnceLock<u16> = OnceLock::new();
 
+/// Per-run random token that authorizes frontend → backend requests.
+///
+/// Generated once at process start, handed to the Python backend via the
+/// `CHATVEIN_TOKEN` env var, and exposed to the React UI through the
+/// `backend_token` command. The backend rejects any request whose
+/// `X-ChatVein-Token` header does not match.
+static BACKEND_TOKEN: OnceLock<String> = OnceLock::new();
+
+/// The shared access token for this app run (never persisted).
+pub fn backend_token() -> String {
+    BACKEND_TOKEN.get_or_init(|| {
+        use rand::RngExt;
+        let mut bytes = [0u8; 32];
+        rand::rng().fill(&mut bytes);
+        bytes.iter().map(|b| format!("{b:02x}")).collect()
+    })
+    .clone()
+}
+
 /// Resolve the backend port. Computed lazily on first use and cached.
 pub fn backend_port() -> u16 {
     *BACKEND_PORT.get_or_init(|| {
@@ -163,6 +182,8 @@ pub fn spawn_backend(app: &AppHandle) {
         cmd.arg(arg);
     }
     cmd.env("CHATVEIN_RESOURCE_DIR", &resource_dir);
+    // 访问令牌：后端校验每个请求的 X-ChatVein-Token，非本应用启动的请求一律拒绝。
+    cmd.env("CHATVEIN_TOKEN", backend_token());
     // Dev: uvicorn --reload so edits under backend/*.py pick up without
     // restarting `tauri dev`. Release / frozen builds never set this.
     #[cfg(debug_assertions)]

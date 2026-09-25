@@ -14,6 +14,25 @@ let cachedUrl: string | null = null;
 /** Set when Rust emits `backend-ready` (or a successful health poll). */
 let backendReady = false;
 
+/** Per-run access token handed out by Rust (`backend_token` command). */
+let cachedToken: string | null | undefined;
+
+/**
+ * The access token for this backend run. The Python side validates every
+ * request against it (`CHATVEIN_TOKEN` env var), so only requests carrying
+ * `X-ChatVein-Token` are served.
+ */
+export async function getBackendToken(): Promise<string | null> {
+  if (cachedToken !== undefined) return cachedToken;
+  try {
+    cachedToken = await invoke<string>("backend_token");
+  } catch {
+    // Browser preview without Tauri — no token available.
+    cachedToken = null;
+  }
+  return cachedToken;
+}
+
 /** Cache URL from the Rust `backend-ready` event so later requests skip cold start. */
 export function markBackendReady(url: string): void {
   cachedUrl = url;
@@ -37,10 +56,12 @@ export async function waitForBackend(timeoutMs = 20000): Promise<string> {
   if (backendReady && cachedUrl) return cachedUrl;
   const url = await getBackendUrl();
   const deadline = Date.now() + timeoutMs;
+  const token = await getBackendToken();
+  const headers = token ? { "X-ChatVein-Token": token } : undefined;
   while (Date.now() < deadline) {
     if (backendReady && cachedUrl) return cachedUrl;
     try {
-      const r = await fetch(`${url}/api/health`);
+      const r = await fetch(`${url}/api/health`, { headers });
       if (r.ok) {
         markBackendReady(url);
         return url;
@@ -62,9 +83,13 @@ export async function backendRequest<T = unknown>(
 ): Promise<T> {
   const url = await waitForBackend();
   try {
+    const token = await getBackendToken();
+    const headers: Record<string, string> = {};
+    if (body) headers["Content-Type"] = "application/json";
+    if (token) headers["X-ChatVein-Token"] = token;
     const res = await fetch(`${url}${endpoint}`, {
       method,
-      headers: body ? { "Content-Type": "application/json" } : undefined,
+      headers,
       body: body ? JSON.stringify(body) : undefined,
       signal: signal ?? undefined,
     });

@@ -79,12 +79,38 @@ app = FastAPI(
     openapi_url="/openapi.json",
 )
 
+# CORS：仅允许本机来源（Tauri webview / 本机开发页面），拒绝其它站点读取本机 API。
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=[
+        "tauri://localhost",
+        "http://tauri.localhost",
+        "https://tauri.localhost",
+    ],
+    allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$",
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type", "X-ChatVein-Token"],
 )
+
+# 访问令牌：Rust 启动后端时通过 CHATVEIN_TOKEN 注入，前端每次请求带
+# X-ChatVein-Token header，这里逐请求校验，不匹配直接 401。
+# 未设置该变量（手动 `python backend/main.py` 调试 / 单测）时不强制校验。
+_token = os.environ.get("CHATVEIN_TOKEN", "").strip()
+
+if _token:
+    from fastapi import Request
+    from fastapi.responses import JSONResponse
+
+    @app.middleware("http")
+    async def _token_guard(request: Request, call_next):
+        # CORS 预检与 OpenAPI 文档页无需令牌
+        if request.method == "OPTIONS":
+            return await call_next(request)
+        if not request.url.path.startswith("/api/"):
+            return await call_next(request)
+        if request.headers.get("X-ChatVein-Token") != _token:
+            return JSONResponse(status_code=401, content={"detail": "无效的访问令牌"})
+        return await call_next(request)
 
 app.include_router(models_router)
 app.include_router(roles_router)

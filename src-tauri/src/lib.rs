@@ -33,7 +33,10 @@ pub fn run() {
             }
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![commands::backend_url])
+        .invoke_handler(tauri::generate_handler![
+            commands::backend_url,
+            commands::backend_token
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

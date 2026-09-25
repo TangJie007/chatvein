@@ -5,3 +5,11 @@
 pub fn backend_url() -> String {
     crate::backend::backend_base_url()
 }
+
+/// Expose this run's access token to the frontend. Every request to the Python
+/// backend must carry it in the `X-ChatVein-Token` header; the backend rejects
+/// requests without a matching token (also sent via `CHATVEIN_TOKEN`).
+#[tauri::command]
+pub fn backend_token() -> String {
+    crate::backend::backend_token()
+}

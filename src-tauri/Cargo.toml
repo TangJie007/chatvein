@@ -19,6 +19,7 @@ tauri-plugin-dialog = "2"
 tauri-plugin-http = "~2.6"
 tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }
+rand = "0.10"
 
 [profile.release]
 panic = "abort"
