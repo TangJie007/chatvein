@@ -5,6 +5,7 @@ import {
   getConversationWorkspace,
   listConversations,
   listRoles,
+  registerGroupMembers,
   type ConversationRecord,
   type RoleRecord,
   type RoleTone,
@@ -226,7 +227,10 @@ export function GroupView({ newGroupRequestId = 0, onGroupCount }: GroupViewProp
       ]);
       setCreateStep(1);
       // 工作区目录 / 会话库初始化：等后端真正就绪。
+      // 群成员注册到后端 chat_groups 表（团队模式花名册 / 跨设备恢复依赖它）；
+      // 失败不阻断建群，发送时随消息透传 group_members 会兜底补注册。
       await Promise.all([
+        registerGroupMembers(conv.id, newMembers).catch(() => {}),
         getConversationWorkspace(conv.id).catch(() => null),
         sleep(280),
       ]);

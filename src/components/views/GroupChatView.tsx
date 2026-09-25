@@ -71,6 +71,9 @@ export function GroupChatView({
     roleId: activeRole?.id ?? null,
     // 群对话由建群流程保证存在：不允许在群里临时建会话。
     allowCreate: false,
+    // 群成员随每次发送透传 group_members：后端补注册 + 装配团队模式
+    // （delegate_to_agent 分工），即使建群时注册失败这里也能兜底补上。
+    groupMemberIds: members.map((r) => r.id),
     onRefreshList,
   });
   const {

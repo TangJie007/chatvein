@@ -101,6 +101,8 @@ type UseChatSessionOptions = {
   onSelectConversation?: (id: string) => void;
   /** 发送成功后刷新外层列表（会话预览 / 群组左栏群对话预览）。 */
   onRefreshList?: () => void;
+  /** 群组成员（角色 id）：随每次发送透传，后端注册进 chat_groups 并装配团队模式。 */
+  groupMemberIds?: string[] | null;
 };
 
 export function useChatSession({
@@ -109,6 +111,7 @@ export function useChatSession({
   allowCreate = false,
   onSelectConversation,
   onRefreshList,
+  groupMemberIds = null,
 }: UseChatSessionOptions) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [workspace, setWorkspace] = useState<ConversationWorkspace | null>(null);
@@ -317,7 +320,9 @@ export function useChatSession({
               turnId,
               controller.signal,
               // 同一句提问只在第一轮落库，后续成员只追加各自那条助手回复。
-              index === 0
+              index === 0,
+              // 群成员透传：后端注册进 chat_groups 并装配团队模式（delegate 分工）。
+              groupMemberIds
             );
             // 兜底：后端换了会话（理论上不会），切过去时同样跳过整表重载。
             if (result.conversation_id !== activeConversationId) {
@@ -390,6 +395,7 @@ export function useChatSession({
     [
       allowCreate,
       conversationId,
+      groupMemberIds,
       onRefreshList,
       onSelectConversation,
       roleId,
