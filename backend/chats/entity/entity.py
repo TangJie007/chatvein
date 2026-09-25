@@ -6,6 +6,7 @@
 
 from datetime import datetime
 
+from sqlalchemy import Column, ForeignKey, String
 from sqlmodel import Field, SQLModel
 
 from db import utc_now  # pyright: ignore[reportImplicitRelativeImport]
@@ -21,10 +22,12 @@ class ChatGroup(SQLModel, table=True):
     __tablename__ = "chat_groups"  # pyright: ignore[reportAssignmentType]
 
     conversation_id: str = Field(
-        primary_key=True,
-        max_length=64,
-        foreign_key="conversations.id",
-        sa_column_kwargs={"ondelete": "CASCADE"},
+        sa_column=Column(
+            "conversation_id",
+            String(64),
+            ForeignKey("conversations.id", ondelete="CASCADE"),
+            primary_key=True,
+        )
     )
     # 群组成员（JSON 文本：角色 id 列表）。@ 指派 / 团队模式标识该会话的参与成员。
     members: str = Field(default="[]", max_length=4096)

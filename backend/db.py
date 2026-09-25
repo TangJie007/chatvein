@@ -338,19 +338,19 @@ def _migrate(connection: Connection) -> None:
     if current == 1:
         _normalise_v1_timestamps(connection)
     SQLModel.metadata.create_all(connection)
+    # 列补齐迁移无条件执行：各 *_ensure_* 自带 PRAGMA table_info 探测，幂等。
+    # 不能按 user_version 门控——旧库若在“补列迁移加入代码之前”就已达到更高版本，
+    # 版本号门控会让这些列永久缺失（create_all 不会给已存在表加列），导致运行期
+    # “no such column” 500。
     _ensure_workspace_dir_column(connection)
+    _ensure_roles_resident_skills_column(connection)
+    _ensure_conversations_skills_column(connection)
+    _ensure_roles_avatar_column(connection)
+    _ensure_roles_description_column(connection)
     if current < 5:
         _drop_main_messages_table(connection)
-    if current < 6:
-        _ensure_roles_resident_skills_column(connection)
     if current < 7:
         _drop_llm_models_flag_columns(connection)
-    if current < 8:
-        _ensure_conversations_skills_column(connection)
-    if current < 9:
-        _ensure_roles_avatar_column(connection)
-    if current < 10:
-        _ensure_roles_description_column(connection)
     if current < 12:
         _split_group_members_to_chat_groups(connection)
     if current != SCHEMA_VERSION:
