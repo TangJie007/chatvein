@@ -27,6 +27,10 @@ from trace.recording import active_callbacks
 
 WireProfile = Literal["openai", "deepseek"]
 
+#: 单次模型调用的兜底超时（秒）：网关挂起 / 网络黑洞时不能无限占住工作线程。
+#: 调用方可显式传 ``timeout`` 覆盖；None 时使用本默认值。
+_DEFAULT_TIMEOUT = 300.0
+
 
 class ChatOpenAICompat(ChatOpenAI):
     """通用 OpenAI 兼容客户端。
@@ -159,8 +163,9 @@ def get_chat_model(
     profile = resolve_wire_profile(cfg)
     if thinking is False and profile == "deepseek":
         kwargs["extra_body"] = {"thinking": {"type": "disabled"}}
-    if timeout is not None:
-        kwargs["timeout"] = timeout
+    # 默认给一个兜底超时：不传 timeout 时按 _DEFAULT_TIMEOUT，避免挂起的
+    # 请求无限占住线程（配合 async 路由的 to_thread 卸载一起控制并发占用）。
+    kwargs["timeout"] = timeout if timeout is not None else _DEFAULT_TIMEOUT
     callbacks = active_callbacks()
     if callbacks:
         kwargs["callbacks"] = callbacks

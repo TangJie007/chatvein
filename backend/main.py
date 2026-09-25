@@ -4,6 +4,7 @@ Rust/Tauri 侧车进程：启动后把真实 base URL 推给前端，前端直�
 模型管理等业务路由在 lifespan 中挂载；OpenAPI / Swagger UI 默认开启。
 """
 import argparse
+import asyncio
 import base64
 import os
 import re
@@ -19,7 +20,7 @@ from pathlib import Path
 from typing import Any, cast
 
 import uvicorn
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
@@ -98,7 +99,6 @@ app.add_middleware(
 _token = os.environ.get("CHATVEIN_TOKEN", "").strip()
 
 if _token:
-    from fastapi import Request
     from fastapi.responses import JSONResponse
 
     @app.middleware("http")
@@ -162,14 +162,21 @@ def _collect_tokens(usage: Any) -> int:
 
 
 @app.post("/api/chat", tags=["chat"], summary="改写 + 难度路由 + 工具选择")
-def chat(req: ChatRequest):
+async def chat(req: ChatRequest, request: Request):
     """对话主入口。
 
+    async 路由：耗时的 LangGraph 调用通过 ``asyncio.to_thread`` 卸载到工作线程，
+    事件循环不被长任务占住，多会话并发不再挤占同步路由的线程池。
+    客户端断开（前端停止 / 关闭）时跳过落库，避免「前端停止后记录仍稍后写入」，
+    前端因此不再需要 cleanupInFlight 轮询兜底。
     对话过程中抛出的异常一律转成可读的 HTTP detail，避免前端只拿到裸
     ``Internal Server Error`` 而无从提示用户。
     """
     try:
-        return _chat_turn(req)
+        if await request.is_disconnected():
+            # 请求到达时客户端已离开：什么都不做，避免白占线程。
+            return _aborted_payload()
+        return await _chat_turn(req, request)
     except HTTPException:
         raise
     except Exception as exc:  # noqa: BLE001
@@ -177,7 +184,7 @@ def chat(req: ChatRequest):
         raise HTTPException(status_code=500, detail=f"对话失败：{exc}") from exc
 
 
-def _chat_turn(req: ChatRequest) -> dict[str, object]:
+async def _chat_turn(req: ChatRequest, request: Request) -> dict[str, object]:
     prepared = conversations_service.open_for_chat(req.conversation_id, req.message)
     # 群组注册：req.group_members 非空时随消息透传补注册（合并去重）。
     # 角色 id 列表持久化到 chats.chat_groups 独立表，团队模式 / 群组 @ 依赖它。
@@ -296,25 +303,35 @@ def _chat_turn(req: ChatRequest) -> dict[str, object]:
     db_path = session_db_path(
         conversations_service.workspace_root_for(prepared["workspace_dir"])
     )
-    started = time.perf_counter()
-    with trace_service.recording(
-        req.message,
-        db_path=db_path,
-        turn_id=turn_id,
-        role=role_runtime,
-    ):
-        with use_conversation_sandbox(prepared["workspace_dir"]):
-            if _usage_callback is not None:
-                with _usage_callback() as usage_cb:
-                    result = run_chat(req.message, history=history, role=role_runtime)
-                tokens = _collect_tokens(usage_cb)
-            else:
-                result = run_chat(req.message, history=history, role=role_runtime)
-                tokens = 0
-    duration_ms = int((time.perf_counter() - started) * 1000)
+    # 长耗时链路（追踪 + 会话沙箱 + LangGraph 对话 + token 统计）整体进工作线程：
+    # trace / 沙箱靠线程内 ContextVar 传递，run_chat 与它必须同线程；异步路由因此
+    # 不再占住事件循环，也不挤占同步路由的线程池。
+    heavy = await asyncio.to_thread(
+        _run_chat_heavy,
+        req,
+        prepared,
+        role_runtime,
+        turn_id,
+        db_path,
+        history,
+    )
+    result = heavy["result"]
+    tokens = heavy["tokens"]
+    duration_ms = heavy["duration_ms"]
     reply = str(result.get("reply") or "")
     route = str(result.get("difficulty") or result.get("route") or "simple")
     tool_trace = list(result.get("tool_trace") or [])
+    # 客户端已断开（前端停止 / 关闭）：跳过落库，否则记录会在前端停止后
+    # 稍后写入，留下「幽灵消息」要前端轮询清理。
+    if await request.is_disconnected():
+        return _aborted_payload(
+            result=result,
+            tokens=tokens,
+            duration_ms=duration_ms,
+            turn_id=turn_id,
+            route=route,
+            tool_trace=tool_trace,
+        )
     conversation_id, user_msg, assistant_msg = conversations_service.save_exchange(
         prepared["id"],
         req.message,
@@ -349,6 +366,76 @@ def _chat_turn(req: ChatRequest) -> dict[str, object]:
         "user_message": user_msg,
         "assistant_message": assistant_msg,
         "workspace": insight,
+    }
+
+
+def _run_chat_heavy(
+    req: ChatRequest,
+    prepared: dict[str, Any],
+    role_runtime: dict[str, Any] | None,
+    turn_id: str,
+    db_path: Path,
+    history: list[dict[str, Any]] | None,
+) -> dict[str, Any]:
+    """长耗时部分：追踪 + 会话沙箱 + LangGraph 对话 + token 统计。
+
+    整体在一个工作线程里执行：trace 回调 / 沙箱工具靠线程内 ContextVar 传递，
+    与 ``run_chat`` 必须同线程；SQLite 连接在 ``check_same_thread=False`` 下
+    可跨线程使用，但这里仍保持「谁跑 run_chat 谁写库」的单线程语义。
+    """
+    started = time.perf_counter()
+    with trace_service.recording(
+        req.message,
+        db_path=db_path,
+        turn_id=turn_id,
+        role=role_runtime,
+    ):
+        with use_conversation_sandbox(prepared["workspace_dir"]):
+            if _usage_callback is not None:
+                with _usage_callback() as usage_cb:
+                    result = run_chat(req.message, history=history, role=role_runtime)
+                tokens = _collect_tokens(usage_cb)
+            else:
+                result = run_chat(req.message, history=history, role=role_runtime)
+                tokens = 0
+    duration_ms = int((time.perf_counter() - started) * 1000)
+    return {"result": result, "tokens": tokens, "duration_ms": duration_ms}
+
+
+def _aborted_payload(
+    *,
+    result: dict[str, Any] | None = None,
+    tokens: int = 0,
+    duration_ms: int = 0,
+    turn_id: str = "",
+    route: str = "simple",
+    tool_trace: list[dict[str, Any]] | None = None,
+) -> dict[str, object]:
+    """客户端已断开时的占位响应：本轮不落库，只回放运行结果。
+
+    ``result`` 为空（请求刚到就被放弃）时返回全空占位；调用方已跑完对话时
+    带上结果，便于需要时复用（连接已断，正常不会有人读到）。
+    """
+    empty = result is None
+    return {
+        "reply": "" if empty else str(result.get("reply") or ""),
+        "from": "agents",
+        "difficulty": route,
+        "rewritten": None if empty else result.get("rewritten"),
+        "route": route,
+        "route_reason": None if empty else result.get("route_reason"),
+        "tool_plan_reason": None if empty else result.get("tool_plan_reason"),
+        "selected_tools": [] if empty else list(result.get("selected_tools") or []),
+        "tool_trace": [] if empty else list(tool_trace or []),
+        "used_llm": False if empty else bool(result.get("used_llm", False)),
+        "turn_id": turn_id,
+        "tokens": tokens,
+        "duration_ms": duration_ms,
+        "conversation_id": None,
+        "user_message": None,
+        "assistant_message": None,
+        "workspace": None,
+        "discarded": True,
     }
 
 

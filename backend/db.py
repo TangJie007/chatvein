@@ -30,7 +30,8 @@ from sqlmodel import Session, SQLModel
 # v10: roles.description 角色一句话描述列（列表副标题 / 群组花名册）。
 # v11: conversations.group_members 群组成员列（JSON 角色 id 列表，@ 指派 / 团队模式）。
 # v12: 群组 / 团队功能独立成 chats 模块：成员数据迁入独立表 chat_groups，删除 conversations.group_members 列。
-SCHEMA_VERSION = 12
+# v13: conversations 冗余 message_count / last_message 列，列表 / 计数不再逐个打开会话空间库。
+SCHEMA_VERSION = 13
 DB_FILENAME = "chatvein.db"
 
 _BACKEND_DIR = Path(__file__).resolve().parent
@@ -213,6 +214,63 @@ def _ensure_conversations_skills_column(connection: Connection) -> None:
         ).close()
 
 
+def _ensure_conversations_preview_columns(connection: Connection) -> None:
+    """v13：给旧库 ``conversations`` 补 ``message_count`` / ``last_message`` 冗余列。
+
+    消息数 / 最后一条消息预览此前靠逐个打开会话空间库统计（N+1），现冗余到
+    主库；写入路径（save_exchange / record_turn / delete_last_exchange）同步维护。
+    """
+    rows = connection.exec_driver_sql("PRAGMA table_info(conversations)").fetchall()
+    names = {str(row[1]) for row in rows}
+    if names and "message_count" not in names:
+        connection.exec_driver_sql(
+            "ALTER TABLE conversations ADD COLUMN message_count INTEGER NOT NULL DEFAULT 0"
+        ).close()
+    if names and "last_message" not in names:
+        connection.exec_driver_sql(
+            "ALTER TABLE conversations ADD COLUMN last_message VARCHAR(2048) NOT NULL DEFAULT ''"
+        ).close()
+
+
+def _backfill_conversation_previews(connection: Connection) -> None:
+    """v13：为升级前的旧会话一次性回填 ``message_count`` / ``last_message``。
+
+    只对「冗余列为空」的会话逐个打开空间库一次；迁移完成后列表 / 计数查询
+    不再碰 session.sqlite。文件不存在 / 解析失败的会话跳过，不产生目录副作用。
+    """
+    try:
+        from conversations import session_store  # pyright: ignore[reportImplicitRelativeImport]
+        from mcps.sandbox import (  # pyright: ignore[reportImplicitRelativeImport]
+            conversation_root,
+            session_db_path,
+        )
+    except Exception:
+        return
+    convs = connection.exec_driver_sql(
+        "SELECT id, workspace_dir FROM conversations "
+        "WHERE message_count = 0 AND last_message = ''"
+    ).fetchall()
+    for cid, ws in convs:
+        name = str(ws or "").strip()
+        if not name:
+            continue
+        try:
+            db_path = session_db_path(conversation_root(name))
+        except ValueError:
+            continue
+        if not db_path.is_file():
+            continue
+        try:
+            count, last = session_store.preview(db_path)
+        except Exception:  # noqa: BLE001 — 单会话回填失败不影响整体迁移
+            continue
+        if count or last:
+            connection.exec_driver_sql(
+                "UPDATE conversations SET message_count = ?, last_message = ? WHERE id = ?",
+                (count, (last or "")[:2048], str(cid)),
+            ).close()
+
+
 def _split_group_members_to_chat_groups(connection: Connection) -> None:
     """v12：把 conversations.group_members 存量数据搬到独立表 chat_groups 后删列。
 
@@ -347,12 +405,15 @@ def _migrate(connection: Connection) -> None:
     _ensure_conversations_skills_column(connection)
     _ensure_roles_avatar_column(connection)
     _ensure_roles_description_column(connection)
+    _ensure_conversations_preview_columns(connection)
     if current < 5:
         _drop_main_messages_table(connection)
     if current < 7:
         _drop_llm_models_flag_columns(connection)
     if current < 12:
         _split_group_members_to_chat_groups(connection)
+    if current < 13:
+        _backfill_conversation_previews(connection)
     if current != SCHEMA_VERSION:
         connection.exec_driver_sql(f"PRAGMA user_version = {SCHEMA_VERSION}").close()
 

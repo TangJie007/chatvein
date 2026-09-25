@@ -404,8 +404,10 @@ export function useChatSession({
     ]
   );
 
-  /** 后端是同步落库，停止 HTTP 后仍可能稍后写入本轮。
-   *  轮询删除时必须同时匹配「用户原文」+「id > 发送前 baseline」，
+  /** 后端已改为断连时不落库：停止 HTTP 后不会再「稍后写入」本轮记录。
+   *  这里只留少量重试兜底「落库已完成 / 断开信号到达」之间的瞬间竞态（LLM 恰好在
+   *  停止瞬间收尾的情况），不用再长轮询 6 秒等幽灵记录。
+   *  删除时必须同时匹配「用户原文」+「id > 发送前 baseline」，
    *  否则本轮未落库时会误删上一轮历史（相同文案连发时仅靠原文也不够）。 */
   const cleanupInFlight = useRef(false);
   const cleanupLastTurn = useCallback(
@@ -421,7 +423,10 @@ export function useChatSession({
       try {
         for (let turn = 0; turn < Math.max(1, turns); turn++) {
           let deleted = false;
-          for (let i = 0; i < 8; i++) {
+          for (const delay of [0, 300, 1200]) {
+            if (delay > 0) {
+              await new Promise((resolve) => setTimeout(resolve, delay));
+            }
             try {
               const res = await deleteLastTurn(id, { userContent, afterMessageId });
               if (res.deleted > 0) {
@@ -431,7 +436,6 @@ export function useChatSession({
             } catch {
               /* 会话可能已被切换或删除，忽略 */
             }
-            await new Promise((resolve) => setTimeout(resolve, 800));
           }
           // 本轮已经没有残留（例如只落了一轮就被停止）：别再往下试，免得白等。
           if (!deleted) break;

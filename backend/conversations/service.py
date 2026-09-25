@@ -24,42 +24,14 @@ class ConversationsService:
         self._repo = repository or ConversationsRepository()
 
     def list_conversations(self, limit: int = 50) -> list[ConversationRecord]:
-        rows = self._repo.list(limit)
-        enriched: list[ConversationRecord] = []
-        for row in rows:
-            count, last = self._session_preview(row)
-            enriched.append(
-                ConversationRecord(
-                    id=row["id"],
-                    title=row["title"],
-                    workspace_dir=row["workspace_dir"],
-                    created_at=row["created_at"],
-                    updated_at=row["updated_at"],
-                    message_count=count,
-                    last_message=last,
-                    skills=row.get("skills") or [],
-                )
-            )
-        return enriched
+        """列表直接读主库冗余列（message_count / last_message），不再逐个开空间库。"""
+        return self._repo.list(limit)
 
     def create_conversation(self, dto: CreateConversationDto) -> ConversationRecord:
         return self._repo.create(dto.title)
 
     def get_conversation(self, conversation_id: str) -> ConversationRecord | None:
-        row = self._repo.get(conversation_id)
-        if row is None:
-            return None
-        count, last = self._session_preview(row)
-        return ConversationRecord(
-            id=row["id"],
-            title=row["title"],
-            workspace_dir=row["workspace_dir"],
-            created_at=row["created_at"],
-            updated_at=row["updated_at"],
-            message_count=count,
-            last_message=last,
-            skills=row.get("skills") or [],
-        )
+        return self._repo.get(conversation_id)
 
     def delete_conversation(self, conversation_id: str) -> bool:
         return self._repo.delete(conversation_id)
@@ -79,15 +51,20 @@ class ConversationsService:
         except Exception:
             return None
 
-    def _session_preview(self, row: ConversationRecord) -> tuple[int, str | None]:
-        name = (row.get("workspace_dir") or "").strip()
-        if not name:
-            return 0, None
+    def _refresh_preview(self, conversation_id: str) -> None:
+        """写 / 删会话空间库后，把精确 preview 同步回主库冗余列。
+
+        只对单个会话开一次空间库（写路径上的一次性代价，非列表 N+1）；
+        列表 / 计数查询由此直接读主库冗余列，不再逐个打开 session.sqlite。
+        """
+        db = self._session_db_for(conversation_id)
+        if db is None:
+            return
         try:
-            db = session_db_path(self.workspace_root_for(name))
-            return session_store.preview(db)
+            count, last = session_store.preview(db)
         except Exception:
-            return 0, None
+            return
+        self._repo.set_preview(conversation_id, count, last)
 
     def _to_message_record(
         self, conversation_id: str, row: dict[str, Any]
@@ -171,13 +148,14 @@ class ConversationsService:
         except Exception:
             return 0
         if removed > 0:
-            # 刷新主库 updated_at，便于列表排序
+            # 刷新主库 updated_at，便于列表排序；冗余预览同步为删除后的精确值。
             conversation = self._repo.get(conversation_id)
             if conversation is not None:
                 self._repo.touch_exchange(
                     conversation_id,
                     title_hint=conversation.get("title") or "会话",
                 )
+            self._refresh_preview(conversation_id)
         return removed
 
     def open_for_chat(self, conversation_id: str | None, title_hint: str) -> ConversationRecord:
@@ -275,16 +253,13 @@ class ConversationsService:
             duration_ms=int(duration_ms or 0),
             actor_id=actor_id,
         )
+        # 冗余预览同步：消息已写入空间库，更新主库 message_count / last_message。
+        self._refresh_preview(cid)
         return cid, user_msg, assistant_msg
 
     def counts(self) -> dict[str, int]:
-        base = self._repo.counts()
-        # 设置页「消息数」改为各会话空间合计
-        total = 0
-        for row in self._repo.list(limit=10_000):
-            count, _ = self._session_preview(row)
-            total += count
-        return {"conversations": base["conversations"], "messages": total}
+        """会话 / 消息计数：消息数来自主库冗余列（SUM），不再逐个打开会话空间库。"""
+        return self._repo.counts()
 
     def workspace_root_for(self, workspace_dir: str) -> Path:
         return init_conversation_layout(conversation_root(workspace_dir))
@@ -351,6 +326,10 @@ class ConversationsService:
                 turn_id=turn_id,
                 status=str(item.get("status") or "ok"),
             )
+        # 主库冗余预览同步：delegate 派发也会写消息，列表 / 计数不能漏。
+        conversation = self._repo.find_by_workspace(workspace_dir)
+        if conversation is not None:
+            self._refresh_preview(conversation["id"])
 
     def open_workspace_folder(self, conversation_id: str) -> str | None:
         conversation = self._repo.get(conversation_id)

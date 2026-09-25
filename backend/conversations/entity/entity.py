@@ -21,3 +21,7 @@ class Conversation(SQLModel, table=True):
     updated_at: datetime = Field(default_factory=utc_now)
     # 会话级技能 slug 列表（JSON 文本）。常驻技能存角色 resident_skills，不在此列。
     skills: str = Field(default="[]", max_length=4096)
+    # 冗余的消息数 / 最后一条消息预览：列表 / 计数查询直接读主库，不再逐个打开
+    # 会话空间库 session.sqlite（消息写入路径同步维护这两个列）。
+    message_count: int = Field(default=0)
+    last_message: str = Field(default="", max_length=2048)

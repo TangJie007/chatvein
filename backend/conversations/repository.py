@@ -54,19 +54,15 @@ def _encode_skills(skills: list[str] | None) -> list[str]:
     return out
 
 
-def _conversation_dict(
-    conversation: Conversation,
-    message_count: int = 0,
-    last_message: str | None = None,
-) -> ConversationRecord:
+def _conversation_dict(conversation: Conversation) -> ConversationRecord:
     return ConversationRecord(
         id=conversation.id,
         title=conversation.title,
         workspace_dir=conversation.workspace_dir,
         created_at=iso(conversation.created_at),
         updated_at=iso(conversation.updated_at),
-        message_count=message_count,
-        last_message=last_message,
+        message_count=int(conversation.message_count or 0),
+        last_message=(conversation.last_message or "").strip() or None,
         skills=_decode_skills(conversation.skills),
     )
 
@@ -134,6 +130,36 @@ class ConversationsRepository:
             conversation.updated_at = utc_now()
             session.flush()
         return cleaned
+
+    def set_preview(
+        self,
+        conversation_id: str,
+        message_count: int,
+        last_message: str | None,
+    ) -> None:
+        """写 / 删会话空间库后，把精确 preview 同步回主库冗余列。
+
+        不触碰 ``updated_at``（排序由 ``touch_exchange`` 管）；列表 / 计数查询
+        由此直接读主库，不再逐个打开 session.sqlite。
+        """
+        with session_scope() as session:
+            conversation = session.get(Conversation, conversation_id)
+            if conversation is None:
+                return
+            conversation.message_count = max(0, int(message_count or 0))
+            conversation.last_message = (last_message or "").strip()[:2048]
+            session.flush()
+
+    def find_by_workspace(self, workspace_dir: str) -> ConversationRecord | None:
+        """按工作区目录名反查会话（delegate 派发写回空间库时同步主库预览）。"""
+        name = (workspace_dir or "").strip()
+        if not name:
+            return None
+        with session_scope() as session:
+            conversation = session.exec(
+                select(Conversation).where(Conversation.workspace_dir == name)
+            ).first()
+            return _conversation_dict(conversation) if conversation is not None else None
 
     def delete(self, conversation_id: str) -> bool:
         name = ""
@@ -214,9 +240,14 @@ class ConversationsRepository:
             return _conversation_dict(conversation)
 
     def counts(self, session: Session | None = None) -> dict[str, int]:
+        """会话 / 消息计数。消息数来自主库冗余列（SUM），不再逐个打开会话空间库。"""
+
         def _read(s: Session) -> dict[str, int]:
             conversations = s.scalar(select(func.count()).select_from(Conversation)) or 0
-            return {"conversations": int(conversations), "messages": 0}
+            messages = (
+                s.scalar(select(func.coalesce(func.sum(Conversation.message_count), 0))) or 0
+            )
+            return {"conversations": int(conversations), "messages": int(messages)}
 
         if session is not None:
             return _read(session)

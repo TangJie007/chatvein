@@ -29,6 +29,56 @@ def test_wire_profile_deepseek_only_when_named() -> None:
     assert resolve_wire_profile(cfg) == "deepseek"
 
 
+def test_chat_model_default_timeout_applied() -> None:
+    cfg = SimpleNamespace(
+        model_id="sensenova-6.8-flash-lite",
+        api_key="sk-test",
+        base_url="https://token.sensenova.cn/v1",
+        enabled=True,
+        temperature=0.7,
+        max_tokens=4096,
+        presence_penalty=0.0,
+        frequency_penalty=0.0,
+        provider="sensenova",
+    )
+    fake = MagicMock()
+    role = {"model_id": "m-1", "temperature": 0.0}
+    with (
+        patch.object(llm_mod, "ModelsService", return_value=fake),
+        patch.object(llm_mod, "ChatOpenAICompat") as chat_cls,
+        patch.object(llm_mod, "active_callbacks", return_value=[]),
+    ):
+        fake.get_entity.return_value = cfg
+        llm_mod.get_chat_model(role=role, temperature=0.0)
+
+    assert chat_cls.call_args.kwargs["timeout"] == llm_mod._DEFAULT_TIMEOUT
+
+
+def test_chat_model_explicit_timeout_overrides_default() -> None:
+    cfg = SimpleNamespace(
+        model_id="sensenova-6.8-flash-lite",
+        api_key="sk-test",
+        base_url="https://token.sensenova.cn/v1",
+        enabled=True,
+        temperature=0.7,
+        max_tokens=4096,
+        presence_penalty=0.0,
+        frequency_penalty=0.0,
+        provider="sensenova",
+    )
+    fake = MagicMock()
+    role = {"model_id": "m-1", "temperature": 0.0}
+    with (
+        patch.object(llm_mod, "ModelsService", return_value=fake),
+        patch.object(llm_mod, "ChatOpenAICompat") as chat_cls,
+        patch.object(llm_mod, "active_callbacks", return_value=[]),
+    ):
+        fake.get_entity.return_value = cfg
+        llm_mod.get_chat_model(role=role, temperature=0.0, timeout=60.0)
+
+    assert chat_cls.call_args.kwargs["timeout"] == 60.0
+
+
 def test_chat_openai_compat_no_thinking_extra_body() -> None:
     cfg = SimpleNamespace(
         model_id="sensenova-6.8-flash-lite",
