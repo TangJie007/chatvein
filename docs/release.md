@@ -32,8 +32,8 @@
 
 ### 3. 自动更新（Updater）— 已走 COS 模式
 Tauri v2 updater 是「静态 HTTP 端点」模型，更新走腾讯云 COS 对象存储。当前骨架已代码化：
-- `src-tauri/tauri.conf.json` → `plugins.updater`：已内嵌公钥（`C:\Users\Administrator\.tauri\chatvein.key.pub`），`endpoints` 指向 `https://<bucket>.cos.<region>.myqcloud.com/chatvein/updater/latest.json`（占位，需替换为真实桶）。
-- Rust 已注册 `tauri-plugin-updater` + `tauri-plugin-process`；前端设置页「软件更新」卡片 + 启动时按 `autoUpdate` 偏好自动检查（发现新版系统弹窗询问，不静默安装）。
+- `src-tauri/tauri.conf.json` → `plugins.updater`：已内嵌公钥（`C:\Users\Administrator\.tauri\chatvein.key.pub`）与真实 COS endpoint `https://lingjin-app-1254228834.cos.ap-guangzhou.myqcloud.com/chatvein/updater/latest.json`。
+- Rust 已注册 `tauri-plugin-updater` + `tauri-plugin-process`；前端设置页「软件更新」卡片 + 启动时按 `autoUpdate` 偏好自动检查（发现新版系统弹窗询问，不静默安装）。endpoint 无效时前端静默跳过 / 设置页提示（历史教训：曾用 `<bucket>/<region>` 占位符导致插件启动 panic）。
 - 发版脚本 `tools/release_updater.ps1`：build → sign → 生成 `latest.json` + `.sig` → 提示上传。
 
 **密钥对**（已生成一次，私钥勿外传）：
@@ -42,13 +42,14 @@ Tauri v2 updater 是「静态 HTTP 端点」模型，更新走腾讯云 COS 对�
 # 公钥：C:\Users\Administrator\.tauri\chatvein.key.pub（已内嵌进 tauri.conf.json）
 ```
 
-**每次发版流程**：
+**每次发版流程**（真实 endpoint 已内置在 `tauri.conf.json`，直接构建即可）：
 ```powershell
 npm run tauri build
 .\tools\release_updater.ps1 -Version 0.1.1 -Notes "本次更新说明"
 # 把 dist-updater/ 下文件上传到 COS 桶 chatvein/updater/（公有读或 CDN 可读）
 # 上传后在 COS 控制台 / CDN 刷新 latest.json 缓存
 ```
+> 如需临时指向其他环境（如测试桶），可用 `tauri build --config` 覆盖 endpoints：`npm run tauri build -- --config "{`"plugins`":{`"updater`":{`"endpoints`":[`"https://...`"]}}}"`。
 
 **COS 桶结构**：
 ```

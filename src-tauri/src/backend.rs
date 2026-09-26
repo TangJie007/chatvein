@@ -86,7 +86,10 @@ pub fn backend_port() -> u16 {
 }
 
 pub fn backend_base_url() -> String {
-    format!("http://127.0.0.1:{}/api", backend_port())
+    // 注意：前端 API 客户端拼接 `${base}${endpoint}`，而每个 endpoint 自带 /api 前缀
+    // （如 /api/bash/pending），因此这里只返回主机根，绝不能带 /api，否则会变成
+    // /api/api/... 的重复前缀导致 404。
+    format!("http://127.0.0.1:{}", backend_port())
 }
 
 // ---------------------------------------------------------------------------
@@ -151,11 +154,18 @@ fn spawn_backend_process(
     token: &str,
     app: &AppHandle,
 ) -> Option<Child> {
-    // dev 时用 PowerShell 里的 python；release 时用与 .exe 同目录的 backend-runtime
+    // dev 时用 PATH 里的 python；release 时用与 .exe 同目录的 backend-runtime/backend.exe
     let python_exe = find_python_exe()?;
-    let args = backend_args(&python_exe, port, token);
-    let mut command = Command::new("cmd");
-    command.arg("/C").args(&args).stdout(Stdio::piped()).stderr(Stdio::piped());
+    let args = backend_args(&python_exe, port);
+    let mut command = Command::new(&python_exe);
+    command
+        .args(&args)
+        .env("CHATVEIN_TOKEN", token)
+        // 强制 Python 以 UTF-8 输出，避免 Windows 控制台 GBK 导致 Rust 侧日志乱码
+        .env("PYTHONUTF8", "1")
+        .env("PYTHONIOENCODING", "utf-8")
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
     let mut child = command.spawn().ok()?;
     if let (Some(stdout), Some(stderr)) = (child.stdout.take(), child.stderr.take()) {
         spawn_drain(stdout, app.clone(), "backend-stdout");
@@ -171,9 +181,13 @@ fn spawn_backend_process(
     app: &AppHandle,
 ) -> Option<Child> {
     let python_exe = find_python_exe()?;
-    let args = backend_args(&python_exe, port, token);
+    let args = backend_args(&python_exe, port);
     let mut command = Command::new(&python_exe);
-    command.args(args).stdout(Stdio::piped()).stderr(Stdio::piped());
+    command
+        .args(&args)
+        .env("CHATVEIN_TOKEN", token)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
     let mut child = command.spawn().ok()?;
     if let (Some(stdout), Some(stderr)) = (child.stdout.take(), child.stderr.take()) {
         spawn_drain(stdout, app.clone(), "backend-stdout");
@@ -182,24 +196,24 @@ fn spawn_backend_process(
     Some(child)
 }
 
-fn backend_args(python_exe: &str, port: u16, token: &str) -> Vec<String> {
+fn backend_args(python_exe: &str, port: u16) -> Vec<String> {
     let exe = std::path::Path::new(python_exe);
     if exe.file_name().is_some_and(|n| n.to_string_lossy().contains("backend")) {
-        // release 打包产物：backend-runtime/backend(.exe)
+        // release 打包产物：backend-runtime/backend(.exe)；token 走 CHATVEIN_TOKEN 环境变量
         vec![
             "--port".into(),
             port.to_string(),
-            "--token".into(),
-            token.into(),
         ]
     } else {
-        // dev 模式：python main.py --port --token
+        // dev 模式：python <repo>/backend/main.py --port（token 走 CHATVEIN_TOKEN）
+        // CARGO_MANIFEST_DIR 是 src-tauri，其上级即仓库根；用绝对路径避免依赖 cwd。
+        let repo_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap_or_else(|| std::path::Path::new("."));
         vec![
-            "main.py".into(),
+            repo_root.join("backend/main.py").to_string_lossy().to_string(),
             "--port".into(),
             port.to_string(),
-            "--token".into(),
-            token.into(),
         ]
     }
 }

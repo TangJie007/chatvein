@@ -32,7 +32,7 @@
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDJGNTI1RkI0NTY3RDk4QwpSV1NNMldkRit5WDFBb0tpQ1Y5NUFKUUxGWFJzdzRQWDY0eTRjSVZmWXh5cnczdEVTQnlYOEM1Ugo=",
       "endpoints": [
-        "https://<bucket>.cos.<region>.myqcloud.com/chatvein/updater/latest.json"
+        "https://lingjin-app-1254228834.cos.ap-guangzhou.myqcloud.com/chatvein/updater/latest.json"
       ],
       "windows": {
         "installMode": "passive"
