@@ -10,7 +10,7 @@ import {
   useSearchParams,
 } from "react-router-dom";
 import { ask } from "@tauri-apps/plugin-dialog";
-import { listModels, listRoles } from "./api";
+import { getKbStatus, listModels, listRoles } from "./api";
 import { TitleBar } from "./components/layout/TitleBar";
 import { Sidebar } from "./components/layout/Sidebar";
 import { BashApproval } from "./components/chat/BashApproval";
@@ -121,6 +121,21 @@ function MainLayout() {
       .then((models) => {
         if (cancelled) return;
         setCounts((c) => ({ ...c, models: models.length }));
+      })
+      .catch(() => {
+        /* backend may still be starting */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    void getKbStatus()
+      .then((status) => {
+        if (cancelled) return;
+        setCounts((c) => ({ ...c, kb: status.count }));
       })
       .catch(() => {
         /* backend may still be starting */

@@ -15,6 +15,9 @@ python-runtime/
 dist-backend/
 build/pyinstaller/
 
+# 本地测试 scratch 目录（pytest basetemp 等）
+tmp_t/
+
 # Local SQLite data (when the backend runs outside Tauri, e.g. `python backend/main.py`)
 backend/data/
 

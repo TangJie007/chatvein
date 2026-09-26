@@ -7,3 +7,4 @@ export * from "./embeddings";
 export * from "./mcps";
 export * from "./skills";
 export * from "./roles";
+export * from "./knowledge";

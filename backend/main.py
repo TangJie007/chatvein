@@ -51,6 +51,7 @@ from embeddings.module import (  # pyright: ignore[reportImplicitRelativeImport]
     embeddings_router,
     on_module_init as on_embeddings_init,
 )
+from knowledge.module import knowledge_router  # pyright: ignore[reportImplicitRelativeImport]
 from models.module import models_router, on_module_init  # pyright: ignore[reportImplicitRelativeImport]
 from roles.module import roles_router, on_module_init as on_roles_init  # pyright: ignore[reportImplicitRelativeImport]
 from skills.module import skills_router  # pyright: ignore[reportImplicitRelativeImport]
@@ -115,6 +116,7 @@ if _token:
 app.include_router(models_router)
 app.include_router(roles_router)
 app.include_router(embeddings_router)
+app.include_router(knowledge_router)
 app.include_router(chats_router)
 app.include_router(conversations_router)
 app.include_router(trace_router)

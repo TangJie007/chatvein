@@ -94,7 +94,7 @@ Agent 图细节见 [`agent-graphs.md`](./agent-graphs.md)；工具矩阵见 [`ag
 | 设置 | 应用偏好（本地）、内置 MCP 状态、SQLite 信息 / VACUUM / 备份 | |
 | Tauri 消息层 | 启停 Python、注入 `CHATVEIN_DATA_DIR`、推送后端 URL | `src-tauri` |
 
-占位页（未做产品逻辑）：独立知识库管理 UI。应用偏好里的托盘 / 开机启动 / 自动更新尚未接 Tauri 插件。
+知识库管理已上线（`KnowledgeView.tsx` + `knowledge/` 模块 + `backend/knowledge/` REST）：左栏文档列表 / 搜索（向量模型就绪时语义召回，否则关键词兜底）、新建 / 编辑 / 删除 / 批量导入（文本文件或粘贴）/ 清空 / 全量重建索引；与 Agent 侧 `kb_*` 工具共用同一份 `kb.sqlite`（`kb_vec_map` 表做 rowid 映射，WAL + busy_timeout 支撑并发）。应用偏好里的托盘 / 开机启动 / 自动更新尚未接 Tauri 插件。
 
 团队模式能力边界见 [`team-mode-design.md`](./team-mode-design.md)：成员角色无模型 / 主 agent 无模型时退化，不支持嵌套派发（子 agent 不挂 `delegate_to_agent`）。
 
