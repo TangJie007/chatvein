@@ -21,6 +21,7 @@
     "core:event:allow-emit",
     "core:event:allow-emit-to",
     "core:event:allow-listen",
+    "log:default",
     {
       "identifier": "http:default",
       "allow": [

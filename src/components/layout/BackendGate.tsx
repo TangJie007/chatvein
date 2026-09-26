@@ -1,36 +1,51 @@
 import { listen } from "@tauri-apps/api/event";
-import { type ReactNode, useEffect, useState } from "react";
-import { getBackendUrl, markBackendReady, waitForBackend } from "../../api";
+import { type ReactNode, useEffect, useRef, useState } from "react";
+import {
+  getBackendUrl,
+  markBackendReady,
+  onBackendLost,
+  waitForBackend,
+} from "../../api";
 import { TitleBar } from "./TitleBar";
 
 type Status = "loading" | "ready" | "error";
 
 /**
  * Show the shell immediately; block routes until Python is reachable.
- * Rust emits `backend-ready` / `backend-error` from a background probe;
- * we also poll `/api/health` so a late listener still recovers.
+ *
+ * 运行期支持「掉线 → 自动重连 → 恢复」流转：
+ * - Rust 广播 `backend-exited`（异常退出，自动重启中）→ 进入 loading；
+ * - Rust 广播 `backend-error`（启动失败 / 重启超限）→ 进入 error；
+ * - API 层探测到连接失败（markBackendLost）→ 进入 loading 重连态；
+ * - 新进程就绪广播 `backend-ready` / 健康轮询成功 → 回到 ready。
  */
 export function BackendGate({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<Status>("loading");
-  const [error, setError] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+  const statusRef = useRef<Status>("loading");
+
+  const setStatusSafe = (next: Status, nextMessage: string | null) => {
+    statusRef.current = next;
+    setStatus(next);
+    setMessage(nextMessage);
+  };
 
   useEffect(() => {
     let cancelled = false;
-    let settled = false;
     const unsubs: Array<() => void> = [];
 
-    const settleReady = (url: string) => {
-      if (cancelled || settled) return;
-      settled = true;
+    const goReady = (url: string) => {
+      if (cancelled) return;
       markBackendReady(url);
-      setStatus("ready");
+      setStatusSafe("ready", null);
     };
-
-    const settleError = (msg: string) => {
-      if (cancelled || settled) return;
-      settled = true;
-      setError(msg);
-      setStatus("error");
+    const goError = (msg: string) => {
+      if (cancelled) return;
+      setStatusSafe("error", msg);
+    };
+    const goLoading = (msg: string) => {
+      if (cancelled) return;
+      setStatusSafe("loading", msg);
     };
 
     void (async () => {
@@ -38,16 +53,23 @@ export function BackendGate({ children }: { children: ReactNode }) {
         unsubs.push(
           await listen<string>("backend-ready", (e) => {
             const url =
+              typeof e.payload === "string" && e.payload ? e.payload : null;
+            if (url) goReady(url);
+            else void getBackendUrl().then(goReady);
+          })
+        );
+        unsubs.push(
+          await listen<string>("backend-exited", (e) => {
+            goLoading(
               typeof e.payload === "string" && e.payload
                 ? e.payload
-                : null;
-            if (url) settleReady(url);
-            else void getBackendUrl().then(settleReady);
+                : "Python 后端异常，正在自动重启…"
+            );
           })
         );
         unsubs.push(
           await listen<string>("backend-error", (e) => {
-            settleError(
+            goError(
               typeof e.payload === "string" && e.payload
                 ? e.payload
                 : "后端启动失败"
@@ -58,12 +80,21 @@ export function BackendGate({ children }: { children: ReactNode }) {
         // Not running under Tauri — fall through to health poll.
       }
 
+      // API 层探测到连接断开 → 重连态（markBackendLost 仅在就绪后触发）。
+      unsubs.push(
+        onBackendLost(() => {
+          if (statusRef.current === "ready") {
+            goLoading("与后端的连接已断开，正在自动重连…");
+          }
+        })
+      );
+
       try {
-        settleReady(await waitForBackend(20000));
+        goReady(await waitForBackend(20000));
       } catch (e) {
-        // Rust may already have settled via event; ignore late poll failure.
-        if (settled || cancelled) return;
-        settleError(e instanceof Error ? e.message : "后端启动失败");
+        // Rust 可能已通过事件就绪 / 掉线后由事件接管，忽略晚到的轮询失败。
+        if (cancelled || statusRef.current === "ready") return;
+        goError(e instanceof Error ? e.message : "后端启动失败");
       }
     })();
 
@@ -85,13 +116,15 @@ export function BackendGate({ children }: { children: ReactNode }) {
               className="h-8 w-8 animate-spin rounded-full border-2 border-brand-100 border-t-brand-600"
               aria-hidden
             />
-            <p className="text-sm text-ink-500">数据库与工作空间加载中，请等待</p>
+            <p className="text-sm text-ink-500">
+              {message ?? "数据库与工作空间加载中，请等待"}
+            </p>
           </>
         ) : (
           <>
             <p className="text-sm font-medium text-danger-600">后端未能启动</p>
             <p className="max-w-md text-center text-sm text-ink-500">
-              {error ?? "未知错误"}
+              {message ?? "未知错误"}
             </p>
             <button
               type="button"

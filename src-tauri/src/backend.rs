@@ -1,231 +1,326 @@
 use std::io::Read;
 use std::process::{Child, Command, Stdio};
+use std::sync::atomic::{AtomicBool, AtomicU16, Ordering};
 use std::sync::{Mutex, OnceLock};
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Emitter};
 
-/// Chosen backend port, resolved once and reused by the spawner, the readiness
-/// probe and the proxy commands so they always agree.
-///
-/// - Dev builds (`tauri dev`, debug): a fixed, predictable port `8420`.
-/// - Release builds (`tauri build`): a dynamically picked free port >= `3000`.
-static BACKEND_PORT: OnceLock<u16> = OnceLock::new();
-
-/// Per-run random token that authorizes frontend → backend requests.
-///
-/// Generated once at process start, handed to the Python backend via the
-/// `CHATVEIN_TOKEN` env var, and exposed to the React UI through the
-/// `backend_token` command. The backend rejects any request whose
-/// `X-ChatVein-Token` header does not match.
+// 端口在崩溃重启后可能变化，用原子值而非 OnceLock，保证前端能拿到最新地址。
+static BACKEND_PORT: AtomicU16 = AtomicU16::new(8420);
 static BACKEND_TOKEN: OnceLock<String> = OnceLock::new();
+static BACKEND_CHILD: OnceLock<Mutex<Option<Child>>> = OnceLock::new();
+static SHUTTING_DOWN: AtomicBool = AtomicBool::new(false);
 
-/// The shared access token for this app run (never persisted).
-pub fn backend_token() -> String {
-    BACKEND_TOKEN.get_or_init(|| {
-        use rand::RngExt;
-        let mut bytes = [0u8; 32];
-        rand::rng().fill(&mut bytes);
-        bytes.iter().map(|b| format!("{b:02x}")).collect()
-    })
-    .clone()
-}
+/// 正常退出路径之外的最大自动重启次数。
+const MAX_AUTO_RESTARTS: u32 = 3;
 
-/// Resolve the backend port. Computed lazily on first use and cached.
-pub fn backend_port() -> u16 {
-    *BACKEND_PORT.get_or_init(|| {
-        if cfg!(debug_assertions) {
-            8420
-        } else {
-            find_free_port(3000)
-        }
-    })
-}
+// ---------------------------------------------------------------------------
+// Windows Job Object：KILL_ON_JOB_CLOSE 语义 —— job 句柄被关闭（父进程退出、
+// 崩溃、被任务管理器强杀）时，OS 自动收割整个后端进程树，杜绝孤儿进程。
+// ---------------------------------------------------------------------------
+#[cfg(windows)]
+mod job_object {
+    use std::mem::size_of;
+    use windows_sys::Win32::Foundation::{CloseHandle, HANDLE, INVALID_HANDLE_VALUE};
+    use windows_sys::Win32::System::JobObjects::{
+        AssignProcessToJobObject, CreateJobObjectW, JobObjectExtendedLimitInformation,
+        JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+        SetInformationJobObject,
+    };
 
-/// Base URL of the embedded Python backend.
-pub fn backend_base_url() -> String {
-    format!("http://127.0.0.1:{}", backend_port())
-}
+    pub struct JobHandle(HANDLE);
+    // SAFETY: HANDLE 内部即指针，Send/Sync 仅由本模块的锁保护使用。
+    unsafe impl Send for JobHandle {}
+    unsafe impl Sync for JobHandle {}
 
-/// Find an available TCP port >= `start` on the loopback interface.
-/// The listener is dropped immediately so the port is free for the backend.
-fn find_free_port(start: u16) -> u16 {
-    for port in start..=65535 {
-        if std::net::TcpListener::bind(("127.0.0.1", port)).is_ok() {
-            return port;
+    pub fn create_kill_on_close_job() -> Option<JobHandle> {
+        unsafe {
+            let job = CreateJobObjectW(std::ptr::null(), std::ptr::null());
+            if job.is_null() || job == INVALID_HANDLE_VALUE {
+                return None;
+            }
+            // windows-sys 该结构无 Default，按 Windows 惯例清零初始化
+            let mut info: JOBOBJECT_EXTENDED_LIMIT_INFORMATION =
+                std::mem::zeroed();
+            info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+            let ok = SetInformationJobObject(
+                job,
+                JobObjectExtendedLimitInformation,
+                &info as *const _ as *const _,
+                size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
+            );
+            if ok == 0 {
+                CloseHandle(job);
+                return None;
+            }
+            Some(JobHandle(job))
         }
     }
-    8420 // extremely unlikely fallback
+
+    impl JobHandle {
+        pub fn assign(&self, process_handle: HANDLE) -> bool {
+            unsafe { AssignProcessToJobObject(self.0, process_handle) != 0 }
+        }
+    }
+
+    impl Drop for JobHandle {
+        fn drop(&mut self) {
+            unsafe {
+                CloseHandle(self.0);
+            }
+        }
+    }
 }
 
-/// Global handle to the spawned Python process so we can terminate it on exit.
-static BACKEND_CHILD: OnceLock<Mutex<Option<Child>>> = OnceLock::new();
+#[cfg(windows)]
+static BACKEND_JOB: OnceLock<Mutex<Option<job_object::JobHandle>>> = OnceLock::new();
 
-/// Dev 固定端口时：先清掉残留的旧 Python，避免新路由（如 /api/skills）仍 404。
-#[cfg(debug_assertions)]
-fn free_dev_backend_port(port: u16) {
-    kill_backend();
+pub fn backend_token() -> String {
+    BACKEND_TOKEN
+        .get()
+        .cloned()
+        .unwrap_or_else(|| "dev-token".to_string())
+}
+
+pub fn backend_port() -> u16 {
+    BACKEND_PORT.load(Ordering::SeqCst)
+}
+
+pub fn backend_base_url() -> String {
+    format!("http://127.0.0.1:{}/api", backend_port())
+}
+
+// ---------------------------------------------------------------------------
+// 后端进程管理
+// ---------------------------------------------------------------------------
+
+/// 启动 Python 后端；启动成功后把子进程登记进 BACKEND_CHILD 并挂 Job Object，
+/// 随后开启崩溃监督线程（仅首次启动时开启，重启复用同一监督线程）。
+pub fn spawn_backend(app: &AppHandle) {
+    spawn_backend_inner(app, true);
+}
+
+fn spawn_backend_inner(app: &AppHandle, supervise: bool) {
+    let port = find_free_port();
+    let token = generate_token();
+
+    #[cfg(windows)]
+    let job = job_object::create_kill_on_close_job();
+    #[cfg(not(windows))]
+    let job: Option<()> = None;
+
+    let Some(child) = spawn_backend_process(port, &token, app) else {
+        let _ = app.emit(
+            "backend-error",
+            "无法启动 Python 后端进程（找不到可用的 Python 运行时）",
+        );
+        return;
+    };
+    let _ = app;
+
     #[cfg(windows)]
     {
-        let _ = Command::new("powershell")
-            .args([
-                "-NoProfile",
-                "-Command",
-                &format!(
-                    "$c = Get-NetTCPConnection -LocalPort {port} -State Listen -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess -Unique; if ($c) {{ $c | ForEach-Object {{ Stop-Process -Id $_ -Force -ErrorAction SilentlyContinue }} }}"
-                ),
-            ])
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status();
+        use std::os::windows::io::AsRawHandle;
+        if let Some(job) = &job {
+            if !job.assign(child.as_raw_handle()) {
+                log::warn!(
+                    "无法把后端进程加入 Job Object（error={}），回退到手动清理",
+                    std::io::Error::last_os_error()
+                );
+            }
+        }
+        if let Some(job) = job {
+            *BACKEND_JOB.get_or_init(|| Mutex::new(None)).lock().unwrap() = Some(job);
+        }
     }
-    #[cfg(not(windows))]
-    {
-        let _ = Command::new("sh")
-            .args([
-                "-c",
-                &format!("fuser -k {port}/tcp 2>/dev/null || true"),
-            ])
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status();
+
+    let _ = BACKEND_CHILD.get_or_init(|| Mutex::new(None)).lock().map(|mut c| {
+        *c = Some(child);
+    });
+    BACKEND_PORT.store(port, Ordering::SeqCst);
+
+    log::info!("Python 后端已启动: port={port} token_len={}", token.len());
+    if supervise {
+        start_supervisor(app.clone());
     }
-    std::thread::sleep(std::time::Duration::from_millis(200));
 }
 
-/// Spawn the Python backend next to the app and forward its output to the UI.
-pub fn spawn_backend(app: &AppHandle) {
-    let resource_dir = match app.path().resource_dir() {
-        Ok(d) => d,
-        Err(e) => {
-            emit_error(app, &format!("无法获取资源目录: {e}"));
-            return;
-        }
-    };
+/// 真正 spawn 子进程的公共逻辑（可被监督线程复用）。
+#[cfg(windows)]
+fn spawn_backend_process(
+    port: u16,
+    token: &str,
+    app: &AppHandle,
+) -> Option<Child> {
+    // dev 时用 PowerShell 里的 python；release 时用与 .exe 同目录的 backend-runtime
+    let python_exe = find_python_exe()?;
+    let args = backend_args(&python_exe, port, token);
+    let mut command = Command::new("cmd");
+    command.arg("/C").args(&args).stdout(Stdio::piped()).stderr(Stdio::piped());
+    let mut child = command.spawn().ok()?;
+    if let (Some(stdout), Some(stderr)) = (child.stdout.take(), child.stderr.take()) {
+        spawn_drain(stdout, app.clone(), "backend-stdout");
+        spawn_drain(stderr, app.clone(), "backend-stderr");
+    }
+    Some(child)
+}
 
-    // Release: PyInstaller onedir at <resources>/backend-runtime/backend(.exe)
-    // Dev:     <repo>/backend/main.py via .venv / PATH python.
-    // A stale backend.exe left in target/debug must not win in dev, or new
-    // routes such as /api/mcps/catalog stay 404 until the runtime is rebuilt.
-    let frozen = if cfg!(debug_assertions) {
-        None
+#[cfg(not(windows))]
+fn spawn_backend_process(
+    port: u16,
+    token: &str,
+    app: &AppHandle,
+) -> Option<Child> {
+    let python_exe = find_python_exe()?;
+    let args = backend_args(&python_exe, port, token);
+    let mut command = Command::new(&python_exe);
+    command.args(args).stdout(Stdio::piped()).stderr(Stdio::piped());
+    let mut child = command.spawn().ok()?;
+    if let (Some(stdout), Some(stderr)) = (child.stdout.take(), child.stderr.take()) {
+        spawn_drain(stdout, app.clone(), "backend-stdout");
+        spawn_drain(stderr, app.clone(), "backend-stderr");
+    }
+    Some(child)
+}
+
+fn backend_args(python_exe: &str, port: u16, token: &str) -> Vec<String> {
+    let exe = std::path::Path::new(python_exe);
+    if exe.file_name().is_some_and(|n| n.to_string_lossy().contains("backend")) {
+        // release 打包产物：backend-runtime/backend(.exe)
+        vec![
+            "--port".into(),
+            port.to_string(),
+            "--token".into(),
+            token.into(),
+        ]
     } else {
-        frozen_backend_exe(&resource_dir)
-    };
-    let (program, args, cwd, fallback_dir) = if let Some(exe) = frozen {
-        let cwd = exe
-            .parent()
-            .map(|p| p.to_path_buf())
-            .unwrap_or_else(|| resource_dir.join("backend-runtime"));
-        (exe, Vec::<String>::new(), cwd.clone(), cwd)
-    } else {
-        // Dev resource dir is `src-tauri/target/debug`. A leftover `backend/`
-        // copy there must not shadow the repo source, or the UI keeps calling
-        // routes that only exist in `backend/main.py` (404).
-        let backend_dir = if cfg!(debug_assertions) {
-            let dev = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../backend");
-            if dev.join("main.py").exists() {
-                dev.canonicalize().unwrap_or(dev)
-            } else {
-                resource_dir.join("backend")
+        // dev 模式：python main.py --port --token
+        vec![
+            "main.py".into(),
+            "--port".into(),
+            port.to_string(),
+            "--token".into(),
+            token.into(),
+        ]
+    }
+}
+
+#[cfg(windows)]
+fn find_python_exe() -> Option<String> {
+    let exe_dir = std::env::current_exe().ok()?.parent()?.to_path_buf();
+    let runtime = exe_dir.join("backend-runtime");
+    if runtime.join("backend.exe").exists() {
+        return Some(runtime.join("backend.exe").to_string_lossy().to_string());
+    }
+    // dev 兜底：PATH 里的 python
+    Some("python".to_string())
+}
+
+#[cfg(not(windows))]
+fn find_python_exe() -> Option<String> {
+    let exe_dir = std::env::current_exe().ok()?.parent()?.to_path_buf();
+    let runtime = exe_dir.join("backend-runtime");
+    if runtime.join("backend").exists() {
+        return Some(runtime.join("backend").to_string_lossy().to_string());
+    }
+    Some("python3".to_string())
+}
+
+/// 崩溃监督线程：try_wait 轮询，异常退出且非应用关闭时自动重启（限次）。
+fn start_supervisor(app: AppHandle) {
+    std::thread::spawn(move || {
+        let mut restarts: u32 = 0;
+        loop {
+            std::thread::sleep(std::time::Duration::from_millis(1500));
+            if SHUTTING_DOWN.load(Ordering::SeqCst) {
+                return;
             }
-        } else {
-            let bundled = resource_dir.join("backend");
-            if bundled.join("main.py").exists() {
-                bundled
-            } else {
-                let dev = resource_dir.join("../backend");
-                dev.canonicalize().unwrap_or(dev)
+
+            let exit_code: Option<Option<i32>> = {
+                let Ok(mut guard) = BACKEND_CHILD.get().map(|m| m.lock().unwrap()).ok_or(())
+                    else {
+                    return;
+                };
+                match guard.as_mut() {
+                    Some(child) => match child.try_wait() {
+                        Ok(Some(status)) => Some(status.code()),
+                        Ok(None) => None,
+                        Err(_) => Some(None),
+                    },
+                    None => return, // 已被 kill_backend() 取走，退出监督
+                }
+            };
+
+            if exit_code.is_none() {
+                continue; // 仍在运行
             }
-        };
-        let main_py = backend_dir.join("main.py");
-        if !main_py.exists() {
-            emit_error(
-                app,
-                &format!(
-                    "未找到后端（已尝试打包产物 backend-runtime 与源码入口 {}）",
-                    main_py.display()
-                ),
-            );
-            return;
-        }
-        let python = match find_python(&backend_dir) {
-            Some(p) => p,
-            None => {
-                emit_error(
-                    app,
-                    "未找到 Python 解释器（已尝试仓库根 .venv 以及 python / python3）",
+            if SHUTTING_DOWN.load(Ordering::SeqCst) {
+                return;
+            }
+
+            if restarts >= MAX_AUTO_RESTARTS {
+                log::error!("Python 后端连续异常退出，已停止自动重启（exit={exit_code:?}）");
+                let _ = app.emit(
+                    "backend-error",
+                    format!(
+                        "Python 后端连续异常退出 {} 次，已停止自动重启（最后退出码 {exit_code:?}）。\
+                         请查看日志后手动重启应用。",
+                        MAX_AUTO_RESTARTS
+                    ),
                 );
                 return;
             }
-        };
-        (
-            python,
-            vec![main_py.to_string_lossy().into_owned()],
-            backend_dir.clone(),
-            backend_dir,
-        )
-    };
 
-    // Own the storage location here (message layer decides paths): the packaged
-    // backend lives in a read-only resources dir, so the SQLite database must
-    // go to the per-user app data dir instead.
-    let data_dir = resolve_data_dir(app, &fallback_dir);
-    if let Err(e) = std::fs::create_dir_all(&data_dir) {
-        emit_error(app, &format!("无法创建数据目录 {}: {e}", data_dir.display()));
-    }
-
-    let port = backend_port();
-    #[cfg(debug_assertions)]
-    free_dev_backend_port(port);
-
-    let mut cmd = Command::new(&program);
-    for arg in &args {
-        cmd.arg(arg);
-    }
-    cmd.env("CHATVEIN_RESOURCE_DIR", &resource_dir);
-    // 访问令牌：后端校验每个请求的 X-ChatVein-Token，非本应用启动的请求一律拒绝。
-    cmd.env("CHATVEIN_TOKEN", backend_token());
-    // Dev: uvicorn --reload so edits under backend/*.py pick up without
-    // restarting `tauri dev`. Release / frozen builds never set this.
-    #[cfg(debug_assertions)]
-    cmd.env("CHATVEIN_RELOAD", "1");
-    let mut child = match cmd
-        .arg("--port")
-        .arg(port.to_string())
-        .current_dir(&cwd)
-        .env("CHATVEIN_PORT", port.to_string())
-        .env("CHATVEIN_DATA_DIR", &data_dir)
-        .env("PYTHONUNBUFFERED", "1")
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-    {
-        Ok(c) => c,
-        Err(e) => {
-            emit_error(app, &format!("启动 Python 后端失败: {e}"));
-            return;
+            restarts += 1;
+            log::error!(
+                "Python 后端异常退出（exit={exit_code:?}），第 {restarts}/{} 次自动重启",
+                MAX_AUTO_RESTARTS
+            );
+            let _ = app.emit(
+                "backend-exited",
+                format!(
+                    "Python 后端异常退出，正在自动重启（{restarts}/{MAX_AUTO_RESTARTS}）"
+                ),
+            );
+            spawn_backend_inner(&app, false);
+            // 重启后等待新进程就绪，重新广播 backend-ready，前端自动恢复。
+            let handle = app.clone();
+            std::thread::spawn(move || {
+                if wait_for_backend(
+                    backend_port(),
+                    std::time::Duration::from_secs(20),
+                ) {
+                    let _ = handle.emit("backend-ready", backend_base_url());
+                } else {
+                    let _ = handle.emit(
+                        "backend-error",
+                        "Python 后端重启后仍未就绪，请查看日志或重启应用",
+                    );
+                }
+            });
         }
-    };
-
-    // Forward stdout/stderr to the UI as events so the message layer is observable.
-    if let Some(out) = child.stdout.take() {
-        spawn_drain(out, app.clone(), "backend-stdout");
-    }
-    if let Some(err) = child.stderr.take() {
-        spawn_drain(err, app.clone(), "backend-stderr");
-    }
-
-    BACKEND_CHILD
-        .get_or_init(|| Mutex::new(None))
-        .lock()
-        .unwrap()
-        .replace(child);
+    });
 }
 
-/// Block until the backend accepts TCP connections, or time out.
+/// 结束后端进程。设置 SHUTTING_DOWN 防止监督线程重启；
+/// Windows 上 Job Object 句柄随进程退出由 OS 关闭，兜底收割整个进程树。
+pub fn kill_backend() {
+    SHUTTING_DOWN.store(true, Ordering::SeqCst);
+    if let Some(lock) = BACKEND_CHILD.get() {
+        if let Ok(mut guard) = lock.lock() {
+            if let Some(mut child) = guard.take() {
+                log::info!("正在结束 Python 后端进程…");
+                let _ = child.kill();
+                let _ = child.wait();
+            }
+        }
+    }
+}
+
+/// 等待后端 HTTP 就绪（探测 /api/health 返回 200 + status=ok），超时返回 false。
 pub fn wait_for_backend(port: u16, timeout: std::time::Duration) -> bool {
     let start = std::time::Instant::now();
     loop {
-        if std::net::TcpStream::connect(("127.0.0.1", port)).is_ok() {
+        if http_health_ok(port) {
             return true;
         }
         if start.elapsed() > timeout {
@@ -235,77 +330,49 @@ pub fn wait_for_backend(port: u16, timeout: std::time::Duration) -> bool {
     }
 }
 
-/// Terminate the embedded Python backend if it is still running.
-pub fn kill_backend() {
-    if let Some(lock) = BACKEND_CHILD.get() {
-        if let Ok(mut guard) = lock.lock() {
-            if let Some(mut child) = guard.take() {
-                let _ = child.kill();
-                let _ = child.wait();
+fn http_health_ok(port: u16) -> bool {
+    use std::io::{Read, Write};
+    use std::net::TcpStream;
+    use std::time::Duration;
+
+    let Ok(mut stream) = TcpStream::connect_timeout(
+        &std::net::SocketAddr::from(([127, 0, 0, 1], port)),
+        Duration::from_millis(800),
+    ) else {
+        return false;
+    };
+    let _ = stream.set_read_timeout(Some(Duration::from_millis(800)));
+    let _ = stream.set_write_timeout(Some(Duration::from_millis(800)));
+
+    let req = format!(
+        "GET /api/health HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nConnection: close\r\n\r\n"
+    );
+    if stream.write_all(req.as_bytes()).is_err() {
+        return false;
+    }
+
+    let mut buf = [0u8; 512];
+    let mut text = String::new();
+    loop {
+        match stream.read(&mut buf) {
+            Ok(0) => break,
+            Ok(n) => {
+                text.push_str(&String::from_utf8_lossy(&buf[..n]));
+                if text.len() > 2048 {
+                    break;
+                }
             }
+            Err(_) => break,
         }
     }
+    let status_line = text.lines().next().unwrap_or("");
+    status_line.contains(" 200") && text.contains("\"status\":\"ok\"")
 }
 
-/// PyInstaller onedir entry shipped via `bundle.resources` as `backend-runtime`.
-fn frozen_backend_exe(resource_dir: &std::path::Path) -> Option<std::path::PathBuf> {
-    let exe = if cfg!(windows) {
-        resource_dir.join("backend-runtime").join("backend.exe")
-    } else {
-        resource_dir.join("backend-runtime").join("backend")
-    };
-    exe.exists().then_some(exe)
-}
+// ---------------------------------------------------------------------------
+// 辅助
+// ---------------------------------------------------------------------------
 
-/// Locate a usable Python interpreter for **dev** (source) runs, in priority order:
-///   1. repo-root `.venv`
-///   2. `python` / `python3` on PATH
-fn find_python(backend_dir: &std::path::Path) -> Option<std::path::PathBuf> {
-    // The dev virtualenv lives at the repo root, deliberately outside `backend/`
-    // so local caches and a several-hundred-MB venv never get mixed into source.
-    let repo_root = backend_dir.parent()?;
-    let venv = if cfg!(windows) {
-        repo_root.join(".venv").join("Scripts").join("python.exe")
-    } else {
-        repo_root.join(".venv").join("bin").join("python")
-    };
-    if venv.exists() {
-        return Some(venv);
-    }
-
-    for name in ["python", "python3"] {
-        if Command::new(name)
-            .arg("--version")
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status()
-            .map(|s| s.success())
-            .unwrap_or(false)
-        {
-            return Some(std::path::PathBuf::from(name));
-        }
-    }
-    None
-}
-
-/// Directory handed to the Python backend for its SQLite database (and any
-/// other persistent state) via `CHATVEIN_DATA_DIR`.
-///
-/// Rust owns path selection: the packaged backend sits inside the read-only
-/// resources directory, so the database must live in the per-user app data
-/// directory instead. If that cannot be resolved we fall back to
-/// `<backend-or-runtime>/data` so the app still starts (dev / unusual sandboxing).
-fn resolve_data_dir(app: &AppHandle, backend_dir: &std::path::Path) -> std::path::PathBuf {
-    match app.path().app_data_dir() {
-        Ok(dir) => dir,
-        Err(e) => {
-            emit_error(app, &format!("无法获取应用数据目录，回退到后端目录: {e}"));
-            backend_dir.join("data")
-        }
-    }
-}
-
-/// Spawn a thread that reads a pipe to completion and emits each chunk.
 fn spawn_drain<R: Read + Send + 'static>(reader: R, app: AppHandle, event: &'static str) {
     std::thread::spawn(move || {
         let mut reader = reader;
@@ -315,6 +382,12 @@ fn spawn_drain<R: Read + Send + 'static>(reader: R, app: AppHandle, event: &'sta
                 Ok(0) => break,
                 Ok(n) => {
                     let text = String::from_utf8_lossy(&buf[..n]).to_string();
+                    // 同时落盘（tauri-plugin-log 的 LogDir target）与上抛给前端
+                    if event == "backend-stderr" {
+                        log::warn!("[backend-stderr] {}", text.trim_end());
+                    } else {
+                        log::info!("[backend] {}", text.trim_end());
+                    }
                     let _ = app.emit(event, text);
                 }
                 Err(_) => break,
@@ -323,6 +396,39 @@ fn spawn_drain<R: Read + Send + 'static>(reader: R, app: AppHandle, event: &'sta
     });
 }
 
-fn emit_error(app: &AppHandle, msg: &str) {
-    let _ = app.emit("backend-error", msg.to_string());
+fn generate_token() -> String {
+    use rand::Rng;
+    let mut bytes = [0u8; 32];
+    rand::rng().fill_bytes(&mut bytes);
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+fn find_free_port() -> u16 {
+    use std::net::TcpListener;
+    TcpListener::bind("127.0.0.1:0")
+        .and_then(|l| l.local_addr())
+        .map(|addr| addr.port())
+        .unwrap_or(8420)
+}
+
+/// dev 模式释放 8420 端口：只杀 ChatVein 自家残留后端，避免误伤其他服务。
+#[cfg(debug_assertions)]
+pub fn free_dev_backend_port() {
+    let port = backend_port();
+    let script = format!(
+        r#"
+$ErrorActionPreference = 'SilentlyContinue'
+$conns = Get-NetTCPConnection -LocalPort {port} -State Listen | Select-Object -ExpandProperty OwningProcess -Unique
+foreach ($procId in $conns) {{
+  $p = Get-CimInstance Win32_Process -Filter "ProcessId=$procId"
+  if ($null -ne $p -and ($p.CommandLine -match 'chatvein' -or $p.CommandLine -match 'backend/main\.py' -or $p.CommandLine -match 'backend\.exe')) {{
+    Stop-Process -Id $procId -Force
+  }}
+}}
+"#
+    );
+    let _ = std::process::Command::new("powershell")
+        .args(["-NoProfile", "-Command", &script])
+        .spawn()
+        .and_then(|mut c| c.wait());
 }

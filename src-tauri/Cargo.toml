@@ -18,8 +18,16 @@ tauri = { version = "2", features = [] }
 tauri-plugin-dialog = "2"
 tauri-plugin-http = "~2.6"
 tauri-plugin-opener = "2"
+tauri-plugin-log = "2"
+tauri-plugin-single-instance = "2"
 serde = { version = "1", features = ["derive"] }
 rand = "0.10"
+log = "0.4"
+
+# Windows Job Object：父进程被强杀 / 崩溃时由 OS 兜底收割 Python 进程树，
+# 防止孤儿后端常驻占端口。
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = ["Win32_System_JobObjects", "Win32_Foundation", "Win32_Security", "Win32_System_Threading"] }
 
 [profile.release]
 panic = "abort"

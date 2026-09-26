@@ -54,7 +54,8 @@ def test_web_search_prefers_claw_then_stops(monkeypatch) -> None:
     ):
         out = web_mod.web_search.invoke({"query": "天气"})
 
-    assert out.startswith("source=claw-search")
+    # 搜索结果按不可信数据包裹（prompt injection 缓解）
+    assert "<untrusted>" in out and "source=claw-search" in out
     tavily.assert_not_called()
     firecrawl.assert_not_called()
     ddgs.assert_not_called()
@@ -91,7 +92,7 @@ def test_web_search_falls_through_to_tavily(monkeypatch) -> None:
     ):
         out = web_mod.web_search.invoke({"query": "hello"})
 
-    assert out.startswith("source=tavily-keyless")
+    assert "<untrusted>" in out and "source=tavily-keyless" in out
     tavily.assert_called_once()
     firecrawl.assert_not_called()
     ddgs.assert_not_called()
@@ -106,7 +107,7 @@ def test_web_search_falls_through_to_firecrawl_then_ddgs(monkeypatch) -> None:
     ):
         out = web_mod.web_search.invoke({"query": "hello"})
 
-    assert out.startswith("source=ddgs")
+    assert "<untrusted>" in out and "source=ddgs" in out
     ddgs.assert_called_once()
 
 

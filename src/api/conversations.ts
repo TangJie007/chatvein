@@ -144,7 +144,7 @@ export function sendChat(
     append_user_message: appendUser,
     // 群组成员：随消息透传，后端注册 / 补注册到 chats 群组表（合并去重）
     group_members: groupMembers ?? null,
-  }, signal ?? undefined);
+  }, { signal: signal ?? undefined });
 }
 
 /** 撤回 / 停止生成：删除该会话最近一轮（用户句 + 助手句）。

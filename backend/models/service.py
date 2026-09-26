@@ -16,6 +16,7 @@ from typing import Any
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
+from .crypto import decrypt_secret, encrypt_secret
 from .entity import (
     CreateLlmModelDto,
     LlmModel,
@@ -53,7 +54,7 @@ class ModelsService:
             provider=entity.provider,
             model_id=entity.model_id,
             base_url=entity.base_url,
-            key_mask=mask_api_key(entity.api_key),
+            key_mask=mask_api_key(decrypt_secret(entity.api_key)),
             has_api_key=bool(entity.api_key),
             temperature=entity.temperature,
             max_tokens=entity.max_tokens,
@@ -86,7 +87,7 @@ class ModelsService:
             provider=dto.provider.strip() or "openai",
             model_id=dto.model_id.strip(),
             base_url=(dto.base_url or "").strip() or None,
-            api_key=(dto.api_key or "").strip() or None,
+            api_key=encrypt_secret((dto.api_key or "").strip() or None),
             temperature=dto.temperature,
             max_tokens=dto.max_tokens,
             presence_penalty=dto.presence_penalty,
@@ -119,7 +120,7 @@ class ModelsService:
             elif "*" in raw or "•" in raw or raw == entity.api_key:
                 pass
             else:
-                entity.api_key = raw.strip() or None
+                entity.api_key = encrypt_secret(raw.strip() or None)
             del data["api_key"]
 
         for key, value in data.items():
@@ -147,7 +148,7 @@ class ModelsService:
         url = f"{base}/models"
         headers = {"User-Agent": "ChatVein/0.1", "Accept": "application/json"}
         if entity.api_key:
-            headers["Authorization"] = f"Bearer {entity.api_key}"
+            headers["Authorization"] = f"Bearer {decrypt_secret(entity.api_key) or ''}"
 
         started = time.perf_counter()
         req = Request(url, headers=headers, method="GET")
@@ -194,8 +195,11 @@ class ModelsService:
             }
 
     def get_entity(self, model_id: str) -> LlmModel | None:
-        """按 id 取模型实体（含 ``api_key``），供角色绑定模型时使用。"""
-        return self._repo.find_by_id(model_id)
+        """按 id 取模型实体（``api_key`` 已解密为明文），供角色绑定模型时使用。"""
+        entity = self._repo.find_by_id(model_id)
+        if entity is not None and entity.api_key:
+            entity.api_key = decrypt_secret(entity.api_key)
+        return entity
 
     def seed_from_env_if_empty(self) -> LlmModelResponseDto | None:
         """库为空且环境有 OPENAI_API_KEY 时，写入一条基础配置。

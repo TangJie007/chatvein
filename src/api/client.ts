@@ -17,6 +17,35 @@ let backendReady = false;
 /** Per-run access token handed out by Rust (`backend_token` command). */
 let cachedToken: string | null | undefined;
 
+/** 后端掉线时的全局订阅（BackendGate 等用于 UI 降级）。 */
+type BackendLostListener = () => void;
+const lostListeners = new Set<BackendLostListener>();
+
+/** 订阅后端掉线通知，返回取消订阅函数。 */
+export function onBackendLost(fn: BackendLostListener): () => void {
+  lostListeners.add(fn);
+  return () => lostListeners.delete(fn);
+}
+
+/**
+ * 后端掉线/重启：复位缓存与就绪标记。
+ * 崩溃重启后端口可能变化，cachedUrl 一并清空，下次请求重新获取。
+ */
+export function markBackendLost(): void {
+  const wasReady = backendReady;
+  backendReady = false;
+  cachedUrl = null;
+  if (wasReady) {
+    for (const fn of lostListeners) {
+      try {
+        fn();
+      } catch {
+        /* 监听器异常不影响主流程 */
+      }
+    }
+  }
+}
+
 /**
  * The access token for this backend run. The Python side validates every
  * request against it (`CHATVEIN_TOKEN` env var), so only requests carrying
@@ -74,14 +103,58 @@ export async function waitForBackend(timeoutMs = 20000): Promise<string> {
   throw new Error("Python 后端在限定时间内未就绪");
 }
 
-/** Direct fetch to the Python backend (frontend talks to it straight). */
+export interface RequestOptions {
+  /** 外部取消信号（用户点击停止等）。 */
+  signal?: AbortSignal | null;
+  /** 请求超时（毫秒）。默认 30s。 */
+  timeoutMs?: number;
+  /** 失败重试次数。默认：GET 1 次，其余 0 次。 */
+  retries?: number;
+}
+
+const DEFAULT_TIMEOUT_MS = 30_000;
+
+/** HTTP 业务错误（非 2xx）：与网络层失败区分，不参与重试/掉线复位。 */
+class HttpError extends Error {}
 export async function backendRequest<T = unknown>(
   endpoint: string,
   method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE" = "GET",
   body?: unknown,
-  signal?: AbortSignal | null
+  options: RequestOptions = {}
+): Promise<T> {
+  const { signal = null, timeoutMs = DEFAULT_TIMEOUT_MS } = options;
+  // 默认重试策略：GET 重试 1 次（可覆盖），其余不重试（避免非幂等请求重复执行）。
+  const retries = options.retries ?? (method === "GET" ? 1 : 0);
+
+  let attempt = 0;
+  for (;;) {
+    try {
+      return await doRequest<T>(endpoint, method, body, signal, timeoutMs);
+    } catch (err) {
+      if (isUserAbort(signal, err)) throw err;
+      if (attempt < retries && isRetryable(err, signal)) {
+        attempt += 1;
+        await new Promise((r) => setTimeout(r, 300 * attempt));
+        continue;
+      }
+      throw err;
+    }
+  }
+}
+
+async function doRequest<T>(
+  endpoint: string,
+  method: string,
+  body: unknown,
+  signal: AbortSignal | null,
+  timeoutMs: number
 ): Promise<T> {
   const url = await waitForBackend();
+  // 超时用独立 controller，与调用方取消信号区分开。
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const onOuterAbort = () => controller.abort();
+  signal?.addEventListener("abort", onOuterAbort, { once: true });
   try {
     const token = await getBackendToken();
     const headers: Record<string, string> = {};
@@ -91,7 +164,7 @@ export async function backendRequest<T = unknown>(
       method,
       headers,
       body: body ? JSON.stringify(body) : undefined,
-      signal: signal ?? undefined,
+      signal: controller.signal,
     });
     const text = await res.text();
     let data: unknown = text;
@@ -101,17 +174,39 @@ export async function backendRequest<T = unknown>(
       /* keep raw text when not JSON */
     }
     if (!res.ok) {
-      throw new Error(httpErrorMessage(res.status, text));
+      throw new HttpError(httpErrorMessage(res.status, text));
     }
     return data as T;
   } catch (err) {
-    // Tauri plugin-http：Rust 抛 string "Request canceled"；JS 侧为 "Request cancelled"。
-    if (signal?.aborted || isHttpAbort(err)) {
-      const abortErr = new DOMException("Request cancelled", "AbortError");
-      throw abortErr;
+    if (isUserAbort(signal, err)) {
+      throw new DOMException("Request cancelled", "AbortError");
+    }
+    // 连接失败 / 超时：后端可能已崩溃重启，通知订阅方复位。
+    if (isRetryable(err, signal)) {
+      markBackendLost();
     }
     throw err;
+  } finally {
+    clearTimeout(timer);
+    signal?.removeEventListener("abort", onOuterAbort);
   }
+}
+
+function isRetryable(err: unknown, signal: AbortSignal | null): boolean {
+  if (isUserAbort(signal, err)) return false;
+  if (err instanceof HttpError) return false; // 业务错误（4xx/5xx）不重试
+  if (isHttpAbort(err)) return false; // 网络层明确取消不重试
+  // 超时触发的 AbortError（外层信号未被取消）
+  if (err instanceof DOMException && err.name === "AbortError") return true;
+  // 非 AbortError 的底层异常（连接拒绝、DNS 失败等）
+  return err instanceof Error;
+}
+
+function isUserAbort(signal: AbortSignal | null, err: unknown): boolean {
+  if (signal?.aborted) return true;
+  if (err instanceof DOMException && err.name === "AbortError") return true;
+  if (err instanceof Error && err.name === "AbortError") return true;
+  return false;
 }
 
 /** 非 2xx：优先取 FastAPI 的 ``detail``（或 message），避免只显示裸 JSON / 状态码。 */

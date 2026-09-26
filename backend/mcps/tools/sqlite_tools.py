@@ -14,7 +14,21 @@ _FORBIDDEN = re.compile(
     r"\b(insert|update|delete|drop|alter|attach|detach|pragma|vacuum|replace|create)\b",
     re.I,
 )
+# 凭据屏蔽：Agent 即使构造 SELECT 也无法读到密钥明文（密文也无意义）。
+_SENSITIVE_TABLES = re.compile(r"\bllm_models\b", re.I)
+_SENSITIVE_COLUMNS = re.compile(
+    r"\b(api_key|api\s*key|secret|password|passwd|authorization|token)\b", re.I
+)
 _MAX_ROWS = 50
+
+
+def _check_sensitive(sql: str) -> str | None:
+    """命中敏感表/列时返回拒绝原因，否则 None。"""
+    if _SENSITIVE_TABLES.search(sql):
+        return "表 llm_models 含加密凭据，禁止查询"
+    if _SENSITIVE_COLUMNS.search(sql):
+        return "涉及敏感凭据列（api_key/secret/token 等），禁止查询"
+    return None
 
 
 def _connect_ro() -> sqlite3.Connection:
@@ -72,6 +86,9 @@ def sqlite_query(sql: str) -> str:
         return "sql 不能为空"
     if _FORBIDDEN.search(statement) or not re.match(r"(?is)^\s*select\b", statement):
         return "仅允许 SELECT 查询"
+    blocked = _check_sensitive(statement)
+    if blocked:
+        return blocked
     try:
         with _connect_ro() as conn:
             cur = conn.execute(statement)

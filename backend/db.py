@@ -572,7 +572,11 @@ def table_detail(name: str, limit: int = 50, offset: int = 0) -> dict[str, objec
             row: dict[str, object] = {}
             for i, value in enumerate(tup):
                 key = raw_cols[i] if i < len(raw_cols) else f"c{i}"
-                row[key] = _coerce_cell(value)
+                # 凭据列一律脱敏，避免明文回显到「数据浏览」页
+                if _SENSITIVE_COLUMN.search(key):
+                    row[key] = "[凭据已加密，已脱敏]"
+                else:
+                    row[key] = _coerce_cell(value)
             rows_out.append(row)
 
         return {
@@ -585,6 +589,11 @@ def table_detail(name: str, limit: int = 50, offset: int = 0) -> dict[str, objec
             "offset": offset_i,
             "rows": rows_out,
         }
+
+
+_SENSITIVE_COLUMN = re.compile(
+    r"^(api_key|password|passwd|secret|token|authorization|credential)$", re.I
+)
 
 
 def _coerce_cell(value: object) -> object:

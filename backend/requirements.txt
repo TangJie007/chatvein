@@ -1,4 +1,6 @@
 fastapi>=0.115,<1.0
+# 本地凭据加密：llm_models.api_key 不再明文落库（Fernet + 密钥文件，见 models/crypto.py）。
+cryptography>=42,<46
 uvicorn>=0.32,<1.0
 pydantic>=2.9,<3.0
 sqlmodel>=0.0.22,<2.0
