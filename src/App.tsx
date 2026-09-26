@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Navigate,
   Outlet,
@@ -9,6 +9,7 @@ import {
   useParams,
   useSearchParams,
 } from "react-router-dom";
+import { ask } from "@tauri-apps/plugin-dialog";
 import { listModels, listRoles } from "./api";
 import { TitleBar } from "./components/layout/TitleBar";
 import { Sidebar } from "./components/layout/Sidebar";
@@ -22,6 +23,8 @@ import { SettingsView } from "./components/views/SettingsView";
 import { SkillsView } from "./components/views/SkillsView";
 import { TooltipProvider } from "./components/ui/tooltip";
 import { TraceShell } from "./components/trace/TraceWindow";
+import { loadPrefs } from "./components/settings/prefs";
+import { checkForUpdate, downloadAndInstall, isTauri } from "./lib/updater";
 import { viewFromPathname, type NavCounts } from "./types/view";
 
 type MainOutletContext = {
@@ -78,6 +81,31 @@ function MainLayout() {
   const [addModelRequestId, setAddModelRequestId] = useState(0);
   const [newChatRequestId, setNewChatRequestId] = useState(0);
   const [newGroupRequestId, setNewGroupRequestId] = useState(0);
+  const autoChecked = useRef(false);
+
+  useEffect(() => {
+    // 启动时按 autoUpdate 偏好静默检查；发现新版本用系统弹窗询问，不静默安装。
+    if (autoChecked.current) return;
+    autoChecked.current = true;
+    if (!isTauri() || !loadPrefs().autoUpdate) return;
+    void (async () => {
+      try {
+        const result = await checkForUpdate();
+        if (!result.available) return;
+        const update = result.update;
+        const ok = await ask(
+          `发现新版本 v${update.version}${update.body ? `\n\n${update.body}` : ""}\n\n是否现在下载并安装？`,
+          { title: "ChatVein 更新", kind: "info" }
+        );
+        if (!ok) return;
+        await downloadAndInstall(update, (percent) => {
+          void percent;
+        });
+      } catch {
+        /* 未配置 endpoint / 网络失败时静默跳过，设置页可手动检查 */
+      }
+    })();
+  }, []);
 
   useEffect(() => {
     void listRoles()

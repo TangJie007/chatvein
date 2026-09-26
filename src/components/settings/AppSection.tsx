@@ -10,6 +10,7 @@ import {
 import { Button } from "../ui/button";
 import { Switch } from "../ui/switch";
 import type { AppPrefs } from "./prefs";
+import { UpdateSection } from "./UpdateSection";
 import { Card, IconButton, Note, Row } from "./primitives";
 
 type AppSectionProps = {
@@ -177,6 +178,8 @@ export function AppSection({ prefs, onSet }: AppSectionProps) {
           </Row>
         </div>
       </Card>
+
+      <UpdateSection />
     </>
   );
 }

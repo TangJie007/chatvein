@@ -28,6 +28,17 @@
       "csp": "default-src 'self'; img-src 'self' asset: https://asset.localhost https://cloudcache.tencent-cloud.com https://cloudcache.tencent-cloud.cn https://skillhub.cn data:; connect-src 'self' ws: wss:"
     }
   },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDJGNTI1RkI0NTY3RDk4QwpSV1NNMldkRit5WDFBb0tpQ1Y5NUFKUUxGWFJzdzRQWDY0eTRjSVZmWXh5cnczdEVTQnlYOEM1Ugo=",
+      "endpoints": [
+        "https://<bucket>.cos.<region>.myqcloud.com/chatvein/updater/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
+  },
   "bundle": {
     "active": true,
     "targets": "all",

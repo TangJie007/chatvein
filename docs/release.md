@@ -30,16 +30,38 @@
   - 不签名的后果：SmartScreen「未知发布者」红色拦截。
 - **macOS 公证（Notarization）**：需 Apple Developer 账号 + Developer ID 证书，`codesign --deep --force --options runtime` 后 `notarytool submit` 公证并 stapler。否则 Gatekeeper 报「已损坏，无法打开」。
 
-### 3. 自动更新（Updater）
-Tauri Updater 需要 RSA 签名密钥对（私钥签名更新包、公钥内嵌进客户端）。
+### 3. 自动更新（Updater）— 已走 COS 模式
+Tauri v2 updater 是「静态 HTTP 端点」模型，更新走腾讯云 COS 对象存储。当前骨架已代码化：
+- `src-tauri/tauri.conf.json` → `plugins.updater`：已内嵌公钥（`C:\Users\Administrator\.tauri\chatvein.key.pub`），`endpoints` 指向 `https://<bucket>.cos.<region>.myqcloud.com/chatvein/updater/latest.json`（占位，需替换为真实桶）。
+- Rust 已注册 `tauri-plugin-updater` + `tauri-plugin-process`；前端设置页「软件更新」卡片 + 启动时按 `autoUpdate` 偏好自动检查（发现新版系统弹窗询问，不静默安装）。
+- 发版脚本 `tools/release_updater.ps1`：build → sign → 生成 `latest.json` + `.sig` → 提示上传。
+
+**密钥对**（已生成一次，私钥勿外传）：
 ```powershell
-# 生成密钥对（只执行一次，妥善保管私钥）
-npx @tauri-apps/cli signer generate
+# 私钥：C:\Users\Administrator\.tauri\chatvein.key（生产发布前建议重新生成并妥善保管）
+# 公钥：C:\Users\Administrator\.tauri\chatvein.key.pub（已内嵌进 tauri.conf.json）
 ```
-然后：
-1. 在 `src-tauri/tauri.conf.json` 的 `plugins.updater` 中填入 `pubkey` 与 `endpoints`（更新清单 URL）。
-2. 在 Rust 注册 `tauri-plugin-updater`，前端加入「检查更新」入口（当前版本未启用）。
-3. 每次发版用 `npx @tauri-apps/cli signer sign -f .\src-tauri\target\release\bundle\msi\*.msi` 生成签名，发布 `.msi` + `.sig` + `latest.json` 到静态托管（GitHub Releases / OSS）。
+
+**每次发版流程**：
+```powershell
+npm run tauri build
+.\tools\release_updater.ps1 -Version 0.1.1 -Notes "本次更新说明"
+# 把 dist-updater/ 下文件上传到 COS 桶 chatvein/updater/（公有读或 CDN 可读）
+# 上传后在 COS 控制台 / CDN 刷新 latest.json 缓存
+```
+
+**COS 桶结构**：
+```
+chatvein/updater/
+  latest.json                      ← 更新清单（含版本/签名/URL）
+  ChatVein_0.1.1_x64-setup.exe     ← NSIS 安装包（updater 仅支持 NSIS，不支持 MSI）
+```
+
+**注意点**：
+- 安装包必须是 **NSIS（.exe）**，updater 不支持 MSI；`bundle.targets` 为 `"all"` 会同时出 nsis，确认 `target/release/bundle/nsis/` 存在。
+- COS 桶建议**私有写 + 公有读**（只放更新产物）；签名校验保证包完整性，篡改会被拒绝。
+- **中国大陆访问 COS 自带域名需 ICP 备案**；未备案就接 CDN（回源 COS）或改用海外 region 桶。
+- 每次发布后必须刷新 CDN 缓存，否则客户端拿到旧清单。
 - 没有更新通道时，线上问题只能靠用户手动重装——务必在首批内测前完成。
 
 ### 4. 跨平台产物

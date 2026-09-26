@@ -45,6 +45,10 @@ pub fn run() {
                 ])
                 .build(),
         )
+        // 自动更新：check() 只做版本比对；下载安装与 relaunch 由前端触发
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        // 安装完成后 relaunch 用
+        .plugin(tauri_plugin_process::init())
         // 单实例：二次启动聚焦既有窗口，避免双后端写同一 SQLite
         .plugin(
             tauri_plugin_single_instance::init(|app, _args, _cwd| {

@@ -24,5 +24,8 @@ backend/data/
 # Tauri generated
 src-tauri/gen/
 
+# Updater 发版产物（latest.json / 安装包 / .sig，不应入库）
+dist-updater/
+
 # OS
 .DS_Store

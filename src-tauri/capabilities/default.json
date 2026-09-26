@@ -6,6 +6,8 @@
   "permissions": [
     "core:default",
     "dialog:allow-open",
+    "dialog:allow-ask",
+    "dialog:allow-message",
     "opener:default",
     "core:window:allow-close",
     "core:window:allow-minimize",
@@ -22,6 +24,8 @@
     "core:event:allow-emit-to",
     "core:event:allow-listen",
     "log:default",
+    "updater:default",
+    "process:default",
     {
       "identifier": "http:default",
       "allow": [

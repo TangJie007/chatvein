@@ -64,5 +64,13 @@ jobs:
       - name: Create .venv for PyInstaller
         run: python -m venv .venv
       - run: npm ci
+      # updater 已启用：build NSIS 时需私钥签名 .sig。CI 用一次性密钥仅保证构建通过，
+      # 正式发布在本地用正式密钥重新签名（见 docs/release.md 与 tools/release_updater.ps1）。
+      - name: Generate CI signing key
+        shell: powershell
+        run: |
+          New-Item -ItemType Directory -Force -Path "$HOME\.tauri" | Out-Null
+          npx tauri signer generate -w "$HOME\.tauri\chatvein.key" --ci
+          "TAURI_SIGNING_PRIVATE_KEY_PATH=$HOME\.tauri\chatvein.key" | Out-File -FilePath $env:GITHUB_ENV -Append
       - name: Tauri build (backend + frontend + bundle)
         run: npm run tauri build
