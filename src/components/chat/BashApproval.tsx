@@ -18,6 +18,10 @@ export function BashApproval() {
   useEffect(() => {
     let cancelled = false;
     let timer = 0;
+    // 有待确认项时固定快速轮询；无待确认项时指数退避，减少空转请求。
+    const FAST = 1000;
+    const MAX_BACKOFF = 5000;
+    let backoff = FAST;
     const tick = async () => {
       try {
         const data = await listBashPending();
@@ -27,10 +31,13 @@ export function BashApproval() {
           if (prev && next && prev.id === next.id) return prev;
           return next;
         });
+        // 出现待确认项立即恢复快速轮询；否则指数退避并封顶
+        backoff = next ? FAST : Math.min(backoff * 2, MAX_BACKOFF);
       } catch {
-        /* 后端还没起来时保持安静 */
+        /* 后端还没起来时保持安静，同样退避 */
+        backoff = Math.min(backoff * 2, MAX_BACKOFF);
       } finally {
-        if (!cancelled) timer = window.setTimeout(() => void tick(), 1000);
+        if (!cancelled) timer = window.setTimeout(() => void tick(), backoff);
       }
     };
     void tick();

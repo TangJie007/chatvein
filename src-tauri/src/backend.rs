@@ -2,7 +2,7 @@ use std::io::Read;
 use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicBool, AtomicU16, Ordering};
 use std::sync::{Mutex, OnceLock};
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 
 // 端口在崩溃重启后可能变化，用原子值而非 OnceLock，保证前端能拿到最新地址。
 static BACKEND_PORT: AtomicU16 = AtomicU16::new(8420);
@@ -96,6 +96,25 @@ pub fn backend_base_url() -> String {
 // 后端进程管理
 // ---------------------------------------------------------------------------
 
+/// 数据目录所有权在 Rust：用 Tauri 的 ``app_data_dir()`` 得到每用户数据目录
+/// （Windows 为 ``%APPDATA%/<identifier>``），确保存在后返回字符串。
+///
+/// 打包后 Python 后端位于只读资源目录，不能自己决定写哪；dev 模式下若不注入，
+/// 后端会回退到仓库内的 ``backend/data``，导致与 release 用户数据目录不一致。
+fn resolve_data_dir(app: &AppHandle) -> String {
+    let dir = app
+        .path()
+        .app_data_dir()
+        .unwrap_or_else(|err| {
+            log::warn!("app_data_dir() 不可用（{err}），回退到临时目录");
+            std::env::temp_dir().join("chatvein")
+        });
+    if let Err(err) = std::fs::create_dir_all(&dir) {
+        log::warn!("无法创建数据目录 {}：{err}", dir.display());
+    }
+    dir.to_string_lossy().to_string()
+}
+
 /// 启动 Python 后端；启动成功后把子进程登记进 BACKEND_CHILD 并挂 Job Object，
 /// 随后开启崩溃监督线程（仅首次启动时开启，重启复用同一监督线程）。
 pub fn spawn_backend(app: &AppHandle) {
@@ -104,7 +123,9 @@ pub fn spawn_backend(app: &AppHandle) {
 
 fn spawn_backend_inner(app: &AppHandle, supervise: bool) {
     let port = find_free_port();
-    let token = generate_token();
+    // 首次启动生成访问令牌并缓存整个运行期；崩溃重启时复用同一令牌，
+    // 避免前端已缓存的 token 在重启后失配（OnceLock 只能 set 一次）。
+    let token = BACKEND_TOKEN.get_or_init(generate_token).clone();
 
     #[cfg(windows)]
     let job = job_object::create_kill_on_close_job();
@@ -161,6 +182,9 @@ fn spawn_backend_process(
     command
         .args(&args)
         .env("CHATVEIN_TOKEN", token)
+        // 数据目录所有权在 Rust：打包后后端在只读资源目录，不能自己决定写哪。
+        // 用 app_data_dir 算出每用户数据目录注入给 Python，避免它回退到仓库 backend/data。
+        .env("CHATVEIN_DATA_DIR", resolve_data_dir(app))
         // 强制 Python 以 UTF-8 输出，避免 Windows 控制台 GBK 导致 Rust 侧日志乱码
         .env("PYTHONUTF8", "1")
         .env("PYTHONIOENCODING", "utf-8")
@@ -186,6 +210,8 @@ fn spawn_backend_process(
     command
         .args(&args)
         .env("CHATVEIN_TOKEN", token)
+        // 数据目录所有权在 Rust：用 app_data_dir 注入，避免回退到仓库 backend/data。
+        .env("CHATVEIN_DATA_DIR", resolve_data_dir(app))
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     let mut child = command.spawn().ok()?;
@@ -220,6 +246,21 @@ fn backend_args(python_exe: &str, port: u16) -> Vec<String> {
 
 #[cfg(windows)]
 fn find_python_exe() -> Option<String> {
+    // debug（tauri dev / cargo run）用仓库 .venv 的 python 直接跑最新源码，
+    // 保证改动即时生效。绝不能优先用 backend-runtime/backend.exe —— 那是打包
+    // 产物，可能滞后于源码（例如缺新路由 /api/bash/pending），会让人误以为
+    // 后端代码有 bug（实际是旧 exe 在响应）。
+    if cfg!(debug_assertions) {
+        let repo_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap_or_else(|| std::path::Path::new("."));
+        let venv = repo_root.join(".venv").join("Scripts").join("python.exe");
+        if venv.exists() {
+            return Some(venv.to_string_lossy().to_string());
+        }
+        return Some("python".to_string());
+    }
+    // release：优先用与 .exe 同目录的打包 backend-runtime/backend.exe
     let exe_dir = std::env::current_exe().ok()?.parent()?.to_path_buf();
     let runtime = exe_dir.join("backend-runtime");
     if runtime.join("backend.exe").exists() {
@@ -231,6 +272,17 @@ fn find_python_exe() -> Option<String> {
 
 #[cfg(not(windows))]
 fn find_python_exe() -> Option<String> {
+    // debug 同 windows：优先仓库 .venv，跑最新源码
+    if cfg!(debug_assertions) {
+        let repo_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap_or_else(|| std::path::Path::new("."));
+        let venv = repo_root.join(".venv").join("bin").join("python");
+        if venv.exists() {
+            return Some(venv.to_string_lossy().to_string());
+        }
+        return Some("python3".to_string());
+    }
     let exe_dir = std::env::current_exe().ok()?.parent()?.to_path_buf();
     let runtime = exe_dir.join("backend-runtime");
     if runtime.join("backend").exists() {
@@ -359,7 +411,8 @@ fn http_health_ok(port: u16) -> bool {
     let _ = stream.set_write_timeout(Some(Duration::from_millis(800)));
 
     let req = format!(
-        "GET /api/health HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nConnection: close\r\n\r\n"
+        "GET /api/health HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nX-ChatVein-Token: {}\r\nConnection: close\r\n\r\n",
+        backend_token()
     );
     if stream.write_all(req.as_bytes()).is_err() {
         return false;
