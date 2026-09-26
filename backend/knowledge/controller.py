@@ -70,8 +70,9 @@ def clear_docs():
 
 @knowledge_controller.post("/search")
 def search_docs(payload: KbSearchIn):
-    """语义 / 关键词检索：向量模型就绪时优先向量召回，否则子串兜底。"""
-    return {"items": get_service().search(payload.query, limit=payload.limit)}
+    """语义 / 关键词检索：向量模型就绪时优先向量召回，否则子串兜底。
+    hybrid=True 时双路召回 + RRF 融合，效果接近 rerank 但无需额外模型。"""
+    return {"items": get_service().search(payload.query, limit=payload.limit, hybrid=payload.hybrid)}
 
 
 @knowledge_controller.post("/import")

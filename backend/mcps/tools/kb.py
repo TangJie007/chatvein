@@ -272,17 +272,57 @@ def _like_hits(conn: sqlite3.Connection, query: str, limit: int) -> list[dict[st
     return [_doc_row_to_hit(doc, None) for doc in rows]
 
 
-def search_hits(query: str, limit: int = 5) -> list[dict[str, object]]:
+def _rrf_merge(
+    vec_hits: list[dict[str, object]],
+    like_hits: list[dict[str, object]],
+    limit: int,
+    k: int = 60,
+) -> list[dict[str, object]]:
+    """倒数排名融合（Reciprocal Rank Fusion）。
+
+    把向量召回与关键词召回两个有序列表合并为一个更稳的排名，
+    无需任何额外模型——这正是轻量级 rerank 的替代方案。
+    同一条目在两路都命中时分数叠加，排名越靠前贡献越大。
+    """
+    scores: dict[str, float] = {}
+    meta: dict[str, dict[str, object]] = {}
+    for rank, h in enumerate(vec_hits):
+        doc_id = str(h["id"])
+        scores[doc_id] = scores.get(doc_id, 0.0) + 1.0 / (k + rank)
+        # 向量命中优先保留其语义距离（distance 非 None）
+        meta[doc_id] = {**h, "distance": h.get("distance")}
+    for rank, h in enumerate(like_hits):
+        doc_id = str(h["id"])
+        scores[doc_id] = scores.get(doc_id, 0.0) + 1.0 / (k + rank)
+        if doc_id not in meta:
+            meta[doc_id] = {**h, "distance": None}
+    ranked = sorted(scores.keys(), key=lambda d: scores[d], reverse=True)
+    return [meta[d] for d in ranked[:limit]]
+
+
+def search_hits(
+    query: str, limit: int = 5, hybrid: bool = False
+) -> list[dict[str, object]]:
     """检索本地知识库：优先向量召回，否则标题 / 正文子串匹配。
 
     返回结构化命中列表，供 Agent 工具与知识库管理 API 共同使用。
     模型未就绪时自动退化为关键词检索（不会抛错）。
+
+    ``hybrid=True`` 时启用混合检索：向量召回与关键词召回双路候选，
+    再用 RRF 融合排序，效果接近 rerank 但无需任何额外模型。
     """
     q = (query or "").strip()
     if not q:
         return []
     limit = max(1, min(int(limit), _MAX_HITS))
     with ensure_kb() as conn:
+        if hybrid:
+            candidate = max(limit * 4, 24)
+            vec = _vec_hits(conn, q, candidate)
+            like = _like_hits(conn, q, candidate)
+            if vec or like:
+                return _rrf_merge(vec, like, limit)
+            return []
         hits = _vec_hits(conn, q, limit) or _like_hits(conn, q, limit)
     return hits
 

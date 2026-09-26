@@ -112,11 +112,17 @@ export function deleteKbDoc(id: string): Promise<{ deleted: string }> {
   );
 }
 
-/** 语义 / 关键词检索（向量模型就绪时优先向量召回） */
-export function searchKb(query: string, limit = 8): Promise<{ items: KbSearchHit[] }> {
+/** 语义 / 关键词检索（向量模型就绪时优先向量召回）。
+ * hybrid=true 时双路召回 + RRF 融合排序，效果接近 rerank 但无需额外模型。 */
+export function searchKb(
+  query: string,
+  limit = 8,
+  hybrid = false
+): Promise<{ items: KbSearchHit[] }> {
   return backendRequest<{ items: KbSearchHit[] }>("/api/kb/search", "POST", {
     query,
     limit,
+    hybrid,
   });
 }
 

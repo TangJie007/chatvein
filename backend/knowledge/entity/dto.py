@@ -40,6 +40,7 @@ class KbSearchIn(BaseModel):
 
     query: str = Field(min_length=1, max_length=2000)
     limit: int = Field(default=5, ge=1, le=20)
+    hybrid: bool = Field(default=False, description="混合检索(RRF 融合)，替代需额外模型的 rerank")
 
 
 class KbImportItemIn(BaseModel):

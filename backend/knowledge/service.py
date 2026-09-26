@@ -168,8 +168,8 @@ class KnowledgeService:
                 return {"deleted": deleted}
 
     # ---- 搜索 ----
-    def search(self, query: str, limit: int = 5) -> list[dict[str, Any]]:
-        hits = store.search_hits(query, limit=limit)
+    def search(self, query: str, limit: int = 5, hybrid: bool = False) -> list[dict[str, Any]]:
+        hits = store.search_hits(query, limit=limit, hybrid=hybrid)
         for hit in hits:
             hit["indexed"] = True if hit.get("distance") is not None else False
             hit["char_count"] = len(str(hit["content"]))
