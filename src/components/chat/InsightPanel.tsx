@@ -16,6 +16,7 @@ import {
   Wrench,
 } from "lucide-react";
 import { useEffect, useState, type ComponentType, type ReactNode } from "react";
+import { ScrollArea } from "../ui/scroll-area";
 
 export type InsightToolStatus = "ok" | "blocked";
 
@@ -133,35 +134,37 @@ export function InsightPanel({
                   : null
             }
           />
-          <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden pr-0.5">
-            {shownGoal ? (
-              <div
-                className="mb-3 flex items-center gap-1.5 rounded-xl bg-tint/70 px-3 py-2 text-[12px] leading-5 text-ink-500"
-                title={shownGoal}
-              >
-                <span className="shrink-0 font-medium text-ink-700">
-                  {live ? "正在回答" : "目标"}
-                </span>
-                <span className="line-clamp-2 break-words">{shownGoal}</span>
-              </div>
-            ) : null}
-            {shownSteps.length ? (
-              <div className="flex flex-col">
-                {shownSteps.map((s, i) => (
-                  <TimelineNode
-                    key={i}
-                    step={s}
-                    last={!live && i === shownSteps.length - 1}
-                  />
-                ))}
-                {live ? <LiveThinkingNode /> : null}
-              </div>
-            ) : live ? (
-              <LiveThinkingNode />
-            ) : (
-              <Empty text="该会话暂无执行轨迹" />
-            )}
-          </div>
+          <ScrollArea className="min-h-0 flex-1">
+            <div className="pr-1">
+              {shownGoal ? (
+                <div
+                  className="mb-3 flex items-center gap-1.5 rounded-xl bg-tint/70 px-3 py-2 text-[12px] leading-5 text-ink-500"
+                  title={shownGoal}
+                >
+                  <span className="shrink-0 font-medium text-ink-700">
+                    {live ? "正在回答" : "目标"}
+                  </span>
+                  <span className="line-clamp-2 break-words">{shownGoal}</span>
+                </div>
+              ) : null}
+              {shownSteps.length ? (
+                <div className="flex flex-col">
+                  {shownSteps.map((s, i) => (
+                    <TimelineNode
+                      key={i}
+                      step={s}
+                      last={!live && i === shownSteps.length - 1}
+                    />
+                  ))}
+                  {live ? <LiveThinkingNode /> : null}
+                </div>
+              ) : live ? (
+                <LiveThinkingNode />
+              ) : (
+                <Empty text="该会话暂无执行轨迹" />
+              )}
+            </div>
+          </ScrollArea>
         </div>
 
         <div className="mt-4 flex min-h-0 min-w-0 flex-[3] flex-col">
@@ -170,66 +173,68 @@ export function InsightPanel({
             title="产物"
             hint={artifacts.length ? `${artifacts.length} 项` : null}
           />
-          <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden pr-0.5">
-            {artifacts.length ? (
-              <div className="flex flex-col gap-2">
-                {artifacts.map((a, i) => {
-                  const meta = ART_META[a.type] || ART_META.file;
-                  const ArtIcon = meta.icon;
-                  const canReveal = !!a.path && !!onRevealArtifact;
-                  return (
-                    <button
-                      key={`${a.name}-${i}`}
-                      type="button"
-                      className="group flex w-full min-w-0 items-center gap-2 rounded-xl bg-surface p-2 text-left shadow-soft transition-shadow hover:shadow-lift focus-visible:outline-2 focus-visible:outline-brand-600"
-                    >
-                      <span
-                        className={
-                          "flex size-7 shrink-0 items-center justify-center rounded-lg " +
-                          meta.cls
-                        }
+          <ScrollArea className="min-h-0 flex-1">
+            <div className="pr-1">
+              {artifacts.length ? (
+                <div className="flex flex-col gap-2">
+                  {artifacts.map((a, i) => {
+                    const meta = ART_META[a.type] || ART_META.file;
+                    const ArtIcon = meta.icon;
+                    const canReveal = !!a.path && !!onRevealArtifact;
+                    return (
+                      <button
+                        key={`${a.name}-${i}`}
+                        type="button"
+                        className="group flex w-full min-w-0 items-center gap-2 rounded-xl bg-surface p-2 text-left shadow-soft transition-shadow hover:shadow-lift focus-visible:outline-2 focus-visible:outline-brand-600"
                       >
-                        <ArtIcon />
-                      </span>
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-[12px] font-medium text-ink-900">
-                          {a.name}
-                        </p>
-                        <p className="truncate text-[11px] text-ink-400">{a.meta}</p>
-                      </div>
-                      <span className="shrink-0 text-[10px] text-ink-300 group-hover:text-ink-500">
-                        {a.time}
-                      </span>
-                      {canReveal ? (
                         <span
-                          role="button"
-                          tabIndex={0}
-                          title="打开文件所在位置"
-                          aria-label="打开文件所在位置"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onRevealArtifact?.(a.path as string);
-                          }}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter" || e.key === " ") {
-                              e.preventDefault();
+                          className={
+                            "flex size-7 shrink-0 items-center justify-center rounded-lg " +
+                            meta.cls
+                          }
+                        >
+                          <ArtIcon />
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-[12px] font-medium text-ink-900">
+                            {a.name}
+                          </p>
+                          <p className="truncate text-[11px] text-ink-400">{a.meta}</p>
+                        </div>
+                        <span className="shrink-0 text-[10px] text-ink-300 group-hover:text-ink-500">
+                          {a.time}
+                        </span>
+                        {canReveal ? (
+                          <span
+                            role="button"
+                            tabIndex={0}
+                            title="打开文件所在位置"
+                            aria-label="打开文件所在位置"
+                            onClick={(e) => {
                               e.stopPropagation();
                               onRevealArtifact?.(a.path as string);
-                            }
-                          }}
-                          className="flex size-6 shrink-0 items-center justify-center rounded-md text-ink-400 transition-colors hover:bg-tint hover:text-brand-600 focus-visible:outline-2 focus-visible:outline-brand-600"
-                        >
-                          <FolderOpen className="size-3.5" strokeWidth={1.75} />
-                        </span>
-                      ) : null}
-                    </button>
-                  );
-                })}
-              </div>
-            ) : (
-              <Empty text="本次执行暂无产物" />
-            )}
-          </div>
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter" || e.key === " ") {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                onRevealArtifact?.(a.path as string);
+                              }
+                            }}
+                            className="flex size-6 shrink-0 items-center justify-center rounded-md text-ink-400 transition-colors hover:bg-tint hover:text-brand-600 focus-visible:outline-2 focus-visible:outline-brand-600"
+                          >
+                            <FolderOpen className="size-3.5" strokeWidth={1.75} />
+                          </span>
+                        ) : null}
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : (
+                <Empty text="本次执行暂无产物" />
+              )}
+            </div>
+          </ScrollArea>
         </div>
       </div>
     </aside>
