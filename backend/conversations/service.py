@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Any
 
@@ -356,18 +357,32 @@ class ConversationsService:
         if not name or not path:
             return None
         root = self.workspace_root_for(name).resolve()
-        target = Path(path).resolve()
+        raw = Path(path)
+        # 产物 path 以工作区根为锚点：后端 insight 返回的是 "output/xxx"
+        # 这种相对路径（也可能是绝对路径）。相对路径要拼回 root，否则会落到
+        # 后端进程的 CWD 上，relative_to 校验失败 → 静默打不开。
+        candidate = raw if raw.is_absolute() else (root / raw)
+        # 必须先 resolve() 再校验：先锚定相对路径到 root，同时归一化 ".." 与
+        # 软链；否则 pathlib 不会归一化 ".."，root/../../etc 能骗过前缀匹配。
+        resolved = candidate.resolve()
         try:
-            target.relative_to(root)
+            resolved.relative_to(root)
         except ValueError:
+            # 越出会话工作区：拒绝打开任意路径（仅记录，不向客户端泄露路径）
+            logging.getLogger(__name__).warning(
+                "open_artifact_location 拒绝越界路径: conv=%s root=%s path=%s",
+                conversation_id,
+                root,
+                path,
+            )
             return None
         from mcps.tools.fs import _open_in_file_manager  # pyright: ignore[reportImplicitRelativeImport]
 
         folder = (
-            target.parent
-            if target.is_file()
-            else target
-            if target.is_dir()
+            resolved.parent
+            if resolved.is_file()
+            else resolved
+            if resolved.is_dir()
             else root
         )
         _open_in_file_manager(str(folder))

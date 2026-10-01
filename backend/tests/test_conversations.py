@@ -2,6 +2,7 @@
 
 import sqlite3
 from pathlib import Path
+from unittest import mock
 
 from conversations.service import ConversationsService
 from conversations.session_store import ensure_session_db
@@ -104,6 +105,32 @@ def test_workspace_root_survives_legacy_tool_calls_schema() -> None:
             ).fetchone()[0]
         ).upper()
     assert turn_type == "TEXT"
+
+
+def test_open_artifact_location_accepts_relative_path() -> None:
+    """产物 path 是相对工作区的 'output/xxx'，必须能拼回 root 打开。"""
+    service = ConversationsService()
+    conversation_id, _, _ = service.save_exchange(None, "hi", "hello")
+    stored = service.get_conversation(conversation_id)
+    root = service.workspace_root_for(stored["workspace_dir"])
+    out = root / "output"
+    out.mkdir(parents=True, exist_ok=True)
+    artifact = out / "report.pdf"
+    artifact.write_text("x")
+
+    with mock.patch("mcps.tools.fs._open_in_file_manager") as opener:
+        folder = service.open_artifact_location(conversation_id, "output/report.pdf")
+    assert folder is not None
+    assert Path(folder).resolve() == out.resolve()
+    opener.assert_called_once()
+
+
+def test_open_artifact_location_rejects_path_outside_workspace() -> None:
+    """越出会话工作区的路径要拒绝，不能落到后端进程 CWD 或任意位置。"""
+    service = ConversationsService()
+    conversation_id, _, _ = service.save_exchange(None, "hi", "hello")
+    with mock.patch("mcps.tools.fs._open_in_file_manager"):
+        assert service.open_artifact_location(conversation_id, "../../etc/passwd") is None
 
 
 def test_delete_last_exchange_requires_matching_user_content() -> None:
