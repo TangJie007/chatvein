@@ -14,6 +14,7 @@ from mcps.registry import (  # pyright: ignore[reportImplicitRelativeImport]
 )
 
 from . import llm as llm_mod
+from .tool_retriever import prefilter_tools  # pyright: ignore[reportImplicitRelativeImport]
 from trace.recording import span
 
 _SYSTEM = """你是工具选择 Agent。根据用户问题与工具清单，选出需要的工具名（可多选）。
@@ -114,6 +115,12 @@ def select_tools(
             "used_llm": False,
         }
 
+    # 两阶段选型：先「向量 + BM25」预筛收窄候选池，再交给模型精选。
+    # 未过预筛的工具不进入模型可见清单（candidate_tools 即预筛后的集合）。
+    prefiltered = prefilter_tools(tools, text)
+    prefiltered_names = {t.name for t in prefiltered}
+    catalog = "\n".join(f"- {t.name}: {t.description}" for t in prefiltered)
+
     try:
         with span("select_tools"):
             plan = llm_mod.invoke_structured(
@@ -124,21 +131,21 @@ def select_tools(
                     HumanMessage(content=text or "(空)"),
                 ],
             )
-        names = [n for n in plan.tool_names if n in candidates]
+        names = [n for n in plan.tool_names if n in prefiltered_names]
         if not names:
-            names = [n for n in heuristic_tool_names(text) if n in candidates]
+            names = [n for n in heuristic_tool_names(text) if n in prefiltered_names]
         reason = (plan.reason or "").strip() or ("已选工具" if names else "无需工具")
         return {
             "selected_tools": names,
-            "candidate_tools": candidates,
+            "candidate_tools": [t.name for t in prefiltered],
             "tool_plan_reason": _with_note(reason),
             "used_llm": True,
         }
     except Exception as exc:  # noqa: BLE001
-        names = [n for n in heuristic_tool_names(text) if n in candidates]
+        names = [n for n in heuristic_tool_names(text) if n in prefiltered_names]
         return {
             "selected_tools": names,
-            "candidate_tools": candidates,
+            "candidate_tools": [t.name for t in prefiltered],
             "tool_plan_reason": _with_note(f"选择失败({exc}); 已回落启发式"),
             "used_llm": False,
         }
