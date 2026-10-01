@@ -26,6 +26,7 @@ import { TraceShell } from "./components/trace/TraceWindow";
 import { loadPrefs } from "./components/settings/prefs";
 import { checkForUpdate, downloadAndInstall, isTauri } from "./lib/updater";
 import { viewFromPathname, type NavCounts } from "./types/view";
+import { loadGroups } from "./lib/groupsStore";
 
 type MainOutletContext = {
   newChatRequestId: number;
@@ -72,7 +73,9 @@ function MainLayout() {
   const view = viewFromPathname(location.pathname);
   const [counts, setCounts] = useState<NavCounts>({
     chat: 1,
-    group: 0,
+    // 群组数据源是 localStorage（同步可读），启动即填好徽标，
+    // 不必先点进群视图等 GroupView 挂载才回传数量。
+    group: loadGroups().length,
     kb: 0,
     skills: 0,
     roles: 0,
