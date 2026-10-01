@@ -202,6 +202,17 @@ function StepDetail({ step }: { step: TraceStep }) {
           <JsonBlock value={step.error_detail} maxHeight={240} />
         </section>
       ) : null}
+
+      {step.detail &&
+      step.kind !== "route" &&
+      step.kind !== "tools" &&
+      step.kind !== "tool" &&
+      step.kind !== "llm" ? (
+        <section className="flex flex-col gap-2">
+          <h3 className="text-[12px] font-medium text-ink-500">detail</h3>
+          <JsonBlock value={step.detail} maxHeight={420} />
+        </section>
+      ) : null}
     </div>
   );
 }

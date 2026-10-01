@@ -23,7 +23,7 @@ from .common import (
     ALWAYS_ON_TOOLS,
     allowed_from_role,
     build_react_graph,
-    failure_reply,
+    concise_failure,
     StepLimitReached,
     invoke_react,
     last_text,
@@ -172,10 +172,21 @@ def build_medium_graph(
                 "tool_trace": traced,
             }
         except Exception as exc:  # noqa: BLE001
-            fallback = run_tools(text, selected) if selected else ""
-            # 限流 / 鉴权这类模型侧原因会翻成人话，其余沿用通用文案
+            verbose = run_tools(text, selected) if selected else ""
+            # 详细工具输出写入追踪，气泡只保留一句话提示（避免把路径/日志铺满聊天框）
+            if verbose:
+                note(
+                    "react_error",
+                    name="react_error",
+                    status="error",
+                    error=f"{type(exc).__name__}: {exc}",
+                    detail={
+                        "error": f"{type(exc).__name__}: {exc}",
+                        "tool_output": verbose,
+                    },
+                )
             return {
-                "reply": failure_reply(exc, fallback),
+                "reply": concise_failure(exc, verbose),
                 "used_llm": False,
                 "tool_trace": [],
             }

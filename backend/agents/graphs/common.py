@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FuturesTimeout
 from typing import Any
@@ -19,11 +20,12 @@ from langchain_core.messages import ToolMessage
 
 from agents.cancellation import raise_if_cancelled  # pyright: ignore[reportImplicitRelativeImport]
 from agents.llm import (  # pyright: ignore[reportImplicitRelativeImport]
-    describe_model_error,
     is_rate_limit_error,
+    model_error_hint,
     rate_limit_retries,
     rate_limit_wait,
 )
+from trace.recording import note
 
 
 def last_text(messages: list[Any] | None) -> str | None:
@@ -239,10 +241,44 @@ def rate_limit_retry_middleware():
     return [retry, _reset]
 
 
-def failure_reply(exc: BaseException, fallback: str = "") -> str:
-    """react 兜底回复：限流 / 鉴权这类模型侧原因要说人话，不能混成「工具调用失败」。"""
-    text = describe_model_error(exc)
-    return f"{text}\n{fallback}" if fallback else text
+def _failed_tool_names(verbose: str) -> list[str]:
+    """从工具输出里挑出带「失败 / 离线模式 / error」的行，取工具名去重。
+
+    形如 ``[sandbox_create_venv] 离线模式无法自动填参`` 的行会命中，用于把失败
+    工具名汇总进聊天气泡的简洁提示。
+    """
+    names: list[str] = []
+    for line in (verbose or "").splitlines():
+        m = re.match(r"\s*\[([^\]]+)\]", line)
+        if not m:
+            continue
+        name = m.group(1).strip()
+        if name in names:
+            continue
+        low = line.lower()
+        if "失败" in line or "离线模式" in line or "error" in low or "exception" in low:
+            names.append(name)
+    return names
+
+
+def concise_failure(exc: BaseException, verbose: str = "") -> str:
+    """react 异常兜底的一句话回复：详细工具输出另存追踪，不进聊天气泡。
+
+    气泡只给一句人话；限流 / 鉴权 / 超时等模型侧原因翻成可读提示，其余回落到
+    「工具调用失败，请重新再试」。具体原因（verbose 工具输出）由调用方写入追踪。
+    """
+    hint = model_error_hint(exc)
+    if hint:
+        return hint
+    failed = _failed_tool_names(verbose)
+    if failed:
+        return (
+            f"工具调用失败，请重新再试（{', '.join(failed)}）。"
+            "具体原因见右侧「追踪」。"
+        )
+    if isinstance(exc, TimeoutError):
+        return "对话执行超时（已超 300 秒），可能卡在模型或联网，请重试或简化问题。"
+    return "工具调用失败，请重新再试。"
 
 
 def build_react_graph(
