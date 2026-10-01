@@ -27,6 +27,8 @@ export interface ConversationRecord {
   last_message: string | null;
   /** 会话级技能 slug 列表：Composer 勾选，当前会话内持续生效。 */
   skills?: string[];
+  /** 绑定的角色 id（空表示走后端默认主角色）：新建时选定，之后该会话整体沿用。 */
+  role_id?: string | null;
 }
 
 export interface ConversationArtifact {
@@ -63,11 +65,22 @@ export interface ConversationWorkspace {
   memory_count: number;
 }
 
-/** Create an empty conversation (allocates workspace_dir). */
-export function createConversation(title = "") {
+/** Create an empty conversation (allocates workspace_dir).
+ *  ``roleId`` 非空时把会话绑定到该角色：之后该会话整体沿用（发送未显式带 role_id 时回退）。 */
+export function createConversation(title = "", roleId: string | null = null) {
   return backendRequest<ConversationRecord>("/api/conversations/", "POST", {
     title,
+    role_id: roleId ?? null,
   });
+}
+
+/** 切换会话绑定的角色：持久化到会话，后续每轮对话都交给该角色。 */
+export function updateConversationRole(conversationId: string, roleId: string | null) {
+  return backendRequest<{ conversation_id: string; role_id: string | null }>(
+    `/api/conversations/${conversationId}/role`,
+    "PUT",
+    { role_id: roleId ?? null }
+  );
 }
 
 /** 补注册群组成员：把参与角色 id 合并进会话（与现有成员去重，chats 模块）。 */

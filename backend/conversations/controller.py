@@ -2,7 +2,11 @@
 
 from fastapi import APIRouter, HTTPException, Body
 
-from .entity import CreateConversationDto, UpdateConversationSkillsDto
+from .entity import (
+    CreateConversationDto,
+    UpdateConversationRoleDto,
+    UpdateConversationSkillsDto,
+)
 from .service import ConversationsService
 
 conversations_controller = APIRouter()
@@ -54,6 +58,16 @@ def update_conversation_skills(conversation_id: str, payload: UpdateConversation
         raise HTTPException(status_code=404, detail="会话不存在")
     skills = _service.set_conversation_skills(conversation_id, payload.skills)
     return {"conversation_id": conversation_id, "skills": skills}
+
+
+@conversations_controller.put("/{conversation_id}/role")
+def update_conversation_role(conversation_id: str, payload: UpdateConversationRoleDto):
+    """切换会话绑定的角色：之后该会话整体沿用（空值 → 后端默认主角色）。"""
+    if _service.get_conversation(conversation_id) is None:
+        raise HTTPException(status_code=404, detail="会话不存在")
+    if not _service.set_conversation_role(conversation_id, payload.role_id):
+        raise HTTPException(status_code=404, detail="会话不存在")
+    return {"conversation_id": conversation_id, "role_id": payload.role_id}
 
 
 @conversations_controller.post("/{conversation_id}/open-workspace")

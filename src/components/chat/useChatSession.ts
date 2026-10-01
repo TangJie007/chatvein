@@ -263,7 +263,8 @@ export function useChatSession({
           return;
         }
         try {
-          const created = await createConversation("");
+          // 自动新建时同样绑定当前角色：之后打开该会话能恢复到同一角色。
+          const created = await createConversation("", roleId);
           activeConversationId = created.id;
           // 新会话是空的：别让它触发的整表重载清掉下面插入的乐观气泡。
           skipNextLoadRef.current = created.id;

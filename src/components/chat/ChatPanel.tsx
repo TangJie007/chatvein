@@ -65,6 +65,8 @@ type ChatPanelProps = {
   roleName?: string;
   /** 角色绑定的头像文件名（如 avatar-11.png）；空串则用 Bot 图标。 */
   roleAvatar?: string;
+  /** 切换当前会话角色：非空时头部展示可点击的角色 chip。 */
+  onChangeRole?: () => void;
   modelName?: string;
   modelId?: string;
   contextPct?: number;
@@ -125,6 +127,7 @@ export function ChatPanel({
   onOpenTrace,
   roleName,
   roleAvatar,
+  onChangeRole,
   modelName = "（未配置模型）",
   modelId = "",
   contextPct = 0,
@@ -256,6 +259,26 @@ export function ChatPanel({
             </p>
           </div>
           <div className="ml-auto flex shrink-0 items-center gap-1">
+            {onChangeRole ? (
+              <button
+                type="button"
+                onClick={onChangeRole}
+                title="切换对话角色"
+                className="mr-1 flex items-center gap-1.5 rounded-lg bg-tint/70 px-2 py-1.5 text-[12px] text-ink-600 transition-colors hover:bg-tint hover:text-ink-800 focus-visible:outline-2 focus-visible:outline-brand-600"
+              >
+                {avatarUrl(roleAvatar) ? (
+                  <img
+                    src={avatarUrl(roleAvatar)}
+                    alt=""
+                    draggable={false}
+                    className="size-4 shrink-0 rounded-full object-cover"
+                  />
+                ) : (
+                  <Bot className="size-4 shrink-0" strokeWidth={1.75} />
+                )}
+                <span className="max-w-[140px] truncate">{roleName || "默认角色"}</span>
+              </button>
+            ) : null}
             {["追踪", "归档", "打开工作区"].map((label) => (
               <button
                 key={label}

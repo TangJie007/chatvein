@@ -161,7 +161,7 @@ describe("useChatSession（发送 / 撤回 / 清理基线）", () => {
       await result.current.send("hello");
     });
 
-    expect(api.createConversation).toHaveBeenCalledWith("");
+    expect(api.createConversation).toHaveBeenCalledWith("", null);
     expect(onSelect).toHaveBeenCalledWith("c9");
     expect(vi.mocked(api.sendChat).mock.calls[0]![1]).toBe("c9");
     expect(result.current.messages).toHaveLength(2);

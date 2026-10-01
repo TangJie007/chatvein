@@ -9,6 +9,7 @@ import {
   listRoles,
   openArtifactLocation,
   openConversationWorkspace,
+  updateConversationRole,
   updateConversationSkills,
   type LlmModelRecord,
   type RoleRecord,
@@ -22,6 +23,7 @@ import type { ComposerSkill } from "../chat/Composer";
 import { buildInsightArtifacts, buildInsightThread } from "../chat/insightData";
 import { SessionList, toSessionItem, type SessionItem } from "../chat/SessionList";
 import { CreatingOverlay } from "../chat/CreatingOverlay";
+import { RolePickerDialog } from "../chat/RolePickerDialog";
 import { useChatSession } from "../chat/useChatSession";
 import { loadGroups } from "../../lib/groupsStore";
 import { CREATE_MIN_MS, CREATE_STEPS, sleep } from "../../lib/creationSteps";
@@ -57,6 +59,8 @@ export function ChatView({ newRequestId = 0, onConversationCount }: ChatViewProp
   const [roles, setRoles] = useState<RoleRecord[]>([]);
   const [models, setModels] = useState<LlmModelRecord[]>([]);
   const [roleId, setRoleId] = useState<string | null>(null);
+  /** 角色选择弹窗：create=新建会话选角色；switch=切换当前会话角色；null=关闭。 */
+  const [rolePicker, setRolePicker] = useState<{ mode: "create" | "switch" } | null>(null);
   /** 新建会话进行中的步骤下标；null 表示不在创建中（遮罩隐藏）。 */
   const [createStep, setCreateStep] = useState<number | null>(null);
   /** 待二次确认的删除目标。 */
@@ -154,7 +158,7 @@ export function ChatView({ newRequestId = 0, onConversationCount }: ChatViewProp
    * （创建本身通常 <100ms，不兜一下就是一闪而过）。失败时返回 null 并把错误交给 setError。
    */
   const creatingRef = useRef(false);
-  const createConversationWithProgress = useCallback(async () => {
+  const createConversationWithProgress = useCallback(async (boundRoleId: string | null = null) => {
     // 连点「新建」时只跑一次：否则两个会话一起建，遮罩也会被前一个收尾提前关掉。
     if (creatingRef.current) return null;
     creatingRef.current = true;
@@ -162,8 +166,9 @@ export function ChatView({ newRequestId = 0, onConversationCount }: ChatViewProp
     try {
       // 不再等待本地向量模型：会话创建不再弹出「工作区初始化」下载弹框，
       // 模型就绪状态在模型管理 / 知识库中可见，下载在后台静默进行。
+      // boundRoleId 非空时把会话绑定到该角色（之后该会话整体沿用）。
       const [created] = await Promise.all([
-        createConversation(""),
+        createConversation("", boundRoleId),
         sleep(CREATE_MIN_MS),
       ]);
       setCreateStep(1);
@@ -191,16 +196,49 @@ export function ChatView({ newRequestId = 0, onConversationCount }: ChatViewProp
     // App 的 newRequestId 是 sticky 的：重进对话视图时，同一 id 不应再次触发新建。
     if (!newRequestId || newRequestId === lastHandledNewRequestId) return;
     lastHandledNewRequestId = newRequestId;
-    void (async () => {
-      // 走带初始化进度的创建流程（至少 1s 的加载提示，成功后才切过去）。
-      const created = await createConversationWithProgress();
-      if (!created) return;
-      await refreshListRef.current();
-      selectConversation(created.id);
-      setSkills([]);
-      setError(null);
-    })();
-  }, [newRequestId, selectConversation, createConversationWithProgress, setError, setSkills]);
+    // 新建前先让用户选角色；确认后再走带初始化进度的创建流程。
+    setRolePicker({ mode: "create" });
+  }, [newRequestId]);
+
+  /** 角色弹窗确认：create=带角色新建会话；switch=切换当前会话绑定的角色。 */
+  const handleRoleConfirm = useCallback(
+    async (picked: string | null) => {
+      const mode = rolePicker?.mode;
+      setRolePicker(null);
+      if (mode === "create") {
+        setRoleId(picked);
+        // 走带初始化进度的创建流程（至少 1s 的加载提示，成功后才切过去）。
+        const created = await createConversationWithProgress(picked);
+        if (!created) return;
+        await refreshListRef.current();
+        selectConversation(created.id);
+        setSkills([]);
+        setError(null);
+      } else if (mode === "switch" && activeId) {
+        try {
+          await updateConversationRole(activeId, picked);
+          setRoleId(picked);
+          setSessions((prev) =>
+            prev.map((s) => (s.id === activeId ? { ...s, roleId: picked } : s))
+          );
+        } catch (err) {
+          setError(errorMessage(err));
+        }
+      }
+    },
+    [activeId, createConversationWithProgress, rolePicker, selectConversation, setError, setSkills]
+  );
+
+  const handleRoleCancel = useCallback(() => setRolePicker(null), []);
+
+  // 打开会话时恢复它绑定的角色（空则退回主角色）：以后端返回的 sessions.roleId 为准。
+  useEffect(() => {
+    if (!activeId) return;
+    const bound = sessions.find((s) => s.id === activeId)?.roleId ?? null;
+    const fallback = roles.find((r) => r.primary)?.id ?? roles[0]?.id ?? null;
+    const next = bound ?? fallback;
+    setRoleId((prev) => (next && next !== prev ? next : prev));
+  }, [activeId, sessions, roles]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -320,6 +358,7 @@ export function ChatView({ newRequestId = 0, onConversationCount }: ChatViewProp
           modelId={boundModel?.model_id ?? ""}
           roleName={activeRole?.name}
           roleAvatar={activeRole?.avatar}
+          onChangeRole={activeId ? () => setRolePicker({ mode: "switch" }) : undefined}
           contextPct={contextPct}
           contextTitle={contextTitle}
           sending={sending}
@@ -369,6 +408,23 @@ export function ChatView({ newRequestId = 0, onConversationCount }: ChatViewProp
           <CreatingOverlay steps={CREATE_STEPS} active={createStep} />
         ) : null}
       </div>
+      {/* 角色选择：新建会话选角色 / 切换当前会话角色 */}
+      <RolePickerDialog
+        open={rolePicker !== null}
+        title={rolePicker?.mode === "switch" ? "切换对话角色" : "选择对话角色"}
+        description={
+          rolePicker?.mode === "switch"
+            ? "切换后，这个会话之后的消息都交给所选角色回答。"
+            : "这个会话将由选中的角色来回答，之后可在会话顶部随时切换。"
+        }
+        roles={roles}
+        value={roleId}
+        confirmLabel={rolePicker?.mode === "switch" ? "切换" : "开始对话"}
+        onConfirm={(picked) => {
+          void handleRoleConfirm(picked);
+        }}
+        onCancel={handleRoleCancel}
+      />
       {/* 删除会话：应用内二次确认，替代 window.confirm */}
       <ConfirmDialog
         open={!!pendingDelete}

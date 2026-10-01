@@ -64,6 +64,7 @@ def _conversation_dict(conversation: Conversation) -> ConversationRecord:
         message_count=int(conversation.message_count or 0),
         last_message=(conversation.last_message or "").strip() or None,
         skills=_decode_skills(conversation.skills),
+        role_id=conversation.role_id or None,
     )
 
 
@@ -87,15 +88,27 @@ def _ensure_workspace(conversation: Conversation) -> None:
 
 
 class ConversationsRepository:
-    def create(self, title: str = "") -> ConversationRecord:
+    def create(self, title: str = "", role_id: str | None = None) -> ConversationRecord:
         with session_scope() as session:
             conversation = Conversation(
                 title=title.strip(),
                 workspace_dir=create_conversation_dir(),
+                role_id=(role_id or "").strip() or None,
             )
             session.add(conversation)
             session.flush()
             return _conversation_dict(conversation)
+
+    def set_role(self, conversation_id: str, role_id: str | None) -> bool:
+        """切换会话绑定的角色；会话不存在返回 False（空值 → 走后端默认主角色）。"""
+        with session_scope() as session:
+            conversation = session.get(Conversation, conversation_id)
+            if conversation is None:
+                return False
+            conversation.role_id = (role_id or "").strip() or None
+            conversation.updated_at = utc_now()
+            session.flush()
+            return True
 
     def list(self, limit: int = 50) -> list[ConversationRecord]:
         statement = (

@@ -31,6 +31,7 @@ export function toSessionItem(c: ConversationRecord): SessionItem {
     colorClass: AVATAR_COLORS[idx] ?? "bg-brand-600",
     tagLabel: c.message_count > 0 ? "进行中" : "空闲",
     tagTone: c.message_count > 0 ? "brand" : "ok",
+    roleId: c.role_id ?? null,
   };
 }
 
@@ -45,6 +46,8 @@ export type SessionItem = {
   tagTone?: "neutral" | "brand" | "ok" | "warn" | "danger";
   running?: boolean;
   unread?: boolean;
+  /** 会话绑定的角色 id（空表示走后端默认主角色）：打开会话时据此恢复角色。 */
+  roleId?: string | null;
 };
 
 /** 会话状态 chip 配色；群组左栏的群对话行复用同一套口径。 */

@@ -214,6 +214,20 @@ def _ensure_conversations_skills_column(connection: Connection) -> None:
         ).close()
 
 
+def _ensure_conversations_role_id_column(connection: Connection) -> None:
+    """v14：给旧库的 ``conversations`` 表补上 ``role_id`` 列（绑定的角色 id，可空）。
+
+    会话级角色绑定：新建会话时选角色，之后该会话整体沿用（发送未显式带 role_id 时
+    回退到会话绑定的角色）。空值表示走后端默认主角色。
+    """
+    rows = connection.exec_driver_sql("PRAGMA table_info(conversations)").fetchall()
+    names = {str(row[1]) for row in rows}
+    if names and "role_id" not in names:
+        connection.exec_driver_sql(
+            "ALTER TABLE conversations ADD COLUMN role_id VARCHAR(64)"
+        ).close()
+
+
 def _ensure_conversations_preview_columns(connection: Connection) -> None:
     """v13：给旧库 ``conversations`` 补 ``message_count`` / ``last_message`` 冗余列。
 
@@ -406,6 +420,7 @@ def _migrate(connection: Connection) -> None:
     _ensure_roles_avatar_column(connection)
     _ensure_roles_description_column(connection)
     _ensure_conversations_preview_columns(connection)
+    _ensure_conversations_role_id_column(connection)
     if current < 5:
         _drop_main_messages_table(connection)
     if current < 7:

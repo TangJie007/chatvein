@@ -233,7 +233,10 @@ async def _chat_turn(req: ChatRequest, request: Request) -> dict[str, object]:
     from roles.service import RolesService  # pyright: ignore[reportImplicitRelativeImport]
     from skills.service import skill_prompt_blocks  # pyright: ignore[reportImplicitRelativeImport]
 
-    role_runtime = RolesService().resolve_for_chat(req.role_id)
+    # 会话绑定角色：请求未显式带 role_id 时，回退到会话创建 / 切换时绑定的角色
+    # （两者都为空则 resolve_for_chat 走默认主角色，行为与之前一致）。
+    effective_role_id = req.role_id or prepared.get("role_id")
+    role_runtime = RolesService().resolve_for_chat(effective_role_id)
     # 角色已选但未绑定模型：直接给出提示，不走理解/路由/工具链。
     # 未选角色（req.role_id 为空）保持原有行为：走离线/无模型链路。
     if role_runtime is not None and not (role_runtime.get("model_id") or "").strip():

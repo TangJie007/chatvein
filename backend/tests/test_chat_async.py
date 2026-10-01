@@ -47,12 +47,13 @@ def _make_request(disconnected: bool) -> Request:
     return request
 
 
-def _patch_deps():
+def _patch_deps(*, prepared_role_id: str | None = None):
     """把 _chat_turn 依赖的耗时链路全部打桩，只留落库行为可观测。"""
     role = {"id": "role-1", "model_id": "m-1", "memory": 12}
-    prepared = {"id": "c-1", "title": "t", "workspace_dir": "ws-dir"}
+    prepared = {"id": "c-1", "title": "t", "workspace_dir": "ws-dir", "role_id": prepared_role_id}
 
     save_exchange = MagicMock(return_value=("c-1", "user-msg", "assistant-msg"))
+    resolve = MagicMock(return_value=role)
     sandbox = MagicMock()
     recording = MagicMock()
     recording.return_value.__enter__.return_value = None
@@ -80,7 +81,7 @@ def _patch_deps():
             "assemble_team",
             side_effect=lambda r, gm, **kw: r,
         ),
-        patch("roles.service.RolesService.resolve_for_chat", return_value=role),
+        patch("roles.service.RolesService.resolve_for_chat", resolve),
         patch("skills.service.skill_prompt_blocks", return_value=""),
         patch.object(main, "session_db_path", return_value=Path("C:/tmp/x.db")),
         patch.object(main, "run_chat", return_value=dict(_DUMMY_RESULT)),
@@ -88,13 +89,18 @@ def _patch_deps():
         patch.object(main, "use_conversation_sandbox", sandbox),
         patch.object(main, "_usage_callback", None),
     ]
-    return patches, {"save_exchange": save_exchange}
+    return patches, {"save_exchange": save_exchange, "resolve": resolve}
 
 
-def _run_turn(disconnected: bool) -> tuple[dict[str, object], dict[str, MagicMock]]:
-    req = ChatRequest(conversation_id="c-1", message="hi")
+def _run_turn(
+    disconnected: bool,
+    *,
+    prepared_role_id: str | None = None,
+    request_role_id: str | None = None,
+) -> tuple[dict[str, object], dict[str, MagicMock]]:
+    req = ChatRequest(conversation_id="c-1", message="hi", role_id=request_role_id)
     request = _make_request(disconnected)
-    patches, mocks = _patch_deps()
+    patches, mocks = _patch_deps(prepared_role_id=prepared_role_id)
     with patches[0], patches[1], patches[2], patches[3], patches[4], patches[5], patches[
         6
     ], patches[7], patches[8], patches[9], patches[10], patches[11], patches[12], patches[
@@ -122,3 +128,19 @@ def test_disconnected_skips_persist() -> None:
     assert out["discarded"] is True
     assert out["reply"] == "ok"
     assert out["conversation_id"] is None
+
+
+def test_chat_falls_back_to_conversation_role() -> None:
+    """请求未带 role_id 时，用会话绑定的角色解析（会话级角色）。"""
+    _, mocks = _run_turn(disconnected=False, prepared_role_id="role-bound")
+    mocks["resolve"].assert_called_once_with("role-bound")
+
+
+def test_chat_request_role_wins_over_conversation_role() -> None:
+    """请求显式带 role_id 时优先用它（群组 @ 指派等）。"""
+    _, mocks = _run_turn(
+        disconnected=False,
+        prepared_role_id="role-bound",
+        request_role_id="role-req",
+    )
+    mocks["resolve"].assert_called_once_with("role-req")

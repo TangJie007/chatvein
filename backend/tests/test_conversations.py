@@ -4,6 +4,7 @@ import sqlite3
 from pathlib import Path
 from unittest import mock
 
+from conversations.entity import CreateConversationDto
 from conversations.service import ConversationsService
 from conversations.session_store import ensure_session_db
 from mcps.sandbox import session_db_path
@@ -178,6 +179,40 @@ def test_delete_last_exchange_respects_after_message_id() -> None:
     left = service.list_messages(conversation_id)
     assert len(left) == 2
     assert left[1]["content"] == "答一"
+
+
+def test_create_conversation_binds_role() -> None:
+    """新建会话可绑定角色：往返读到 role_id，未绑定时为空。"""
+    service = ConversationsService()
+    bound = service.create_conversation(CreateConversationDto(title="带角色", role_id="role-x"))
+    assert bound["role_id"] == "role-x"
+    stored = service.get_conversation(bound["id"])
+    assert stored is not None and stored["role_id"] == "role-x"
+
+    plain = service.create_conversation(CreateConversationDto(title="默认"))
+    assert plain["role_id"] is None
+
+
+def test_set_conversation_role_switches_and_clears() -> None:
+    """切换会话角色：set 后往返读到；传空值清空（→ 后端默认主角色）。"""
+    service = ConversationsService()
+    created = service.create_conversation(CreateConversationDto(title="切换", role_id="r1"))
+    assert service.set_conversation_role(created["id"], "r2") is True
+    stored = service.get_conversation(created["id"])
+    assert stored is not None and stored["role_id"] == "r2"
+
+    assert service.set_conversation_role(created["id"], None) is True
+    cleared = service.get_conversation(created["id"])
+    assert cleared is not None and cleared["role_id"] is None
+    assert service.set_conversation_role("missing", "r3") is False
+
+
+def test_open_for_chat_returns_bound_role() -> None:
+    """open_for_chat 回传 role_id，_chat_turn 据此回退到会话绑定角色。"""
+    service = ConversationsService()
+    created = service.create_conversation(CreateConversationDto(title="回退", role_id="role-z"))
+    prepared = service.open_for_chat(created["id"], "hi")
+    assert prepared["role_id"] == "role-z"
 
 
 def test_messages_live_only_in_session_db() -> None:

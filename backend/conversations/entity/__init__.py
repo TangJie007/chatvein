@@ -5,6 +5,7 @@ from .dto import (
     CreateConversationDto,
     MessageRecord,
     Role,
+    UpdateConversationRoleDto,
     UpdateConversationSkillsDto,
 )
 from .entity import Conversation
@@ -15,5 +16,6 @@ __all__ = [
     "MessageRecord",
     "CreateConversationDto",
     "Role",
+    "UpdateConversationRoleDto",
     "UpdateConversationSkillsDto",
 ]

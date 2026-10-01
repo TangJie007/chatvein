@@ -29,7 +29,7 @@ class ConversationsService:
         return self._repo.list(limit)
 
     def create_conversation(self, dto: CreateConversationDto) -> ConversationRecord:
-        return self._repo.create(dto.title)
+        return self._repo.create(dto.title, dto.role_id)
 
     def get_conversation(self, conversation_id: str) -> ConversationRecord | None:
         return self._repo.get(conversation_id)
@@ -168,6 +168,10 @@ class ConversationsService:
 
     def get_conversation_skills(self, conversation_id: str) -> list[str]:
         return self._repo.get_skills(conversation_id)
+
+    def set_conversation_role(self, conversation_id: str, role_id: str | None) -> bool:
+        """切换会话绑定的角色（空值 → 走后端默认主角色）。会话不存在返回 False。"""
+        return self._repo.set_role(conversation_id, role_id)
 
     def save_exchange(
         self,
