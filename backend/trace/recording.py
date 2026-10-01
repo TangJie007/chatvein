@@ -383,6 +383,19 @@ class TraceRecorder:
         self.status = "done"
         return self.flush()
 
+    def cancel(self) -> dict[str, Any]:
+        """本轮被用户取消：在途步骤收尾为 ``cancelled`` 并落库。
+
+        只改 ``running`` 的步骤，已完成 / 失败的步骤保持原状，
+        面板因此能看到「取消发生在哪一步」。
+        """
+        self.status = "cancelled"
+        for step in self.steps:
+            if step.get("status") == "running":
+                step["status"] = "cancelled"
+        self._parents.clear()
+        return self.flush()
+
     def snapshot(self) -> dict[str, Any]:
         self.finished_at = _iso_now()
         elapsed_ms = self._offset_ms()
@@ -704,6 +717,19 @@ def complete(
     return recorder.finish()
 
 
+def cancel_current_turn() -> bool:
+    """把当前线程的追踪标成 ``cancelled`` 并落库；无进行中的追踪返回 ``False``。
+
+    取消由 ``agents.cancellation`` 的检查点调用：终态不能停在 ``running``，
+    否则面板会一直显示「进行中」并不停轮询。
+    """
+    recorder = _recorder.get()
+    if recorder is None:
+        return False
+    recorder.cancel()
+    return True
+
+
 @contextmanager
 def span(name: str) -> Iterator[None]:
     recorder = _recorder.get()
@@ -714,7 +740,10 @@ def span(name: str) -> Iterator[None]:
     try:
         yield
     except Exception:
-        recorder.close_span(str(step["id"]), status="error")
+        # 本轮已被用户取消时（检查点先收尾了整轮），span 跟着标 cancelled，
+        # 否则会显示成「失败」，与真实故障混在一起。
+        failed = "cancelled" if recorder.status == "cancelled" else "error"
+        recorder.close_span(str(step["id"]), status=failed)
         raise
     else:
         recorder.close_span(str(step["id"]), status="ok")

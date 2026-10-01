@@ -5,6 +5,7 @@ import type { ChatMessageRecord, TurnTrace } from "../../api";
 import { toChatMessages, toLiveSteps, useChatSession } from "./useChatSession";
 
 vi.mock("../../api", () => ({
+  cancelChat: vi.fn().mockResolvedValue({ turn_id: "t", accepted: true }),
   createConversation: vi.fn(),
   deleteLastTurn: vi.fn(),
   getConversation: vi.fn(),
@@ -201,11 +202,35 @@ describe("useChatSession（发送 / 撤回 / 清理基线）", () => {
       userContent: "hello",
       afterMessageId: 0,
     });
+    // 真·取消：把本轮 turn_id 报给后端，否则后端会把剩余步骤全部跑完
+    const [notifiedTurnId] = vi.mocked(api.cancelChat).mock.calls[0] as [string];
+    expect(typeof notifiedTurnId).toBe("string");
+    expect(notifiedTurnId.length).toBeGreaterThan(0);
 
     // 收尾：让挂起的请求结束（已被 abort，最终走已取消分支）
     await act(async () => {
       resolveChat(chatReply());
     });
     expect(result.current.sending).toBe(false);
+  });
+
+  it("中断不是用户发起时：摘掉思考中的空气泡，并报真实原因而非「已取消」", async () => {
+    // 客户端超时 / 连接断开：signal 未被 abort，不属于用户取消
+    vi.mocked(api.sendChat).mockRejectedValue(new DOMException("boom", "AbortError"));
+
+    const { result } = renderHook(() =>
+      useChatSession({ conversationId: "c1", roleId: null })
+    );
+    await settleInitialLoad();
+
+    await act(async () => {
+      await result.current.send("帮我把这张图扣一下");
+    });
+
+    // 只剩提问气泡：占位的助手气泡不能永远停在「思考中」
+    expect(result.current.messages).toHaveLength(1);
+    expect(result.current.messages[0]).toMatchObject({ role: "user" });
+    expect(result.current.sending).toBe(false);
+    expect(result.current.error).toBe("本轮生成已中断，未收到结果");
   });
 });

@@ -43,6 +43,7 @@ function formatTokens(n: number): string {
 function statusTone(status: string): BadgeTone {
   if (status === "error") return "danger";
   if (status === "offline") return "warn";
+  if (status === "cancelled") return "warn";
   if (status === "ok") return "ok";
   return "neutral";
 }
@@ -51,6 +52,7 @@ function statusText(status: string): string {
   if (status === "ok") return "完成";
   if (status === "error") return "失败";
   if (status === "offline") return "离线";
+  if (status === "cancelled") return "已取消";
   if (status === "running") return "进行中";
   if (status === "done") return "完成";
   return status;

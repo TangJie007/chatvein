@@ -106,7 +106,7 @@ export async function waitForBackend(timeoutMs = 20000): Promise<string> {
 export interface RequestOptions {
   /** 外部取消信号（用户点击停止等）。 */
   signal?: AbortSignal | null;
-  /** 请求超时（毫秒）。默认 30s。 */
+  /** 请求超时（毫秒）。默认 30s；``<= 0`` 表示不启用超时（由调用方自行取消）。 */
   timeoutMs?: number;
   /** 失败重试次数。默认：GET 1 次，其余 0 次。 */
   retries?: number;
@@ -116,6 +116,17 @@ const DEFAULT_TIMEOUT_MS = 30_000;
 
 /** HTTP 业务错误（非 2xx）：与网络层失败区分，不参与重试/掉线复位。 */
 class HttpError extends Error {}
+
+/** 客户端超时：与「用户取消」「网络失败」区分开，UI 才能给出准确提示。
+ *  超时只说明前端等不下去了，后端任务多半还在跑，不能当成掉线。 */
+export class RequestTimeoutError extends Error {
+  readonly timeoutMs: number;
+  constructor(timeoutMs: number) {
+    super(`请求超时（超过 ${Math.round(timeoutMs / 1000)} 秒未返回结果）`);
+    this.name = "RequestTimeoutError";
+    this.timeoutMs = timeoutMs;
+  }
+}
 export async function backendRequest<T = unknown>(
   endpoint: string,
   method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE" = "GET",
@@ -152,7 +163,15 @@ async function doRequest<T>(
   const url = await waitForBackend();
   // 超时用独立 controller，与调用方取消信号区分开。
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  let timedOut = false;
+  // timeoutMs <= 0：不装定时器，长任务（生成 / 抠图）交给用户手动停止。
+  const timer =
+    timeoutMs > 0
+      ? setTimeout(() => {
+          timedOut = true;
+          controller.abort();
+        }, timeoutMs)
+      : null;
   const onOuterAbort = () => controller.abort();
   signal?.addEventListener("abort", onOuterAbort, { once: true });
   try {
@@ -181,13 +200,15 @@ async function doRequest<T>(
     if (isUserAbort(signal, err)) {
       throw new DOMException("Request cancelled", "AbortError");
     }
-    // 连接失败 / 超时：后端可能已崩溃重启，通知订阅方复位。
+    // 超时（非用户取消）：后端任务可能仍在跑，只回报超时，不判定后端掉线。
+    if (timedOut) throw new RequestTimeoutError(timeoutMs);
+    // 连接失败：后端可能已崩溃重启，通知订阅方复位。
     if (isRetryable(err, signal)) {
       markBackendLost();
     }
     throw err;
   } finally {
-    clearTimeout(timer);
+    if (timer) clearTimeout(timer);
     signal?.removeEventListener("abort", onOuterAbort);
   }
 }
@@ -195,6 +216,7 @@ async function doRequest<T>(
 function isRetryable(err: unknown, signal: AbortSignal | null): boolean {
   if (isUserAbort(signal, err)) return false;
   if (err instanceof HttpError) return false; // 业务错误（4xx/5xx）不重试
+  if (err instanceof RequestTimeoutError) return false; // 超时重试只会再等一轮，直接交给 UI 提示
   if (isHttpAbort(err)) return false; // 网络层明确取消不重试
   // 超时触发的 AbortError（外层信号未被取消）
   if (err instanceof DOMException && err.name === "AbortError") return true;

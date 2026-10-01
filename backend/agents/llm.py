@@ -13,7 +13,10 @@
 
 from __future__ import annotations
 
-from typing import Any, Literal
+import os
+import random
+import time
+from typing import Any, Callable, Literal, TypeVar
 
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage, SystemMessage
@@ -25,11 +28,141 @@ from models.service import ModelsService  # pyright: ignore[reportImplicitRelati
 
 from trace.recording import active_callbacks
 
+from agents.cancellation import (  # pyright: ignore[reportImplicitRelativeImport]
+    TurnCancelled,
+    current_turn_id,
+    is_cancelled,
+)
+
 WireProfile = Literal["openai", "deepseek"]
 
 #: 单次模型调用的兜底超时（秒）：网关挂起 / 网络黑洞时不能无限占住工作线程。
 #: 调用方可显式传 ``timeout`` 覆盖；None 时使用本默认值。
 _DEFAULT_TIMEOUT = 300.0
+
+T = TypeVar("T")
+
+
+def _env_number(name: str, default: float) -> float:
+    raw = (os.environ.get(name) or "").strip()
+    try:
+        return float(raw) if raw else default
+    except ValueError:
+        return default
+
+
+#: 供应商限流（429 / TPM·RPM 超限）时的退避重试参数。
+#: openai SDK 自带 2 次秒级退避，对「按分钟结算」的配额基本没用，
+#: 所以上层再补一层长退避；配额释放通常在几十秒量级。
+_RATE_LIMIT_RETRIES = int(_env_number("CHATVEIN_LLM_RATE_LIMIT_RETRIES", 3))
+_RATE_LIMIT_INITIAL_DELAY = _env_number("CHATVEIN_LLM_RATE_LIMIT_DELAY", 10.0)
+_RATE_LIMIT_MAX_DELAY = _env_number("CHATVEIN_LLM_RATE_LIMIT_MAX_DELAY", 60.0)
+
+#: 判定的报文特征（各网关措辞不一）：必须小写比较。
+_RATE_LIMIT_MARKERS = (
+    "rate limit",
+    "rate_limit",
+    "rate-limit",
+    "ratelimit",
+    "too many requests",
+    "quota",
+    "tpm",
+    "rpm",
+    "429",
+)
+
+
+def is_rate_limit_error(exc: BaseException) -> bool:
+    """是不是供应商限流（429 / TPM·RPM 超限）。
+
+    只看报文会漏（`status_code` 未必被透传），只看状态码会漏改造过的网关，
+    所以两者都判命中即算。
+    """
+    if _status_code(exc) == 429:
+        return True
+    text = f"{type(exc).__name__} {exc}".lower()
+    return any(marker in text for marker in _RATE_LIMIT_MARKERS)
+
+
+def _status_code(exc: BaseException) -> int | None:
+    status = getattr(exc, "status_code", None)
+    response = getattr(exc, "response", None)
+    if status is None and response is not None:
+        status = getattr(response, "status_code", None)
+    try:
+        return int(status) if status is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _request_id(exc: BaseException) -> str:
+    for source in (getattr(exc, "request_id", None), getattr(exc, "body", None)):
+        if isinstance(source, str) and source.strip():
+            return source.strip()
+        if isinstance(source, dict):
+            found = source.get("request_id") or source.get("id")
+            if found:
+                return str(found)
+    return ""
+
+
+def model_error_hint(exc: BaseException) -> str | None:
+    """模型侧原因（限流 / 鉴权 / 404 / 5xx）的可读提示；认不出来返回 ``None``。"""
+    rid = _request_id(exc)
+    suffix = f"（request_id: {rid}）" if rid else ""
+    status = _status_code(exc)
+    if is_rate_limit_error(exc):
+        return (
+            "模型供应商限流（HTTP 429）：本轮请求超过该模型的 TPM/RPM 配额，"
+            f"已自动退避重试仍未通过。请稍后再试，或在「模型」里换额度更宽的模型。{suffix}"
+        )
+    if status in (401, 403):
+        return f"模型鉴权失败（HTTP {status}）：请检查该模型的 Key 是否有效、是否有此模型权限。{suffix}"
+    if status == 404:
+        return f"模型不可访问（HTTP 404）：请核对模型 ID 与网关地址。{suffix}"
+    if status is not None and status >= 500:
+        return f"模型服务端异常（HTTP {status}）：供应商侧暂时不可用，可稍后重试。{suffix}"
+    return None
+
+
+def describe_model_error(exc: BaseException) -> str:
+    """``model_error_hint`` 之外回落到通用文案（react 兜底回复用）。"""
+    return model_error_hint(exc) or f"工具调用失败({exc})"
+
+
+def rate_limit_retries() -> int:
+    """限流时最多重试几次（不含首次调用）。"""
+    return _RATE_LIMIT_RETRIES
+
+
+def rate_limit_wait(attempt: int) -> None:
+    """第 ``attempt`` 次重试前的退避等待（可被用户取消打断）。"""
+    delay = min(_RATE_LIMIT_INITIAL_DELAY * (2**attempt), _RATE_LIMIT_MAX_DELAY)
+    _wait_interruptible(delay + random.uniform(0.0, delay * 0.25))
+
+
+def call_with_rate_limit_retry(fn: Callable[[], T]) -> T:
+    """调用 LLM，遇到限流就退避重试；其余异常照常抛出。"""
+    for attempt in range(_RATE_LIMIT_RETRIES + 1):
+        try:
+            return fn()
+        except Exception as exc:  # noqa: BLE001
+            if attempt >= _RATE_LIMIT_RETRIES or not is_rate_limit_error(exc):
+                raise
+            rate_limit_wait(attempt)
+    raise AssertionError("unreachable")  # pragma: no cover
+
+
+def _wait_interruptible(total: float) -> None:
+    """可被取消打断的 sleep：退避期间用户点停止能立刻收尾。"""
+    end = time.monotonic() + max(0.0, total)
+    while True:
+        if is_cancelled():
+            raise TurnCancelled(current_turn_id() or "")
+        remaining = end - time.monotonic()
+        if remaining <= 0:
+            return
+        time.sleep(min(0.5, remaining))
 
 
 class ChatOpenAICompat(ChatOpenAI):
@@ -183,7 +316,10 @@ def invoke_structured(model: BaseChatModel, schema: type, messages: list[Any]) -
         if method == "json_mode":
             payload = _with_json_hint(schema, messages)
         try:
-            return model.with_structured_output(schema, method=method).invoke(payload)
+            # 路由 / 选型 / 规划这类结构化调用也要能扛住限流
+            return call_with_rate_limit_retry(
+                lambda: model.with_structured_output(schema, method=method).invoke(payload)
+            )
         except Exception as exc:
             last = exc
             if method == "json_mode" or not _structured_method_rejected(exc):

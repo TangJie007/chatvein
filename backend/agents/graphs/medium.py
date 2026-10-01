@@ -23,10 +23,12 @@ from .common import (
     ALWAYS_ON_TOOLS,
     allowed_from_role,
     build_react_graph,
+    failure_reply,
     invoke_react,
     last_text,
     react_recursion_limit,
 )
+from ..cancellation import TurnCancelled  # pyright: ignore[reportImplicitRelativeImport]
 from .prompts import MEDIUM_SYSTEM_STATIC, build_agent_system
 from .state import ChatState
 from .tool_trace import extract_tool_trace
@@ -155,11 +157,15 @@ def build_medium_graph(
                 "used_llm": True,
                 "tool_trace": traced,
             }
+        except TurnCancelled:
+            # 用户取消必须继续往外抛：落进下面的兜底分支会变成「工具调用失败」
+            # 并让本轮继续跑完。
+            raise
         except Exception as exc:  # noqa: BLE001
             fallback = run_tools(text, selected) if selected else ""
-            suffix = f"\n{fallback}" if fallback else ""
+            # 限流 / 鉴权这类模型侧原因会翻成人话，其余沿用通用文案
             return {
-                "reply": f"工具调用失败({exc}){suffix}",
+                "reply": failure_reply(exc, fallback),
                 "used_llm": False,
                 "tool_trace": [],
             }

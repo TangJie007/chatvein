@@ -30,11 +30,13 @@ from .common import (
     ALWAYS_ON_TOOLS,
     allowed_from_role,
     build_react_graph,
+    failure_reply,
     invoke_react,
     last_text,
     merge_tool_traces,
     react_recursion_limit,
 )
+from ..cancellation import TurnCancelled  # pyright: ignore[reportImplicitRelativeImport]
 from .prompts import HARD_SYSTEM_STATIC, build_agent_system
 from .state import ChatState
 from .tool_trace import extract_tool_trace
@@ -312,11 +314,14 @@ def build_hard_graph(
                 "used_llm": True,
                 "tool_trace": merge_tool_traces(prior_trace, traced),
             }
+        except TurnCancelled:
+            # 用户取消：不能落进兜底分支（否则本轮会继续跑完剩余轮次）
+            raise
         except Exception as exc:  # noqa: BLE001
             fallback = run_tools(user_blob, selected) if selected else ""
-            suffix = f"\n{fallback}" if fallback else ""
+            # 限流 / 鉴权这类模型侧原因会翻成人话，其余沿用通用文案
             return {
-                "reply": f"工具调用失败({exc}){suffix}",
+                "reply": failure_reply(exc, fallback),
                 "used_llm": False,
                 "tool_trace": prior_trace,
             }

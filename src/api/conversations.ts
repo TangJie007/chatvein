@@ -95,6 +95,10 @@ export function updateConversationSkills(conversationId: string, skills: string[
   );
 }
 
+/** 一轮生成的客户端超时上限：工具链 / 图片处理 / 命令审批都可能耗时数分钟，
+ *  用默认 30s 会把正常长任务误判成「已取消」，这里放宽到 20 分钟。 */
+const CHAT_TIMEOUT_MS = 20 * 60 * 1000;
+
 /** Run one chat turn against the agent pipeline.
  *  ``turnId`` 由前端预先生成：后端按它逐步落追踪，UI 可边等边轮询思考流进度。
  *  ``appendUser=false`` 用于群里 @ 多人时的第 2 个及之后的成员：同一句提问只落一次用户消息。 */
@@ -144,7 +148,25 @@ export function sendChat(
     append_user_message: appendUser,
     // 群组成员：随消息透传，后端注册 / 补注册到 chats 群组表（合并去重）
     group_members: groupMembers ?? null,
-  }, { signal: signal ?? undefined });
+  }, {
+    signal: signal ?? undefined,
+    // 一轮生成可能跑很久（工具链、图片处理、命令审批等待），不能用默认 30s；
+    // 用户随时可点停止，这里只留一个很长的兜底上限。
+    timeoutMs: CHAT_TIMEOUT_MS,
+  });
+}
+
+/** 真·取消：通知后端停掉这一轮（只 abort HTTP 不会让后端停手）。
+ *  后端在下一个模型 / 工具检查点抛 TurnCancelled，本轮追踪收尾为 cancelled。
+ *  轮次已结束 / id 未知时无害（标记 30 分钟后过期）。 */
+export function cancelChat(turnId: string) {
+  return backendRequest<{ turn_id: string; accepted: boolean }>(
+    "/api/chat/cancel",
+    "POST",
+    { turn_id: turnId },
+    // 取消要快：短暂超时即可，失败也不该弹红字（前端已本地停止）。
+    { timeoutMs: 5000 }
+  );
 }
 
 /** 撤回 / 停止生成：删除该会话最近一轮（用户句 + 助手句）。

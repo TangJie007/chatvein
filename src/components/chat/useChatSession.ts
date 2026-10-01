@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  cancelChat,
   createConversation,
   deleteLastTurn,
   getConversation,
@@ -365,8 +366,9 @@ export function useChatSession({
             );
             onRefreshList?.();
           } catch (err) {
-            // Rust 抛 string "Request canceled"（非 Error）；以 signal / 文案双保险，绝不能落到红字。
-            if (controller.signal.aborted || isAbortError(err)) {
+            // 只有用户主动点停止 / 编辑 / 撤回才算「取消」：此时 signal 已被 abort，
+            // 气泡由 cancel() 摘掉，这里只补一条中性提示。
+            if (controller.signal.aborted) {
               const mode = cancelModeRef.current;
               cancelModeRef.current = null;
               if (mode === "stop" || mode == null) {
@@ -374,9 +376,13 @@ export function useChatSession({
               }
               return;
             }
-            // 群里某位成员失败不影响其他人：只摘掉 TA 的占位气泡，记下错误继续。
+            // 非用户发起的中断（客户端超时 / 连接断开 / Rust 抛的 "Request canceled"）：
+            // 摘掉占位气泡并报真实原因——留着空气泡会一直显示「思考中」，
+            // 而思考流已随轮询停止，看起来就像「思考中断了却还在转」。
             setMessages((prev) => prev.filter((m) => m.id !== pendingId));
-            failure = failure ?? errorMessage(err);
+            failure =
+              failure ??
+              (isAbortError(err) ? "本轮生成已中断，未收到结果" : errorMessage(err));
           }
         }
         // 保留提问气泡（错误挂在它下面），助手气泡已在上面逐个摘掉 / 填充。
@@ -390,6 +396,14 @@ export function useChatSession({
         setPendingQuestion(null);
         // 本轮结束：停掉追踪轮询，思考流交回已完成轮次的轨迹。
         setLiveTurn(null);
+        // 兜底：无论走哪条分支，都不能留下还在「思考中」的空气泡
+        // （已填充的回复 streaming 已置 false，不受影响）。
+        const leftover = pendingRef.current;
+        if (leftover) {
+          setMessages((prev) =>
+            prev.filter((m) => !(leftover.agentIds.includes(m.id) && m.streaming))
+          );
+        }
       }
     },
     [
@@ -452,6 +466,8 @@ export function useChatSession({
     (mode: "stop" | "edit" | "recall") => {
       cancelModeRef.current = mode;
       const controller = abortRef.current;
+      // 先通知后端停手：只 abort HTTP 的话，后端会把剩余步骤全部跑完。
+      if (liveTurn) void cancelChat(liveTurn.turnId).catch(() => undefined);
       if (controller) controller.abort();
       abortRef.current = null;
       const pending = pendingRef.current;
@@ -482,7 +498,7 @@ export function useChatSession({
         );
       }
     },
-    [cleanupLastTurn, conversationId, setError]
+    [cleanupLastTurn, conversationId, liveTurn, setError]
   );
 
   const onRestored = useCallback(() => setRestoreText(null), []);

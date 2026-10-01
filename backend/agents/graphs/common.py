@@ -10,10 +10,20 @@ from typing import Any
 from langchain.agents import create_agent
 from langchain.agents.middleware import (
     ModelCallLimitMiddleware,
+    ModelRetryMiddleware,
     ToolCallLimitMiddleware,
+    before_model,
     wrap_tool_call,
 )
 from langchain_core.messages import ToolMessage
+
+from agents.cancellation import raise_if_cancelled  # pyright: ignore[reportImplicitRelativeImport]
+from agents.llm import (  # pyright: ignore[reportImplicitRelativeImport]
+    describe_model_error,
+    is_rate_limit_error,
+    rate_limit_retries,
+    rate_limit_wait,
+)
 
 
 def last_text(messages: list[Any] | None) -> str | None:
@@ -148,6 +158,71 @@ def react_recursion_limit(
     return 2 * calls + pad
 
 
+def cancellation_guards() -> list[Any]:
+    """每步检查「本轮是否已被用户取消」。
+
+    一次模型调用可达 1~2 分钟、一次工具执行可达 2 分钟；没有这两个检查点，
+    前端点停止后后端仍会把剩余步骤全部跑完（追踪也一直停在 running）。
+    命中就抛 ``TurnCancelled``：``before_model`` 抛在图节点里，不会被
+    ToolNode 的错误兜底吞成一条工具错误消息，能直接冲出 ``agent.invoke``。
+    """
+
+    @wrap_tool_call(name="CancellationGuardTool")
+    def _before_tool(request: Any, handler: Any) -> Any:
+        raise_if_cancelled()
+        return handler(request)
+
+    @before_model(name="CancellationGuardModel")
+    def _before_model(state: Any, runtime: Any) -> None:
+        raise_if_cancelled()
+
+    return [_before_tool, _before_model]
+
+
+def rate_limit_retry_middleware():
+    """供应商限流（429 / TPM·RPM 超限）时退避重试，其余错误照常抛出。
+
+    等待由我们自己承担（``initial_delay=0``，中间件不再额外 sleep）：配额恢复
+    要几十秒，退避窗口必须能被「用户已取消」打断，否则点了停止还得干等。
+    重试次数用尽后原样抛出（``on_failure="error"``），由 react 兜底翻成人话。
+    """
+    retries = max(0, rate_limit_retries())
+    state = {"attempt": 0}
+
+    def policy(exc: BaseException) -> bool:
+        if not is_rate_limit_error(exc):
+            return False
+        attempt = state["attempt"]
+        state["attempt"] += 1
+        # 最后一次机会已经用完：中间件只会 _handle_failure，再等也没意义。
+        if attempt >= retries:
+            return True
+        # 退避在判断「是否重试」时一并完成：中间件自己的延迟已置 0。
+        rate_limit_wait(attempt)
+        return True
+
+    @before_model(name="RateLimitRetryReset")
+    def _reset(_state: Any, _runtime: Any) -> None:
+        # 每次新的模型调用前复位计数：连续失敗才指数增长。
+        state["attempt"] = 0
+
+    retry = ModelRetryMiddleware(
+        max_retries=retries,
+        retry_on=policy,
+        backoff_factor=0.0,
+        initial_delay=0.0,
+        jitter=False,
+        on_failure="error",
+    )
+    return [retry, _reset]
+
+
+def failure_reply(exc: BaseException, fallback: str = "") -> str:
+    """react 兜底回复：限流 / 鉴权这类模型侧原因要说人话，不能混成「工具调用失败」。"""
+    text = describe_model_error(exc)
+    return f"{text}\n{fallback}" if fallback else text
+
+
 def build_react_graph(
     model: Any,
     tools: list[Any],
@@ -164,8 +239,14 @@ def build_react_graph(
     - 同工具同参只执行一次
     - 工具次数对齐 LangChain 文档示例：``web_search`` run_limit=3、全体=10
     - 模型调用上限（触顶 end）；默认略高于工具上限以免先卡死
+    - 用户取消：每次模型 / 工具调用前检查，命中即中断本轮
+    - 供应商限流：退避重试若干次，仍失败由上层翻成可读提示
     """
-    middleware: list[Any] = [same_arg_tool_guard()]
+    middleware: list[Any] = [
+        same_arg_tool_guard(),
+        *cancellation_guards(),
+        *rate_limit_retry_middleware(),
+    ]
     if max_web_search is not None and max_web_search > 0:
         middleware.append(
             ToolCallLimitMiddleware(

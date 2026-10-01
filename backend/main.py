@@ -25,6 +25,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 import db  # pyright: ignore[reportImplicitRelativeImport]
+from agents.cancellation import (  # pyright: ignore[reportImplicitRelativeImport]
+    TurnCancelled,
+    bind_turn,
+    cancel_turn,
+    clear_turn,
+)
+from agents.llm import model_error_hint  # pyright: ignore[reportImplicitRelativeImport]
 from agents.service import run_chat  # pyright: ignore[reportImplicitRelativeImport]
 from chats.module import (  # pyright: ignore[reportImplicitRelativeImport]
     chats_router,
@@ -141,6 +148,12 @@ class ChatRequest(BaseModel):
     group_members: list[str] | None = Field(default=None, max_length=50)
 
 
+class CancelChatRequest(BaseModel):
+    """前端点「停止 / 撤回 / 编辑」时上报：只 abort HTTP 不会让后端停手。"""
+
+    turn_id: str = Field(min_length=1, max_length=64)
+
+
 try:  # langchain-core 版本差异：拿不到用量回调就退化为不统计
     from langchain_core.callbacks import (  # pyright: ignore[reportMissingImports]
         get_usage_metadata_callback,
@@ -181,9 +194,25 @@ async def chat(req: ChatRequest, request: Request):
         return await _chat_turn(req, request)
     except HTTPException:
         raise
+    except TurnCancelled:
+        # 用户主动取消：不是故障，返回占位响应，别打成 500。
+        return _aborted_payload()
     except Exception as exc:  # noqa: BLE001
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"对话失败：{exc}") from exc
+        # 限流 / 鉴权 / 供应商 5xx：直说人话，别让用户对着 HTTP 429 猜
+        detail = model_error_hint(exc) or f"对话失败：{exc}"
+        raise HTTPException(status_code=500, detail=detail) from exc
+
+
+@app.post("/api/chat/cancel", tags=["chat"], summary="取消在途的一轮生成")
+def cancel_chat(req: CancelChatRequest) -> dict[str, object]:
+    """标记 ``turn_id`` 这一轮为已取消。
+
+    标记后 ReAct 在下一次模型 / 工具调用前抛 ``TurnCancelled``：本轮立刻收尾
+    （追踪写 ``cancelled``），不再让用户离开后后端继续空跑到自然结束。
+    轮次早已结束 / turn_id 未知时只是记一条无人认领的标记，30 分钟后自动过期。
+    """
+    return {"turn_id": req.turn_id, "accepted": cancel_turn(req.turn_id)}
 
 
 async def _chat_turn(req: ChatRequest, request: Request) -> dict[str, object]:
@@ -386,20 +415,28 @@ def _run_chat_heavy(
     可跨线程使用，但这里仍保持「谁跑 run_chat 谁写库」的单线程语义。
     """
     started = time.perf_counter()
-    with trace_service.recording(
-        req.message,
-        db_path=db_path,
-        turn_id=turn_id,
-        role=role_runtime,
-    ):
-        with use_conversation_sandbox(prepared["workspace_dir"]):
-            if _usage_callback is not None:
-                with _usage_callback() as usage_cb:
+    result: dict[str, Any] = {}
+    tokens = 0
+    # 绑定本轮：ReAct / 工具的取消检查点靠这个 ContextVar 找到自己的 turn_id。
+    bind_turn(turn_id)
+    try:
+        with trace_service.recording(
+            req.message,
+            db_path=db_path,
+            turn_id=turn_id,
+            role=role_runtime,
+        ):
+            with use_conversation_sandbox(prepared["workspace_dir"]):
+                if _usage_callback is not None:
+                    with _usage_callback() as usage_cb:
+                        result = run_chat(req.message, history=history, role=role_runtime)
+                    tokens = _collect_tokens(usage_cb)
+                else:
                     result = run_chat(req.message, history=history, role=role_runtime)
-                tokens = _collect_tokens(usage_cb)
-            else:
-                result = run_chat(req.message, history=history, role=role_runtime)
-                tokens = 0
+                    tokens = 0
+    finally:
+        clear_turn(turn_id)
+        bind_turn(None)
     duration_ms = int((time.perf_counter() - started) * 1000)
     return {"result": result, "tokens": tokens, "duration_ms": duration_ms}
 
