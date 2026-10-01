@@ -31,10 +31,12 @@ from .common import (
     allowed_from_role,
     build_react_graph,
     failure_reply,
+    StepLimitReached,
     invoke_react,
     last_text,
     merge_tool_traces,
     react_recursion_limit,
+    step_limit_reply,
 )
 from ..cancellation import TurnCancelled  # pyright: ignore[reportImplicitRelativeImport]
 from .prompts import HARD_SYSTEM_STATIC, build_agent_system
@@ -50,7 +52,7 @@ _REACT_DEADLINE_S = 420.0
 _MAX_MODEL_CALLS = 16
 _MAX_TOOL_CALLS = 10
 _MAX_WEB_SEARCH = 3
-_RECURSION_LIMIT = react_recursion_limit(_MAX_MODEL_CALLS)  # 2×16+10 = 42
+_RECURSION_LIMIT = react_recursion_limit(_MAX_MODEL_CALLS)  # 16×8+16 = 144
 
 
 class TaskPlan(BaseModel):
@@ -317,6 +319,16 @@ def build_hard_graph(
         except TurnCancelled:
             # 用户取消：不能落进兜底分支（否则本轮会继续跑完剩余轮次）
             raise
+        except StepLimitReached as exc:
+            # 步数触顶：已跑过的工具结果仍然有效，收束给用户而不是整轮报错
+            fallback = run_tools(user_blob, selected) if selected else ""
+            return {
+                "reply": step_limit_reply(exc.partial, fallback),
+                "used_llm": False,
+                "tool_trace": merge_tool_traces(
+                    prior_trace, extract_tool_trace(exc.partial.get("messages") or [])
+                ),
+            }
         except Exception as exc:  # noqa: BLE001
             fallback = run_tools(user_blob, selected) if selected else ""
             # 限流 / 鉴权这类模型侧原因会翻成人话，其余沿用通用文案

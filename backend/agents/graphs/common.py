@@ -138,9 +138,14 @@ def same_arg_tool_guard():
     return _guard
 
 
-# create_agent 一轮约「模型节点 + 工具节点」各计 1 步；middleware / 并行 tool 另占步数。
-# 余量 10：对齐社区常见 create_agent 默认量级（约 25）相对「纯 2×轮次」多出的缓冲。
-RECURSION_LIMIT_MARGIN = 10
+# create_agent 里**每个 middleware 钩子都单独占一个图步**，不是「模型+工具各 1 步」。
+# 实测一轮（一次模型调用 + 一次工具执行）= 8 步：
+#   3 × before_model（取消守卫 / 限流复位 / 模型次数上限）
+#   + model + 3 × after_model（模型次数 / 工具次数 / web_search 次数）+ tools
+# 所以步数上限必须是「轮次 × 8」，否则图会**先于**模型次数上限撞墙：
+# 旧公式 2×12+10=34 只够跑 4 轮就抛 Recursion limit of 34 reached。
+STEPS_PER_REACT_ITERATION = 8
+RECURSION_LIMIT_MARGIN = 16
 
 
 def react_recursion_limit(
@@ -148,14 +153,31 @@ def react_recursion_limit(
     *,
     margin: int = RECURSION_LIMIT_MARGIN,
 ) -> int:
-    """图 ``recursion_limit``：``2 × max_model_calls + margin``。
+    """图 ``recursion_limit``：``max_model_calls × STEPS_PER_REACT_ITERATION + margin``。
 
-    须大于模型/工具 middleware 预算，否则天气这类「定位 + 搜索」会先撞图步数。
-    空转由 Tool/Model call limit 收束，本值只当安全网。
+    只是安全网：正常收束交给 Tool / Model call limit（语义上限）。
+    步数不够会让本轮在第 4 轮左右被硬切，且异常文案是框架内部措辞。
     """
     calls = max(1, int(max_model_calls))
     pad = max(0, int(margin))
-    return 2 * calls + pad
+    return calls * STEPS_PER_REACT_ITERATION + pad
+
+
+class StepLimitReached(RuntimeError):
+    """撞到图步上限（``recursion_limit``）：带上中止前最后一份状态，供上层收束。"""
+
+    def __init__(self, message: str, partial: dict[str, Any] | None = None) -> None:
+        super().__init__(message)
+        self.partial = partial or {}
+
+
+def step_limit_reply(partial: dict[str, Any], fallback: str = "") -> str:
+    """步数触顶时的收束回复：把已收集到的结果交给用户，而不是整轮报错。"""
+    messages = list((partial or {}).get("messages") or [])
+    done = sum(1 for msg in messages if isinstance(msg, ToolMessage))
+    head = f"本轮达到步骤上限（已完成 {done} 次工具调用），以下是已收集到的结果："
+    body = last_text(messages) or fallback or "（工具已执行，但模型还没来得及给出结论）"
+    return f"{head}\n\n{body}"
 
 
 def cancellation_guards() -> list[Any]:
@@ -286,19 +308,34 @@ def invoke_react(
     deadline_s: float | None = None,
     config_extra: dict[str, Any] | None = None,
 ) -> Any:
-    """``agent.invoke``；可选墙钟超时（仅防死挂，默认不压质量）。
+    """跑 ReAct；可选墙钟超时（仅防死挂，默认不压质量）。
 
     超时跑在线程池时须 ``copy_context().run``，否则丢失
     ``use_conversation_sandbox`` 的 ContextVar，文件/沙箱工具会报「没有会话工作区」。
+
+    用 ``stream`` 而非 ``invoke``：图步上限触顶时仍能拿到最后一份状态，
+    上层据此用已收集到的结果收束（``StepLimitReached.partial``）。
     """
     import contextvars
+
+    from langgraph.errors import GraphRecursionError
 
     from trace.recording import runnable_config
 
     cfg = runnable_config({"recursion_limit": recursion_limit, **(config_extra or {})})
 
     def _run() -> Any:
-        return agent.invoke(payload, config=cfg)
+        last: dict[str, Any] | None = None
+        try:
+            for chunk in agent.stream(payload, config=cfg, stream_mode="values"):
+                if isinstance(chunk, dict):
+                    last = chunk
+        except GraphRecursionError as exc:
+            raise StepLimitReached(
+                f"ReAct 达到图步上限（recursion_limit={recursion_limit}）",
+                partial=last,
+            ) from exc
+        return last or {}
 
     if deadline_s is None or deadline_s <= 0:
         return _run()

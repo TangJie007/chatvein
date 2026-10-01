@@ -24,9 +24,11 @@ from .common import (
     allowed_from_role,
     build_react_graph,
     failure_reply,
+    StepLimitReached,
     invoke_react,
     last_text,
     react_recursion_limit,
+    step_limit_reply,
 )
 from ..cancellation import TurnCancelled  # pyright: ignore[reportImplicitRelativeImport]
 from .prompts import MEDIUM_SYSTEM_STATIC, build_agent_system
@@ -41,7 +43,7 @@ _REACT_DEADLINE_S = 300.0
 _MAX_MODEL_CALLS = 12  # 略高于工具上限，避免模型先触顶
 _MAX_TOOL_CALLS = 10
 _MAX_WEB_SEARCH = 3
-_RECURSION_LIMIT = react_recursion_limit(_MAX_MODEL_CALLS)  # 2×12+10 = 34
+_RECURSION_LIMIT = react_recursion_limit(_MAX_MODEL_CALLS)  # 12×8+16 = 112
 
 
 def build_medium_graph(
@@ -161,6 +163,14 @@ def build_medium_graph(
             # 用户取消必须继续往外抛：落进下面的兜底分支会变成「工具调用失败」
             # 并让本轮继续跑完。
             raise
+        except StepLimitReached as exc:
+            # 步数触顶：已跑过的工具结果仍然有效，收束给用户而不是整轮报错
+            traced = extract_tool_trace(exc.partial.get("messages") or [])
+            return {
+                "reply": step_limit_reply(exc.partial),
+                "used_llm": False,
+                "tool_trace": traced,
+            }
         except Exception as exc:  # noqa: BLE001
             fallback = run_tools(text, selected) if selected else ""
             # 限流 / 鉴权这类模型侧原因会翻成人话，其余沿用通用文案

@@ -25,7 +25,9 @@ from agents.graphs.common import (  # pyright: ignore[reportImplicitRelativeImpo
     build_react_graph,
     invoke_react,
     last_text,
+    StepLimitReached,
     react_recursion_limit,
+    step_limit_reply,
 )
 from agents.graphs.prompts import build_agent_system  # pyright: ignore[reportImplicitRelativeImport]
 from agents.llm import get_chat_model  # pyright: ignore[reportImplicitRelativeImport]
@@ -136,12 +138,16 @@ def delegate_to_agent(role_id: str, task: str, instruction: str | None = None) -
         user_blob = f"{user_blob}\n\n约束与期望：{str(instruction).strip()}"
 
     prior: list[BaseMessage] = to_lc_messages(history)
-    out = invoke_react(
-        agent,
-        {"messages": [*prior, HumanMessage(content=user_blob)]},
-        recursion_limit=_RECURSION_LIMIT,
-        deadline_s=_REACT_DEADLINE_S,
-    )
+    try:
+        out = invoke_react(
+            agent,
+            {"messages": [*prior, HumanMessage(content=user_blob)]},
+            recursion_limit=_RECURSION_LIMIT,
+            deadline_s=_REACT_DEADLINE_S,
+        )
+    except StepLimitReached as exc:
+        # 子 agent 步数触顶：把已收集到的结果交回主 agent，别变成一条工具错误
+        return f"[成员 {member_name} 的回复]\n{step_limit_reply(exc.partial)}"
     out_messages = out.get("messages") or []
     reply = last_text(out_messages) or "（成员未返回文本回复）"
 

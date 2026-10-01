@@ -9,16 +9,19 @@ from langchain_core.messages import ToolMessage
 from agents.graphs.common import (
     react_recursion_limit,
     RECURSION_LIMIT_MARGIN,
+    STEPS_PER_REACT_ITERATION,
     same_arg_tool_guard,
     tool_call_fingerprint,
 )
 
 
 def test_react_recursion_limit_formula() -> None:
-    assert RECURSION_LIMIT_MARGIN == 10
-    assert react_recursion_limit(12) == 34
-    assert react_recursion_limit(16) == 42
-    assert react_recursion_limit(12, margin=0) == 24
+    # 每个 middleware 钩子都占一个图步，故倍数是 8 而不是 2
+    assert STEPS_PER_REACT_ITERATION == 8
+    assert RECURSION_LIMIT_MARGIN == 16
+    assert react_recursion_limit(12) == 112
+    assert react_recursion_limit(16) == 144
+    assert react_recursion_limit(12, margin=0) == 96
 
 
 def test_fingerprint_stable_for_same_args() -> None:
