@@ -85,7 +85,8 @@ Agent 图细节见 [`agent-graphs.md`](./agent-graphs.md)；工具矩阵见 [`ag
 | 三栏对话 | 会话列表 + 消息流 + 洞察（轨迹 / 产物） | 对齐 WorkBuddy UI 壳 |
 | Markdown | Streamdown + CJK / 代码高亮 | 助手气泡 |
 | 输入区 | 模型名、上下文占比、添加技能、添加文件、拖放上传 | `Composer` |
-| Bash/PowerShell 确认 | 危险或写盘命令弹窗批准 | `BashApproval` |
+| 统一确认卡片 | 命令 / 会话外路径 / 危险工具统一弹窗批准，决定落会话库、续跑复用 | `BashApproval` + `mcps/approval.py` |
+| 中断续跑 | 停止或崩溃后消息流上方出现「继续生成 / 放弃」 | `useChatSession` → `/api/conversations/{id}/resume` |
 | 追踪窗口 | 独立窗看整轮 path / LLM / 工具 / token | `TraceWindow` |
 | 群组 | 左栏整栏是群对话列表（一行 = 一个群组），建群时选成员并开好群对话；右栏是独立的群聊面板：无模型条、无技能，上下文用量放在气泡上方；输入区可「@ 指派」给某个成员，由该成员绑定模型单独执行，气泡与指派记录按成员显示 | `GroupView` / `GroupChatView` |
 | 群组注册 | 会话持久化 `group_members`（角色 id 列表）：创建注册 / 补注册 / 随 `/api/chat` 消息透传，合并去重 | `conversations/` + `main.py` |

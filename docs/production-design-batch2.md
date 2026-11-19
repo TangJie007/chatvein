@@ -84,6 +84,8 @@ event: cancelled  data: {"turn_id","resumable":true}
 
 ## 2.2 统一 HITL 审批（interrupt 断点）
 
+> **状态：已实现（2026-11-19）**，实现位置与评审稿有出入（见末节「实现纪要」）：审批设施落在**工具层**（`backend/mcps/approval.py`），而不是图内 `approval_node` + `Command(resume)`；图内 interrupt 留给 2.3 外部 MCP 危险工具时再补。开关 `CHATVEIN_UNIFIED_APPROVAL`（默认开，设 0 回退旧 `bash_approval`）；超时 `CHATVEIN_APPROVAL_TIMEOUT`（默认 120s）。
+
 ### 现状（证据）
 
 - 审批在工具执行层：`bash_approval.create_pending()` / `wait_decision()`（`mcps/bash_approval.py`），内存 dict + 120s 超时；`path_access.py` 会话外访问复用同一确认弹窗。
@@ -149,6 +151,32 @@ def request_approval(req: ApprovalRequest) -> ApprovalDecision: ...
 - Bash 危险命令 → 弹窗 → 批准 → 工具执行 → trace 有中断/恢复节点；拒绝 → 工具不执行。
 - 弹窗期间杀后端 → 重启 → 会话出现「待审批」→ 批准 → 从中断点续跑。
 - 关闭开关后审批行为与当前一致。
+
+### 实现纪要（2026-11-19）
+
+与评审稿的差异：**审批不落在图内 `interrupt()`，而落在工具执行层**。理由：审批天然发生在「工具即将执行」这一刻，工具层阻塞等待即可直接复用现有 `raise_if_cancelled` 取消语义；搬进图里需要为恢复路径重建 trace / sandbox / turn / sink 四个 ContextVar，收益不足以抵消恢复复杂度。图内 interrupt 留给 2.3 外部 MCP 危险工具（那时需要在模型看到工具结果前暂停）。
+
+实际落地：
+
+| 文件 | 内容 |
+|---|---|
+| `backend/mcps/approval_policy.py`（新） | `ApprovalNeed(kind,title,detail,risk)`；`shell_approval` / `path_approval` 集中决定文案与风险等级 |
+| `backend/mcps/approval.py`（新） | `request_approval` 阻塞等待 → `allow/deny/timeout`；`decide` 供 HTTP 线程提交；`pending` 供轮询；`bind_tool_call` 绑定本轮 `tool_call_id`；`unified_enabled` / `approval_timeout` 开关 |
+| `backend/conversations/session_store.py` | 会话库新表 `approvals` + `save_approval` / `decide_approval` / `expire_approval` / `get_approval` / `list_pending_approvals` |
+| `backend/agents/streaming.py` | `StreamSink.approval` / `approval_resolved` → SSE `approval` / `approval_resolved` 事件 |
+| `backend/agents/graphs/common.py` | `wrap_tool_call` 内 `with bind_tool_call(call_id)`，让审批 id 与 turn/tool_call 绑定 |
+| `backend/mcps/tools/bash.py`、`powershell.py`、`path_access.py` | `unified_enabled()` 时走 `request_approval`，否则旧路径 |
+| `backend/mcps/bash_approval.py` | 旧 `list_pending` / `decide` 在统一开启时转发同一登记表 |
+| `backend/main.py` | `GET /api/approvals/pending`、`POST /api/approvals/{id}/decision`；旧 `/api/bash/*` 兼容转发 |
+| `src/api/approvals.ts`（新） | `listApprovals` / `decideApproval` |
+| `src/components/chat/BashApproval.tsx` | 通用审批卡片：按 `kind` 渲染标题/详情/风险；1s 起指数退避到 5s 轮询 |
+| `backend/tests/test_approval.py` | 策略、allow/deny、超时=expired、确定性 id 复用、跨重启待批复用、SSE 事件 |
+
+关键语义：
+
+- **确定性 request_id**：`blake2s(f"{turn_id}:{tool_call_id}")`，续跑重放同一条工具调用时命中历史决定（不重复弹窗、不重复执行）。
+- **超时 ≠ 拒绝**：超时只把记录置 `expired`，恢复时会重新提问；`deny` 才写 `decided`。
+- **旧接口不破**：`/api/bash/pending|approve|deny` 始终返回与统一登记表一致的数据。
 
 ---
 

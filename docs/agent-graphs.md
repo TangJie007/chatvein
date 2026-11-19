@@ -16,7 +16,7 @@ ChatVein 对话 Agent 用 **LangGraph** 编排：总图先理解并判难度，�
 | 可观测 | 节点写 `trace.note` / `span`；追踪窗展示 path |
 | 可离线降级 | 无 API Key 时启发式路由与直接 `invoke_tools`，不拖垮会话 |
 
-**不在图内做的事**：流式 token 推送、HITL 审批节点（Bash 确认在工具层）、多智能体并行分发。
+**不在图内做的事**：流式 token 推送、HITL 审批节点（Bash / 会话外路径 / 危险工具确认都在工具层走 `mcps/approval.py`，见批次 2 §2.2）、多智能体并行分发。
 
 ---
 
@@ -345,7 +345,7 @@ role.memory  ──────→ history 条数（HTTP 层）  │
 | --- | --- |
 | 新难度档 | 新子图模块 + pipeline 条件边 + router 枚举 + trace `_path` |
 | hard 更强核对 | 调 `_MAX_VERIFY_ROUNDS`；或 verify 失败时强制重跑 sandbox 工具 |
-| 人审节点 | LangGraph `interrupt` + 前端确认（与现有 Bash 审批可统一） |
+| 人审节点 | 优先接 `mcps/approval.py`（工具层统一登记 + 审批卡片）；确需在模型看到工具结果前暂停时才用 `interrupt` |
 | 流式 | 挡位 `react`/`chat` 改 `astream`；总图仍可同步选型 |
 | 共享选型逻辑 | medium/hard 的 `select_tools_node` 已趋同，可再抽到 `graphs/common.py` |
 

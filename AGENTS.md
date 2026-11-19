@@ -59,7 +59,8 @@
 | Agent 决策逻辑 | `backend/agents/graphs/{simple,medium,hard}.py` | `common.py`、`prompts.py`、`state.py` |
 | 工具选择/预筛 | `backend/agents/tool_selector.py`、`tool_retriever.py` | `backend/mcps/registry.py` |
 | 新增工具 | `backend/mcps/tools/<module>.py` | `backend/mcps/tools/__init__.py`、`src/components/settings/prefs.ts`、`src/lib/rolesStore.ts` |
-| 工具执行/审批 | `backend/mcps/registry.py` | `bash.py`、`bash_policy.py`、`bash_approval.py` |
+| 工具执行/审批 | `backend/mcps/registry.py`、`approval.py`、`approval_policy.py` | `bash.py`、`bash_policy.py`、`bash_approval.py`、`path_access.py`、`src/components/chat/BashApproval.tsx` |
+| 断点续跑 / 继续生成 | `backend/agents/checkpoint.py`、`backend/main.py`（`/resumable`、`/resume`） | `src/api/conversations.ts`、`src/components/chat/useChatSession.ts`、`ChatPanel.tsx` |
 | 工作区/沙箱 | `backend/mcps/sandbox.py`、`workspace.py`、`path_access.py` | `backend/main.py`（uploads） |
 | 新后端接口 | `backend/<module>/controller.py` | `module.py`、`main.py include_router`、`src/api/*.ts` |
 | 会话/群组数据 | `backend/conversations/`、`backend/chats/` | `src/api/conversations.ts`、`src/api/db.ts` |
@@ -96,6 +97,9 @@
 11. 不要提交 `src-tauri/target/`、`backend/data/`、`.venv/`、构建产物。
 12. 安全：不要把 token、API Key、密钥写进日志/工具输出/前端。
 13. 注释只写「为什么 / 坑」，不复述代码；同一事实只在离代码最近的唯一一处解释，别处留一行指针（如 `见 graphs/common.py::ALWAYS_ON_TOOLS`）。
+14. 审批统一走 `mcps/approval.py::request_approval`（策略在 `mcps/approval_policy.py` 构造 `ApprovalNeed`），不要新增独立弹窗通道；工具里不要自己发审批事件。审批 id 是 `(turn_id, tool_call_id)` 的确定性哈希，因此工具调用必须经 `wrap_tool_call` 的 `bind_tool_call` 才拿得到。
+15. 审批超时只作废本次等待（`expired`），不得写成 `deny`：续跑会重放同一 request_id，历史决定必须复用，否则会把用户批准过的命令再拦一次。
+16. 中断现场只走 `/api/conversations/{id}/resumable` + `/resume`（`continue|discard`），前端不要自建一套续跑状态机。
 
 ## 6. 常用命令
 

@@ -49,12 +49,12 @@
 批次 1 内核韧性（先做，最高杠杆，全部在现有进程内链路增强）
   1.1 上下文工程（压缩/摘要 + token 预算）            ← 已实现
   1.2 工具可靠性（结构化错误码 + 重试/熔断 + 幂等）      ← 已实现
-  1.3 断点续跑（LangGraph checkpointer + 状态持久化）  ← 后端已实现（UI 随 2.1 接线）
+  1.3 断点续跑（LangGraph checkpointer + 状态持久化）  ← 已实现（含前端「继续 / 放弃」入口）
   1.4 长期记忆（事实/偏好抽取 + 巩固 + 召回）
         ↓ 依赖 1.3 的 checkpointer 作为 HITL 断点基础
 批次 2 体验与生态
   2.1 token 级流式（SSE）                                 ← 已实现
-  2.2 统一 HITL 审批（interrupt）
+  2.2 统一 HITL 审批（interrupt）                         ← 已实现（工具层统一登记 + 审批卡片）
   2.3 真 MCP 协议客户端（stdio / SSE / Streamable HTTP）
   2.4 多 agent 并行编排（fan-out + 聚合）
         ↓ 依赖 1.2 的结构化错误码 / 2.3 的工具契约
