@@ -286,6 +286,8 @@ def request_approval(req: ApprovalRequest) -> ApprovalDecision: ...
 
 ## 2.4 多 agent 并行编排（fan-out + 聚合）
 
+> **状态：已实现（2026-11-19）**。开关 `CHATVEIN_PARALLEL_DELEGATE`（设 `0` 回退串行）、并行度 `CHATVEIN_DELEGATE_MAX_PARALLEL`（默认 4，上限 8）、整批上限 `CHATVEIN_DELEGATE_BATCH_TIMEOUT`（默认 420s）。实现与评审稿的差异见末节「实现纪要」。
+
 ### 现状（证据）
 
 - `delegation.py::delegate_to_agent` 是单一工具，主 agent 在 ReAct 里调用；成员用自己模型/工具/独立记忆，**同步串行**等待返回。
@@ -336,6 +338,47 @@ def request_approval(req: ApprovalRequest) -> ApprovalDecision: ...
 - 3 成员并行子任务，墙钟耗时 < 串行之和；任务板 3 条状态齐全；聚合结果进入主 agent 最终回复。
 - 1 成员失败不影响其他成员，trace 标 `error_code`。
 - 关闭开关后团队模式行为与当前一致。
+
+### 实现纪要（2026-11-19）
+
+先说结论：**并行只能由工具内部开线程池**。LangGraph 对同一条 AIMessage 里的多个 `tool_call`
+是顺序执行的，让模型「连发多次 delegate」不会并行；因此新增 `parallel_delegate`，模型侧只表达
+「一次派发 N 条子任务」。
+
+| 文件 | 内容 |
+|---|---|
+| `backend/agents/orchestration.py`（新） | `parallel_delegate` 工具、线程池 fan-out、轮询取消、聚合、任务板落库、`max_parallel` / `parallel_enabled` / `batch_timeout` |
+| `backend/agents/delegation.py` | 抽出 `run_member_task(role_id, task, instruction) -> MemberOutcome`（串行与并行共用一条路径），`delegate_to_agent` 变成薄包装 |
+| `backend/trace/recording.py` | `TraceRecorder` / `TraceHandler` 加 `RLock`（并行成员共享 steps、`_seq`、`_seen`、`_pending`）；新增 `child_span(name, parent_id)` + `_span_parent` ContextVar 做「显式父节点」隔离 |
+| `backend/agents/graphs/medium.py` / `hard.py` | 团队模式挂 `delegate_to_agent`（始终）+ `parallel_delegate`（开关开启时） |
+| `backend/chats/service.py` | 花名册 prompt 改为「优先并行，有依赖用串行」；`set_team_context` 补 `role`（聚合用主模型） |
+| `backend/conversations/session_store.py` | `agent_tasks` 表 + `save_agent_task` / `update_agent_task` / `list_agent_tasks` |
+| `backend/conversations/{service,controller}.py` | `GET /api/conversations/{id}/agent-tasks?turn_id=` |
+| `src/api/conversations.ts` | `AgentTaskRecord` + `listAgentTasks` |
+| `src/components/trace/TraceWindow.tsx` | `delegate:成员` / `aggregate` / `parallel_delegate` 标签 |
+| `backend/tests/test_orchestration.py` | 并行耗时、失败隔离、取消、聚合降级、任务板状态、开关与钳位 |
+
+与评审稿的差异（按影响从大到小）：
+
+1. **trace 隔离不是「派生 recorder」**，而是共享 recorder + 锁 + 显式父节点。
+   派生 recorder 会让 SSE 的 `on_change` 收到两份快照，前端还得合并；共享 + `RLock` 只是在
+   并行成员之间串行化几十微秒的记账，更简单也更容易保证事件顺序。
+2. **取消不改 `cancellation.py`**：`_fan_out` 用 `concurrent.futures.wait(..., timeout=0.2)` 循环，
+   每轮调一次 `raise_if_cancelled`，命中就 `future.cancel()` + 抛出；`executor.shutdown(wait=False)`
+   不等待在跑的成员（成员内部每个节点都会检查取消位，会自行退出）。
+3. **聚合没有 `conflicts[]` 结构化输出**：ToolMessage 只回文本，多一层 JSON 只会多一个解析失败面；
+   改在聚合 system prompt 里要求「有冲突时指出分歧」。模型不可用 / 调用失败时退化为
+   「### 成员名 + 回复」拼接，不丢内容。
+4. **单成员异常按失败隔离**：`run_member_task` 自身不吞异常（保持串行语义），由 `_fan_out`
+   在每个 future 外围捕获（`TurnCancelled` 除外，它必须向上冒泡结束整轮）。
+5. **任务板字段简化**：`result` 存纯文本（不是 `result_json`），`finished_at` 代替 `updated_at`；
+   状态 `running/done/failed/cancelled`。前端只提供 `listAgentTasks` 封装，**未新增任务板 UI** ——
+   trace 树里已有 `delegate:成员` 子树，任务板定位为排查/自动化接口。
+6. **开启时两个工具都挂**：`parallel_delegate` 负责无依赖的多路任务，`delegate_to_agent` 留给
+   「必须拿到上一步结果」的串行场景；`CHATVEIN_PARALLEL_DELEGATE=0` 或并行度=1 时只挂后者，
+   与「关闭开关回到当前行为」一致。
+7. **上限**：单次最多 8 条子任务（超出丢弃并在结果里说明），整批 420s；单成员仍用
+   `delegation.py` 的 300s deadline 与步数上限，不额外放大。
 
 ---
 

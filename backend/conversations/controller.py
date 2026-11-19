@@ -88,6 +88,15 @@ def open_artifact_location(conversation_id: str, body: dict = Body(default={})):
     return {"ok": True, "path": folder}
 
 
+@conversations_controller.get("/{conversation_id}/agent-tasks")
+def list_agent_tasks(conversation_id: str, turn_id: str | None = None, limit: int = 40):
+    """团队并行派发的任务板（按 turn 过滤可看某一轮的成员进度）。"""
+    tasks = _service.agent_tasks(conversation_id, turn_id=turn_id, limit=limit)
+    if tasks is None:
+        raise HTTPException(status_code=404, detail="会话不存在或尚未创建工作区")
+    return {"tasks": tasks}
+
+
 @conversations_controller.get("/{conversation_id}/workspace")
 def conversation_workspace(conversation_id: str):
     insight = _service.workspace_insight(conversation_id)

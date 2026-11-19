@@ -87,12 +87,20 @@ def build_medium_graph(
         # 常驻工具见 graphs/common.py::ALWAYS_ON_TOOLS：不参与选型 / 白名单，始终挂载。
         names = list(dict.fromkeys([*selected, *ALWAYS_ON_TOOLS]))
         tools = resolve_tools(names)
-        # 团队模式：把 delegate_to_agent 工具挂进本轮（主 agent 派发子任务给成员）。
+        # 团队模式：挂派发工具（主 agent 把子任务交给成员）。
         # 工具从团队上下文读花名册；未开启团队模式时 role 无 _team_mode，不会挂载。
+        # parallel_delegate 走线程池 fan-out（批次 2 §2.4），delegate_to_agent 保留给
+        # 「子任务有先后依赖」的串行场景；CHATVEIN_PARALLEL_DELEGATE=0 时只挂后者。
         if (role or {}).get("_team_mode"):
             from agents.delegation import DELEGATE_TOOL  # pyright: ignore[reportImplicitRelativeImport]
+            from agents.orchestration import (  # pyright: ignore[reportImplicitRelativeImport]
+                PARALLEL_TOOL,
+                parallel_enabled,
+            )
 
             tools = [*tools, DELEGATE_TOOL]
+            if parallel_enabled():
+                tools = [*tools, PARALLEL_TOOL]
         model = llm_mod.get_chat_model(
             role=role,
             timeout=_LLM_TIMEOUT,

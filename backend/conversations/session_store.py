@@ -72,6 +72,20 @@ CREATE TABLE IF NOT EXISTS approvals (
     decided_at TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_approvals_status ON approvals(status);
+CREATE TABLE IF NOT EXISTS agent_tasks (
+    id TEXT PRIMARY KEY,
+    turn_id TEXT,
+    role_id TEXT NOT NULL,
+    role_name TEXT NOT NULL,
+    task TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'running',
+    result TEXT,
+    error_code TEXT,
+    duration_ms INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL,
+    finished_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_agent_tasks_turn ON agent_tasks(turn_id);
 """
 
 
@@ -418,6 +432,71 @@ def list_pending_approvals(db_path: Path) -> list[dict[str, Any]]:
             "status, decision, created_at, decided_at FROM approvals "
             "WHERE status = 'pending' ORDER BY created_at"
         ).fetchall()
+    return [{key: row[key] for key in row.keys()} for row in rows]
+
+
+def save_agent_task(
+    db_path: Path,
+    *,
+    task_id: str,
+    turn_id: str,
+    role_id: str,
+    role_name: str,
+    task: str,
+) -> None:
+    """登记一条成员子任务（先落 ``running``，结果回来再 update）。
+
+    并行派发时多个成员同时写，靠 ``task_id`` 主键幂等（重跑同一轮不会堆重复行）。
+    """
+    ensure_session_db(db_path)
+    with _connect(db_path) as conn:
+        conn.execute(
+            "INSERT OR REPLACE INTO agent_tasks "
+            "(id, turn_id, role_id, role_name, task, status, created_at) "
+            "VALUES (?, ?, ?, ?, ?, 'running', ?)",
+            (task_id, turn_id, role_id, role_name, task, _iso_now()),
+        )
+
+
+def update_agent_task(
+    db_path: Path,
+    task_id: str,
+    *,
+    status: str,
+    result: str = "",
+    error_code: str = "",
+    duration_ms: int = 0,
+) -> None:
+    ensure_session_db(db_path)
+    with _connect(db_path) as conn:
+        conn.execute(
+            "UPDATE agent_tasks SET status = ?, result = ?, error_code = ?, "
+            "duration_ms = ?, finished_at = ? WHERE id = ?",
+            (status, result, error_code, int(duration_ms), _iso_now(), task_id),
+        )
+
+
+def list_agent_tasks(
+    db_path: Path, *, turn_id: str | None = None, limit: int = 40
+) -> list[dict[str, Any]]:
+    """任务板：最近一轮/几次的成员派发状态（前端可轮询，也用于排查）。"""
+    ensure_session_db(db_path)
+    limit = max(1, min(int(limit), 200))
+    with _connect(db_path) as conn:
+        if turn_id:
+            rows = conn.execute(
+                "SELECT id, turn_id, role_id, role_name, task, status, result, "
+                "error_code, duration_ms, created_at, finished_at FROM agent_tasks "
+                "WHERE turn_id = ? ORDER BY created_at LIMIT ?",
+                (turn_id, limit),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT id, turn_id, role_id, role_name, task, status, result, "
+                "error_code, duration_ms, created_at, finished_at FROM agent_tasks "
+                "ORDER BY created_at DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
     return [{key: row[key] for key in row.keys()} for row in rows]
 
 

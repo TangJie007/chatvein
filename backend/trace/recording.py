@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import threading
 import time
 from contextlib import contextmanager
 from contextvars import ContextVar
@@ -14,6 +15,11 @@ from langchain_core.callbacks import BaseCallbackHandler
 from langchain_core.messages import BaseMessage
 
 _recorder: ContextVar[TraceRecorder | None] = ContextVar("chatvein_trace", default=None)
+#: 并行派发时，当前线程「逻辑父节点」的显式覆盖。
+#: ``_parents`` 是单线程栈：多个成员线程各自 open/close 会互相踩栈，
+#: 所以并行分支不 push 栈，改用这个 ContextVar 告诉回调「我的父级是谁」。
+#: 它随 ``copy_context()`` 复制到成员线程，因此各成员互不可见。
+_span_parent: ContextVar[str | None] = ContextVar("chatvein_trace_parent", default=None)
 
 _MAX_TEXT = 80_000
 _PARAM_KEYS = (
@@ -292,29 +298,38 @@ class TraceRecorder:
         self._parents: list[str] = []
         self._run_steps: dict[str, str] = {}
         self.handler: TraceHandler | None = None
+        # 并行成员同时写 steps / _seq，必须串行化（RLock 允许 add → flush 重入）。
+        self._lock = threading.RLock()
 
     def current_parent(self) -> str | None:
         return self._parents[-1] if self._parents else None
 
     def parent_for(self, parent_run_id: UUID | None) -> str | None:
-        if parent_run_id is not None:
-            found = self._run_steps.get(str(parent_run_id))
-            if found:
-                return found
-        return self.current_parent()
+        with self._lock:
+            if parent_run_id is not None:
+                found = self._run_steps.get(str(parent_run_id))
+                if found:
+                    return found
+            # 并行成员线程：用显式父节点，避免落到主线程栈顶。
+            override = _span_parent.get()
+            if override:
+                return override
+            return self.current_parent()
 
     def bind_run(self, run_id: UUID, step_id: str) -> None:
-        self._run_steps[str(run_id)] = step_id
+        with self._lock:
+            self._run_steps[str(run_id)] = step_id
 
     def add(self, step: dict[str, Any]) -> dict[str, Any]:
-        self._seq += 1
-        step.setdefault("id", str(self._seq))
-        step.setdefault("parent_id", self.current_parent())
-        step.setdefault("start_ms", self._offset_ms())
-        self._absorb(step)
-        self.steps.append(step)
-        self.flush()
-        return step
+        with self._lock:
+            self._seq += 1
+            step.setdefault("id", str(self._seq))
+            step.setdefault("parent_id", self.current_parent())
+            step.setdefault("start_ms", self._offset_ms())
+            self._absorb(step)
+            self.steps.append(step)
+            self.flush()
+            return step
 
     def _absorb(self, step: dict[str, Any]) -> None:
         """路由和工具筛选的结论提前写到本轮上，进行中的快照就能画出路径。"""
@@ -336,30 +351,49 @@ class TraceRecorder:
                 self.tool_plan_reason = str(detail.get("reason"))
 
     def open_span(self, name: str) -> dict[str, Any]:
-        step = self.add(
-            {
-                "kind": "span",
-                "name": name,
-                "status": "running",
-                "parent_id": self.current_parent(),
-            }
-        )
-        self._parents.append(str(step["id"]))
-        return step
+        with self._lock:
+            step = self.add(
+                {
+                    "kind": "span",
+                    "name": name,
+                    "status": "running",
+                    "parent_id": self.current_parent(),
+                }
+            )
+            self._parents.append(str(step["id"]))
+            return step
+
+    def open_child_span(self, name: str, parent_id: str | None) -> dict[str, Any]:
+        """并行分支专用：按显式父节点建 span，不 push ``_parents`` 栈。
+
+        成员线程各自持有一份 ContextVar，push 共享栈会互相踩踏；因此并行分支
+        只用 ``_span_parent`` 传递父级，span 结束后由本线程 close。
+        """
+        with self._lock:
+            return self.add(
+                {
+                    "kind": "span",
+                    "name": name,
+                    "status": "running",
+                    "parent_id": parent_id or self.current_parent(),
+                }
+            )
 
     def close_span(self, step_id: str, *, status: str = "ok") -> None:
-        if self._parents and self._parents[-1] == step_id:
-            self._parents.pop()
-        for step in self.steps:
-            if step.get("id") != step_id:
-                continue
-            step["status"] = status
-            step["elapsed_ms"] = max(0, self._offset_ms() - _int(step.get("start_ms")))
-            break
-        self.flush()
+        with self._lock:
+            if self._parents and self._parents[-1] == step_id:
+                self._parents.pop()
+            for step in self.steps:
+                if step.get("id") != step_id:
+                    continue
+                step["status"] = status
+                step["elapsed_ms"] = max(0, self._offset_ms() - _int(step.get("start_ms")))
+                break
+            self.flush()
 
     def tools_since(self, mark: int) -> int:
-        return sum(1 for step in self.steps[mark:] if step.get("kind") == "tool")
+        with self._lock:
+            return sum(1 for step in self.steps[mark:] if step.get("kind") == "tool")
 
     def apply_outcome(
         self,
@@ -390,12 +424,13 @@ class TraceRecorder:
         只改 ``running`` 的步骤，已完成 / 失败的步骤保持原状，
         面板因此能看到「取消发生在哪一步」。
         """
-        self.status = "cancelled"
-        for step in self.steps:
-            if step.get("status") == "running":
-                step["status"] = "cancelled"
-        self._parents.clear()
-        return self.flush()
+        with self._lock:
+            self.status = "cancelled"
+            for step in self.steps:
+                if step.get("status") == "running":
+                    step["status"] = "cancelled"
+            self._parents.clear()
+            return self.flush()
 
     def snapshot(self) -> dict[str, Any]:
         self.finished_at = _iso_now()
@@ -463,10 +498,11 @@ class TraceRecorder:
         }
 
     def flush(self) -> dict[str, Any]:
-        payload = self.snapshot()
-        if self.on_change is not None:
-            self.on_change(payload)
-        return payload
+        with self._lock:
+            payload = self.snapshot()
+            if self.on_change is not None:
+                self.on_change(payload)
+            return payload
 
     def _offset_ms(self) -> int:
         return int((time.perf_counter() - self.started) * 1000)
@@ -482,6 +518,9 @@ class TraceHandler(BaseCallbackHandler):
         self.recorder = recorder
         self._pending: dict[str, dict[str, Any]] = {}
         self._seen: set[str] = set()
+        # 并行成员共用同一个 handler（callbacks 来自 ContextVar），
+        # ``_seen`` / ``_pending`` 是共享 dict，必须加锁。
+        self._lock = threading.RLock()
 
     def on_chat_model_start(
         self,
@@ -492,38 +531,37 @@ class TraceHandler(BaseCallbackHandler):
         parent_run_id: UUID | None = None,
         **kwargs: Any,
     ) -> Any:
-        key = str(run_id)
-        if key in self._seen:
+        if not self._claim(run_id):
             return
-        self._seen.add(key)
         params = kwargs.get("invocation_params") or {}
         if not isinstance(params, dict):
             params = {}
         model = str(params.get("model") or params.get("model_name") or "")
         batch = messages[0] if messages else []
-        span_name = self._span_name()
-        same = sum(
-            1
-            for step in self.recorder.steps
-            if step.get("kind") == "llm"
-            and str(step.get("name") or "").split("#", 1)[0] == span_name
-        )
-        name = span_name if same == 0 else f"{span_name}#{same + 1}"
-        self._pending[key] = {
-            "kind": "llm",
-            "name": name,
-            "status": "running",
-            "model": model or None,
-            "parent_id": self.recorder.parent_for(parent_run_id),
-            "start_ms": self.recorder._offset_ms(),
-            "started": time.perf_counter(),
-            "invocation": _invocation(params, serialized),
-            "request": {"messages": [_dump_message(msg) for msg in batch]},
-            "response": None,
-            "usage": None,
-            "error": None,
-            "error_detail": None,
-        }
+        with self._lock:
+            span_name = self._span_name()
+            same = sum(
+                1
+                for step in self.recorder.steps
+                if step.get("kind") == "llm"
+                and str(step.get("name") or "").split("#", 1)[0] == span_name
+            )
+            name = span_name if same == 0 else f"{span_name}#{same + 1}"
+            self._pending[str(run_id)] = {
+                "kind": "llm",
+                "name": name,
+                "status": "running",
+                "model": model or None,
+                "parent_id": self.recorder.parent_for(parent_run_id),
+                "start_ms": self.recorder._offset_ms(),
+                "started": time.perf_counter(),
+                "invocation": _invocation(params, serialized),
+                "request": {"messages": [_dump_message(msg) for msg in batch]},
+                "response": None,
+                "usage": None,
+                "error": None,
+                "error_detail": None,
+            }
 
     def on_llm_end(self, response: Any, *, run_id: UUID, **kwargs: Any) -> Any:
         step = self._take(run_id)
@@ -586,23 +624,24 @@ class TraceHandler(BaseCallbackHandler):
         inputs: dict[str, Any] | None = None,
         **kwargs: Any,
     ) -> Any:
-        key = str(run_id)
-        if key in self._seen:
+        if not self._claim(run_id):
             return
-        self._seen.add(key)
         name = str(serialized.get("name") or kwargs.get("name") or "tool")
-        self._pending[key] = {
-            "kind": "tool",
-            "name": name,
-            "status": "running",
-            "parent_id": self.recorder.parent_for(parent_run_id),
-            "start_ms": self.recorder._offset_ms(),
-            "started": time.perf_counter(),
-            "arguments": _clip_value(inputs if inputs is not None else {"input": input_str}),
-            "result": None,
-            "error": None,
-            "error_detail": None,
-        }
+        with self._lock:
+            self._pending[str(run_id)] = {
+                "kind": "tool",
+                "name": name,
+                "status": "running",
+                "parent_id": self.recorder.parent_for(parent_run_id),
+                "start_ms": self.recorder._offset_ms(),
+                "started": time.perf_counter(),
+                "arguments": _clip_value(
+                    inputs if inputs is not None else {"input": input_str}
+                ),
+                "result": None,
+                "error": None,
+                "error_detail": None,
+            }
 
     def on_tool_end(self, output: Any, *, run_id: UUID, **kwargs: Any) -> Any:
         step = self._take(run_id)
@@ -628,11 +667,22 @@ class TraceHandler(BaseCallbackHandler):
         step["elapsed_ms"] = int((time.perf_counter() - float(step.pop("started", time.perf_counter()))) * 1000)
         self.recorder.add(step)
 
+    def _claim(self, run_id: UUID) -> bool:
+        """同一 run_id 只记一次；并行成员共用 handler 时必须原子判定。"""
+        key = str(run_id)
+        with self._lock:
+            if key in self._seen:
+                return False
+            self._seen.add(key)
+            return True
+
     def _take(self, run_id: UUID) -> dict[str, Any] | None:
-        return self._pending.pop(str(run_id), None)
+        with self._lock:
+            return self._pending.pop(str(run_id), None)
 
     def _span_name(self) -> str:
-        parent = self.recorder.current_parent()
+        # 并行成员用显式父级（_span_parent），否则会读到主线程栈顶的名字。
+        parent = self.recorder.parent_for(None)
         if parent is None:
             return "llm"
         for step in reversed(self.recorder.steps):
@@ -745,6 +795,31 @@ def span(name: str) -> Iterator[None]:
         raise
     else:
         recorder.close_span(str(step["id"]), status="ok")
+
+
+@contextmanager
+def child_span(name: str, parent_id: str | None) -> Iterator[None]:
+    """并行分支 span：显式父节点 + 本线程内父级覆盖（见 ``_span_parent``）。
+
+    用法：成员线程里 ``with child_span(f"delegate:{name}", parent): ...``，
+    之后该成员所有 LLM / 工具回调都挂在这个 span 下，互不串台。
+    """
+    recorder = _recorder.get()
+    if recorder is None:
+        yield
+        return
+    step = recorder.open_child_span(name, parent_id)
+    token = _span_parent.set(str(step["id"]))
+    try:
+        yield
+    except Exception:
+        failed = "cancelled" if recorder.status == "cancelled" else "error"
+        recorder.close_span(str(step["id"]), status=failed)
+        raise
+    else:
+        recorder.close_span(str(step["id"]), status="ok")
+    finally:
+        _span_parent.reset(token)
 
 
 @contextmanager

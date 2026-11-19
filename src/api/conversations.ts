@@ -247,6 +247,28 @@ export function resumeTurn(
   );
 }
 
+export interface AgentTaskRecord {
+  id: string;
+  turn_id: string | null;
+  role_id: string;
+  role_name: string;
+  task: string;
+  status: "running" | "done" | "failed" | "cancelled" | string;
+  result: string | null;
+  error_code: string | null;
+  duration_ms: number;
+  created_at: string;
+  finished_at: string | null;
+}
+
+/** 团队并行派发的任务板；`turnId` 只看某一轮，省略则最近若干条。 */
+export function listAgentTasks(conversationId: string, turnId?: string) {
+  const query = turnId ? `?turn_id=${encodeURIComponent(turnId)}` : "";
+  return backendRequest<{ tasks: AgentTaskRecord[] }>(
+    `/api/conversations/${conversationId}/agent-tasks${query}`
+  );
+}
+
 /** 真·取消：通知后端停掉这一轮（只 abort HTTP 不会让后端停手）。
  *  后端在下一个模型 / 工具检查点抛 TurnCancelled，本轮追踪收尾为 cancelled。
  *  轮次已结束 / id 未知时无害（标记 30 分钟后过期）。 */

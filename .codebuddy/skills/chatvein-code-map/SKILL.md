@@ -90,8 +90,9 @@ description: ChatVein 桌面 Agent（Tauri 2 外壳 + React 19 + Python FastAPI 
 
 `GroupView`（群组存 localStorage）→ `GroupChatView` → `useChatSession` 透传 `groupMemberIds`
 → `POST /api/chat` 带 `group_members` → `chats_service.register_group_members` 落 `chat_groups`
-→ `assemble_team` 给主 agent 花名册 + `delegate_to_agent`（`agents/delegation.py`，ContextVar 团队上下文）。
-真正执行分工的是 medium/hard 的 ReAct 图。
+→ `assemble_team` 给主 agent 花名册 + 派发工具：`delegate_to_agent`（串行，`agents/delegation.py`）
+与 `parallel_delegate`（并行，`agents/orchestration.py`，线程池 + `child_span` + 主模型汇总）。
+真正执行分工的是 medium/hard 的 ReAct 图；任务板落会话库 `agent_tasks`。
 
 ### D. 技能
 

@@ -111,7 +111,8 @@ Token：Rust 通过 `CHATVEIN_TOKEN` 注入，前端带 `X-ChatVein-Token`，中
 | `tool_retriever.py` | b | 向量 + BM25 预筛，收窄工具候选池 | `prefilter_tools`（或 `ToolRetriever`） |
 | `memory.py` | b | 会话历史 → LangChain 消息 | `to_lc_messages` |
 | `cancellation.py` | b | 每轮取消 ContextVar 与检查点 | `bind_turn`、`clear_turn`、`raise_if_cancelled`、`TurnCancelled` |
-| `delegation.py` | b | 团队上下文 + `delegate_to_agent` 工具 | 团队 ContextVar、工具构造 |
+| `delegation.py` | b | 团队上下文 + 成员执行（`run_member_task` 串行/并行共用）+ `delegate_to_agent` 工具 | 团队 ContextVar、`MemberOutcome` |
+| `orchestration.py` | b | `parallel_delegate`：线程池 fan-out（`copy_context` + `child_span`）、取消轮询、聚合、`agent_tasks` 任务板 | `max_parallel`、`parallel_enabled`、`DelegateTask` |
 | `__init__.py` | e | 包导出 | — |
 
 **常驻工具**：`graphs/common.py::ALWAYS_ON_TOOLS`（至少含 `load_skill`），medium/hard 的 ReAct 会无条件附加；角色未勾选技能也要能 `load_skill`。

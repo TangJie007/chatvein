@@ -56,7 +56,7 @@
   2.1 token 级流式（SSE）                                 ← 已实现
   2.2 统一 HITL 审批（interrupt）                         ← 已实现（工具层统一登记 + 审批卡片）
   2.3 真 MCP 协议客户端（stdio / SSE / Streamable HTTP）      ← 已实现（可选依赖 + 外部 server 配置页）
-  2.4 多 agent 并行编排（fan-out + 聚合）
+  2.4 多 agent 并行编排（fan-out + 聚合）                     ← 已实现（parallel_delegate + 任务板）
         ↓ 依赖 1.2 的结构化错误码 / 2.3 的工具契约
 批次 3 安全与运维
   3.1 沙箱加固（环境变量/网络/资源约束，不做容器）

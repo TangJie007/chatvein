@@ -91,14 +91,15 @@ Agent 图细节见 [`agent-graphs.md`](./agent-graphs.md)；工具矩阵见 [`ag
 | 追踪窗口 | 独立窗看整轮 path / LLM / 工具 / token | `TraceWindow` |
 | 群组 | 左栏整栏是群对话列表（一行 = 一个群组），建群时选成员并开好群对话；右栏是独立的群聊面板：无模型条、无技能，上下文用量放在气泡上方；输入区可「@ 指派」给某个成员，由该成员绑定模型单独执行，气泡与指派记录按成员显示 | `GroupView` / `GroupChatView` |
 | 群组注册 | 会话持久化 `group_members`（角色 id 列表）：创建注册 / 补注册 / 随 `/api/chat` 消息透传，合并去重 | `conversations/` + `main.py` |
-| 团队模式 | `group_members` 非空时主 agent 自动进入团队模式：花名册注入 prompt，挂 `delegate_to_agent` 工具；成员用自己绑定的模型 / 工具 / 按 `actor_id` 隔离的独立短期记忆完成子任务，回复写回成员名下；小任务主 agent 直接完成不派发 | `agents/delegation.py` + `agents/graphs/medium|hard.py` + `main.py` |
+| 团队模式 | `group_members` 非空时主 agent 自动进入团队模式：花名册注入 prompt，挂 `delegate_to_agent`（串行）与 `parallel_delegate`（并行）两个派发工具；成员用自己绑定的模型 / 工具 / 按 `actor_id` 隔离的独立短期记忆完成子任务，回复写回成员名下；小任务主 agent 直接完成不派发 | `agents/delegation.py` + `agents/orchestration.py` + `agents/graphs/medium|hard.py` |
+| 并行 fan-out | 多条无依赖子任务一次派发、线程池并发执行、成员 trace 子树隔离、完成后主模型汇总；会话库 `agent_tasks` 任务板记录每条状态，`GET /api/conversations/{id}/agent-tasks` 可查；`CHATVEIN_PARALLEL_DELEGATE=0` 回退串行 | `agents/orchestration.py` + `trace/recording.py`（`child_span`） |
 | 气泡耗时 | 对话气泡 100% 完整展示上下文（不压缩代码块高度）；tokens · 耗时显示在气泡内容之后 | `ChatPanel.tsx` / `MarkdownMessage.tsx` |
 | 设置 | 应用偏好（本地）、内置 MCP 状态、SQLite 信息 / VACUUM / 备份 | |
 | Tauri 消息层 | 启停 Python、注入 `CHATVEIN_DATA_DIR`、推送后端 URL | `src-tauri` |
 
 知识库管理已上线（`KnowledgeView.tsx` + `knowledge/` 模块 + `backend/knowledge/` REST）：左栏文档列表 / 搜索（向量模型就绪时语义召回，否则关键词兜底）、新建 / 编辑 / 删除 / 批量导入（文本文件或粘贴）/ 清空 / 全量重建索引；与 Agent 侧 `kb_*` 工具共用同一份 `kb.sqlite`（`kb_vec_map` 表做 rowid 映射，WAL + busy_timeout 支撑并发）。应用偏好里的托盘 / 开机启动 / 自动更新尚未接 Tauri 插件。
 
-团队模式能力边界见 [`team-mode-design.md`](./team-mode-design.md)：成员角色无模型 / 主 agent 无模型时退化，不支持嵌套派发（子 agent 不挂 `delegate_to_agent`）。
+团队模式能力边界见 [`群组模式.md`](./群组模式.md)：成员角色无模型 / 主 agent 无模型时退化，不支持嵌套派发（子 agent 不挂 `delegate_to_agent` / `parallel_delegate`）。并行派发的实现差异见 [`production-design-batch2.md`](./production-design-batch2.md) §2.4「实现纪要」。
 
 ---
 

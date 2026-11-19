@@ -392,6 +392,18 @@ class ConversationsService:
         _open_in_file_manager(str(folder))
         return str(folder)
 
+    def agent_tasks(
+        self, conversation_id: str, *, turn_id: str | None = None, limit: int = 40
+    ) -> list[dict[str, Any]] | None:
+        """成员任务板：并行派发的每条子任务状态（running / done / failed / cancelled）。
+
+        ``None`` = 会话不存在或还没建工作区（本就没跑过）。
+        """
+        db = self._session_db_for(conversation_id)
+        if db is None:
+            return None
+        return session_store.list_agent_tasks(db, turn_id=turn_id, limit=limit)
+
     def workspace_insight(self, conversation_id: str) -> dict[str, Any] | None:
         conversation = self._repo.get(conversation_id)
         if conversation is None:

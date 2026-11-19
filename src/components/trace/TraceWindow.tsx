@@ -22,12 +22,19 @@ const STEP_LABEL: Record<string, string> = {
   verify: "核对",
   route: "路由",
   context: "上下文",
+  // 团队并行编排（批次 2 §2.4）：成员 span 形如 `delegate:张三`。
+  delegate: "成员执行",
+  aggregate: "汇总",
+  parallel_delegate: "并行派发",
+  delegate_to_agent: "派发",
 };
 
 function stepLabel(name: string): string {
-  const [base, index] = name.split("#");
-  const text = STEP_LABEL[base ?? ""] ?? name;
-  return index ? `${text} #${index}` : text;
+  const [head = "", index] = name.split("#");
+  const [base = "", subject] = head.split(":");
+  const text = STEP_LABEL[base] ?? name;
+  const suffix = [subject, index ? `#${index}` : ""].filter(Boolean).join(" ");
+  return suffix ? `${text} ${suffix}` : text;
 }
 
 function formatElapsed(ms: number | null | undefined): string {

@@ -61,6 +61,7 @@
 | 新增工具 | `backend/mcps/tools/<module>.py` | `backend/mcps/tools/__init__.py`、`src/components/settings/prefs.ts`、`src/lib/rolesStore.ts` |
 | 工具执行/审批 | `backend/mcps/registry.py`、`approval.py`、`approval_policy.py` | `bash.py`、`bash_policy.py`、`bash_approval.py`、`path_access.py`、`src/components/chat/BashApproval.tsx` |
 | 断点续跑 / 继续生成 | `backend/agents/checkpoint.py`、`backend/main.py`（`/resumable`、`/resume`） | `src/api/conversations.ts`、`src/components/chat/useChatSession.ts`、`ChatPanel.tsx` |
+| 团队并行派发 | `backend/agents/orchestration.py` | `delegation.py`（`run_member_task`）、`graphs/medium\|hard.py`、`trace/recording.py`（`child_span`）、`session_store.py`（`agent_tasks`）、`src/api/conversations.ts`（`listAgentTasks`） |
 | 外部 MCP 服务 | `backend/mcps/external/{config,client,state}.py` | `controller.py`、`service.py`、`repository.py`、`module.py`、`db.py`（v14 表）、`src/api/mcpServers.ts`、`McpExternalSection.tsx` |
 | 工作区/沙箱 | `backend/mcps/sandbox.py`、`workspace.py`、`path_access.py` | `backend/main.py`（uploads） |
 | 新后端接口 | `backend/<module>/controller.py` | `module.py`、`main.py include_router`、`src/api/*.ts` |
@@ -104,6 +105,7 @@
 17. 外部 MCP 的**连接**只允许发生在启动后台线程（`state.startup`）或用户点「重连」；`tool_groups()` / `refresh_tool_groups()` 在请求路径上只能读缓存，绝不能拉起进程。
 18. 外部工具名固定 `mcp__<server>__<tool>`、分组固定 `mcp-ext::<server>`：`tool_selector.expand_allowlist` 靠 `mcp-` 前缀识别分组，改名会静默丢工具。新增连接必须在 `lifespan` 结束时 `disconnect_all()`，否则 Tauri 退出会留孤儿进程。
 19. 外部 server 的凭据（env / headers）只以密文进 `mcp_servers` 表，响应里只回 `env_keys` / `header_keys`；任何日志、trace、错误文案都不得打印值。
+20. 并行派发（`orchestration.parallel_delegate`）必须：每条任务 `copy_context()` 后再提交线程、成员在 `child_span` 内跑（`TraceRecorder` 的 `_parents` 是单线程栈，直接 `span()` 会串台）、单成员异常只记该条失败（`TurnCancelled` 必须冒泡）。不要再往 `delegate_to_agent` 里加并行——LangGraph 对同一条消息的多个 `tool_call` 是串行的。
 
 ## 6. 常用命令
 

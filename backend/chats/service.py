@@ -66,9 +66,11 @@ class ChatsService:
         )
         team_block = (
             "\n\n# 团队成员（花名册）\n"
-            "以下成员可以协作。任务适合分工时，用 delegate_to_agent 工具把子任务"
-            "派发给合适的成员，并把结果汇总进最终回复；成员会用自己的模型、工具和"
-            "独立记忆完成。任务量小、不需要分工时，直接自己完成即可，不必派发。\n"
+            "以下成员可以协作。任务适合分工时，优先用 parallel_delegate 一次把多条"
+            "无依赖的子任务并行派发（不传就用 delegate_to_agent 逐条派发），并把结果"
+            "汇总进最终回复；成员会用自己的模型、工具和独立记忆完成。"
+            "子任务之间有先后依赖、必须拿到前一步结果时，用 delegate_to_agent 串行派发。"
+            "任务量小、不需要分工时，直接自己完成即可，不必派发。\n"
             f"{roster_lines}"
         )
         base_role = role_runtime or {}
@@ -81,7 +83,10 @@ class ChatsService:
 
         from agents.delegation import set_team_context  # pyright: ignore[reportImplicitRelativeImport]
 
-        set_team_context({"workspace_dir": workspace_dir, "roster": team_roster})
+        # role 也要给：并行编排用主模型做一次结构化汇总（orchestration._aggregate）。
+        set_team_context(
+            {"workspace_dir": workspace_dir, "roster": team_roster, "role": assembled}
+        )
         return assembled
 
 

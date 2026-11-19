@@ -13,7 +13,9 @@
 
 from __future__ import annotations
 
+import time
 from contextvars import ContextVar
+from dataclasses import dataclass
 from typing import Any
 
 from langchain_core.messages import BaseMessage, HumanMessage
@@ -68,34 +70,62 @@ class DelegateToAgentInput(BaseModel):
     )
 
 
-@tool("delegate_to_agent", args_schema=DelegateToAgentInput)
-def delegate_to_agent(role_id: str, task: str, instruction: str | None = None) -> str:
-    """把子任务派发给花名册中的某个团队成员，返回该成员独立完成的回复。
+@dataclass
+class MemberOutcome:
+    """一名成员跑完一个子任务的结果（成功/失败都带可读文本）。"""
 
-    这是团队协作的任务拆分入口：当用户请求可拆成若干独立子任务时，
-    先按领域/职责给每个子任务挑选最合适的成员，然后为每个子任务各调用一次
-    本工具（一次可连续调用多次，派发给不同成员），最后汇总各成员回复。
-    团队成员会用自己绑定的模型、自己的工具和自己独立的短期记忆完成任务。
-    若任务量小、不需要分工，直接自己完成即可，不必调用本工具。
+    role_id: str
+    name: str
+    ok: bool
+    reply: str
+    #: 失败类别：``NOT_IN_ROSTER`` / ``NO_MODEL`` / ``STEP_LIMIT`` / ``FAILED`` …
+    error_code: str = ""
+    duration_ms: int = 0
+
+
+def run_member_task(
+    role_id: str, task: str, instruction: str | None = None
+) -> MemberOutcome:
+    """让一名成员用自己绑定的模型 / 工具 / 独立记忆完成子任务。
+
+    单任务串行派发与并行 fan-out 共用这一条执行路径，保证两条链路的
+    护栏、记忆写回、步数上限完全一致。
     """
+    started = time.perf_counter()
     ctx = _team_ctx.get()
     if not ctx:
-        return "团队上下文不可用：当前不是团队模式会话，无法派发子任务。"
+        return MemberOutcome(
+            role_id, role_id, False, "团队上下文不可用：当前不是团队模式会话，无法派发子任务。", "NO_TEAM_CONTEXT"
+        )
     roster = ctx.get("roster") or {}
     if role_id not in roster:
         names = "、".join(
             f"{m.get('name')}({rid})" for rid, m in roster.items()
         ) or "（无）"
-        return f"花名册中没有角色 id={role_id}。可用成员：{names}"
+        return MemberOutcome(
+            role_id,
+            role_id,
+            False,
+            f"花名册中没有角色 id={role_id}。可用成员：{names}",
+            "NOT_IN_ROSTER",
+        )
 
     from roles.service import RolesService  # pyright: ignore[reportImplicitRelativeImport]
 
     member_runtime = RolesService().get_runtime(role_id)
     if member_runtime is None:
-        return f"角色 {role_id} 不存在或已被删除。"
+        return MemberOutcome(
+            role_id, role_id, False, f"角色 {role_id} 不存在或已被删除。", "NO_ROLE"
+        )
     member_name = str(member_runtime.get("name") or role_id)
     if not (member_runtime.get("model_id") or "").strip():
-        return f"成员「{member_name}」未配置模型，无法派发子任务。"
+        return MemberOutcome(
+            role_id,
+            member_name,
+            False,
+            f"成员「{member_name}」未配置模型，无法派发子任务。",
+            "NO_MODEL",
+        )
 
     from conversations.module import (  # pyright: ignore[reportImplicitRelativeImport]
         conversations_service,
@@ -113,7 +143,13 @@ def delegate_to_agent(role_id: str, task: str, instruction: str | None = None) -
 
     model = get_chat_model(role=member_runtime, timeout=_LLM_TIMEOUT)
     if model is None:
-        return f"成员「{member_name}」的模型不可用，无法派发子任务。"
+        return MemberOutcome(
+            role_id,
+            member_name,
+            False,
+            f"成员「{member_name}」的模型不可用，无法派发子任务。",
+            "MODEL_UNAVAILABLE",
+        )
 
     member_tools = [
         str(t) for t in (member_runtime.get("tools") or []) if str(t).strip()
@@ -147,7 +183,14 @@ def delegate_to_agent(role_id: str, task: str, instruction: str | None = None) -
         )
     except StepLimitReached as exc:
         # 子 agent 步数触顶：把已收集到的结果交回主 agent，别变成一条工具错误
-        return f"[成员 {member_name} 的回复]\n{step_limit_reply(exc.partial)}"
+        return MemberOutcome(
+            role_id,
+            member_name,
+            True,
+            step_limit_reply(exc.partial),
+            "STEP_LIMIT",
+            int((time.perf_counter() - started) * 1000),
+        )
     out_messages = out.get("messages") or []
     reply = last_text(out_messages) or "（成员未返回文本回复）"
 
@@ -164,7 +207,30 @@ def delegate_to_agent(role_id: str, task: str, instruction: str | None = None) -
     except Exception as exc:  # noqa: BLE001 — 成员记忆落库失败不该打断主 agent
         print(f"CHATVEIN_DELEGATE record_turn failed: {exc}", flush=True)
 
-    return f"[成员 {member_name} 的回复]\n{reply}"
+    return MemberOutcome(
+        role_id,
+        member_name,
+        True,
+        reply,
+        "",
+        int((time.perf_counter() - started) * 1000),
+    )
+
+
+@tool("delegate_to_agent", args_schema=DelegateToAgentInput)
+def delegate_to_agent(role_id: str, task: str, instruction: str | None = None) -> str:
+    """把子任务派发给花名册中的某个团队成员，返回该成员独立完成的回复。
+
+    这是团队协作的任务拆分入口：当用户请求可拆成若干独立子任务时，
+    先按领域/职责给每个子任务挑选最合适的成员，然后为每个子任务各调用一次
+    本工具（一次可连续调用多次，派发给不同成员），最后汇总各成员回复。
+    团队成员会用自己绑定的模型、自己的工具和自己独立的短期记忆完成任务。
+    若任务量小、不需要分工，直接自己完成即可，不必调用本工具。
+    """
+    outcome = run_member_task(role_id, task, instruction)
+    if not outcome.ok:
+        return outcome.reply
+    return f"[成员 {outcome.name} 的回复]\n{outcome.reply}"
 
 
 TOOLS: tuple[BaseTool, ...] = (delegate_to_agent,)
@@ -174,7 +240,9 @@ DELEGATE_TOOL: BaseTool = delegate_to_agent
 __all__ = [
     "TOOLS",
     "DELEGATE_TOOL",
+    "MemberOutcome",
     "delegate_to_agent",
     "get_team_context",
+    "run_member_task",
     "set_team_context",
 ]

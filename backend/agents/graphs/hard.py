@@ -241,11 +241,18 @@ def build_hard_graph(
         # 常驻工具见 graphs/common.py::ALWAYS_ON_TOOLS：不参与选型 / 白名单，始终挂载。
         names = list(dict.fromkeys([*selected, *ALWAYS_ON_TOOLS]))
         tools = resolve_tools(names)
-        # 团队模式：把 delegate_to_agent 工具挂进本轮（主 agent 派发子任务给成员）。
+        # 团队模式：并行 fan-out（parallel_delegate）+ 串行派发（delegate_to_agent）；
+        # 开关关闭时只挂串行入口，见 agents/orchestration.py::parallel_enabled。
         if (role or {}).get("_team_mode"):
             from agents.delegation import DELEGATE_TOOL  # pyright: ignore[reportImplicitRelativeImport]
+            from agents.orchestration import (  # pyright: ignore[reportImplicitRelativeImport]
+                PARALLEL_TOOL,
+                parallel_enabled,
+            )
 
             tools = [*tools, DELEGATE_TOOL]
+            if parallel_enabled():
+                tools = [*tools, PARALLEL_TOOL]
         model = llm_mod.get_chat_model(
             role=role,
             timeout=_LLM_TIMEOUT,
