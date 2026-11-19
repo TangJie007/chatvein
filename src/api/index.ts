@@ -10,3 +10,4 @@ export * from "./mcpServers";
 export * from "./skills";
 export * from "./roles";
 export * from "./knowledge";
+export * from "./memories";

@@ -252,7 +252,7 @@ def _error_info(error: BaseException) -> dict[str, Any]:
     return info
 
 
-def _path(difficulty: str) -> list[dict[str, Any]]:
+def _path(difficulty: str, memory_used: bool = False) -> list[dict[str, Any]]:
     level = difficulty if difficulty in ("simple", "medium", "hard") else "simple"
     branched = level in ("medium", "hard")
     is_hard = level == "hard"
@@ -261,6 +261,8 @@ def _path(difficulty: str) -> list[dict[str, Any]]:
         {"id": "understand", "label": "理解", "taken": True},
         {"id": "route", "label": "路由", "taken": True},
         {"id": "context", "label": "上下文", "taken": True},
+        # 长期记忆召回（1.4）：有命中才点亮，未命中不占用户注意力。
+        {"id": "memory", "label": "记忆", "taken": memory_used},
         {"id": "simple", "label": "直答", "taken": level == "simple"},
         {"id": "plan", "label": "规划", "taken": is_hard},
         {"id": "select_tools", "label": "筛选工具", "taken": branched},
@@ -297,6 +299,8 @@ class TraceRecorder:
         self._seq = 0
         self._parents: list[str] = []
         self._run_steps: dict[str, str] = {}
+        #: 本轮是否真的注入了长期记忆（``note("memory")`` 的 detail.injected）。
+        self._memory_used = False
         self.handler: TraceHandler | None = None
         # 并行成员同时写 steps / _seq，必须串行化（RLock 允许 add → flush 重入）。
         self._lock = threading.RLock()
@@ -349,6 +353,8 @@ class TraceRecorder:
                 self.candidate_tools = [str(name) for name in detail["candidate_tools"]]
             if detail.get("reason"):
                 self.tool_plan_reason = str(detail.get("reason"))
+        elif step.get("kind") == "memory":
+            self._memory_used = bool(detail.get("injected"))
 
     def open_span(self, name: str) -> dict[str, Any]:
         with self._lock:
@@ -492,7 +498,7 @@ class TraceRecorder:
             "model_name": self.meta.get("model_name"),
             "config_name": self.meta.get("config_name"),
             "context_window": window or None,
-            "path": _path(self.difficulty),
+            "path": _path(self.difficulty, self._memory_used),
             "steps": self.steps,
             "totals": totals,
         }

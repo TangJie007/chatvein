@@ -1,4 +1,4 @@
-import { Database, Plug, Settings2, type LucideIcon } from "lucide-react";
+import { Brain, Database, Plug, Settings2, type LucideIcon } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { NavLink, Navigate, useParams } from "react-router-dom";
 import { dbBackup, dbInfo, dbVacuum, type DbInfo } from "../../api";
@@ -6,6 +6,7 @@ import { cn } from "../../lib/cn";
 import { VIEW_PATH } from "../../types/view";
 import { AppSection } from "../settings/AppSection";
 import { McpExternalSection } from "../settings/McpExternalSection";
+import { MemorySection } from "../settings/MemorySection";
 import { McpSection } from "../settings/McpSection";
 import { SqliteSection, formatBytes } from "../settings/SqliteSection";
 import {
@@ -16,9 +17,9 @@ import {
   type McpServer,
 } from "../settings/prefs";
 
-type SectionKey = "app" | "mcp" | "sqlite";
+type SectionKey = "app" | "memory" | "mcp" | "sqlite";
 
-const SECTION_KEYS = new Set<SectionKey>(["app", "mcp", "sqlite"]);
+const SECTION_KEYS = new Set<SectionKey>(["app", "memory", "mcp", "sqlite"]);
 
 function isSectionKey(value: string | undefined): value is SectionKey {
   return !!value && SECTION_KEYS.has(value as SectionKey);
@@ -31,6 +32,7 @@ const SECTIONS: {
   hint: string;
 }[] = [
   { key: "app", label: "应用设置", icon: Settings2, hint: "工作区与启动" },
+  { key: "memory", label: "长期记忆", icon: Brain, hint: "偏好与长期事实" },
   { key: "mcp", label: "内置 MCP", icon: Plug, hint: "随应用分发的协议服务" },
   { key: "sqlite", label: "SQLite", icon: Database, hint: "本地库连接与维护" },
 ];
@@ -198,6 +200,7 @@ function SettingsBody({ section }: { section: SectionKey }) {
         <div className="flex-1 overflow-y-auto px-[25px] py-2 pb-6">
           <div className="flex flex-1 flex-col gap-4">
             {section === "app" && <AppSection prefs={prefs} onSet={setPref} />}
+            {section === "memory" && <MemorySection />}
             {section === "mcp" && (
               <>
                 <McpSection servers={servers} />
@@ -233,6 +236,7 @@ const SUBTITLE: Record<
   }) => string
 > = {
   app: () => "主空间与启动行为 · 工作区立即生效 · 全部保存在本机",
+  memory: () => "自动抽取偏好与长期事实 · 默认确认后生效 · 保存在本机 memory.sqlite",
   mcp: ({ activeCount, total, toolCount }) =>
     `${activeCount}/${total} 已启用 · ${toolCount} 个工具可用 · 数据全部存放在本机`,
   sqlite: ({ info, totalRows }) =>

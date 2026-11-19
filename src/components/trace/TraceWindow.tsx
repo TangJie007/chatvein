@@ -22,6 +22,8 @@ const STEP_LABEL: Record<string, string> = {
   verify: "核对",
   route: "路由",
   context: "上下文",
+  // 长期记忆召回（批次 1 §1.4）：有命中才点亮，detail 里带注入条数。
+  memory: "记忆",
   // 团队并行编排（批次 2 §2.4）：成员 span 形如 `delegate:张三`。
   delegate: "成员执行",
   aggregate: "汇总",

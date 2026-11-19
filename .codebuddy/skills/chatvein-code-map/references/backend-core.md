@@ -17,6 +17,7 @@
 | 加表 / 加字段 | `backend/db.py`（`SCHEMA_VERSION`）+ 模块 `entity/` |
 | 加接口 | `backend/<domain>/module.py` + `controller.py` + `main.py::include_router` |
 | 消息 / 追踪存储 | `conversations/session_store.py`、`trace/store.py`（都在 `session.sqlite`） |
+| 长期记忆抽取 / 召回 / 整理 | `backend/memory/service.py`（存储 `store.py`，库 `memory.sqlite`） |
 
 ```text
 backend/
@@ -32,6 +33,7 @@ backend/
 ├─ embeddings/         本地向量模型
 ├─ knowledge/          知识库文档与检索
 ├─ trace/              span 记录、存储、查询
+├─ memory/             长期记忆抽取 / 巩固 / 召回（独立 memory.sqlite）
 ├─ mcps/               工具注册表、执行、沙箱、Bash/浏览器运行时
 ├─ tests/              pytest
 └─ scripts/            冒烟脚本
@@ -68,7 +70,7 @@ Token：Rust 通过 `CHATVEIN_TOKEN` 注入，前端带 `X-ChatVein-Token`，中
 | `CancelChatRequest` | `turn_id` |
 | `chat()` | async 路由；断连不落库；`TurnCancelled` 返回占位而非 500；异常经 `model_error_hint` 转人话 |
 | `_chat_turn()` | **核心编排**：开/取会话 → 角色运行时 → 历史 → 技能目录 → 团队装配 → `to_thread(_run_chat_heavy)` → `save_exchange` → `workspace_insight` |
-| `_run_chat_heavy()` | 工作线程内：`bind_turn` → `trace_service.recording` → `use_conversation_sandbox` → `run_pipeline` → token 统计 |
+| `_run_chat_heavy()` | 工作线程内：`bind_turn` → `trace_service.recording` → `use_conversation_sandbox` → `memory_service.recall_into_role`（拿 prompt 副本）→ `run_pipeline` → token 统计；`_persist_turn` 之后 `maybe_extract_async` |
 | `_collect_tokens()` | 从 usage callback 汇总 `total_tokens` |
 | `_aborted_payload()` | 客户端断开时的占位响应（不落库） |
 
@@ -78,6 +80,7 @@ Token：Rust 通过 `CHATVEIN_TOKEN` 注入，前端带 `X-ChatVein-Token`，中
 2. 技能目录必须在 `assemble_team` 之前并入 `role_runtime["prompt"]`，否则团队花名册会覆盖/打乱角色 prompt 顺序。
 3. `trace.recording`、`use_conversation_sandbox`、`bind_turn` 必须全部在 `_run_chat_heavy` 的**同一线程**内进入。
 4. `save_exchange` 必须在 `_run_chat_heavy` 返回之后、且在再次检查 `is_disconnected()` 之后。
+5. 记忆召回只能改 `role_runtime` 的**副本**（`memory.recall_into_role`），原地改会串到其他会话；抽取必须在落盘之后，且异步（daemon 线程）。
 
 ## 3. `db.py`（a）
 
@@ -226,7 +229,26 @@ Token：Rust 通过 `CHATVEIN_TOKEN` 注入，前端带 `X-ChatVein-Token`，中
 
 前端对应：`api/traces.ts`、`useChatSession.toLiveSteps`、`InsightPanel`、`TraceWindow`、`lib/openTrace.ts`。
 
-## 13. 测试与脚本
+## 13. 长期记忆（`backend/memory/`）
+
+| 文件 | 等级 | 职责 |
+|---|---|---|
+| `store.py` | b | `memory.sqlite`（`CHATVEIN_MEMORY_DB_PATH` > 主库同目录）建表 `memories`；`upsert` / `get` / `list` / `delete` / `purge`；`normalize_content` + `content_hash` 做归一化去重，`upsert` 返回 `(stored_id, inserted)` |
+| `service.py` | b | `create/list/update/delete/status/consolidate`；`recall`（作用域 + 关键词相关度 + 条数上限）、`recall_into_role`（返回 prompt 副本并 `note("memory")`）、`extract`（`invoke_structured` → `ExtractResult`）、`maybe_extract_async`（daemon 线程 + 按轮限流） |
+| `controller.py` | c | `/api/memories`：`status` / 列表 / 新增 / `PATCH` / 删除 / `consolidate` |
+| `module.py` / `entity/dto.py` | b / d | router + service 单例；`CreateMemoryDto` / `UpdateMemoryDto` / `ExtractResult` / `ExtractedItem` |
+
+要点：
+
+- 作用域 `global` / `role`（`scope_id=role_id`）/ `conversation`；状态 `pending` → `active`。
+- 默认候选制：抽取写 `pending`，用户确认后才注入；`CHATVEIN_MEMORY_AUTO_ACCEPT=1` 直接生效。
+- `CHATVEIN_MEMORY=0` 关闭召回与抽取（已存数据保留）；`CHATVEIN_MEMORY_EXTRACT_TURN_INTERVAL` 控制每 N 轮抽一次（默认 1）。
+- 敏感内容（`sk-` key、手机号）整条拒绝写入，不做裁剪。
+- 主库**不建表**：记忆全在 `memory.sqlite`；trace 只在命中时点亮 `memory` 节点。
+
+前端对应：`api/memories.ts`、`components/settings/MemorySection.tsx`、`SettingsView`（二级导航「长期记忆」）、`TraceWindow.STEP_LABEL`。
+
+## 14. 测试与脚本
 
 | 位置 | 等级 | 内容 |
 |---|---|---|
@@ -235,7 +257,7 @@ Token：Rust 通过 `CHATVEIN_TOKEN` 注入，前端带 `X-ChatVein-Token`，中
 | `backend/scripts/smoke_tools_docs_test.py` | e | 工具/文档冒烟 |
 | `tools/test_backend.py` | e | 后端冒烟入口 |
 
-## 14. 后端硬约定
+## 15. 后端硬约定
 
 1. 新模块：建 `module.py/controller.py/service.py/entity/dto.py`，在 `main.py` `include_router`；不要绕过模块直接在 `main.py` 写业务。
 2. 路由处理保持薄：参数校验放 DTO，业务放 service，SQL 放 repository。

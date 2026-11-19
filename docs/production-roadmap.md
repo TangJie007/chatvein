@@ -50,7 +50,7 @@
   1.1 上下文工程（压缩/摘要 + token 预算）            ← 已实现
   1.2 工具可靠性（结构化错误码 + 重试/熔断 + 幂等）      ← 已实现
   1.3 断点续跑（LangGraph checkpointer + 状态持久化）  ← 已实现（含前端「继续 / 放弃」入口）
-  1.4 长期记忆（事实/偏好抽取 + 巩固 + 召回）
+  1.4 长期记忆（事实/偏好抽取 + 巩固 + 召回）              ← 已实现（候选制 + 设置页「长期记忆」）
         ↓ 依赖 1.3 的 checkpointer 作为 HITL 断点基础
 批次 2 体验与生态
   2.1 token 级流式（SSE）                                 ← 已实现
@@ -77,7 +77,7 @@
 新增数据一律遵循「主库只加索引、明细进会话库」：
 
 - **checkpointer / 断点状态**：会话 `logs/session.sqlite` 新表 `agent_checkpoints`（见 P1.3），按 `(conversation_id, turn_id, checkpoint_id)` 定位。
-- **长期记忆**：主库存作用域与开关，明细在 `<data>/memory.sqlite`（跨会话，故不能放单个会话库）。
+- **长期记忆**：全部明细（含作用域与状态）在 `<data>/memory.sqlite`（跨会话，故不能放单个会话库），主库不建表、不存开关。
 - **MCP 配置**：主库存 server 配置 + 工具白名单，凭据引用 `models/crypto.py` 的加密存储（禁止明文）。
 - **审计日志**：`<data>/audit.sqlite`（追加写、不可篡改语义，与业务库分离）。
 

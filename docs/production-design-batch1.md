@@ -237,6 +237,8 @@ class SqliteCheckpointer(BaseCheckpointSaver):
 
 ## 1.4 长期记忆：事实/偏好抽取 + 巩固 + 召回
 
+> **状态：已实现（2026-11-20）**。新增 `backend/memory/`（`store.py` + `service.py` + `controller.py` + `module.py` + `entity/dto.py`），独立库 `memory.sqlite`；召回注入 role prompt 的**副本**，抽取在落库之后 daemon 线程异步执行；trace 增 `memory` 节点。开关：`CHATVEIN_MEMORY`（默认开）、`CHATVEIN_MEMORY_AUTO_ACCEPT`（默认关，候选制）、`CHATVEIN_MEMORY_EXTRACT_TURN_INTERVAL`（默认 1）。
+
 ### 现状（证据）
 
 - Agent 框架内无自动长期记忆；只有工具驱动的 `mcps/tools/kb.py`（`kb_add_note` / `kb_search`）和按 `actor_id` 隔离的短期记忆。
@@ -296,6 +298,31 @@ class SqliteCheckpointer(BaseCheckpointSaver):
 - 跨两轮对话让模型记住偏好，第三轮召回命中并出现在 trace。
 - 含疑似 token 的消息不被写入记忆表。
 - 关闭开关后召回/抽取均不发生，4 条基础冒烟无变化。
+
+### 实现纪要
+
+| 文件 | 内容 |
+|---|---|
+| `backend/memory/store.py` | `memory.sqlite` 建表（`memories`）、`upsert` / `get` / `list` / `delete` / `purge`；`normalize_content()` 抹掉空白与中英文标点，`content_hash(scope, scope_id, content)` 做归一化去重（`upsert` 返回 `(stored_id, inserted)`，重复则合并置信度与来源 turn） |
+| `backend/memory/service.py` | `create` / `list` / `update` / `delete` / `status` / `consolidate`；`recall()` 按作用域 + 关键词相关度过滤后限量；`recall_into_role()` 返回 **prompt 副本**并 `note("memory", …)`；`extract()` 走 `agents/llm.py::invoke_structured` 输出 `ExtractResult`；`maybe_extract_async()` 起 daemon 线程 + 按轮限流 |
+| `backend/memory/entity/dto.py` | `CreateMemoryDto` / `UpdateMemoryDto` / `ExtractResult` / `ExtractedItem`（Pydantic） |
+| `backend/memory/controller.py` + `module.py` | `/api/memories`：`GET /status`、`GET /`、`POST /`、`PATCH /{id}`、`DELETE /{id}`、`POST /consolidate` |
+| `backend/main.py` | `include_router(memory_router)`；`_run_chat_heavy` 里 `recall_into_role(...)` 得到 `role_for_turn` 再交给 `run_pipeline`；`_persist_turn` 之后 `maybe_extract_async(...)`（两个 usage_callback 分支都已改） |
+| `backend/trace/recording.py` | `_path(difficulty, memory_used)` 增 `{"id":"memory","label":"记忆","taken":…}`；`_absorb` 读 `kind=="memory"` 的 `detail["injected"]`，未命中不点亮 |
+| `src/api/memories.ts`（+ `index.ts`） | `listMemories` / `getMemoryStatus` / `createMemory` / `updateMemory` / `deleteMemory` / `consolidateMemories` |
+| `src/components/settings/MemorySection.tsx` | 状态卡（已生效 / 待确认 / 合计）、全部 / 待确认 / 已生效过滤、确认 / 编辑 / 删除 / 整理 / 手动新增；候选制与自动确认的策略文案 |
+| `src/components/views/SettingsView.tsx` | 二级导航新增「长期记忆」（`Brain` 图标），`SectionKey` 加 `"memory"` |
+| `src/components/trace/TraceWindow.tsx` | `STEP_LABEL` 加 `memory: "记忆"` |
+| `backend/tests/test_memory.py` | 去重、敏感拒绝、作用域可见性、相关度过滤、`recall_into_role` 不改原 role、开关关闭、默认 pending、auto_accept、确认后召回、consolidate、status 计数、REST 往返（TestClient）、trace 两种 path |
+
+与评审稿的差异：
+
+1. **不做 `extras["memories"]`**：`role_runtime` 是跨轮缓存的，改写它会串记忆。实现改为 `recall_into_role()` 返回浅拷贝后只改副本的 `prompt`，因此 `agents/context.py`、`graphs/state.py` 未改动（次数比评审稿少动 2 个 b 级文件）。
+2. **召回不接 sqlite-vec**：单轮召回上限 8 条，先用「作用域过滤 + 关键词/子串相关度」就够；向量化留到记忆条目上万再做，避免多一个索引失效面。
+3. **巩固不调模型**：`consolidate()` 用归一化内容判等 + 子串包含合并，只降级/删除重复与过期，不做语义重写（一次整理不该再产生一次模型调用）。
+4. **脱敏是整条丢弃**：命中 `sk-` key / 手机号即不写入该 item，而不是裁剪片段（半截凭证仍是凭证）。
+5. **前端入口在设置页**：与 2.3 / 2.4 一致走 `SettingsView` 二级导航，不占侧栏（避免侧栏继续膨胀）。
+6. **抽取默认每轮**（`CHATVEIN_MEMORY_EXTRACT_TURN_INTERVAL=1`）：评审稿建议 5 是成本考虑，但每轮抽才能覆盖「说了就忘」的长尾；成本换来的是候选制不自动生效，用户仍可批量整理。
 
 ---
 

@@ -139,11 +139,12 @@ def test_offline_pipeline_trace_exposes_route(monkeypatch) -> None:
     trace = out["trace"]
     assert trace["status"] == "done"
     assert trace["difficulty"] == "simple"
-    assert trace["path"][2]["id"] == "context"
-    assert trace["path"][2]["taken"] is True
-    assert trace["path"][3]["id"] == "simple"
-    assert trace["path"][3]["taken"] is True
-    assert trace["path"][4]["taken"] is False
+    # 按 id 取而不是按下标：path 可能插入新节点（如 1.4 的记忆）
+    path = {item["id"]: item for item in trace["path"]}
+    assert path["context"]["taken"] is True
+    assert path["simple"]["taken"] is True
+    assert path["verify"]["taken"] is False
+    assert path["memory"]["taken"] is False
     kinds = [step["kind"] for step in trace["steps"]]
     assert "route" in kinds
     assert any(step.get("status") == "offline" for step in trace["steps"])

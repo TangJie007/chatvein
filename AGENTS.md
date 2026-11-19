@@ -44,6 +44,7 @@
 | `backend/models/` | 模型配置（OpenAI 兼容） |
 | `backend/embeddings/` | 向量模型配置 |
 | `backend/trace/` | 追踪记录与查询 |
+| `backend/memory/` | 长期记忆：抽取 / 巩固 / 召回，独立库 `memory.sqlite`（`CHATVEIN_MEMORY_DB_PATH`） |
 | `backend/db.py` | 主 SQLite 连接与迁移（SCHEMA_VERSION=14） |
 | `src-tauri/src/` | `lib.rs` `main.rs` `backend.rs` `commands.rs` |
 | `tools/` | 后端冻结、运行时整理、发布、图标、冒烟脚本 |
@@ -70,6 +71,7 @@
 | 技能 | `backend/skills/`、`src/components/views/SkillsView.tsx` | `src/components/skills/*`、`backend/mcps/tools/skills.py` |
 | 知识库 | `backend/knowledge/`、`src/components/views/KnowledgeView.tsx` | `src/components/knowledge/*` |
 | 模型/向量模型 | `backend/models/`、`backend/embeddings/` | `src/api/models.ts`、`src/api/embeddings.ts`、`src/components/models/*` |
+| 长期记忆（抽取/召回/整理） | `backend/memory/service.py` | `store.py`、`controller.py`、`main.py`（召回注入 + 异步抽取）、`backend/trace/recording.py`、`src/components/settings/MemorySection.tsx` |
 | 追踪/面板 | `backend/trace/`、`src/components/trace/*`、`insightData.ts` | `src/lib/openTrace.ts`、`src/api/traces.ts` |
 | 提示词 | `backend/agents/graphs/prompts.py` | `router.py`、`tool_selector.py`、`hard.py` |
 | 启动/端口/token | `src-tauri/src/backend.rs` | `src/api/client.ts`、`BackendGate.tsx` |
@@ -82,6 +84,7 @@
 - **群组**：`ChatView/GroupChatView` → `mode` + `members` → 后端 `is_group` → `chats.assemble_team` → `tool_selector` 限定发言角色工具 → `delegate_to_agent`。
 - **技能**：`SkillsView` → `/api/skills` → 保存 SKILL.md → 渲染技能目录进 prompt → `load_skill` 读全文。
 - **工具**：角色勾选 → `registry.resolve_tools` → 图内调用工具；离线直调 `registry.invoke_tools`。Bash/PowerShell 在工具内部走审批，文件越界走 `path_access`。
+- **记忆**：`main.py::_run_chat_heavy` → `memory_service.recall_into_role`（role prompt 副本）→ 图；落盘后 `maybe_extract_async` → `memory.sqlite`（默认 `pending`）→ `PATCH /api/memories/{id}` 确认 → 后续轮召回。
 - **追踪**：`agents/graphs/pipeline.run_pipeline` → `trace.recording.tracing` → span 树 → `turn_traces.payload_json` → `/api/conversations/{id}/traces/{turn}` → `TraceWindow`。
 
 ## 5. 硬约定
@@ -105,7 +108,8 @@
 17. 外部 MCP 的**连接**只允许发生在启动后台线程（`state.startup`）或用户点「重连」；`tool_groups()` / `refresh_tool_groups()` 在请求路径上只能读缓存，绝不能拉起进程。
 18. 外部工具名固定 `mcp__<server>__<tool>`、分组固定 `mcp-ext::<server>`：`tool_selector.expand_allowlist` 靠 `mcp-` 前缀识别分组，改名会静默丢工具。新增连接必须在 `lifespan` 结束时 `disconnect_all()`，否则 Tauri 退出会留孤儿进程。
 19. 外部 server 的凭据（env / headers）只以密文进 `mcp_servers` 表，响应里只回 `env_keys` / `header_keys`；任何日志、trace、错误文案都不得打印值。
-20. 并行派发（`orchestration.parallel_delegate`）必须：每条任务 `copy_context()` 后再提交线程、成员在 `child_span` 内跑（`TraceRecorder` 的 `_parents` 是单线程栈，直接 `span()` 会串台）、单成员异常只记该条失败（`TurnCancelled` 必须冒泡）。不要再往 `delegate_to_agent` 里加并行——LangGraph 对同一条消息的多个 `tool_call` 是串行的。
+20. 召回只能改 `role_runtime` 的**副本**（`memory.recall_into_role`），绝不原地注入：`role_runtime` 跨轮/跨会话复用缓存，原地改会把记忆串台。抽取必须在消息落盘之后、用 daemon 线程异步跑，失败只打日志不影响响应；记忆明细只在 `memory.sqlite`，主库不建表。
+21. 并行派发（`orchestration.parallel_delegate`）必须：每条任务 `copy_context()` 后再提交线程、成员在 `child_span` 内跑（`TraceRecorder` 的 `_parents` 是单线程栈，直接 `span()` 会串台）、单成员异常只记该条失败（`TurnCancelled` 必须冒泡）。不要再往 `delegate_to_agent` 里加并行——LangGraph 对同一条消息的多个 `tool_call` 是串行的。
 
 ## 6. 常用命令
 

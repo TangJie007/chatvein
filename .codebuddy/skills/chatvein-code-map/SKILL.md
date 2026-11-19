@@ -1,6 +1,6 @@
 ---
 name: chatvein-code-map
-description: ChatVein 桌面 Agent（Tauri 2 外壳 + React 19 + Python FastAPI + LangGraph）的代码地图。为前端、后端、工具运行时、Tauri 外壳的每个源文件提供一句话职责、a–f 重要性等级、关联文件，并给出「需求 → 应先改哪个文件」的定位表与六条主干链路。当需要在 chatvein 仓库定位功能实现、评估改动影响面、新增页面 / 接口 / 工具 / 数据表 / 发布流程，或排查 前端组件 ↔ api 封装 ↔ FastAPI 控制器 ↔ service/repository ↔ SQLite 的跨层调用链时，使用本技能。
+description: ChatVein 桌面 Agent（Tauri 2 外壳 + React 19 + Python FastAPI + LangGraph）的代码地图。为前端、后端、工具运行时、Tauri 外壳的每个源文件提供一句话职责、a–f 重要性等级、关联文件，并给出「需求 → 应先改哪个文件」的定位表与七条主干链路。当需要在 chatvein 仓库定位功能实现、评估改动影响面、新增页面 / 接口 / 工具 / 数据表 / 发布流程，或排查 前端组件 ↔ api 封装 ↔ FastAPI 控制器 ↔ service/repository ↔ SQLite 的跨层调用链时，使用本技能。
 ---
 
 # ChatVein 代码地图
@@ -42,6 +42,7 @@ description: ChatVein 桌面 Agent（Tauri 2 外壳 + React 19 + Python FastAPI 
 | 知识库 + 向量 | `<data>/kb.sqlite`（`kb_docs` / `kb_vec_map` / sqlite-vec） | `backend/mcps/tools/kb.py::kb_db_path` |
 | 会话工作区 | `<主空间>/<YYYYMMDD-HHMMSS-xxxxx>/`，含 `output/` `logs/` `runs/`（上传时另建 `uploads/`） | `backend/mcps/sandbox.py` |
 | 会话消息 / 短期记忆 / 追踪 | `<工作区>/logs/session.sqlite`（`turn_traces` 表） | `conversations/session_store.py`、`trace/store.py` |
+| 长期记忆 | `<data>/memory.sqlite`（`memories` 表；`CHATVEIN_MEMORY_DB_PATH` 可覆盖） | `backend/memory/store.py::memory_db_path` |
 | 已安装技能 | `<data>/skills/<slug>/SKILL.md` + `manifest.json` | `backend/skills/local_store.py` |
 | 主空间设置 | `<data>/workspace.json` | `backend/mcps/workspace.py` |
 | 群组 / 设置偏好 | 浏览器 localStorage：`chatvein.groups.v1`、`chatvein.settings.app.v1`、`chatvein.settings.mcp.v1` | `src/lib/groupsStore.ts`、`src/components/settings/prefs.ts` |
@@ -115,6 +116,14 @@ description: ChatVein 桌面 Agent（Tauri 2 外壳 + React 19 + Python FastAPI 
 → `GET /api/conversations/{id}/traces` / `.../{turn_id}` → `openTraceWindow` 打开独立窗口
 → `TraceWindow` + `JsonBlock` 展示；聊天内 `insightData` / `InsightPanel` 复用同一 payload。
 
+### G. 长期记忆
+
+召回：`main.py::_run_chat_heavy` → `memory_service.recall_into_role(query, role_runtime, conversation_id)`
+→ 返回 **prompt 副本**（不原地改缓存中的 `role_runtime`）→ `run_pipeline`；命中时 `note("memory")` 点亮 trace 的 `memory` 节点。
+
+抽取：`_persist_turn` 落盘后 → `maybe_extract_async`（daemon 线程，按 `CHATVEIN_MEMORY_EXTRACT_TURN_INTERVAL` 限流）
+→ `extract` 走 `invoke_structured` → 写 `memory.sqlite`（默认 `pending`）→ `PATCH /api/memories/{id}` 确认 → 后续轮召回。
+
 ## 3. 定位工作流
 
 ```text
@@ -138,6 +147,7 @@ description: ChatVein 桌面 Agent（Tauri 2 外壳 + React 19 + Python FastAPI 
 | `/api/kb` | `backend/knowledge/module.py` |
 | `/api/embeddings` | `backend/embeddings/module.py` |
 | `/api/chats` | `backend/chats/module.py`（群组成员） |
+| `/api/memories` | `backend/memory/module.py`（长期记忆） |
 
 ## 4. 需求 → 落点
 
@@ -156,6 +166,7 @@ description: ChatVein 桌面 Agent（Tauri 2 外壳 + React 19 + Python FastAPI 
 | 技能市场 / 安装 / 注入 | `backend/skills/service.py`、`local_store.py` | `SkillsView`、`SkillDetailDrawer`、`mcps/tools/skills.py` |
 | 知识库 / RAG | `backend/knowledge/service.py`、`mcps/tools/kb.py` | `embeddings/service.py`、`KnowledgeView`、`KbDocEditor`、`KbImportDialog` |
 | 追踪 / 思考流 | `backend/trace/recording.py`、`store.py`、`service.py` | `TraceWindow`、`lib/openTrace.ts`、`useChatSession` 轮询、`insightData.ts` |
+| 长期记忆 抽取 / 召回 / 整理 | `backend/memory/service.py` | `store.py`、`main.py`（`recall_into_role` + `maybe_extract_async`）、`trace/recording.py`、`api/memories.ts`、`settings/MemorySection.tsx` |
 | 会话 / 消息 / 撤回 / 工作区 | `conversations/service.py`、`session_store.py` | `mcps/sandbox.py`、`ChatView`、`SessionList`、`useChatSession` |
 | 群组 / @ / 团队分工 | `lib/groupsStore.ts`、`GroupView`、`GroupChatView`、`group/*` | `chats/service.py`、`agents/delegation.py` |
 | 设置页 / 工具目录 | `components/settings/*`、`prefs.ts` | `main.py /api/mcps/catalog`、`registry.py::tool_catalog` |
@@ -176,10 +187,11 @@ description: ChatVein 桌面 Agent（Tauri 2 外壳 + React 19 + Python FastAPI 
 6. **前端只经 `src/api/*` 访问后端**，不要页面里直接 `fetch`；新增 API 必须加进 `src/api/index.ts` 桶导出。
 7. **长请求**：`sendChat` 用 `timeoutMs: 0` + `AbortController`；区分「用户停止 / 超时 / 后端掉线」，停止要走 `/api/chat/cancel` 上报，光断 HTTP 不会停后端。
 8. **数据归属**：模型/角色/会话索引在主库；消息与追踪只在会话 `session.sqlite`（v5 起主库不存消息）；群组和设置偏好只在 localStorage。
-9. **没有 SSE / WebSocket**：生成中的思考流靠轮询 trace。
+9. **主入口是 SSE**：`POST /api/chat/stream`（`token` / `tool` / `trace` / `done` / `cancelled` / `error`）；不支持可读流或 `CHATVEIN_STREAM=0` 才回落 `POST /api/chat` + 轮询 trace。
 10. **安全默认收紧**：Bash 逐条审批（`bash_policy` + `bash_approval`）；工作区外路径走 `path_access` 人工确认；API Key 由 `models/crypto.py` 加解密，禁止写入日志。
 11. UI 文案与注释保持中文风格；不要引入新的全局状态库（现有仅 localStorage + React context）。
 12. 文档可能滞后：`docs/项目目录总结.md` 仍把 `chats` 写成「预留」，实际已是群组表模块；**以代码为准**。
+13. **记忆召回只改 role prompt 副本**（`memory.recall_into_role`）：`role_runtime` 跨轮/跨会话缓存，原地注入会串台；抽取必须在消息落盘之后异步跑，且明细只在 `memory.sqlite`（主库不建表）。
 
 ## 6. 工程命令 / 文档
 
@@ -214,7 +226,7 @@ description: ChatVein 桌面 Agent（Tauri 2 外壳 + React 19 + Python FastAPI 
 | 文件 | 等级 | 内容 | 何时打开 |
 |---|---|---|---|
 | `references/frontend.md` | b | `src/` 全量文件职责、a–f 等级、api 映射、组件依赖、前端约定 | 改页面/组件/请求/状态 |
-| `references/backend-core.md` | a | `main.py`、`db.py`、`agents/`、`conversations/`、`chats/`、`models/`、`roles/`、`skills/`、`embeddings/`、`knowledge/`、`trace/` | 改业务/Agent/存储/接口 |
+| `references/backend-core.md` | a | `main.py`、`db.py`、`agents/`、`conversations/`、`chats/`、`models/`、`roles/`、`skills/`、`embeddings/`、`knowledge/`、`trace/`、`memory/` | 改业务/Agent/存储/接口 |
 | `references/backend-tools.md` | a | `mcps/` 注册表、16 个工具模块、运行时、分组、审批与沙箱 | 改工具/权限/文件访问 |
 | `references/tauri-build.md` | b | Rust 启动监督、事件、打包、更新、脚本、测试、文档 | 改启动/打包/窗口/更新 |
 

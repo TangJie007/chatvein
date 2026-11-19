@@ -90,6 +90,7 @@ from mcps.external.module import (  # pyright: ignore[reportImplicitRelativeImpo
     on_shutdown as on_mcp_servers_shutdown,
 )
 from knowledge.module import knowledge_router  # pyright: ignore[reportImplicitRelativeImport]
+from memory.module import memory_router, memory_service  # pyright: ignore[reportImplicitRelativeImport]
 from models.module import models_router, on_module_init  # pyright: ignore[reportImplicitRelativeImport]
 from roles.module import roles_router, on_module_init as on_roles_init  # pyright: ignore[reportImplicitRelativeImport]
 from skills.module import skills_router  # pyright: ignore[reportImplicitRelativeImport]
@@ -164,6 +165,7 @@ app.include_router(conversations_router)
 app.include_router(trace_router)
 app.include_router(skills_router)
 app.include_router(mcp_servers_router)
+app.include_router(memory_router)
 
 
 class ChatRequest(BaseModel):
@@ -554,6 +556,15 @@ def _persist_turn(
         actor_id=(role_runtime or {}).get("id"),
         append_user=req.append_user_message,
     )
+    # 长期记忆抽取（1.4）：必须放在落库之后 —— 只记「已经真实发生」的对话；
+    # daemon 线程 + 轮次限流，抽取失败只打日志，不影响已返回的响应。
+    if reply.strip():
+        memory_service.maybe_extract_async(
+            user_text=req.message,
+            reply=reply,
+            role=role_runtime,
+            turn_id=turn_id,
+        )
     insight = conversations_service.workspace_insight(conversation_id)
     return {
         "reply": reply,
@@ -750,12 +761,17 @@ def _run_chat_heavy(
                 tool_scope(turn_id),
                 bind_stream_sink(sink),
             ):
+                # 长期记忆召回（1.4）：放在追踪 + 沙箱上下文内，note 才能落到本轮 trace；
+                # 返回 prompt 的副本，role_runtime 本身留给落库用的 actor_id。
+                role_for_turn = memory_service.recall_into_role(
+                    req.message, role_runtime, conversation_id=prepared["id"]
+                )
                 if _usage_callback is not None:
                     with _usage_callback() as usage_cb:
                         result = run_pipeline(
                             req.message,
                             history=history,
-                            role=role_runtime,
+                            role=role_for_turn,
                             thread_id=thread_id,
                         )
                     tokens = _collect_tokens(usage_cb)
@@ -763,7 +779,7 @@ def _run_chat_heavy(
                     result = run_pipeline(
                         req.message,
                         history=history,
-                        role=role_runtime,
+                        role=role_for_turn,
                         thread_id=thread_id,
                     )
                     tokens = 0
