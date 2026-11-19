@@ -54,4 +54,28 @@ def path_approval(target: Path, action: str) -> ApprovalNeed:
     )
 
 
-__all__ = ["ApprovalNeed", "DecisionKind", "path_approval", "shell_approval"]
+def mcp_tool_approval(server: str, tool: str, arguments: dict | None) -> ApprovalNeed:
+    """外部 MCP 工具调用：默认「问」，用户知道自己在给哪个 server 放行。"""
+    import json
+
+    try:
+        shown = json.dumps(arguments or {}, ensure_ascii=False, indent=2)
+    except (TypeError, ValueError):
+        shown = str(arguments)
+    if len(shown) > 600:
+        shown = shown[:600] + " …"
+    return ApprovalNeed(
+        kind="mcp_tool",
+        title=f"允许调用外部工具 {server}/{tool}？",
+        detail=shown,
+        risk="medium",
+    )
+
+
+__all__ = [
+    "ApprovalNeed",
+    "DecisionKind",
+    "mcp_tool_approval",
+    "path_approval",
+    "shell_approval",
+]

@@ -183,6 +183,8 @@ def request_approval(req: ApprovalRequest) -> ApprovalDecision: ...
 ## 2.3 真 MCP 协议客户端（stdio / SSE / Streamable HTTP）
 
 > **本能力推翻 `docs/agents.md` 既有边界**：由「刻意不做外置 MCP 子进程」改为「内置工具优先，外置 MCP 按需 opt-in」。评审通过后须同步修订 `docs/agents.md` §「刻意不做」与 `features.md`。
+>
+> **状态：已实现（2026-11-19）**。`agents.md` 与 `features.md` 已同步修订。开关 `CHATVEIN_MCP_EXTERNAL=0`（默认开）；`mcp` SDK 缺失时全量降级，内置工具不受影响。实现与评审稿的差异见末节「实现纪要」。
 
 ### 现状（证据）
 
@@ -246,6 +248,39 @@ def request_approval(req: ApprovalRequest) -> ApprovalDecision: ...
 - 配一个本地 stdio echo server → 目录出现 `mcp__<name>__*` → 对话中可调用 → trace 有记录。
 - SSE server 连接失败 → 会话正常，目录标「不可用」，无异常日志泄漏 URL token。
 - 卸载 SDK / 关开关 → 内置工具全部正常。
+
+### 实现纪要（2026-11-19）
+
+文件比评审稿细：协议层与 HTTP 层分开，避免「改一个字段要动连接代码」。
+
+| 文件 | 内容 |
+|---|---|
+| `backend/mcps/external/config.py` | `ServerConfig` / 传输与审批枚举 / `split_command` / 凭据加解密 / `external_enabled` / `sdk_available` |
+| `backend/mcps/external/repository.py` | 主库 `mcp_servers` 裸 SQL 读写（不建 SQLModel 实体，避免 `db` ↔ `mcps` 互相 import） |
+| `backend/mcps/external/client.py` | 后台事件循环线程 + 每条 server 一个常驻协程；`Connection.connect/list_tools/call_tool/close`；`McpError` 带 `MCP_SERVER_DOWN` / `MCP_TOOL_TIMEOUT` |
+| `backend/mcps/external/adapter.py` | `inputSchema` → Pydantic 模型 → `StructuredTool`；`ExternalToolError(tool_code=...)`；默认「问」审批走 `mcps/approval.py` |
+| `backend/mcps/external/state.py` | 配置快照 / 连接表 / 工具缓存；`tool_groups()` 只读内存，**绝不在请求路径上拉起子进程** |
+| `backend/mcps/external/{service,controller,module}.py` | CRUD + `/reconnect` / `/tools`；`APIRouter(prefix="/api/mcp-servers")` |
+| `backend/db.py` | `SCHEMA_VERSION=14` + `_ensure_mcp_servers_table`（幂等） |
+| `backend/mcps/tools/__init__.py` | `build_tool_groups()` 末尾 merge 外部分组 |
+| `backend/mcps/resilience.py` | 异常带 `tool_code` 时原样上报、不再按 transient 重试 |
+| `backend/mcps/tool_result.py` | 新增 `TOOL_TIMEOUT` / `MCP_SERVER_DOWN` |
+| `src/api/mcpServers.ts` | 配置 CRUD（凭据只上行） |
+| `src/components/settings/McpExternalSection.tsx` | 外部服务列表 + 编辑弹窗 + 工具展开；挂进 `SettingsView` 的 mcp 分区 |
+| `backend/tests/test_mcp_external.py` | FastMCP 真子进程：发现 / 调用 / 报错 / 白名单 / 缓存 / HTTP CRUD |
+| `backend/tests/test_tool_resilience.py` | 错误码透传用例 |
+
+与评审稿的差异：
+
+1. **不是「每条 server 一个事件循环」**，而是 **一个进程级后台 loop + 每条 server 一个常驻协程**。anyio 的取消作用域要求「进入与退出在同一个任务」，把 `AsyncExitStack` 拆到每次 `run_coroutine_threadsafe` 调用上会在关闭时抛 `cancel scope in a different task`。
+2. **接口用 `PATCH` 而非 `PUT`**，且只在请求体里出现的键才覆盖：凭据没传 = 保留原密文，传 `{}` = 清空。否则「改个名称」会把 token 清掉。
+3. **前端新建独立 `McpExternalSection.tsx`**，没有改动 `McpSection.tsx`（内置工具那块是只读展示，混在一起会让状态机变复杂）；`prefs.ts` 也不再需要外部分组元数据——分组从 `/api/mcps/catalog` 与 `/api/mcp-servers/` 直接读。
+4. **连接时机**：`lifespan` 只起后台线程（`state.startup`），请求路径只读缓存。评审稿写的「PUT 后调 `refresh_tool_groups()`」改为 CRUD 后 `state.refresh(id)`，效果相同但不重建内置工具。
+5. **SSRF 放宽**：远程地址只校验协议与云元数据主机，**放行 localhost / 内网**——本地 SSE server 是主流用法，且地址由用户手填；这与「模型能读到网页里的内网 URL」的场景不同。
+6. **错误码**：`MCP_SERVER_DOWN` / `TOOL_TIMEOUT` / `TOOL_DENIED` 通过异常上的 `tool_code` 直达 `ToolResult.code`，不是塞进文案。
+7. **测试策略**：用 `FastMCP` 起真子进程（stdio 全链路），而不是 mock `ClientSession`——后者测不出 `cancel scope` 与进程清理问题。
+
+未做（与评审稿「风险与回滚」对应）：`tools/build_backend.ps1` 的冻结配置未改，`mcp` 已进 `backend/requirements.txt`，冻结时会随依赖一起打进去；若确认体积敏感，再改成 opt-in extras。
 
 ---
 

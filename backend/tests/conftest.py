@@ -9,6 +9,7 @@ import pytest
 
 import db
 import mcps.bash_runtime as bash_runtime
+from mcps.external import state as external_state
 import mcps.browser_runtime as browser_runtime
 import mcps.browser_session as browser_session
 import mcps.workspace as workspace
@@ -47,3 +48,6 @@ def _reset_singletons() -> None:
     bash_runtime.clear_runtime_cache()
     browser_runtime.clear_runtime_cache()
     browser_session.reset_session()
+    # 外部 MCP：连接是进程级单例，用例之间必须断开（否则子进程泄漏 + 配置串味）。
+    external_state.disconnect_all()
+    external_state.reset()

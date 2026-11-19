@@ -19,6 +19,7 @@ from mcps.bash_runtime import (  # pyright: ignore[reportImplicitRelativeImport]
     powershell_available,
 )
 from mcps.browser_runtime import browser_available  # pyright: ignore[reportImplicitRelativeImport]
+from mcps.external import state as external_state  # pyright: ignore[reportImplicitRelativeImport]
 
 from . import (
     bash,
@@ -65,6 +66,9 @@ def build_tool_groups() -> dict[str, list[BaseTool]]:
         groups["mcp-powershell"] = list(powershell.TOOLS)
     if browser_available():
         groups["mcp-browser"] = list(browser.TOOLS)
+    # 外部 MCP server：只合入已连上的（连接在启动后台线程 / 设置页重连时建立，
+    # 这里绝不阻塞拉起子进程，见 mcps/external/state.py）。
+    groups.update(external_state.tool_groups())
     return groups
 
 

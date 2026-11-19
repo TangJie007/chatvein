@@ -57,10 +57,11 @@ Agent 图细节见 [`agent-graphs.md`](./agent-graphs.md)；工具矩阵见 [`ag
 | `mcp-ip` | 公网出口 / IP 归属（ipinfo → ipwhois → ip-api，免费无 Key） |
 | `mcp-ocr` | OCR.space → 沙箱 RapidOCR 降级 |
 | `mcp-pdf` | 文本/元信息读取、合并、按页拆分、文本生成、加密/解密（pypdf + reportlab） |
+| `mcp-ext::<server>` | **用户自配**的外部 MCP 服务（stdio / SSE / Streamable HTTP）；工具名 `mcp__<server>__<tool>`，默认每次调用前确认 | `mcps/external/` + `McpExternalSection` |
 
-目录 API：`GET /api/mcps/catalog`。
+目录 API：`GET /api/mcps/catalog`；外部服务配置 API：`/api/mcp-servers/`（CRUD + `/reconnect`）。
 
-**未实现（占位或刻意不做）**：`mcp-http`、外置 MCP 子进程、通用 `cmd.exe`、SaaS 连接器、`browser_run_code_unsafe`。详见 [`agents.md`](./agents.md)。
+**未实现（占位或刻意不做）**：预置外置 MCP 子进程/`npx` 分发、通用 `cmd.exe`、SaaS 连接器、`browser_run_code_unsafe`。外部 server 仅按用户配置 opt-in，不随包分发；详见 [`agents.md`](./agents.md)。
 
 ---
 

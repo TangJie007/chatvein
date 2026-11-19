@@ -6,6 +6,7 @@ export * from "./traces";
 export * from "./models";
 export * from "./embeddings";
 export * from "./mcps";
+export * from "./mcpServers";
 export * from "./skills";
 export * from "./roles";
 export * from "./knowledge";

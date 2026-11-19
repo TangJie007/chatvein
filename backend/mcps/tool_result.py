@@ -20,6 +20,11 @@ TOOL_DENIED = "TOOL_DENIED"
 TOOL_TRANSIENT_EXHAUSTED = "TOOL_TRANSIENT_EXHAUSTED"
 TOOL_CIRCUIT_OPEN = "TOOL_CIRCUIT_OPEN"
 TOOL_SKIPPED = "TOOL_SKIPPED"
+#: 单次工具超时（外部 MCP server 最长等待）。与 ``external/client.py`` 的
+#: ``MCP_TOOL_TIMEOUT`` 对齐，异常上带 ``tool_code`` 时由 resilience 直取。
+TOOL_TIMEOUT = "TOOL_TIMEOUT"
+#: 外部 MCP 服务连不上 / 已断开：不该重试，换工具或直答。
+MCP_SERVER_DOWN = "MCP_SERVER_DOWN"
 
 
 @dataclass

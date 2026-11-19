@@ -323,21 +323,27 @@ def execute_tool_call(
             raise
         except Exception as exc:  # noqa: BLE001 - 统一归一到 ToolResult
             kind = classify_exception(exc)
+            # 工具自带错误码（外部 MCP 的 MCP_SERVER_DOWN / TOOL_TIMEOUT）优先：
+            # 这类失败重试也没用，字符串猜类别只会猜成 TOOL_FAILED。
+            explicit = getattr(exc, "tool_code", None)
             retry_left = attempts < attempts_allowed
-            if kind == "transient" and retry_left:
+            if kind == "transient" and retry_left and not explicit:
                 _note_retry(tool_name, attempts, kind, exc)
                 base = _retry_base_s()
                 delay = base * (2 ** (attempts - 1))
                 _sleep_with_cancel(delay * random.uniform(0.8, 1.2))
                 continue
-            code = TOOL_DENIED if kind == "denied" else (
-                TOOL_TRANSIENT_EXHAUSTED if kind == "transient" else TOOL_FAILED
-            )
+            if explicit:
+                code = str(explicit)
+            else:
+                code = TOOL_DENIED if kind == "denied" else (
+                    TOOL_TRANSIENT_EXHAUSTED if kind == "transient" else TOOL_FAILED
+                )
             result = ToolResult(
                 ok=False,
                 content=_failure_text(tool_name, exc, kind, attempts),
                 code=code,
-                retryable=kind == "transient",
+                retryable=kind == "transient" and not explicit,
                 error_kind=kind,
                 tool=tool_name,
                 attempts=attempts,

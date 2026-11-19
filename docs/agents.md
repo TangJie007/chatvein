@@ -49,8 +49,13 @@
 ## WorkBuddy 对齐：内置 MCP / 工具矩阵
 
 ChatVein 是本机桌面 Agent（Tauri + Python），前端设置页已规划 `builtin://mcp-*`。
-本仓库用 **进程内 LangChain `@tool`** 实现同等能力（不另起 MCP 子进程），分组 id 与
+内置能力用 **进程内 LangChain `@tool`** 实现（默认不另起 MCP 子进程），分组 id 与
 `src/components/settings/prefs.ts` 的 `MCP_SERVERS` 对齐。
+
+**例外（批次 2 §2.3）**：用户可以在设置页「外部 MCP 服务」里自己填 stdio 命令 / SSE /
+Streamable HTTP 地址，经真 MCP 协议客户端动态发现工具，落到分组 `mcp-ext::<server>`、
+工具名 `mcp__<server>__<tool>`。打包物里**不附带**任何外部 server；`CHATVEIN_MCP_EXTERNAL=0`
+或未安装 `mcp` SDK 时完全降级为内置工具面。
 
 | 能力（WorkBuddy） | ChatVein 分组 | 工具 | 说明 |
 | --- | --- | --- | --- |
@@ -67,7 +72,7 @@ ChatVein 是本机桌面 Agent（Tauri + Python），前端设置页已规划 `b
 | IP 归属地 | `mcp-ip` | `get_my_location` `lookup_ip_region` | 免费降级：ipinfo.io → ipwhois-python → ip-api.com（均无 Key）；全失败返回原因 |
 | OCR 识字 | `mcp-ocr` | `ocr_image` `ocr_image_base64` | 先 OCR.space（默认公共 key `helloworld`，可用 `CHATVEIN_OCR_SPACE_KEY`）；失败则在当前会话沙箱 `pip install rapidocr-onnxruntime`、写 `ocr_run.py` 并执行。支持 URL 或工作区/会话目录内路径 |
 | PDF 处理 | `mcp-pdf` | `pdf_info` `pdf_read` `pdf_merge` `pdf_split` `pdf_split_files` `pdf_generate` `pdf_encrypt` `pdf_decrypt` | 读取用 `pypdf`（文本层、页数/元信息/页面尺寸、加密状态），生成用 `reportlab`（内置中文字体，不依赖字体文件）。`pdf_split` 抽取指定页合成一个文件，`pdf_split_files` 按页拆成每页一个文件。页数上限 400、文本截断 `max_chars`；扫描件（无文本层）返回提示并建议配合 `ocr_image`。路径规则同 `mcp-fs` |
-| 自定义 HTTP MCP | `mcp-http` | （配置位） | 设置页占位；后续用 LangChain `MCPAdapter` 拉远程工具 |
+| 外部 MCP server（自定义） | `mcp-ext::<server>` | 由 server 自己声明（`mcp__<server>__<tool>`） | 设置页「外部 MCP 服务」配置 stdio / SSE / Streamable HTTP；连接在后台线程建立，工具默认「每次确认」，详见 docs/production-design-batch2.md §2.3 |
 
 目录 API：`GET /api/mcps/catalog`。内置 MCP 开关只读：由本机探测决定「运行中 / 不可用」，
 用户不能切换；未探测到的 Bash / PowerShell / Browser 不注册工具分组。
@@ -75,7 +80,7 @@ ChatVein 是本机桌面 Agent（Tauri + Python），前端设置页已规划 `b
 ### 刻意不做（长期）
 
 1. **通用 cmd**：不开放 `cmd.exe`。Bash / PowerShell 只在当前会话目录执行；危险命令直接拒绝，其余改动要用户在对话框里允许。未检测到对应解释器时，该分组不会注入 Agent。
-2. **外置 MCP 子进程**（`npx @modelcontextprotocol/server-filesystem`、`npx @playwright/mcp` 等）：与 `builtin://` 设计重复，体积与打包成本更高；优先内置工具。Browser 以进程内 Playwright 对齐上游工具面，不另起 Node MCP。
+2. **预置外置 MCP 子进程**（`npx @modelcontextprotocol/server-filesystem`、`npx @playwright/mcp` 等）：仍不做——与 `builtin://` 设计重复，体积与打包成本更高，优先内置工具；Browser 以进程内 Playwright 对齐上游工具面。用户**自配**的外部 server 走 `mcps/external/`（默认关闭、可整包关开关），不属于预置分发。
 3. **GitHub / Notion / Slack 等 SaaS 连接器**：走用户自配 `mcp-http`，不塞进默认分发。
 4. **`browser_run_code_unsafe`**：上游 `@playwright/mcp` 标明 RCE-equivalent（在 Playwright **服务端进程**执行任意 JS）。桌面 Agent 进程内工具面**不暴露**；复杂逻辑只用页面内 `browser_evaluate` 或拆成 Core 工具。Chromium 等浏览器二进制不打进安装包。
 

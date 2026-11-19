@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Check, Play, Plus, Trash2, Wrench } from "lucide-react";
 import {
   listInstalledSkills,
+  listMcpServers,
   type InstalledSkill,
   type LlmModelRecord,
   type RoleRecord,
@@ -42,6 +43,33 @@ export function RoleConfig({
         ? form.tools.filter((t) => t !== id)
         : [...form.tools, id]
     );
+  // 外部 MCP 分组是运行期发现的（用户在设置页加完 server 才有），不能写死在 TOOLSET；
+  // 拉不到就退回内置清单，不阻塞角色编辑。
+  const [toolset, setToolset] = useState(TOOLSET);
+  useEffect(() => {
+    let cancelled = false;
+    listMcpServers()
+      .then((data) => {
+        if (cancelled) return;
+        const extras = data.servers
+          .filter((server) => !TOOLSET.some((item) => item.id === server.group))
+          .map((server) => ({
+            id: server.group,
+            name: server.name,
+            desc:
+              server.status.state === "connected"
+                ? `外部 MCP · ${server.tools.length} 个工具`
+                : "外部 MCP · 未连接",
+          }));
+        if (extras.length) setToolset([...TOOLSET, ...extras]);
+      })
+      .catch(() => {
+        /* 外部服务不可用时保持内置清单 */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
   // 常驻技能：只允许从「已下载技能」中勾选，聊天时会自动带入（可与消息级临时技能叠加）。
   const [installed, setInstalled] = useState<InstalledSkill[]>([]);
   const [loadingInstalled, setLoadingInstalled] = useState(true);
@@ -216,10 +244,10 @@ export function RoleConfig({
           <Collapsible
             title="可用工具"
             desc="只勾选必要的，可以减少误调用"
-            badge={`${realCount} / ${TOOLSET.length}`}
+            badge={`${realCount} / ${toolset.length}`}
           >
             <div className="flex flex-col">
-              {TOOLSET.map((t) => {
+              {toolset.map((t) => {
                 const on = form.tools.includes(t.id);
                 return (
                   <div

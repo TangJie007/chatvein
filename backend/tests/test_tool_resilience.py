@@ -221,6 +221,25 @@ def test_turn_cancelled_is_not_swallowed() -> None:
         )
 
 
+def test_explicit_tool_code_wins_over_string_guessing() -> None:
+    """外部 MCP 失败自带错误码：必须原样上报，且不再按 transient 重试。"""
+    from mcps.external.adapter import ExternalToolError
+
+    calls: list[int] = []
+
+    def invoke() -> str:
+        calls.append(1)
+        raise ExternalToolError("server down", tool_code="MCP_SERVER_DOWN")
+
+    result = execute_tool_call(
+        tool_name="mcp__remote__search", call_id="mcp-1", invoke=invoke, state=TurnState()
+    )
+    assert result.ok is False
+    assert result.code == "MCP_SERVER_DOWN"
+    assert result.retryable is False
+    assert len(calls) == 1
+
+
 def test_resilient_middleware_wraps_tool_message() -> None:
     middleware = resilient_tool_middleware()
     assert len(middleware) == 1

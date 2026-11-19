@@ -84,6 +84,11 @@ from embeddings.module import (  # pyright: ignore[reportImplicitRelativeImport]
     embeddings_router,
     on_module_init as on_embeddings_init,
 )
+from mcps.external.module import (  # pyright: ignore[reportImplicitRelativeImport]
+    mcp_servers_router,
+    on_module_init as on_mcp_servers_init,
+    on_shutdown as on_mcp_servers_shutdown,
+)
 from knowledge.module import knowledge_router  # pyright: ignore[reportImplicitRelativeImport]
 from models.module import models_router, on_module_init  # pyright: ignore[reportImplicitRelativeImport]
 from roles.module import roles_router, on_module_init as on_roles_init  # pyright: ignore[reportImplicitRelativeImport]
@@ -101,7 +106,11 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
     on_module_init()
     on_roles_init()
     on_embeddings_init()
-    yield
+    on_mcp_servers_init()
+    try:
+        yield
+    finally:
+        on_mcp_servers_shutdown()
 
 
 app = FastAPI(
@@ -154,6 +163,7 @@ app.include_router(chats_router)
 app.include_router(conversations_router)
 app.include_router(trace_router)
 app.include_router(skills_router)
+app.include_router(mcp_servers_router)
 
 
 class ChatRequest(BaseModel):

@@ -31,7 +31,8 @@ from sqlmodel import Session, SQLModel
 # v11: conversations.group_members 群组成员列（JSON 角色 id 列表，@ 指派 / 团队模式）。
 # v12: 群组 / 团队功能独立成 chats 模块：成员数据迁入独立表 chat_groups，删除 conversations.group_members 列。
 # v13: conversations 冗余 message_count / last_message 列，列表 / 计数不再逐个打开会话空间库。
-SCHEMA_VERSION = 13
+# v14: mcp_servers 外部 MCP server 配置表（凭据列存密文，见 mcps/external/config.py）。
+SCHEMA_VERSION = 14
 DB_FILENAME = "chatvein.db"
 
 _BACKEND_DIR = Path(__file__).resolve().parent
@@ -215,7 +216,7 @@ def _ensure_conversations_skills_column(connection: Connection) -> None:
 
 
 def _ensure_conversations_role_id_column(connection: Connection) -> None:
-    """v14：给旧库的 ``conversations`` 表补上 ``role_id`` 列（绑定的角色 id，可空）。
+    """v13 补列：给旧库的 ``conversations`` 表补上 ``role_id`` 列（绑定的角色 id，可空）。
 
     会话级角色绑定：新建会话时选角色，之后该会话整体沿用（发送未显式带 role_id 时
     回退到会话绑定的角色）。空值表示走后端默认主角色。
@@ -244,6 +245,33 @@ def _ensure_conversations_preview_columns(connection: Connection) -> None:
         connection.exec_driver_sql(
             "ALTER TABLE conversations ADD COLUMN last_message VARCHAR(2048) NOT NULL DEFAULT ''"
         ).close()
+
+
+def _ensure_mcp_servers_table(connection: Connection) -> None:
+    """v14：外部 MCP server 配置表（用户自己填的 stdio / SSE / HTTP 服务）。
+
+    ``env_enc`` / ``headers_enc`` 存 Fernet 密文（可能含 token）：明文绝不落库，
+    也不出现在 ``/api/mcp-servers`` 的响应里，只回 ``env_keys`` / ``has_headers``。
+    """
+    connection.exec_driver_sql(
+        """
+        CREATE TABLE IF NOT EXISTS mcp_servers (
+            id VARCHAR(64) PRIMARY KEY,
+            name VARCHAR(128) NOT NULL,
+            transport VARCHAR(16) NOT NULL DEFAULT 'stdio',
+            command VARCHAR(4096) NOT NULL DEFAULT '',
+            url VARCHAR(2048) NOT NULL DEFAULT '',
+            env_enc TEXT NOT NULL DEFAULT '',
+            headers_enc TEXT NOT NULL DEFAULT '',
+            allow_tools TEXT NOT NULL DEFAULT '',
+            approval_mode VARCHAR(16) NOT NULL DEFAULT 'ask',
+            enabled INTEGER NOT NULL DEFAULT 1,
+            timeout_s REAL NOT NULL DEFAULT 30,
+            created_at VARCHAR(64) NOT NULL DEFAULT '',
+            updated_at VARCHAR(64) NOT NULL DEFAULT ''
+        )
+        """
+    ).close()
 
 
 def _backfill_conversation_previews(connection: Connection) -> None:
@@ -421,6 +449,7 @@ def _migrate(connection: Connection) -> None:
     _ensure_roles_description_column(connection)
     _ensure_conversations_preview_columns(connection)
     _ensure_conversations_role_id_column(connection)
+    _ensure_mcp_servers_table(connection)
     if current < 5:
         _drop_main_messages_table(connection)
     if current < 7:

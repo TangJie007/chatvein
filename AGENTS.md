@@ -35,7 +35,7 @@
 | `src/lib/` | 路由、store、tokens、trace、updater、错误人话 |
 | `backend/main.py` | FastAPI 入口：/api/chat、/api/chat/stream（SSE）、uploads、bash 审批、health、workspace、db |
 | `backend/agents/` | 难度路由、理解/改写、工具选择、ReAct 图、提示词、取消、委派 |
-| `backend/mcps/` | 工具注册表、分组、执行、沙箱、Bash/浏览器运行时 |
+| `backend/mcps/` | 工具注册表、分组、执行、沙箱、Bash/浏览器运行时；`external/` 为外部 MCP 协议客户端 |
 | `backend/conversations/` | 会话 CRUD、成员、turn 编排、历史装配 |
 | `backend/chats/` | 群会话与成员（chat_groups / chat_group_members） |
 | `backend/roles/` | 角色 CRUD、多角色种子、运行时解析 |
@@ -44,7 +44,7 @@
 | `backend/models/` | 模型配置（OpenAI 兼容） |
 | `backend/embeddings/` | 向量模型配置 |
 | `backend/trace/` | 追踪记录与查询 |
-| `backend/db.py` | 主 SQLite 连接与迁移（SCHEMA_VERSION=13） |
+| `backend/db.py` | 主 SQLite 连接与迁移（SCHEMA_VERSION=14） |
 | `src-tauri/src/` | `lib.rs` `main.rs` `backend.rs` `commands.rs` |
 | `tools/` | 后端冻结、运行时整理、发布、图标、冒烟脚本 |
 
@@ -61,6 +61,7 @@
 | 新增工具 | `backend/mcps/tools/<module>.py` | `backend/mcps/tools/__init__.py`、`src/components/settings/prefs.ts`、`src/lib/rolesStore.ts` |
 | 工具执行/审批 | `backend/mcps/registry.py`、`approval.py`、`approval_policy.py` | `bash.py`、`bash_policy.py`、`bash_approval.py`、`path_access.py`、`src/components/chat/BashApproval.tsx` |
 | 断点续跑 / 继续生成 | `backend/agents/checkpoint.py`、`backend/main.py`（`/resumable`、`/resume`） | `src/api/conversations.ts`、`src/components/chat/useChatSession.ts`、`ChatPanel.tsx` |
+| 外部 MCP 服务 | `backend/mcps/external/{config,client,state}.py` | `controller.py`、`service.py`、`repository.py`、`module.py`、`db.py`（v14 表）、`src/api/mcpServers.ts`、`McpExternalSection.tsx` |
 | 工作区/沙箱 | `backend/mcps/sandbox.py`、`workspace.py`、`path_access.py` | `backend/main.py`（uploads） |
 | 新后端接口 | `backend/<module>/controller.py` | `module.py`、`main.py include_router`、`src/api/*.ts` |
 | 会话/群组数据 | `backend/conversations/`、`backend/chats/` | `src/api/conversations.ts`、`src/api/db.ts` |
@@ -100,6 +101,9 @@
 14. 审批统一走 `mcps/approval.py::request_approval`（策略在 `mcps/approval_policy.py` 构造 `ApprovalNeed`），不要新增独立弹窗通道；工具里不要自己发审批事件。审批 id 是 `(turn_id, tool_call_id)` 的确定性哈希，因此工具调用必须经 `wrap_tool_call` 的 `bind_tool_call` 才拿得到。
 15. 审批超时只作废本次等待（`expired`），不得写成 `deny`：续跑会重放同一 request_id，历史决定必须复用，否则会把用户批准过的命令再拦一次。
 16. 中断现场只走 `/api/conversations/{id}/resumable` + `/resume`（`continue|discard`），前端不要自建一套续跑状态机。
+17. 外部 MCP 的**连接**只允许发生在启动后台线程（`state.startup`）或用户点「重连」；`tool_groups()` / `refresh_tool_groups()` 在请求路径上只能读缓存，绝不能拉起进程。
+18. 外部工具名固定 `mcp__<server>__<tool>`、分组固定 `mcp-ext::<server>`：`tool_selector.expand_allowlist` 靠 `mcp-` 前缀识别分组，改名会静默丢工具。新增连接必须在 `lifespan` 结束时 `disconnect_all()`，否则 Tauri 退出会留孤儿进程。
+19. 外部 server 的凭据（env / headers）只以密文进 `mcp_servers` 表，响应里只回 `env_keys` / `header_keys`；任何日志、trace、错误文案都不得打印值。
 
 ## 6. 常用命令
 

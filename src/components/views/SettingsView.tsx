@@ -5,6 +5,7 @@ import { dbBackup, dbInfo, dbVacuum, type DbInfo } from "../../api";
 import { cn } from "../../lib/cn";
 import { VIEW_PATH } from "../../types/view";
 import { AppSection } from "../settings/AppSection";
+import { McpExternalSection } from "../settings/McpExternalSection";
 import { McpSection } from "../settings/McpSection";
 import { SqliteSection, formatBytes } from "../settings/SqliteSection";
 import {
@@ -197,7 +198,12 @@ function SettingsBody({ section }: { section: SectionKey }) {
         <div className="flex-1 overflow-y-auto px-[25px] py-2 pb-6">
           <div className="flex flex-1 flex-col gap-4">
             {section === "app" && <AppSection prefs={prefs} onSet={setPref} />}
-            {section === "mcp" && <McpSection servers={servers} />}
+            {section === "mcp" && (
+              <>
+                <McpSection servers={servers} />
+                <McpExternalSection />
+              </>
+            )}
             {section === "sqlite" && (
               <SqliteSection
                 info={info}

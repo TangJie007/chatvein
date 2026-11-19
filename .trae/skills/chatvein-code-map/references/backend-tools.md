@@ -12,7 +12,8 @@
 | 改工具分组 / 常驻工具 | `tools/__init__.py` + `agents/graphs/common.py::ALWAYS_ON_TOOLS` |
 | 改按角色勾选哪些工具 | `registry.py::resolve_tools` / `heuristic_tool_names` |
 | 改离线直调执行 | `mcps/registry.py::invoke_tools` |
-| 改审批 / 命令策略 | `bash_policy.py` / `powershell_policy.py` / `bash_approval.py` |
+| 改审批 / 命令策略 | `bash_policy.py` / `powershell_policy.py` / `bash_approval.py`；统一入口 `approval.py` + `approval_policy.py` |
+| 外部 MCP server（stdio/SSE/HTTP） | `external/`（`config`→`client`→`adapter`→`state`→`repository/service/controller/module`） |
 | 改文件越界判定 | `path_access.py` |
 | 改工作区目录结构 | `sandbox.py`（`output/` `logs/` `runs/`，上传时才有 `uploads/`） |
 | 改主空间位置 | `workspace.py` |
@@ -30,6 +31,7 @@ backend/mcps/
 ├─ powershell_policy.py
 ├─ browser_runtime.py / browser_session.py
 ├─ ipwhois_runtime.py
+├─ external/            外部 MCP 协议客户端（可选依赖 mcp）
 └─ tools/               16 个工具模块（core / fs / web / sqlite / kb / sandbox / ip / ocr / pdf / skills / docx / pptx / excel / bash / powershell / browser）
                         └─ _output.py   bash / powershell / sandbox 共用的输出截断（不是工具模块）
 ```
@@ -51,6 +53,12 @@ backend/mcps/
 | `powershell_policy.py` | b | PowerShell 命令策略 | 分类/审批 |
 | `browser_runtime.py` | b | Playwright/浏览器运行时探测与安装 | 状态 |
 | `browser_session.py` | c | 浏览器会话持久化/恢复 | session |
+| `approval.py` / `approval_policy.py` | b | 统一 HITL：阻塞等待决定、确定性 request_id、超时=expired | `request_approval`、`decide`、`bind_tool_call`、`ApprovalNeed` |
+| `external/config.py` | b | 外部 server 配置模型、传输/审批枚举、凭据加解密、`external_enabled`/`sdk_available` | `ServerConfig`、`row_from_payload`、`split_command` |
+| `external/client.py` | a | 后台 loop + 每 server 常驻协程；stdio/SSE/HTTP 传输、list/call、连接关闭 | `Connection`、`McpError`、`check_url` |
+| `external/adapter.py` | b | `inputSchema`→Pydantic→`StructuredTool`（`mcp__<server>__<tool>`）、默认「问」审批 | `make_tool`、`ExternalToolError` |
+| `external/state.py` | a | 配置快照/连接表/工具缓存；`tool_groups()` 只读缓存，连接只在启动线程或重连时发生 | `startup`、`connect`、`refresh`、`tool_groups`、`disconnect_all` |
+| `external/{repository,service,controller,module}.py` | b | `mcp_servers` 表 CRUD、`/api/mcp-servers/` 路由、lifespan 钩子 | `create_server`、`update_server`、`reconnect_server` |
 | `ipwhois_runtime.py` | c | IP 归属数据加载 | 数据源 |
 
 ## 2. 工具模块（`backend/mcps/tools/`）
