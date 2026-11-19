@@ -18,7 +18,12 @@ from langchain.agents.middleware import (
 )
 from langchain_core.messages import ToolMessage
 
-from agents.cancellation import raise_if_cancelled  # pyright: ignore[reportImplicitRelativeImport]
+from agents.cancellation import TurnCancelled, raise_if_cancelled  # pyright: ignore[reportImplicitRelativeImport]
+from mcps.resilience import (  # pyright: ignore[reportImplicitRelativeImport]
+    execute_tool_call,
+    recent_failed_tools,
+    tool_retry_enabled,
+)
 from agents.llm import (  # pyright: ignore[reportImplicitRelativeImport]
     is_rate_limit_error,
     model_error_hint,
@@ -138,6 +143,35 @@ def same_arg_tool_guard():
         return handler(request)
 
     return _guard
+
+
+def resilient_tool_middleware() -> list[Any]:
+    """工具韧性：transient 退避重试 + 本轮熔断 + 幂等去重 + 结构化结果。
+
+    必须排在 ``same_arg_tool_guard`` 之后、取消守卫之前（外层到内层）：
+    同参去重要先判，取消检查要在每次重试时都能命中。
+    ``CHATVEIN_TOOL_RETRY=0`` 时返回空列表，整体回落到旧行为。
+    """
+
+    if not tool_retry_enabled():
+        return []
+
+    @wrap_tool_call(name="ResilientTool")
+    def _resilient(request: Any, handler: Any) -> Any:
+        name, _args, call_id = _tool_call_fields(request.tool_call)
+        result = execute_tool_call(
+            tool_name=name,
+            call_id=call_id,
+            invoke=lambda: handler(request),
+        )
+        return ToolMessage(
+            content=result.content,
+            tool_call_id=call_id,
+            status="success" if result.ok else "error",
+            additional_kwargs={"tool_result": result.to_dict()},
+        )
+
+    return [_resilient]
 
 
 # create_agent 里**每个 middleware 钩子都单独占一个图步**，不是「模型+工具各 1 步」。
@@ -271,6 +305,11 @@ def concise_failure(exc: BaseException, verbose: str = "") -> str:
     if hint:
         return hint
     failed = _failed_tool_names(verbose)
+    # 结构化失败记录优先于字符串匹配：工具抛异常后被上层兜底时，
+    # verbose 里可能没有 `[name]` 行，但韧性层已经记下了失败工具名。
+    for name in recent_failed_tools():
+        if name not in failed:
+            failed.append(name)
     if failed:
         return (
             f"工具调用失败，请重新再试（{', '.join(failed)}）。"
@@ -302,6 +341,7 @@ def build_react_graph(
     """
     middleware: list[Any] = [
         same_arg_tool_guard(),
+        *resilient_tool_middleware(),
         *cancellation_guards(),
         *rate_limit_retry_middleware(),
     ]

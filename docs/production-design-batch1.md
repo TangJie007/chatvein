@@ -83,6 +83,8 @@ def assemble_context(
 
 ## 1.2 工具可靠性：结构化错误 + 重试/熔断 + 幂等
 
+> **状态：已实现（2026-11-19）**。新增 `mcps/tool_result.py` / `mcps/resilience.py`，接入 ReAct（middleware）与离线 `invoke_tools`，`tool_scope` 按轮隔离状态；开关 `CHATVEIN_TOOL_RETRY`（默认开）。
+
 ### 现状（证据）
 
 - `registry.py::invoke_tools()` 每个工具 `try/except` 拼 `f"[{name}] 失败: {exc}"` 字符串；ReAct 层工具由 LangChain `ToolNode` 执行，失败以字符串回灌模型。
@@ -152,6 +154,8 @@ class ToolResult:
 ## 1.3 断点续跑：LangGraph checkpointer + 状态持久化
 
 > 本能力是 2.2 统一 HITL 的前置。**评审已确认（2026-11-19）：「崩溃/重启后续跑」与「用户点停止后保留现场可恢复」两者都做。** 下文按此范围实现。
+>
+> **状态：后端已实现（2026-11-19）**。新增 `agents/checkpoint.py::SqliteCheckpointer`，`run_pipeline(thread_id=..., resume=...)` 接入；`GET /api/conversations/{id}/resumable`、`POST /api/conversations/{id}/resume`（continue/discard）；开关 `CHATVEIN_CHECKPOINT`（默认开）。**前端「继续生成 / 放弃」按钮随 2.1 一起改 `useChatSession`，尚未接线。**
 
 ### 现状（证据）
 

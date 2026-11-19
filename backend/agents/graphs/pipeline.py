@@ -7,7 +7,8 @@ from typing import Any, Literal
 from langgraph.graph import END, START, StateGraph
 
 from .. import router
-from trace.recording import complete, note, tracing
+from ..checkpoint import checkpoint_enabled, get_checkpointer
+from trace.recording import complete, note, runnable_config, tracing
 from . import hard as hard_mod
 from . import medium as medium_mod
 from . import simple as simple_mod
@@ -16,6 +17,7 @@ from .state import ChatState
 DifficultyRoute = Literal["simple", "medium", "hard"]
 
 _compiled_pipeline = None
+_compiled_pipeline_ckpt = None
 
 
 def _merged_system(role: dict[str, Any] | None, base: str) -> str:
@@ -123,11 +125,7 @@ def _hard_node(state: ChatState) -> dict[str, Any]:
     return branched
 
 
-def build_pipeline():
-    """编译总图（进程内缓存；节点在 invoke 时读模块引用，测试 monkeypatch 仍生效）。"""
-    global _compiled_pipeline
-    if _compiled_pipeline is not None:
-        return _compiled_pipeline
+def _state_graph() -> StateGraph:
     graph = StateGraph(ChatState)
     graph.add_node("understand", _understand)
     graph.add_node("simple", _simple_node)
@@ -146,14 +144,38 @@ def build_pipeline():
     graph.add_edge("simple", END)
     graph.add_edge("medium", END)
     graph.add_edge("hard", END)
-    _compiled_pipeline = graph.compile(name="chat_pipeline")
+    return graph
+
+
+def build_pipeline():
+    """编译总图（进程内缓存；节点在 invoke 时读模块引用，测试 monkeypatch 仍生效）。"""
+    global _compiled_pipeline
+    if _compiled_pipeline is not None:
+        return _compiled_pipeline
+    _compiled_pipeline = _state_graph().compile(name="chat_pipeline")
     return _compiled_pipeline
 
 
+def _graph_with_checkpoint():
+    """带断点的图：只有传了 ``thread_id`` 才用它，否则走无 checkpointer 的旧图。
+
+    两张图分开缓存：带 checkpointer 的图要求 config 里必须有 ``thread_id``，
+    离线 / 单测路径不传，因此不能共用一个编译结果。
+    """
+    global _compiled_pipeline_ckpt
+    if _compiled_pipeline_ckpt is not None:
+        return _compiled_pipeline_ckpt
+    _compiled_pipeline_ckpt = _state_graph().compile(
+        name="chat_pipeline_ckpt", checkpointer=get_checkpointer()
+    )
+    return _compiled_pipeline_ckpt
+
+
 def reset_pipeline_cache() -> None:
-    """测试用：清空总图缓存。"""
-    global _compiled_pipeline
+    """测试用：清空总图缓存（含带 checkpointer 的那张）。"""
+    global _compiled_pipeline, _compiled_pipeline_ckpt
     _compiled_pipeline = None
+    _compiled_pipeline_ckpt = None
 
 
 def run_pipeline(
@@ -161,17 +183,32 @@ def run_pipeline(
     *,
     history: list[dict[str, Any]] | None = None,
     role: dict[str, Any] | None = None,
+    thread_id: str | None = None,
+    resume: bool = False,
 ) -> dict[str, Any]:
-    """入口：跑总图，返回 ``run_pipeline`` 所需字段，并附上 ``trace``。"""
+    """入口：跑总图，返回 ``run_pipeline`` 所需字段，并附上 ``trace``。
+
+    ``thread_id`` 非空（且断点开关打开）时走带 checkpointer 的图：每个节点完成
+    后落一次 checkpoint；``resume=True`` 传 ``None`` 输入，LangGraph 从最新
+    checkpoint 继续，已完成节点不重放。不传 ``thread_id`` 时行为与旧版完全一致。
+    """
     text = (message or "").strip()
+    persisted = bool(thread_id) and checkpoint_enabled()
     with tracing(text):
-        out = build_pipeline().invoke(
-            {
-                "message": text,
-                "history": list(history or []),
-                "role": role,
-            }
-        )
+        payload: dict[str, Any] = {
+            "message": text,
+            "history": list(history or []),
+            "role": role,
+        }
+        if persisted:
+            out = _graph_with_checkpoint().invoke(
+                None if resume else payload,
+                config=runnable_config(
+                    {"configurable": {"thread_id": str(thread_id)}}
+                ),
+            )
+        else:
+            out = build_pipeline().invoke(payload, config=runnable_config())
         difficulty = str(out.get("difficulty") or "simple")
         result = {
             "reply": str(out.get("reply") or ""),

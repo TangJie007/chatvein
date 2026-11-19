@@ -13,7 +13,25 @@ from mcps.bash_runtime import (  # pyright: ignore[reportImplicitRelativeImport]
 )
 from mcps.browser_runtime import probe_browser  # pyright: ignore[reportImplicitRelativeImport]
 
+from .resilience import execute_tool_call
 from .tools import heuristic_hits, refresh_tool_groups
+
+#: 离线启发式可无参直接调用的工具（不需要模型填参）。
+_NOARG_TOOLS: frozenset[str] = frozenset(
+    {
+        "list_allowed_directories",
+        "sqlite_tables",
+        "sandbox_info",
+        "bash_info",
+        "powershell_info",
+        "browser_info",
+        "get_current_time",
+        "get_system_info",
+        "db_stats",
+        "list_configured_models",
+        "get_my_location",
+    }
+)
 
 
 def _registry() -> dict[str, BaseTool]:
@@ -117,44 +135,36 @@ def suggest_tools_route(message: str) -> tuple[str, str]:
     return "direct", "工具启发式: 无需工具"
 
 
+def _offline_args(t: BaseTool, text: str) -> dict[str, Any] | None:
+    """离线（无 LLM）时的启发式填参；``None`` 表示这个工具填不了。"""
+    if t.name == "calculator":
+        m = re.search(r"([\d\.\s\+\-\*\/\%\(\)]+)", text)
+        return {"expression": m.group(1).strip() if m else "1+1"}
+    if t.name in {"web_search", "kb_search", "kb_search_messages"}:
+        return {"query": text}
+    if t.name == "list_directory":
+        return {"path": "."}
+    if t.name in _NOARG_TOOLS:
+        return {}
+    return None
+
+
 def invoke_tools(message: str, names: list[str]) -> str:
+    """离线直调：保留旧展示格式，失败统一走韧性层（可重试 + 结构化原因）。"""
     chunks: list[str] = []
     text = (message or "").strip()
     for t in resolve_tools(names):
-        try:
-            result: Any
-            if t.name == "calculator":
-                m = re.search(r"([\d\.\s\+\-\*\/\%\(\)]+)", text)
-                expr = m.group(1).strip() if m else "1+1"
-                result = t.invoke({"expression": expr})
-            elif t.name == "web_search":
-                result = t.invoke({"query": text})
-            elif t.name == "kb_search":
-                result = t.invoke({"query": text})
-            elif t.name == "kb_search_messages":
-                result = t.invoke({"query": text})
-            elif t.name == "list_directory":
-                result = t.invoke({"path": "."})
-            elif t.name == "list_allowed_directories":
-                result = t.invoke({})
-            elif t.name == "sqlite_tables":
-                result = t.invoke({})
-            elif t.name in {"sandbox_info", "bash_info", "powershell_info", "browser_info"}:
-                result = t.invoke({})
-            elif t.name in {
-                "get_current_time",
-                "get_system_info",
-                "db_stats",
-                "list_configured_models",
-                "get_my_location",
-            }:
-                result = t.invoke({})
-            else:
-                chunks.append(f"[{t.name}] 离线模式无法自动填参，请配置 LLM")
-                continue
-            chunks.append(f"[{t.name}] {result}")
-        except Exception as exc:  # noqa: BLE001
-            chunks.append(f"[{t.name}] 失败: {exc}")
+        args = _offline_args(t, text)
+        if args is None:
+            chunks.append(f"[{t.name}] 离线模式无法自动填参，请配置 LLM")
+            continue
+        result = execute_tool_call(
+            tool_name=t.name,
+            call_id="",
+            invoke=lambda tool=t, payload=args: tool.invoke(payload),
+        )
+        # 失败文本自带 `[name] 失败:` 前缀，避免重复拼一次。
+        chunks.append(result.content if result.failed else f"[{t.name}] {result.content}")
     return "\n".join(chunks) if chunks else "未执行任何工具"
 
 

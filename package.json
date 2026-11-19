@@ -11,7 +11,7 @@
     "app:dev": "tauri dev",
     "prepare:runtime": "powershell -ExecutionPolicy Bypass -File tools/build_backend.ps1",
     "prepare:backend": "powershell -ExecutionPolicy Bypass -File tools/build_backend.ps1",
-    "test:backend": ".venv/Scripts/python.exe -m pytest",
+    "test:backend": ".venv\\Scripts\\python.exe -m pytest",
     "test": "vitest run",
     "test:watch": "vitest"
   },

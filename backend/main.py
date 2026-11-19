@@ -31,6 +31,13 @@ from agents.cancellation import (  # pyright: ignore[reportImplicitRelativeImpor
     cancel_turn,
     clear_turn,
 )
+from agents.checkpoint import (  # pyright: ignore[reportImplicitRelativeImport]
+    checkpoint_enabled,
+    discard_turn,
+    latest_state,
+    list_resumable,
+    thread_id_for,
+)
 from agents.context import use_summary_cache  # pyright: ignore[reportImplicitRelativeImport]
 from agents.llm import model_error_hint  # pyright: ignore[reportImplicitRelativeImport]
 from agents.graphs.pipeline import run_pipeline  # pyright: ignore[reportImplicitRelativeImport]
@@ -49,6 +56,7 @@ from mcps.registry import (  # pyright: ignore[reportImplicitRelativeImport]
     tool_groups,
 )
 from mcps.bash_approval import decide, list_pending  # pyright: ignore[reportImplicitRelativeImport]
+from mcps.resilience import tool_scope  # pyright: ignore[reportImplicitRelativeImport]
 from mcps.sandbox import (  # pyright: ignore[reportImplicitRelativeImport]
     session_db_path,
     use_conversation_sandbox,
@@ -221,6 +229,153 @@ def cancel_chat(req: CancelChatRequest) -> dict[str, object]:
     return {"turn_id": req.turn_id, "accepted": cancel_turn(req.turn_id)}
 
 
+class ResumeTurnRequest(BaseModel):
+    turn_id: str = Field(min_length=1)
+    action: str = Field(default="continue", pattern="^(continue|discard)$")
+
+
+def _conversation_and_db(conversation_id: str) -> tuple[Any, Path]:
+    conversation = conversations_service.get_conversation(conversation_id)
+    if conversation is None:
+        raise HTTPException(status_code=404, detail="会话不存在")
+    root = conversations_service.workspace_root_for(conversation["workspace_dir"])
+    return conversation, session_db_path(root)
+
+
+@app.get(
+    "/api/conversations/{conversation_id}/resumable",
+    tags=["chat"],
+    summary="列出可恢复的轮次",
+)
+def resumable_turns(conversation_id: str) -> dict[str, object]:
+    """停止 / 崩溃后仍留有 checkpoint 的轮次；已产出答复的不列出。"""
+    if not checkpoint_enabled():
+        return {"turns": []}
+    _conversation, db_path = _conversation_and_db(conversation_id)
+    prefix = f"{conversation_id}:"
+    turns = [
+        {
+            "turn_id": item["thread_id"][len(prefix) :],
+            "created_at": item["created_at"],
+        }
+        for item in list_resumable(db_path)
+        if item["thread_id"].startswith(prefix)
+    ]
+    return {"turns": turns}
+
+
+@app.post(
+    "/api/conversations/{conversation_id}/resume",
+    tags=["chat"],
+    summary="恢复某轮生成（continue）或放弃现场（discard）",
+)
+async def resume_turn(
+    conversation_id: str, req: ResumeTurnRequest
+) -> dict[str, object]:
+    """``continue``：从最近 checkpoint 继续，只补写助手消息（用户消息已落库）。"""
+    conversation, db_path = _conversation_and_db(conversation_id)
+    thread = thread_id_for(conversation_id, req.turn_id)
+    if req.action == "discard":
+        discard_turn(db_path, thread)
+        return {"turn_id": req.turn_id, "discarded": True}
+    if not checkpoint_enabled():
+        raise HTTPException(
+            status_code=409, detail="断点续跑已关闭（CHATVEIN_CHECKPOINT=0）"
+        )
+    state = latest_state(db_path, thread)
+    if state is None:
+        raise HTTPException(
+            status_code=404, detail="没有可恢复的现场（可能已被放弃，或该轮从未开始）"
+        )
+    existing = str(state.get("reply") or "").strip()
+    if existing:
+        # 已经跑完的轮次不该出现在恢复入口；顺手清掉现场，返回既有答复。
+        discard_turn(db_path, thread)
+        return {"turn_id": req.turn_id, "reply": existing, "already_done": True}
+    if not str(state.get("message") or "").strip():
+        raise HTTPException(status_code=409, detail="现场缺少本轮用户消息，无法恢复")
+    heavy = await asyncio.to_thread(
+        _resume_turn_heavy, conversation, db_path, thread, req.turn_id, state
+    )
+    result = heavy["result"]
+    reply = str(result.get("reply") or "").strip()
+    if not reply:
+        raise HTTPException(
+            status_code=409, detail="恢复后仍未产出答复，请重试或放弃该轮"
+        )
+    role = state.get("role") or {}
+    route = str(result.get("difficulty") or "simple")
+    cid, _user_msg, assistant_msg = conversations_service.save_exchange(
+        conversation_id,
+        str(state.get("message") or ""),
+        reply,
+        used_llm=bool(result.get("used_llm", False)),
+        route=route,
+        turn_id=req.turn_id,
+        tokens=int(heavy["tokens"]),
+        duration_ms=int(heavy["duration_ms"]),
+        tool_trace=list(result.get("tool_trace") or []),
+        route_reason=result.get("route_reason"),
+        tool_plan=result.get("tool_plan_reason"),
+        actor_id=(role or {}).get("id"),
+        append_user=False,
+    )
+    discard_turn(db_path, thread)
+    return {
+        "reply": reply,
+        "turn_id": req.turn_id,
+        "route": route,
+        "resumed": True,
+        "tokens": int(heavy["tokens"]),
+        "duration_ms": int(heavy["duration_ms"]),
+        "assistant_message": assistant_msg,
+        "workspace": conversations_service.workspace_insight(cid),
+    }
+
+
+def _resume_turn_heavy(
+    conversation: dict[str, Any],
+    db_path: Path,
+    thread_id: str,
+    turn_id: str,
+    state: dict[str, Any],
+) -> dict[str, Any]:
+    """在会话沙箱里从 checkpoint 继续一轮（与 ``_run_chat_heavy`` 同线程约束）。"""
+    started = time.perf_counter()
+    result: dict[str, Any] = {}
+    tokens = 0
+    message = str(state.get("message") or "")
+    bind_turn(turn_id)
+    try:
+        with trace_service.recording(
+            message,
+            db_path=db_path,
+            turn_id=turn_id,
+            role=state.get("role"),
+        ):
+            with (
+                use_conversation_sandbox(conversation["workspace_dir"]),
+                use_summary_cache(db_path),
+                tool_scope(turn_id),
+            ):
+                if _usage_callback is not None:
+                    with _usage_callback() as usage_cb:
+                        result = run_pipeline(
+                            message, thread_id=thread_id, resume=True
+                        )
+                    tokens = _collect_tokens(usage_cb)
+                else:
+                    result = run_pipeline(message, thread_id=thread_id, resume=True)
+    finally:
+        clear_turn(turn_id)
+        bind_turn(None)
+    return {
+        "result": result,
+        "tokens": tokens,
+        "duration_ms": int((time.perf_counter() - started) * 1000),
+    }
+
+
 async def _chat_turn(req: ChatRequest, request: Request) -> dict[str, object]:
     prepared = conversations_service.open_for_chat(req.conversation_id, req.message)
     # 群组注册：req.group_members 非空时随消息透传补注册（合并去重）。
@@ -346,6 +501,7 @@ async def _chat_turn(req: ChatRequest, request: Request) -> dict[str, object]:
         turn_id,
         db_path,
         history,
+        thread_id_for(prepared["id"], turn_id),
     )
     result = heavy["result"]
     tokens = heavy["tokens"]
@@ -408,6 +564,7 @@ def _run_chat_heavy(
     turn_id: str,
     db_path: Path,
     history: list[dict[str, Any]] | None,
+    thread_id: str | None = None,
 ) -> dict[str, Any]:
     """长耗时部分：追踪 + 会话沙箱 + LangGraph 对话 + token 统计。
 
@@ -430,13 +587,24 @@ def _run_chat_heavy(
             with (
                 use_conversation_sandbox(prepared["workspace_dir"]),
                 use_summary_cache(db_path),
+                tool_scope(turn_id),
             ):
                 if _usage_callback is not None:
                     with _usage_callback() as usage_cb:
-                        result = run_pipeline(req.message, history=history, role=role_runtime)
+                        result = run_pipeline(
+                            req.message,
+                            history=history,
+                            role=role_runtime,
+                            thread_id=thread_id,
+                        )
                     tokens = _collect_tokens(usage_cb)
                 else:
-                    result = run_pipeline(req.message, history=history, role=role_runtime)
+                    result = run_pipeline(
+                        req.message,
+                        history=history,
+                        role=role_runtime,
+                        thread_id=thread_id,
+                    )
                     tokens = 0
     finally:
         clear_turn(turn_id)
