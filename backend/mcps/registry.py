@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import time
 from typing import Any
 
 from langchain_core.tools import BaseTool
@@ -13,6 +14,8 @@ from mcps.bash_runtime import (  # pyright: ignore[reportImplicitRelativeImport]
 )
 from mcps.browser_runtime import probe_browser  # pyright: ignore[reportImplicitRelativeImport]
 
+from . import permissions
+from .audit import record_event
 from .resilience import execute_tool_call
 from .tools import heuristic_hits, refresh_tool_groups
 
@@ -121,7 +124,9 @@ def resolve_tools(names: list[str]) -> list[BaseTool]:
     registry = _registry()
     if not names:
         return []
-    return [registry[n] for n in names if n in registry]
+    picked = [registry[n] for n in names if n in registry]
+    # 无参数条件的 deny 规则在这里就摘掉：模型连「有这个工具」都不该看到。
+    return [t for t in picked if permissions.static_deny(t.name) is None]
 
 
 def heuristic_tool_names(message: str) -> list[str]:
@@ -158,10 +163,34 @@ def invoke_tools(message: str, names: list[str]) -> str:
         if args is None:
             chunks.append(f"[{t.name}] 离线模式无法自动填参，请配置 LLM")
             continue
+        decision = permissions.check(t.name, args)
+        if decision.effect != "allow":
+            # 离线没有弹窗通道：ask 也只能按拒绝处理（安全优先，绝不静默放行）。
+            why = "需要人工确认" if decision.effect == "ask" else "被权限规则拒绝"
+            chunks.append(f"[{t.name}] 已跳过：{why}（{decision.reason}；离线模式无审批弹窗）")
+            record_event(
+                "tool.deny",
+                tool=t.name,
+                args=args,
+                result_code="TOOL_DENIED",
+                decision=decision.effect,
+                decision_by=decision.by,
+            )
+            continue
+        started = time.monotonic()
         result = execute_tool_call(
             tool_name=t.name,
             call_id="",
             invoke=lambda tool=t, payload=args: tool.invoke(payload),
+        )
+        record_event(
+            "tool.call",
+            tool=t.name,
+            args=args,
+            result_code=result.code or ("TOOL_FAILED" if result.failed else "TOOL_OK"),
+            duration_ms=int((time.monotonic() - started) * 1000),
+            decision="allow",
+            decision_by=decision.by,
         )
         # 失败文本自带 `[name] 失败:` 前缀，避免重复拼一次。
         chunks.append(result.content if result.failed else f"[{t.name}] {result.content}")

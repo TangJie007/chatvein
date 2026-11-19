@@ -42,6 +42,7 @@ description: ChatVein 桌面 Agent（Tauri 2 外壳 + React 19 + Python FastAPI 
 | 知识库 + 向量 | `<data>/kb.sqlite`（`kb_docs` / `kb_vec_map` / sqlite-vec） | `backend/mcps/tools/kb.py::kb_db_path` |
 | 会话工作区 | `<主空间>/<YYYYMMDD-HHMMSS-xxxxx>/`，含 `output/` `logs/` `runs/`（上传时另建 `uploads/`） | `backend/mcps/sandbox.py` |
 | 审计 | `<data>/audit.sqlite`（`audit_events`，只追加；`CHATVEIN_AUDIT_DB_PATH` 可覆盖） | `backend/mcps/audit.py` |
+| 权限策略 | `<data>/permissions.json`（用户可编辑；`CHATVEIN_PERMISSIONS_PATH` 可覆盖） | `backend/mcps/permissions.py` |
 | 会话消息 / 短期记忆 / 追踪 | `<工作区>/logs/session.sqlite`（`turn_traces` 表） | `conversations/session_store.py`、`trace/store.py` |
 | 长期记忆 | `<data>/memory.sqlite`（`memories` 表；`CHATVEIN_MEMORY_DB_PATH` 可覆盖） | `backend/memory/store.py::memory_db_path` |
 | 已安装技能 | `<data>/skills/<slug>/SKILL.md` + `manifest.json` | `backend/skills/local_store.py` |
@@ -149,6 +150,7 @@ description: ChatVein 桌面 Agent（Tauri 2 外壳 + React 19 + Python FastAPI 
 | `/api/embeddings` | `backend/embeddings/module.py` |
 | `/api/chats` | `backend/chats/module.py`（群组成员） |
 | `/api/memories` | `backend/memory/module.py`（长期记忆） |
+| `/api/permissions`、`/api/audit/*` | `backend/security/module.py`（权限配置 + 审计查询） |
 
 ## 4. 需求 → 落点
 
@@ -164,6 +166,8 @@ description: ChatVein 桌面 Agent（Tauri 2 外壳 + React 19 + Python FastAPI 
 | 工具审批 / 沙箱 / 越界访问 | `mcps/bash_policy.py`、`path_access.py`、`bash_approval.py`、`powershell_policy.py` | `mcps/registry.py`、`BashApproval.tsx` |
 | 执行加固（env / 限额 / 网络 / pip 源） | `mcps/sandbox_guard.py`（入口 `run_limited`） | `tools/sandbox.py`、`tools/bash.py`、`tools/powershell.py`、`graphs/common.py::always_on_tools` |
 | 审计留痕 | `mcps/audit.py::record_event` | `audit.sqlite`（`<data>/audit.sqlite`，只追加） |
+| 细粒度权限（路径 / URL / 只读 SQL） | `mcps/permissions.py`（`check` / `static_deny`） | `graphs/common.py::permission_gate_middleware`、`mcps/registry.py` |
+| 权限设置页 / 审计查询 | `backend/security/` | `src/api/permissions.ts`、`src/api/audit.ts`、`settings/PermissionSection.tsx` |
 | 模型接入 / 报错提示 / 用量 | `backend/models/service.py`、`agents/llm.py` | `src/api/models.ts`、`ModelsView`、`AddModelDialog`、`lib/tokens.ts` |
 | 角色配置 / 常驻技能 / 记忆 | `backend/roles/service.py::get_runtime`、`controller.py` | `api/roles.ts`、`RolesView`、`views/roles/*` |
 | 技能市场 / 安装 / 注入 | `backend/skills/service.py`、`local_store.py` | `SkillsView`、`SkillDetailDrawer`、`mcps/tools/skills.py` |
@@ -195,6 +199,7 @@ description: ChatVein 桌面 Agent（Tauri 2 外壳 + React 19 + Python FastAPI 
 11. UI 文案与注释保持中文风格；不要引入新的全局状态库（现有仅 localStorage + React context）。
 12. 文档可能滞后：`docs/项目目录总结.md` 仍把 `chats` 写成「预留」，实际已是群组表模块；**以代码为准**。
 13. **记忆召回只改 role prompt 副本**（`memory.recall_into_role`）：`role_runtime` 跨轮/跨会话缓存，原地注入会串台；抽取必须在消息落盘之后异步跑，且明细只在 `memory.sqlite`（主库不建表）。
+14. **权限只有一个拦截点**：`graphs/common.py::permission_gate_middleware`（`permissions.check` 顺序首命中，`ask` 复用 `approval.py`，`deny` 返回 `TOOL_DENIED`）；`resolve_tools` 只用 `static_deny` 摘「无参数条件」的工具。规则文件解析失败只能退回空策略 + 暴露 `error`，不得静默放行/拒绝。审计动作名 `tool.call` / `tool.deny` / `permission.config`，`decision_by` 写清来源。
 
 ## 6. 工程命令 / 文档
 

@@ -93,6 +93,7 @@ from knowledge.module import knowledge_router  # pyright: ignore[reportImplicitR
 from memory.module import memory_router, memory_service  # pyright: ignore[reportImplicitRelativeImport]
 from models.module import models_router, on_module_init  # pyright: ignore[reportImplicitRelativeImport]
 from roles.module import roles_router, on_module_init as on_roles_init  # pyright: ignore[reportImplicitRelativeImport]
+from security.module import security_router  # pyright: ignore[reportImplicitRelativeImport]
 from skills.module import skills_router  # pyright: ignore[reportImplicitRelativeImport]
 
 
@@ -166,6 +167,7 @@ app.include_router(trace_router)
 app.include_router(skills_router)
 app.include_router(mcp_servers_router)
 app.include_router(memory_router)
+app.include_router(security_router)
 
 
 class ChatRequest(BaseModel):

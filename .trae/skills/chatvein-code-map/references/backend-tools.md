@@ -11,7 +11,9 @@
 | 新增一个工具 | `tools/<module>.py` → `tools/__init__.py::build_tool_groups` → `prefs.ts` → `rolesStore.ts` |
 | 改工具分组 / 常驻工具 | `tools/__init__.py` + `agents/graphs/common.py::always_on_tools`（角色可用 `!工具名` 显式拒绝） |
 | 改执行加固（env / 限额 / 网络） | `sandbox_guard.py`（入口 `run_limited`） |
+| 改权限规则 / 三态判定 / 配额 | `permissions.py`（`check` / `static_deny` / `QuotaGuard`），配置 `<data>/permissions.json` |
 | 改审计 / 留痕 | `audit.py::record_event`（库 `<data>/audit.sqlite`，只追加） |
+| 改权限设置页 / 审计查询 | `backend/security/` + `settings/PermissionSection.tsx` |
 | 改按角色勾选哪些工具 | `registry.py::resolve_tools` / `heuristic_tool_names` |
 | 改离线直调执行 | `mcps/registry.py::invoke_tools` |
 | 改审批 / 命令策略 | `bash_policy.py` / `powershell_policy.py` / `bash_approval.py`；统一入口 `approval.py` + `approval_policy.py` |
@@ -27,6 +29,7 @@ backend/mcps/
 ├─ sandbox.py           会话工作区 + ContextVar + 执行 cwd
 ├─ sandbox_guard.py     执行加固：env 清洗 / 限额 / 网络软隔离 / pip 源（run_limited）
 ├─ audit.py             审计写入（audit.sqlite，只追加 + 脱敏）
+├─ permissions.py       权限规则（permissions.json）+ 三态判定 + 配额
 ├─ workspace.py         主空间解析
 ├─ path_access.py       路径解析 + 越界审批
 ├─ bash_policy.py       Bash 命令分类
@@ -57,7 +60,10 @@ backend/mcps/
 | `powershell_policy.py` | b | PowerShell 命令策略 | 分类/审批 |
 | `browser_runtime.py` | b | Playwright/浏览器运行时探测与安装 | 状态 |
 | `browser_session.py` | c | 浏览器会话持久化/恢复 | session |
-| `approval.py` / `approval_policy.py` | b | 统一 HITL：阻塞等待决定、确定性 request_id、超时=expired | `request_approval`、`decide`、`bind_tool_call`、`ApprovalNeed` |
+| `approval.py` / `approval_policy.py` | b | 统一 HITL：阻塞等待决定、确定性 request_id、超时=expired；`permission_approval` 把权限 `ask` 接到同一弹窗 | `request_approval`、`decide`、`bind_tool_call`、`ApprovalNeed` |
+| `sandbox_guard.py` | a | 执行加固：env 清洗 / 限额 / 网络软隔离 / pip 源；所有子进程入口 | `run_limited`、`sanitize_env`、`apply_network_env`、`pip_index_url` |
+| `audit.py` | e | 审计库（`audit.sqlite`）：只追加、写前脱敏、失败吞掉 | `record_event`、`list_events`、`redact`、`mask_secrets` |
+| `permissions.py` | b | 声明式权限规则 + 配额：顺序首命中、`strict` 未命中 → `ask`、静态拒绝预过滤、进程内计数 | `check`、`static_deny`、`consume_quota`、`config_view`、`save_config` |
 | `external/config.py` | b | 外部 server 配置模型、传输/审批枚举、凭据加解密、`external_enabled`/`sdk_available` | `ServerConfig`、`row_from_payload`、`split_command` |
 | `external/client.py` | a | 后台 loop + 每 server 常驻协程；stdio/SSE/HTTP 传输、list/call、连接关闭 | `Connection`、`McpError`、`check_url` |
 | `external/adapter.py` | b | `inputSchema`→Pydantic→`StructuredTool`（`mcp__<server>__<tool>`）、默认「问」审批 | `make_tool`、`ExternalToolError` |
@@ -109,7 +115,8 @@ backend/mcps/
 - **安全**：不要把 API Key、token、密钥写进工具输出或日志。
 - **子进程**：必须用 `sandbox_guard.run_limited`（不要裸 `subprocess.run`），env 从 `sanitize_env()` 起。宿主的 `*_KEY` / `*_TOKEN` / `CHATVEIN_*` 不进子进程；限额默认 CPU 120s / 内存 1GB / 文件 100MB（`CHATVEIN_SANDBOX_LIMITS=0` 回退）。
 - **网络**：默认禁用，靠 `runs/.chatvein-guard/sitecustomize.py`（前置 `PYTHONPATH`）+ 黑洞代理两层**软**隔离；脚本重绑 socket 即可绕过，别当安全边界。`CHATVEIN_SANDBOX_NETWORK=1` 放开。
-- **审计**：新增会执行外部动作的工具，调 `record_event(action, tool=..., result_code=..., duration_ms=...)` 留痕；审计只追加、写前脱敏、永不抛错。
+- **权限**：不要自己判断「能不能跑」。规则在 `permissions.py`（`<data>/permissions.json`，顺序首命中）；ReAct 走 `permission_gate_middleware`，离线直调在 `registry.invoke_tools` 里 `check()`。工具本身只负责执行。
+- **审计**：新增会执行外部动作的工具，调 `record_event(action, tool=..., result_code=..., duration_ms=...)` 留痕；审计只追加、写前脱敏、永不抛错。工具调用由网关统一写 `tool.call` / `tool.deny`，工具内不必重复写。
 
 ## 5. 运行时与环境变量
 
@@ -125,5 +132,7 @@ backend/mcps/
 | `CHATVEIN_SANDBOX_ENV_PASSTHROUGH` | 允许透传的敏感变量名（逗号分隔） | `mcps/sandbox_guard.py` |
 | `CHATVEIN_PIP_INDEX_URL` | pip 源（只接受 http/https） | `mcps/sandbox_guard.py::pip_index_url` |
 | `CHATVEIN_AUDIT` / `CHATVEIN_AUDIT_DB_PATH` | 审计开关 / 库路径 | `mcps/audit.py` |
+| `CHATVEIN_PERMISSION_MODE` | `strict` / `normal`，环境变量优先于文件配置 | `mcps/permissions.py::mode` |
+| `CHATVEIN_PERMISSIONS_PATH` | 权限策略文件路径覆盖 | `mcps/permissions.py::permissions_path` |
 
 工具运行时状态在 `GET /api/mcps/catalog` 返回（shell / powershell / browser 是否可用），设置页据此置灰。

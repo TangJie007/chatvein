@@ -98,6 +98,8 @@
 
 ## 3.2 细粒度权限 + 审计日志
 
+> **状态：已实现（2026-11-20）**。规则 DSL 落成扁平字段（路径 / URL / 只读 SQL），`deny_tools` 不落库（继续用角色 `tools` 的 `!` / `-` 前缀），审计沿用 `audit.sqlite`，配额为进程内计数。实现细节与偏差见文末「实现纪要」「与评审稿的差异」。
+
 ### 现状（证据）
 
 - 权限是角色级粗粒度白名单（`tools` 分组 id / 工具名），`registry.resolve_tools/invoke_tools/catalog` 无工具级鉴权；无配额、无安全审计（trace 是功能追踪，非审计）。
@@ -155,6 +157,42 @@
 - 配「禁止 write_file 到 output 外」→ 越界调用被拒且写审计；allow/ask/deny 三态正确。
 - 审计日志无 token/key 明文；按工具查询可回放参数。
 - 关闭权限/审计后行为与当前一致。
+
+### 实现纪要
+
+| 文件 | 等级 | 实际改动 |
+|---|---|---|
+| `backend/mcps/permissions.py` | b | 新建：`PermissionRule` / `PermissionConfig`（`mode` + `rules` + `quota`）、顺序首命中判定、`strict` 未命中 → `ask`、`static_deny` 预过滤、`QuotaGuard`、`config_view` / `save_config`（校验 + 原子写）、mtime+size 缓存、坏配置审计 |
+| `backend/mcps/audit.py` | e | `list_events` 增加 `decision` 过滤；沿用 3.1 的 `audit_events` 表（`decision` / `decision_by` 已存在，无新库新表） |
+| `backend/agents/graphs/common.py` | a | `permission_gate_middleware` 置于最外层；`_denied_tool_message`（`TOOL_DENIED` 结构化结果 + `tool.deny`）；`_audit_tool_call`（成功/失败统一 `tool.call`） |
+| `backend/mcps/registry.py` | a | `resolve_tools` 用 `static_deny` 摘掉无参数条件的 deny 工具；`invoke_tools` 离线路径过 `check()` + 审计（`ask` 按拒绝处理） |
+| `backend/mcps/approval_policy.py` | b | `permission_approval(tool, args, reason)`，`kind="permission"`，复用统一审批弹窗 |
+| `backend/security/{dto,service,controller,module}.py` | b | `GET/PUT /api/permissions`、`GET /api/audit/events`、`GET /api/audit/status`；`security_router` 前缀 `/api` |
+| `backend/main.py` | a | `include_router(security_router)` |
+| `backend/tests/test_permissions_audit.py` | — | 23 项：规则匹配 / 三态 / glob / 路径与 URL 条件 AND / 静态拒绝 / `resolve_tools` / 两种配额 / 配置往返与坏配置 / 网关 deny+allow 审计 / 审批形状 / REST 往返 / 审计过滤与脱敏 / 关闭审计 |
+| `src/api/permissions.ts`、`src/api/audit.ts`、`src/api/index.ts` | d | 新接口封装 + 桶导出 |
+| `src/components/settings/PermissionSection.tsx`、`src/components/views/SettingsView.tsx` | c | 「权限与审计」分区：模式切换、两个配额、规则 JSON + 4 个模板、规则摘要、审计筛选（工具 / 判定）与只读表格、配置错误横幅 |
+
+行为要点：
+
+- **判定顺序**：`permissions.json` 的 `rules` 按列表顺序取第一条命中；未命中时 `strict` → `ask`、`normal` → `allow`（空策略 = 3.2 之前的老行为，删文件即可回滚）。
+- **拦截位置**：ReAct 中间件最外层，先于「同参去重 / 熔断」。否则模型看到的是「重复调用」而不是「权限被拒绝」，会无意义重试。
+- **`ask`**：复用 `approval.py::request_approval`，审批 id 仍是 `(turn_id, tool_call_id)` 确定性哈希，续跑复用历史决定；用户拒绝 / 超时归为 deny 并写 `tool.deny`。
+- **`deny`**：返回 `ToolMessage` + `tool_result.code=TOOL_DENIED`，正文提示「换工具/参数或请用户改规则」。
+- **配额**：`(会话, 工具)` 与本轮总调用两个上限，默认 0（不限），进程内计数、重启清零。
+- **配置容错**：解析失败退回空配置 + normal，`/api/permissions` 暴露 `error`，并按文件版本只写一条 `permission.config` 审计；判定函数自身异常兜底 `allow`（权限设施坏了不能锁死应用）。
+- **开关**：`CHATVEIN_PERMISSION_MODE=strict|normal`（环境变量优先于文件）、`CHATVEIN_PERMISSIONS_PATH`、`CHATVEIN_AUDIT=0`。
+
+与评审稿的差异：
+
+1. **规则 DSL 是扁平的，不是 `(scope, tool, conditions)` 嵌套**：`effect` + `tool` 通配 + `path_prefix` / `path_not_prefix` / `url_host_in` / `read_only`（同时给出即 AND）；OR 语义拆多条规则。评审稿的「外部 MCP 字段白名单」未实现——字段级约束要等真实 server schema 稳定，先靠 `url_host_in` + `tool` 通配覆盖。
+2. **`deny_tools` 不落库、没有 v15 迁移**：角色 `tools` 里的 `!` / `-` 前缀（3.1 起）已能表达显式拒绝，参数级 / 路径级拒绝交给 `permissions.json`；策略不进主库，唯一事实来源就是那个 JSON 文件。
+3. **审计不写「判定 + 结果」两条**：`allow` 只写一条 `tool.call`（带 `result_code` + `duration_ms`），`deny` / 用户拒绝 / 超时写一条 `tool.deny`，`decision_by` 记录是规则、模式还是用户。事件数减半，回放信息不丢。
+4. **配额默认关闭且进程内计数**：这是运营级「防跑飞」阀，不是计费；落库会引入清理与漂移问题，重启清零可接受。
+5. **离线直调 `ask` 按拒绝**：`invoke_tools` 没有弹窗通道，`ask` 会跳过并说明原因（安全优先，绝不静默放行）。
+6. **权限设施异常兜底 `allow`**：`check()` 抛异常返回 allow + 原因（`by="fallback"`），`static_deny` 异常返回 `None`；但配置语法错误不静默（见上）。
+7. **没有审计「回放 UI」**：接口返回脱敏后的 `args`，设置页只读表格 + 工具/判定过滤。播放器对安全排查没有增量价值。
+8. **前端只做 JSON 编辑 + 模板，没做可视化勾选**：条件组合空间用表单表达会失真；模板 + 摘要列表比半吊子表单可靠。
 
 ---
 

@@ -183,6 +183,7 @@ def list_events(
     *,
     tool: str | None = None,
     action: str | None = None,
+    decision: str | None = None,
     since: str | None = None,
     limit: int = 100,
 ) -> list[dict[str, Any]]:
@@ -200,6 +201,9 @@ def list_events(
         if action:
             clauses.append("action = ?")
             params.append(str(action))
+        if decision:
+            clauses.append("decision = ?")
+            params.append(str(decision))
         if since:
             clauses.append("ts >= ?")
             params.append(str(since))

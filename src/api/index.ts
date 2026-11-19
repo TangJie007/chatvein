@@ -11,3 +11,5 @@ export * from "./skills";
 export * from "./roles";
 export * from "./knowledge";
 export * from "./memories";
+export * from "./permissions";
+export * from "./audit";

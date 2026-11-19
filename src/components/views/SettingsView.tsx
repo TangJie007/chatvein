@@ -1,4 +1,4 @@
-import { Brain, Database, Plug, Settings2, type LucideIcon } from "lucide-react";
+import { Brain, Database, Plug, Settings2, ShieldCheck, type LucideIcon } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { NavLink, Navigate, useParams } from "react-router-dom";
 import { dbBackup, dbInfo, dbVacuum, type DbInfo } from "../../api";
@@ -8,6 +8,7 @@ import { AppSection } from "../settings/AppSection";
 import { McpExternalSection } from "../settings/McpExternalSection";
 import { MemorySection } from "../settings/MemorySection";
 import { McpSection } from "../settings/McpSection";
+import { PermissionSection } from "../settings/PermissionSection";
 import { SqliteSection, formatBytes } from "../settings/SqliteSection";
 import {
   hydrateMcpServers,
@@ -17,9 +18,9 @@ import {
   type McpServer,
 } from "../settings/prefs";
 
-type SectionKey = "app" | "memory" | "mcp" | "sqlite";
+type SectionKey = "app" | "memory" | "security" | "mcp" | "sqlite";
 
-const SECTION_KEYS = new Set<SectionKey>(["app", "memory", "mcp", "sqlite"]);
+const SECTION_KEYS = new Set<SectionKey>(["app", "memory", "security", "mcp", "sqlite"]);
 
 function isSectionKey(value: string | undefined): value is SectionKey {
   return !!value && SECTION_KEYS.has(value as SectionKey);
@@ -33,6 +34,7 @@ const SECTIONS: {
 }[] = [
   { key: "app", label: "应用设置", icon: Settings2, hint: "工作区与启动" },
   { key: "memory", label: "长期记忆", icon: Brain, hint: "偏好与长期事实" },
+  { key: "security", label: "权限与审计", icon: ShieldCheck, hint: "规则、配额、执行留痕" },
   { key: "mcp", label: "内置 MCP", icon: Plug, hint: "随应用分发的协议服务" },
   { key: "sqlite", label: "SQLite", icon: Database, hint: "本地库连接与维护" },
 ];
@@ -201,6 +203,7 @@ function SettingsBody({ section }: { section: SectionKey }) {
           <div className="flex flex-1 flex-col gap-4">
             {section === "app" && <AppSection prefs={prefs} onSet={setPref} />}
             {section === "memory" && <MemorySection />}
+            {section === "security" && <PermissionSection />}
             {section === "mcp" && (
               <>
                 <McpSection servers={servers} />
@@ -237,6 +240,7 @@ const SUBTITLE: Record<
 > = {
   app: () => "主空间与启动行为 · 工作区立即生效 · 全部保存在本机",
   memory: () => "自动抽取偏好与长期事实 · 默认确认后生效 · 保存在本机 memory.sqlite",
+  security: () => "声明式规则控制工具放行 / 确认 / 拒绝 · 配额防跑飞 · 留痕在 audit.sqlite",
   mcp: ({ activeCount, total, toolCount }) =>
     `${activeCount}/${total} 已启用 · ${toolCount} 个工具可用 · 数据全部存放在本机`,
   sqlite: ({ info, totalRows }) =>

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+import time
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FuturesTimeout
 from typing import Any
@@ -19,7 +20,11 @@ from langchain.agents.middleware import (
 from langchain_core.messages import ToolMessage
 
 from agents.cancellation import TurnCancelled, raise_if_cancelled  # pyright: ignore[reportImplicitRelativeImport]
-from mcps.approval import bind_tool_call  # pyright: ignore[reportImplicitRelativeImport]
+from mcps.approval import bind_tool_call, request_approval  # pyright: ignore[reportImplicitRelativeImport]
+from mcps.approval_policy import permission_approval  # pyright: ignore[reportImplicitRelativeImport]
+from mcps import permissions  # pyright: ignore[reportImplicitRelativeImport]
+from mcps.audit import record_event  # pyright: ignore[reportImplicitRelativeImport]
+from mcps.tool_result import TOOL_DENIED, ToolResult  # pyright: ignore[reportImplicitRelativeImport]
 from agents.streaming import (  # pyright: ignore[reportImplicitRelativeImport]
     emit_token,
     emit_tool,
@@ -228,6 +233,120 @@ def resilient_tool_middleware() -> list[Any]:
     return [_resilient]
 
 
+def _denied_tool_message(
+    name: str,
+    args: Any,
+    call_id: str,
+    decision: permissions.Decision,
+    started: float,
+) -> ToolMessage:
+    """权限拒绝的统一出口：结构化结果 + 审计 + 给模型的人话（都属于同一事实）。"""
+    duration = int((time.monotonic() - started) * 1000)
+    text = (
+        f"[{name}] 已拒绝：{decision.reason}。"
+        "请换用允许的工具或参数，或请用户在设置里调整权限规则。"
+    )
+    record_event(
+        "tool.call",
+        tool=name,
+        args=args,
+        result_code=TOOL_DENIED,
+        duration_ms=duration,
+        decision="deny",
+        decision_by=decision.by,
+    )
+    return ToolMessage(
+        content=text,
+        tool_call_id=call_id,
+        status="error",
+        additional_kwargs={
+            "tool_result": ToolResult(
+                ok=False,
+                content=text,
+                code=TOOL_DENIED,
+                error_kind="denied",
+                tool=name,
+                duration_ms=duration,
+            ).to_dict()
+        },
+    )
+
+
+def _audit_tool_call(
+    name: str,
+    args: Any,
+    decision: permissions.Decision,
+    output: Any,
+    started: float,
+) -> None:
+    """全量工具调用审计：成功/失败都留痕（``code`` 来自韧性层的 ``tool_result``）。"""
+    payload: dict[str, Any] = {}
+    if isinstance(output, ToolMessage):
+        raw = (output.additional_kwargs or {}).get("tool_result")
+        if isinstance(raw, dict):
+            payload = raw
+    code = str(payload.get("code") or "")
+    if not code:
+        code = "TOOL_FAILED" if payload.get("ok") is False else "TOOL_OK"
+    record_event(
+        "tool.call",
+        tool=name,
+        args=args,
+        result_code=code,
+        duration_ms=int((time.monotonic() - started) * 1000),
+        decision="allow",
+        decision_by=decision.by,
+    )
+
+
+def permission_gate_middleware() -> list[Any]:
+    """权限网关 + 工具审计：每次调用都过规则（allow / ask / deny 三态）。
+
+    放最外层：``deny`` 必须在「同参去重」「熔断」之前生效，否则模型看到的会是
+    「重复调用」而不是「权限被拒绝」，容易触发无意义的重试。
+    ``ask`` 复用 ``mcps/approval.py::request_approval``，不新增弹窗通道。
+    """
+
+    @wrap_tool_call(name="PermissionGate")
+    def _gate(request: Any, handler: Any) -> Any:
+        name, args, call_id = _tool_call_fields(request.tool_call)
+        started = time.monotonic()
+        payload = args if isinstance(args, dict) else {}
+        decision = permissions.check(name, payload)
+
+        if decision.effect == "deny":
+            record_event(
+                "tool.deny",
+                tool=name,
+                args=payload,
+                result_code=TOOL_DENIED,
+                decision="deny",
+                decision_by=decision.by,
+            )
+            return _denied_tool_message(name, payload, call_id, decision, started)
+
+        if decision.effect == "ask":
+            with bind_tool_call(call_id):
+                verdict = request_approval(permission_approval(name, payload, decision.reason))
+            if verdict != "allow":
+                label = "超时未确认" if verdict == "timeout" else "已拒绝"
+                refused = permissions.Decision(
+                    "deny", f"{decision.reason}；用户{label}", f"user:{verdict}"
+                )
+                return _denied_tool_message(name, payload, call_id, refused, started)
+            decision = permissions.Decision("allow", decision.reason, "user:allow")
+
+        over_quota = permissions.consume_quota(name)
+        if over_quota is not None:
+            return _denied_tool_message(name, payload, call_id, over_quota, started)
+
+        output = handler(request)
+        _audit_tool_call(name, payload, decision, output, started)
+        return output
+
+    return [_gate]
+
+
 # create_agent 里**每个 middleware 钩子都单独占一个图步**，不是「模型+工具各 1 步」。
 # 实测一轮（一次模型调用 + 一次工具执行）= 8 步：
 #   3 × before_model（取消守卫 / 限流复位 / 模型次数上限）
@@ -394,6 +513,7 @@ def build_react_graph(
     - 供应商限流：退避重试若干次，仍失败由上层翻成可读提示
     """
     middleware: list[Any] = [
+        *permission_gate_middleware(),
         same_arg_tool_guard(),
         *resilient_tool_middleware(),
         *cancellation_guards(),
