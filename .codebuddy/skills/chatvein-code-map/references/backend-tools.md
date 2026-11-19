@@ -1,48 +1,79 @@
 # 工具与运行时地图（`backend/mcps/`）
 
+> 等级含义见 `../SKILL.md`「1.2 重要性等级 a–f」。路径相对仓库根。
 > 这一层负责「Agent 能做什么」。改工具先想清楚：是新增工具、挂分组、改权限，还是改执行运行时？
 > 工具模块协议：`TOOLS: tuple[BaseTool, ...]` + `heuristic(text) -> list[str]`（关键词命中，供无模型/预筛使用）。
 
+## 0. 一分钟导航
+
+| 我要… | 去这里 |
+|---|---|
+| 新增一个工具 | `tools/<module>.py` → `tools/__init__.py::build_tool_groups` → `prefs.ts` → `rolesStore.ts` |
+| 改工具分组 / 常驻工具 | `tools/__init__.py` + `agents/graphs/common.py::ALWAYS_ON_TOOLS` |
+| 改按角色勾选哪些工具 | `registry.py::resolve_tools` / `heuristic_tool_names` |
+| 改离线兜底执行 | `service.py::run_tools` → `registry.invoke_tools` |
+| 改审批 / 命令策略 | `bash_policy.py` / `powershell_policy.py` / `bash_approval.py` |
+| 改文件越界判定 | `path_access.py` |
+| 改工作区目录结构 | `sandbox.py`（`output/` `logs/` `runs/`，上传时才有 `uploads/`） |
+| 改主空间位置 | `workspace.py` |
+
+```text
+backend/mcps/
+├─ __init__.py          对外导出（resolve_tools / run_tools / tool_catalog …）
+├─ registry.py          注册表、分组、解析、目录元数据、离线直调
+├─ service.py           离线/直调入口
+├─ sandbox.py           会话工作区 + ContextVar + 执行 cwd
+├─ workspace.py         主空间解析
+├─ path_access.py       路径解析 + 越界审批
+├─ bash_policy.py       Bash 命令分类
+├─ bash_approval.py     待审批队列
+├─ bash_runtime.py / bash_download.py
+├─ powershell_policy.py
+├─ browser_runtime.py / browser_session.py
+├─ ipwhois_runtime.py
+└─ tools/               16 个工具模块（core / fs / web / sqlite / kb / sandbox / ip / ocr / pdf / skills / docx / pptx / excel / bash / powershell / browser）
+```
+
 ## 1. 装配与执行
 
-| 文件 | 职责 | 关键符号 |
-|---|---|---|
-| `__init__.py` | 对外暴露注册/解析/执行 | `resolve_tools`、`run_tools`、`tool_catalog`、`tool_catalog_text`、`tool_groups`、`shell_runtime`、`suggest_tools_route` |
-| `registry.py` | 工具注册表、分组定义、按角色勾选解析、目录元数据、离线直调 | `all_tools`、`tool_groups`、`tool_catalog`、`tool_catalog_text`、`resolve_tools`、`heuristic_tool_names`、`invoke_tools`（自动填参、异常转文本）、`suggest_tools_route` |
-| `tools/__init__.py` | **分组装配**：把各模块 `TOOLS` 汇成 `core` / `mcp-*` 分组；运行时可用才加 `mcp-bash` / `mcp-powershell` / `mcp-browser` | `build_tool_groups` |
-| `service.py` | 离线/直调入口：按工具名自动填参执行（在线由 Agent 图直接调工具） | `run_tools(message, names)` → `registry.invoke_tools` |
-| `sandbox.py` | 会话工作区布局 + ContextVar + 执行 cwd；`output/` `logs/` `runs/` `uploads/` | `use_conversation_sandbox`、`current_sandbox`、`conversation_root` |
-| `workspace.py` | 主空间解析：设置文件 > `CHATVEIN_WORKSPACE` > `<data>/workspace` | `workspace_root`、`set/reset` |
-| `path_access.py` | 路径解析与越界访问审批（工作区内直接放行，工作区外人工确认） | `resolve_path`、越界审批 |
-| `bash_policy.py` | Bash 命令分类：只读放行 / 需审批 / 直接拒绝 | `classify`、policy 规则 |
-| `bash_approval.py` | 待审批队列（`/api/bash/pending` 数据源） | `pending`、`approve`、`deny` |
-| `bash_runtime.py` | Git Bash 探测、持久会话、cwd 管理 | `probe`、session |
-| `bash_download.py` | 下载类命令执行/超时 | 下载封装 |
-| `powershell_policy.py` | PowerShell 命令策略 | 分类/审批 |
-| `browser_runtime.py` | Playwright/浏览器运行时探测与安装 | 状态 |
-| `browser_session.py` | 浏览器会话持久化/恢复 | session |
-| `ipwhois_runtime.py` | IP 归属数据加载 | 数据源 |
+| 文件 | 等级 | 职责 | 关键符号 |
+|---|---|---|---|
+| `__init__.py` | a | 对外暴露注册/解析/执行 | `resolve_tools`、`run_tools`、`tool_catalog`、`tool_catalog_text`、`tool_groups`、`shell_runtime`、`suggest_tools_route` |
+| `registry.py` | a | 工具注册表、分组定义、按角色勾选解析、目录元数据、离线直调 | `all_tools`、`tool_groups`、`tool_catalog`、`tool_catalog_text`、`resolve_tools`、`heuristic_tool_names`、`invoke_tools`（自动填参、异常转文本）、`suggest_tools_route` |
+| `tools/__init__.py` | a | **分组装配**：把各模块 `TOOLS` 汇成 `core` / `mcp-*` 分组；运行时可用才加 `mcp-bash` / `mcp-powershell` / `mcp-browser` | `build_tool_groups` |
+| `service.py` | b | 离线/直调入口：按工具名自动填参执行（在线由 Agent 图直接调工具） | `run_tools(message, names)` → `registry.invoke_tools` |
+| `sandbox.py` | a | 会话工作区布局 + ContextVar + 执行 cwd；`output/` `logs/` `runs/` `uploads/` | `use_conversation_sandbox`、`current_sandbox`、`conversation_root` |
+| `workspace.py` | b | 主空间解析：设置文件 > `CHATVEIN_WORKSPACE` > `<data>/workspace` | `workspace_root`、`set/reset` |
+| `path_access.py` | a | 路径解析与越界访问审批（工作区内直接放行，工作区外人工确认） | `resolve_path`、越界审批 |
+| `bash_policy.py` | a | Bash 命令分类：只读放行 / 需审批 / 直接拒绝 | `classify`、policy 规则 |
+| `bash_approval.py` | b | 待审批队列（`/api/bash/pending` 数据源） | `pending`、`approve`、`deny` |
+| `bash_runtime.py` | b | Git Bash 探测、持久会话、cwd 管理 | `probe`、session |
+| `bash_download.py` | c | 下载类命令执行/超时 | 下载封装 |
+| `powershell_policy.py` | b | PowerShell 命令策略 | 分类/审批 |
+| `browser_runtime.py` | b | Playwright/浏览器运行时探测与安装 | 状态 |
+| `browser_session.py` | c | 浏览器会话持久化/恢复 | session |
+| `ipwhois_runtime.py` | c | IP 归属数据加载 | 数据源 |
 
 ## 2. 工具模块（`backend/mcps/tools/`）
 
-| 文件 | 分组 id | 能力 | 依赖/注意 |
-|---|---|---|---|
-| `core.py` | `core` | 当前时间、时区换算、计算器、系统信息、模型列表 | 无外部依赖 |
-| `fs.py` | `mcp-fs` | 读/写/编辑/列目录/搜索文件/打开位置/删除 | 必须经 `path_access` |
-| `web.py` | `mcp-web` | `web_search`、`web_fetch` | keyless 抓取；网络失败要人话 |
-| `sqlite_tools.py` | `mcp-sqlite` | SQLite schema/只读查询 | 只读、结果截断 |
-| `kb.py` | `mcp-kb` | 知识库增/查/列/删 | 与 `knowledge` 服务共用 `kb.sqlite` |
-| `sandbox.py` | `mcp-codesandbox` | `run_python` 代码沙箱 | 超时/输出截断；工作区 cwd |
-| `ip.py` | `mcp-ip` | IP 地理/ASN | 依赖 `ipwhois_runtime` |
-| `ocr.py` | `mcp-ocr` | 图片 OCR | 本地 OCR 依赖可选 |
-| `pdf.py` | `mcp-pdf` | PDF 信息/读取/合并/拆分/生成/加解密 | pypdf 等 |
-| `skills.py` | `mcp-skills` | `load_skill` 读取完整 `SKILL.md` | **常驻工具**（`ALWAYS_ON_TOOLS`） |
-| `word_tools.py` | `mcp-docx` | Word 生成/编辑 | python-docx |
-| `pptx_tools.py` | `mcp-pptx` | PPT 生成/读取 | python-pptx |
-| `excel_tools.py` | `mcp-excel` | Excel 读写/统计 | openpyxl |
-| `bash.py` | `mcp-bash`（运行时可用才注册） | 持久 Git Bash 执行 | **默认需审批**；`bash_policy` 分类 |
-| `powershell.py` | `mcp-powershell`（运行时可用才注册） | PowerShell 执行 | 默认需审批；`powershell_policy` |
-| `browser.py` | `mcp-browser`（运行时可用才注册） | 浏览器打开/点击/输入/截图 | Playwright 探测 |
+| 文件 | 等级 | 分组 id | 能力 | 依赖/注意 |
+|---|---|---|---|---|
+| `core.py` | b | `core` | 当前时间、时区换算、计算器、系统信息、模型列表 | 无外部依赖 |
+| `fs.py` | a | `mcp-fs` | 读/写/编辑/列目录/搜索文件/打开位置/删除 | 必须经 `path_access` |
+| `web.py` | b | `mcp-web` | `web_search`、`web_fetch` | keyless 抓取；网络失败要人话 |
+| `sqlite_tools.py` | c | `mcp-sqlite` | SQLite schema/只读查询 | 只读、结果截断 |
+| `kb.py` | b | `mcp-kb` | 知识库增/查/列/删 | 与 `knowledge` 服务共用 `kb.sqlite` |
+| `sandbox.py` | b | `mcp-codesandbox` | `run_python` 代码沙箱 | 超时/输出截断；工作区 cwd |
+| `ip.py` | c | `mcp-ip` | IP 地理/ASN | 依赖 `ipwhois_runtime` |
+| `ocr.py` | c | `mcp-ocr` | 图片 OCR | 本地 OCR 依赖可选 |
+| `pdf.py` | c | `mcp-pdf` | PDF 信息/读取/合并/拆分/生成/加解密 | pypdf 等 |
+| `skills.py` | b | `mcp-skills` | `load_skill` 读取完整 `SKILL.md` | **常驻工具**（`ALWAYS_ON_TOOLS`） |
+| `word_tools.py` | c | `mcp-docx` | Word 生成/编辑 | python-docx |
+| `pptx_tools.py` | c | `mcp-pptx` | PPT 生成/读取 | python-pptx |
+| `excel_tools.py` | c | `mcp-excel` | Excel 读写/统计 | openpyxl |
+| `bash.py` | a | `mcp-bash`（运行时可用才注册） | 持久 Git Bash 执行 | **默认需审批**；`bash_policy` 分类 |
+| `powershell.py` | b | `mcp-powershell`（运行时可用才注册） | PowerShell 执行 | 默认需审批；`powershell_policy` |
+| `browser.py` | b | `mcp-browser`（运行时可用才注册） | 浏览器打开/点击/输入/截图 | Playwright 探测 |
 
 > 工具名以各文件 `TOOLS` 为准；新增/改名后要同步设置页与角色勾选展示，不要只改后端。
 

@@ -1,12 +1,23 @@
 ---
 name: chatvein-code-map
-description: "ChatVein 桌面 Agent（Tauri 2 + React + Python FastAPI + LangGraph）代码地图：按需求关键词精确定位前端、后端、工具、Tauri 文件与符号后再改代码。触发词：定位文件、ChatVein、会话/群组/角色/技能/知识库/模型、Agent 图、工具选择、MCP、追踪、工作区、启动打包。"
+description: ChatVein 桌面 Agent（Tauri 2 外壳 + React 19 + Python FastAPI + LangGraph）的代码地图。为前端、后端、工具运行时、Tauri 外壳的每个源文件提供一句话职责、a–f 重要性等级、关联文件，并给出「需求 → 应先改哪个文件」的定位表与六条主干链路。当需要在 chatvein 仓库定位功能实现、评估改动影响面、新增页面 / 接口 / 工具 / 数据表 / 发布流程，或排查 前端组件 ↔ api 封装 ↔ FastAPI 控制器 ↔ service/repository ↔ SQLite 的跨层调用链时，使用本技能。
 ---
 
 # ChatVein 代码地图
 
 > 目标：**先定位、再读 30~80 行、最后改**。不要全库通读。
 > 所有路径相对仓库根 `chatvein/`。
+
+## 何时使用 / 不适用
+
+**使用**：
+
+- 接到需求但不确定改哪个层（页面 / api 封装 / controller / service / 工具 / 外壳）。
+- 评估「改这里会波及谁」，确定联动文件与回归范围。
+- 新增页面、接口、工具、技能形态、数据表、打包/更新通道。
+- 排查跨层调用链，确认某个类型或字段的归属方。
+
+**不适用**：单纯跑构建、装依赖、看业务背景——见 §6 命令与 `docs/`；本技能只负责定位。
 
 ## 0. 30 秒用法
 
@@ -37,6 +48,19 @@ description: "ChatVein 桌面 Agent（Tauri 2 + React + Python FastAPI + LangGra
 
 `<data>` = `CHATVEIN_DATA_DIR` > 仓库 `backend/data/`（见 `db.py` / `workspace.py` 的解析优先级）。
 主空间 = 用户自选（`workspace.json`）> `CHATVEIN_WORKSPACE` > `<data>/workspace`。
+
+### 1.2 重要性等级 a–f
+
+等级 = **理解与改动成本 × 影响半径**，不是业务优先级。
+
+| 等级 | 含义 | 典型文件 | 改动要求 |
+|---|---|---|---|
+| **a** | 全局骨架：进程入口、请求底座、会话引擎、Agent 装配、工具注册表、数据模型、外壳监督 | `backend/main.py::_chat_turn`、`backend/agents/graphs/common.py`、`backend/mcps/registry.py`、`backend/db.py`、`src/api/client.ts`、`src/App.tsx`、`src/components/chat/useChatSession.ts`、`src-tauri/src/backend.rs` | 必读上下文 + 全链路回归 |
+| **b** | 主干业务：单一业务域的主 service / 主页面 / 主组件 | `conversations/service.py`、`agents/service.py`、`agents/router.py`、`roles/service.py`、`skills/service.py`、`knowledge/service.py`、`views/ChatView.tsx`、`chat/ChatPanel.tsx`、`lib/groupsStore.ts` | 读同目录全部文件 + 对端 |
+| **c** | 模块内实现：控制器、DTO、子组件、单个 composable / 小组件 | `*/controller.py`、`views/roles/*`、`group/*`、`knowledge/*`、`skills/*`、`layout/*` | 局部影响，注意入参与契约 |
+| **d** | 契约层：前端 api 封装、后端 DTO、跨层类型 | `src/api/*.ts`（除 `client.ts`）、`src/types/view.ts`、`backend/*/entity/dto.py` | 单侧改动必须双向同步，否则字段静默丢失 |
+| **e** | 支撑设施：工具函数、UI 基础组件、样式、脚本 | `src/lib/{cn,errors,creationSteps}.ts`、`src/components/ui/*`、`src/styles.css`、`tools/*.ps1` | 低频但影响面广，先全局搜引用 |
+| **f** | 生成物与样例：构建产物、依赖、冻结运行时 | `src-tauri/target/`、`backend-runtime/`、`dist/`、`node_modules/`、`.venv/` | 不手改，改源后重新生成 |
 
 ## 2. 六条主线链路（改哪里先看链）
 
@@ -186,12 +210,12 @@ description: "ChatVein 桌面 Agent（Tauri 2 + React + Python FastAPI + LangGra
 
 ## 7. 参考索引（按域打开）
 
-| 文件 | 内容 | 何时打开 |
-|---|---|---|
-| `references/frontend.md` | `src/` 全量文件职责、api 映射、组件依赖、前端约定 | 改页面/组件/请求/状态 |
-| `references/backend-core.md` | `main.py`、`db.py`、`agents/`、`conversations/`、`chats/`、`models/`、`roles/`、`skills/`、`embeddings/`、`knowledge/`、`trace/` | 改业务/Agent/存储/接口 |
-| `references/backend-tools.md` | `mcps/` 注册表、16 个工具模块、运行时、分组、审批与沙箱 | 改工具/权限/文件访问 |
-| `references/tauri-build.md` | Rust 启动监督、事件、打包、更新、脚本、测试、文档 | 改启动/打包/窗口/更新 |
+| 文件 | 等级 | 内容 | 何时打开 |
+|---|---|---|---|
+| `references/frontend.md` | b | `src/` 全量文件职责、a–f 等级、api 映射、组件依赖、前端约定 | 改页面/组件/请求/状态 |
+| `references/backend-core.md` | a | `main.py`、`db.py`、`agents/`、`conversations/`、`chats/`、`models/`、`roles/`、`skills/`、`embeddings/`、`knowledge/`、`trace/` | 改业务/Agent/存储/接口 |
+| `references/backend-tools.md` | a | `mcps/` 注册表、16 个工具模块、运行时、分组、审批与沙箱 | 改工具/权限/文件访问 |
+| `references/tauri-build.md` | b | Rust 启动监督、事件、打包、更新、脚本、测试、文档 | 改启动/打包/窗口/更新 |
 
 ## 8. 高风险改动（先读整段再动）
 
@@ -205,3 +229,27 @@ description: "ChatVein 桌面 Agent（Tauri 2 + React + Python FastAPI + LangGra
 | `backend/db.py` 迁移 | 必须幂等、按 `SCHEMA_VERSION` 递增；不要新增 Alembic |
 | `src-tauri/src/backend.rs` | 进程生命周期、端口探测、重启广播；Windows Job Object 防孤儿进程 |
 | `src/api/client.ts` | token 注入、超时、重试、backend-lost 广播；改错会全站请求失败 |
+
+## 9. 跨工具使用（单一真源，不逐工具复制）
+
+地图内容只写在本目录；仓库根 `AGENTS.md` 是共享入口，各 Agent 命中入口后按需读本目录 reference，**新增 Agent 不需要再写一套**。
+
+| 工具 | 如何找到 | 需要新增文件 |
+|---|---|---|
+| CodeBuddy | 原生技能，自动发现 `.codebuddy/skills/` | 否 |
+| Claude Code | 根 `CLAUDE.md` 用 `@AGENTS.md` 导入 | 否 |
+| Cursor | 根 `AGENTS.md` 常驻，另有 `.cursor/rules/chatvein-code-map.mdc` 按需触发 | 否 |
+| Trae | `.trae/rules/project_rules.md` + `.trae/skills/chatvein-code-map/`（本目录副本） | 否（改本目录后同步副本） |
+
+约束：`AGENTS.md` 只放精简地图并指向本目录，不重复 `references/` 细节；引用增删只改本目录。
+
+## 10. 维护本技能
+
+代码结构变动后同步更新 `references/`，否则会误导后续 Agent：
+
+1. 新增/删除/重命名源文件 → 更新对应 reference 的条目。
+2. 新增业务模块或页面目录 → 补 §4「需求 → 落点」一行 + reference 分组小节 + 一分钟导航。
+3. 条目统一格式：`| 相对路径 | 等级 | 一句话职责 + 关键导出/入口 | 关联文件 |`。
+4. 等级升级判据：影响半径扩大（被多处引用或进入全局链路）就上调（c → b → a）。
+5. 本目录改名/移动 → 只改本目录内链接；`AGENTS.md` 只指目录不指具体文件，通常无需改。
+6. `.trae/skills/chatvein-code-map/` 是副本：改完本目录后整目录覆盖过去。

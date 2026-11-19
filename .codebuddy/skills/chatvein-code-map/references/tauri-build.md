@@ -1,16 +1,45 @@
 # Tauri / 启动 / 打包地图
 
+> 等级含义见 `../SKILL.md`「1.2 重要性等级 a–f」。路径相对仓库根。
 > ChatVein 是「Rust 外壳 + Python 内核 + React 界面」的桌面应用。改启动/窗口/打包时，先确认是 Rust、Tauri 配置还是打包脚本的问题。
+
+## 0. 一分钟导航
+
+| 我要… | 去这里 |
+|---|---|
+| 改后端启动命令 / 找 Python | `src-tauri/src/backend.rs` |
+| 改端口 / token / 数据目录 | `backend.rs` + `backend/main.py`（读环境变量） |
+| 改窗口尺寸 / 标题 / 最小尺寸 | `src-tauri/tauri.conf.json` |
+| 新增前端 invoke 命令 | `commands.rs` + `lib.rs::generate_handler` + `capabilities` |
+| 新增独立窗口 | `lib.rs` + `tauri.conf.json` + `capabilities/*.json` |
+| 改打包进安装包的资源 | `tauri.conf.json` 的 `bundle.resources` + `tools/build_backend.ps1` |
+| 改自动更新 | `tauri.conf.json` updater + `tools/release_updater.ps1` + `src/lib/updater.ts` |
+| 后端白屏 / 一直转圈 | `BackendGate.tsx` → `backend-log` 事件 → 手动起后端复现 |
+
+```text
+src-tauri/
+├─ src/
+│  ├─ main.rs          入口，调用 chatvein_lib::run()
+│  ├─ lib.rs           Builder、插件、单实例、窗口、setup 拉起后端
+│  ├─ backend.rs       进程监督、端口、token、健康等待、清理
+│  └─ commands.rs      invoke 命令（backend_url / backend_token）
+├─ capabilities/       default.json（主窗口）、trace.json（追踪窗口）
+├─ icons/              应用图标
+├─ Cargo.toml          依赖与插件
+├─ build.rs            tauri-build
+├─ tauri.conf.json     产品、窗口、devUrl、bundle resources、updater
+└─ target/             构建产物（勿提交/勿搜索）
+```
 
 ## 1. Rust 侧（`src-tauri/src/`）
 
-| 文件 | 职责 | 关键符号 / 注意 |
-|---|---|---|
-| `main.rs` | 程序入口，调用库 `run()` | `chatvein_lib::run()` |
-| `lib.rs` | Tauri Builder：插件、单实例、窗口、`setup` 中拉起后端、命令注册 | `run()`、`generate_handler!`、单实例回调聚焦主窗口 |
-| `backend.rs` | **后端进程监督**：数据目录、找 Python/冻结 exe、选空闲端口、spawn、等健康、事件广播、退出清理（Windows Job Object 防孤儿） | `spawn_backend`、`find_python_exe`、`resolve_data_dir`、`find_free_port`、`wait_for_backend`、`kill_backend`、`start_supervisor`、`backend_base_url` |
-| `commands.rs` | 暴露给前端的 invoke | `backend_url`、`backend_token` |
-| `build.rs` | tauri-build | — |
+| 文件 | 等级 | 职责 | 关键符号 / 注意 |
+|---|---|---|---|
+| `main.rs` | b | 程序入口，调用库 `run()` | `chatvein_lib::run()` |
+| `lib.rs` | a | Tauri Builder：插件、单实例、窗口、`setup` 中拉起后端、命令注册 | `run()`、`generate_handler!`、单实例回调聚焦主窗口 |
+| `backend.rs` | a | **后端进程监督**：数据目录、找 Python/冻结 exe、选空闲端口、spawn、等健康、事件广播、退出清理（Windows Job Object 防孤儿） | `spawn_backend`、`find_python_exe`、`resolve_data_dir`、`find_free_port`、`wait_for_backend`、`kill_backend`、`start_supervisor`、`backend_base_url` |
+| `commands.rs` | c | 暴露给前端的 invoke | `backend_url`、`backend_token` |
+| `build.rs` | e | tauri-build | — |
 
 启动时序：
 
@@ -37,40 +66,40 @@ lib.rs::run()
 
 ## 2. Tauri 配置与能力
 
-| 文件 | 作用 |
-|---|---|
-| `src-tauri/tauri.conf.json` | 产品名/标识、`devUrl`（Vite 5183）、窗口尺寸/最小尺寸、打包资源（`backend-runtime`）、updater 配置、安全策略 |
-| `src-tauri/capabilities/default.json` | 主窗口权限（opener、dialog、updater、窗口操作等） |
-| `src-tauri/capabilities/trace.json` | 独立追踪窗口（label `trace`）权限 |
-| `src-tauri/Cargo.toml` | Rust 依赖与插件（single-instance、opener、updater、dialog、http、log、process 等） |
-| `src-tauri/icons/` | 应用图标（`tools/make_icon.py` 生成） |
-| `src-tauri/build.rs` | 构建脚本 |
+| 文件 | 等级 | 作用 |
+|---|---|---|
+| `src-tauri/tauri.conf.json` | a | 产品名/标识、`devUrl`（Vite 5183）、窗口尺寸/最小尺寸、打包资源（`backend-runtime`）、updater 配置、安全策略 |
+| `src-tauri/capabilities/default.json` | b | 主窗口权限（opener、dialog、updater、窗口操作等） |
+| `src-tauri/capabilities/trace.json` | c | 独立追踪窗口（label `trace`）权限 |
+| `src-tauri/Cargo.toml` | b | Rust 依赖与插件（single-instance、opener、updater、dialog、http、log、process 等） |
+| `src-tauri/icons/` | e | 应用图标（`tools/make_icon.py` 生成） |
+| `src-tauri/build.rs` | e | 构建脚本 |
 
 > 新增窗口/权限时，**同时**改 `tauri.conf.json`（窗口定义）与 `capabilities/*.json`（权限），否则运行时报 not allowed。
 
 ## 3. 打包 / 发布
 
-| 文件 | 作用 |
-|---|---|
-| `tools/build_backend.ps1` | PyInstaller onedir 冻结 `backend/main.py` → `backend-runtime/`（含 `_internal`） |
-| `tools/prepare_runtime.ps1` | 整理运行时目录/启动 shim |
-| `tools/release_updater.ps1` | 构建安装包 → 生成签名与 `latest.json` → 上传（腾讯云 COS 等） |
-| `tools/make_icon.py` | 生成 `src-tauri/icons` |
-| `tools/test_backend.py` | 后端冒烟 |
-| `src-tauri/target/` | 构建产物（勿提交/勿搜索） |
+| 文件 | 等级 | 作用 |
+|---|---|---|
+| `tools/build_backend.ps1` | b | PyInstaller onedir 冻结 `backend/main.py` → `backend-runtime/`（含 `_internal`） |
+| `tools/prepare_runtime.ps1` | b | 整理运行时目录/启动 shim |
+| `tools/release_updater.ps1` | b | 构建安装包 → 生成签名与 `latest.json` → 上传（腾讯云 COS 等） |
+| `tools/make_icon.py` | e | 生成 `src-tauri/icons` |
+| `tools/test_backend.py` | e | 后端冒烟 |
+| `src-tauri/target/` | f | 构建产物（勿提交/勿搜索） |
 
 npm 脚本对应：`npm run prepare:backend`、`npm run prepare:runtime`、`npm run app:dev`、`npm run build`、`npm test`、`npm run test:backend`。
 发布说明见 `docs/release.md`。
 
 ## 4. 前端与外壳的交互
 
-| 位置 | 说明 |
-|---|---|
-| `src/api/client.ts` | `invoke("backend_url")` / `invoke("backend_token")`；浏览器 dev 用 `VITE_BACKEND_URL` 兜底 |
-| `src/components/layout/BackendGate.tsx` | 监听后端事件、轮询健康、失败重试 |
-| `src/lib/openTrace.ts` | 打开独立 `trace` 窗口（`#/trace/:conversationId`） |
-| `src/lib/openExternal.ts` | Tauri opener 打开系统浏览器 |
-| `src/lib/updater.ts` + `settings/UpdateSection.tsx` | 检查/下载/安装更新 |
+| 位置 | 等级 | 说明 |
+|---|---|---|
+| `src/api/client.ts` | a | `invoke("backend_url")` / `invoke("backend_token")`；浏览器 dev 用 `VITE_BACKEND_URL` 兜底 |
+| `src/components/layout/BackendGate.tsx` | a | 监听后端事件、轮询健康、失败重试 |
+| `src/lib/openTrace.ts` | c | 打开独立 `trace` 窗口（`#/trace/:conversationId`） |
+| `src/lib/openExternal.ts` | e | Tauri opener 打开系统浏览器 |
+| `src/lib/updater.ts` + `settings/UpdateSection.tsx` | c | 检查/下载/安装更新 |
 
 ## 5. 常见改动落点
 

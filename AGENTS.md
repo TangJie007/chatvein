@@ -5,6 +5,7 @@
 工作方式：**先在本文件定位，再按需读 30~80 行源码，最后改**。不要全库通读。
 
 深度文件地图在 `.codebuddy/skills/chatvein-code-map/`（CodeBuddy 技能目录，Claude Code / Cursor 可直接按需读取）；Trae 用同内容的副本 `.trae/skills/chatvein-code-map/`。
+每个源文件都标了 **a–f 重要性等级**（a 全局骨架 / b 主干业务 / c 模块内实现 / d 契约层 / e 支撑设施 / f 生成物），改 a 级文件必须全链路回归；等级定义见 `SKILL.md` 的「1.2 重要性等级」。
 - `SKILL.md`：全量需求落点、链路、边界
 - `references/frontend.md`：`src/` 每个文件的职责与 api 映射
 - `references/backend-core.md`：`backend/` 核心模块
@@ -28,7 +29,7 @@
 | `src/components/views/` | 顶层页面：`ChatView` `GroupView` `GroupChatView` `SkillsView` `RolesView` `KnowledgeView` `ModelsView` `SettingsView` |
 | `src/components/chat/` | 聊天内核：`ChatPanel` `Composer` `useChatSession` `InsightPanel` `insightData` `BashApproval` `mounts` `mentions` `SessionList` |
 | `src/components/group/` | 群组：`GroupList` `GroupMembers` `GroupSkills` |
-| `src/components/layout/` | `AppShell` `Sidebar` `TitleBar` `BackendGate` |
+| `src/components/layout/` | `BackendGate` `Sidebar` `TitleBar` `ErrorBoundary` `CenterHint` |
 | `src/components/settings/` | `prefs.ts`（MCP 分组元数据）、`AppSection` `McpSection` `SqliteSection` `UpdateSection` |
 | `src/api/` | `client.ts`（底层 fetch/invoke）+ 各资源模块 |
 | `src/lib/` | 路由、store、tokens、trace、updater、错误人话 |
@@ -51,7 +52,7 @@
 
 | 需求 | 先改 | 连带 |
 |---|---|---|
-| 新页面/导航 | `src/types/view.ts`、`src/App.tsx` | `src/components/layout/AppShell.tsx`、`Sidebar.tsx`、`src/index.css` |
+| 新页面/导航 | `src/types/view.ts`、`src/App.tsx` | `src/components/layout/Sidebar.tsx`、`src/styles.css` |
 | 聊天交互/流式/停止 | `src/components/chat/useChatSession.ts` | `ChatPanel.tsx`、`Composer.tsx`、`src/api/conversations.ts` |
 | 单轮对话编排 | `backend/main.py`（`/api/chat`） | `backend/conversations/service.py`、`backend/agents/service.py` |
 | 难度路由/改写 | `backend/agents/router.py` | `backend/agents/graphs/pipeline.py` |
