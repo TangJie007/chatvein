@@ -9,6 +9,7 @@ from langgraph.graph import END, START, MessagesState, StateGraph
 
 from .. import llm as llm_mod
 from ..context import assemble_context
+from ..streaming import emit_token, message_text, stream_enabled
 from trace.recording import note, runnable_config, span
 
 from .common import last_text
@@ -30,6 +31,17 @@ def build_simple_graph(model: Any, *, system_prompt: str = _SYSTEM):
     graph.add_edge(START, "chat")
     graph.add_edge("chat", END)
     return graph.compile(name="simple_chat")
+
+
+def _stream_simple(model: Any, messages: list[BaseMessage]) -> str:
+    """逐块推 token；模型不支持流式（或抛错）由调用方回落 invoke。"""
+    chunks: list[str] = []
+    for chunk in model.stream(messages, config=runnable_config()):
+        delta = message_text(chunk)
+        if delta:
+            emit_token(delta)
+            chunks.append(delta)
+    return "".join(chunks).strip()
 
 
 def run_simple(
@@ -65,11 +77,20 @@ def run_simple(
             HumanMessage(content=text or "你好"),
         ]
         with span("simple"):
-            out = build_simple_graph(model, system_prompt=system_prompt).invoke(
-                {"messages": messages},
-                config=runnable_config(),
-            )
-        reply = last_text(out.get("messages"))
+            if stream_enabled():
+                try:
+                    reply = _stream_simple(model, messages)
+                except Exception:  # noqa: BLE001 —— 流式不可用时回落到一次性 invoke
+                    out = build_simple_graph(
+                        model, system_prompt=system_prompt
+                    ).invoke({"messages": messages}, config=runnable_config())
+                    reply = last_text(out.get("messages"))
+            else:
+                out = build_simple_graph(model, system_prompt=system_prompt).invoke(
+                    {"messages": messages},
+                    config=runnable_config(),
+                )
+                reply = last_text(out.get("messages"))
         if reply:
             return reply, True
         return "（无文本回复）", True

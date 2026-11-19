@@ -33,7 +33,7 @@
 | `src/components/settings/` | `prefs.ts`（MCP 分组元数据）、`AppSection` `McpSection` `SqliteSection` `UpdateSection` |
 | `src/api/` | `client.ts`（底层 fetch/invoke）+ 各资源模块 |
 | `src/lib/` | 路由、store、tokens、trace、updater、错误人话 |
-| `backend/main.py` | FastAPI 入口：/api/chat、uploads、bash 审批、health、workspace、db |
+| `backend/main.py` | FastAPI 入口：/api/chat、/api/chat/stream（SSE）、uploads、bash 审批、health、workspace、db |
 | `backend/agents/` | 难度路由、理解/改写、工具选择、ReAct 图、提示词、取消、委派 |
 | `backend/mcps/` | 工具注册表、分组、执行、沙箱、Bash/浏览器运行时 |
 | `backend/conversations/` | 会话 CRUD、成员、turn 编排、历史装配 |
@@ -75,7 +75,7 @@
 ## 4. 关键链路（只记顺序）
 
 - **启动**：`lib.rs::run()` → `backend.rs::spawn_backend`（选空闲端口、生成 token、注入 env）→ `emit("backend-ready")` → `BackendGate` → `client.ts` 请求。
-- **单轮**：`useChatSession.send` → `sendChat` → `POST /api/chat` → `router.understand` → `conversations.prepare_turn`（历史/短期记忆/技能/群成员）→ `pipeline.run_pipeline` → `trace.recording` → 历史落盘 + 前端轮询 `/traces/{turn_id}`。
+- **单轮**：`useChatSession.send` → `sendChatStream`（`POST /api/chat/stream`，SSE 增量）→ 环境不支持时回落 `sendChat` → `POST /api/chat` → `router.understand` → `conversations.prepare_turn`（历史/短期记忆/技能/群成员）→ `pipeline.run_pipeline` → `trace.recording` → 历史落盘 + `done` 事件回填（回落路径轮询 `/traces/{turn_id}`）。
 - **群组**：`ChatView/GroupChatView` → `mode` + `members` → 后端 `is_group` → `chats.assemble_team` → `tool_selector` 限定发言角色工具 → `delegate_to_agent`。
 - **技能**：`SkillsView` → `/api/skills` → 保存 SKILL.md → 渲染技能目录进 prompt → `load_skill` 读全文。
 - **工具**：角色勾选 → `registry.resolve_tools` → 图内调用工具；离线直调 `registry.invoke_tools`。Bash/PowerShell 在工具内部走审批，文件越界走 `path_access`。
@@ -88,7 +88,7 @@
 3. 工具模块必须导出 `TOOLS: tuple` + `heuristic(text) -> list[str]`；新增分组要同步 `tools/__init__.py`、`prefs.ts`、`rolesStore.ts`。
 4. 文件/命令必须经 `path_access` 与 `bash_policy`，不能在工具里自行放行；会话工作区优先 `current_sandbox()`，不要用全局 cwd。
 5. 前端所有请求走 `src/api/client.ts`（自动带 `X-Chatvein-Token`）；不要手写 fetch。
-6. 对话无 SSE：先乐观插入本轮，再用 `/traces/{turn_id}` 轮询补齐；停止必须调 `/api/chat/cancel`，否则落盘回滚。
+6. 对话主入口是 `POST /api/chat/stream`（SSE：`token` / `tool` / `trace` / `done` / `cancelled` / `error`）；环境不支持可读流或 `CHATVEIN_STREAM=0` 时回落 `POST /api/chat` + 轮询 `/traces/{turn_id}`。停止必须调 `/api/chat/cancel`，否则落盘回滚；中断现场靠 1.3 断点保留。
 7. 主库迁移只追加、保持幂等；主库不存消息（v5 起），消息在会话工作区 `logs/session.sqlite`。
 8. 技能目录必须在 `assemble_team` 之前并入 `role_runtime["prompt"]`；`load_skill` 常驻。
 9. 长任务在 `asyncio.to_thread` 中执行（阻塞 SDK / 图同步调用）；`ContextVar` 不会自动跨线程。

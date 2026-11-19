@@ -8,6 +8,7 @@ from langgraph.graph import END, START, StateGraph
 
 from .. import router
 from ..checkpoint import checkpoint_enabled, get_checkpointer
+from ..streaming import emit_stage
 from trace.recording import complete, note, runnable_config, tracing
 from . import hard as hard_mod
 from . import medium as medium_mod
@@ -35,6 +36,7 @@ def _merged_system(role: dict[str, Any] | None, base: str) -> str:
 
 
 def _understand(state: ChatState) -> dict[str, Any]:
+    emit_stage("understand")
     text = (state.get("message") or "").strip()
     understood = router.understand(text, role=state.get("role"))
     rewritten = str(understood.get("rewritten") or text)
@@ -68,6 +70,7 @@ def _route(state: ChatState) -> DifficultyRoute:
 
 
 def _simple_node(state: ChatState) -> dict[str, Any]:
+    emit_stage("simple")
     role = state.get("role")
     system_prompt = _merged_system(role, simple_mod.SIMPLE_SYSTEM)
     reply, ran = simple_mod.run_simple(
@@ -97,6 +100,7 @@ def _branch_result(result: dict[str, Any]) -> dict[str, Any]:
 
 
 def _medium_node(state: ChatState) -> dict[str, Any]:
+    emit_stage("medium")
     role = state.get("role")
     result = medium_mod.run_medium(
         str(state.get("rewritten") or ""),
@@ -109,6 +113,7 @@ def _medium_node(state: ChatState) -> dict[str, Any]:
 
 
 def _hard_node(state: ChatState) -> dict[str, Any]:
+    emit_stage("hard")
     role = state.get("role")
     result = hard_mod.run_hard(
         str(state.get("rewritten") or ""),

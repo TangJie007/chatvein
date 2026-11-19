@@ -246,6 +246,109 @@ function httpErrorMessage(status: number, text: string): string {
   return body ? `请求失败（${status}）：${body}` : `请求失败（${status}）`;
 }
 
+/** 当前运行环境拿不到可读流（Tauri HTTP 插件个别平台返回 body=null）。 */
+export class StreamUnsupportedError extends Error {
+  constructor() {
+    super("当前环境不支持流式读取，已回落到普通请求");
+    this.name = "StreamUnsupportedError";
+  }
+}
+
+export interface SSEEvent {
+  event: string;
+  data: unknown;
+}
+
+/** 逐帧解析一条 SSE 报文；注释行（`: ping`）与空帧返回 null。 */
+function parseSseFrame(frame: string): SSEEvent | null {
+  if (!frame || frame.startsWith(":")) return null;
+  let event = "message";
+  const dataLines: string[] = [];
+  for (const line of frame.split("\n")) {
+    if (line.startsWith("event:")) event = line.slice(6).trim();
+    else if (line.startsWith("data:")) dataLines.push(line.slice(5).trim());
+  }
+  if (dataLines.length === 0) return null;
+  const raw = dataLines.join("\n");
+  let data: unknown = raw;
+  try {
+    data = JSON.parse(raw);
+  } catch {
+    /* 非 JSON 时保留原文 */
+  }
+  return { event, data };
+}
+
+/**
+ * POST + `text/event-stream`：拿到增量事件就回调，流结束才 resolve。
+ *
+ * ``timeoutMs <= 0``（默认）不装超时——生成可以跑很久，停止由调用方的
+ * AbortSignal 负责。没拿到 ``res.body`` 时抛 ``StreamUnsupportedError``，
+ * 调用方回落到普通 ``backendRequest``。
+ */
+export async function backendStream(
+  endpoint: string,
+  body: unknown,
+  options: { signal?: AbortSignal | null; timeoutMs?: number; onEvent: (event: SSEEvent) => void }
+): Promise<void> {
+  const { signal = null, timeoutMs = 0, onEvent } = options;
+  const url = await waitForBackend();
+  const controller = new AbortController();
+  let timedOut = false;
+  const timer =
+    timeoutMs > 0
+      ? setTimeout(() => {
+          timedOut = true;
+          controller.abort();
+        }, timeoutMs)
+      : null;
+  const onOuterAbort = () => controller.abort();
+  signal?.addEventListener("abort", onOuterAbort, { once: true });
+  try {
+    const token = await getBackendToken();
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+      Accept: "text/event-stream",
+    };
+    if (token) headers["X-ChatVein-Token"] = token;
+    const res = await fetch(`${url}${endpoint}`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(body ?? {}),
+      signal: controller.signal,
+    });
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      throw new Error(httpErrorMessage(res.status, text));
+    }
+    if (!res.body) throw new StreamUnsupportedError();
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let cut = buffer.indexOf("\n\n");
+      while (cut >= 0) {
+        const frame = buffer.slice(0, cut);
+        buffer = buffer.slice(cut + 2);
+        const parsed = parseSseFrame(frame);
+        if (parsed) onEvent(parsed);
+        cut = buffer.indexOf("\n\n");
+      }
+    }
+  } catch (err) {
+    if (isUserAbort(signal, err)) throw new DOMException("Request cancelled", "AbortError");
+    if (timedOut) throw new RequestTimeoutError(timeoutMs);
+    throw err;
+  } finally {
+    if (timer) clearTimeout(timer);
+    signal?.removeEventListener("abort", onOuterAbort);
+  }
+}
+
 function isHttpAbort(err: unknown): boolean {
   if (err instanceof DOMException && err.name === "AbortError") return true;
   if (err instanceof Error && err.name === "AbortError") return true;

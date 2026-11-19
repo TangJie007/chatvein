@@ -6,6 +6,7 @@ Rust/Tauri 侧车进程：启动后把真实 base URL 推给前端，前端直�
 import argparse
 import asyncio
 import base64
+import json
 import os
 import re
 import secrets
@@ -22,6 +23,7 @@ from typing import Any, cast
 import uvicorn
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 import db  # pyright: ignore[reportImplicitRelativeImport]
@@ -39,6 +41,11 @@ from agents.checkpoint import (  # pyright: ignore[reportImplicitRelativeImport]
     thread_id_for,
 )
 from agents.context import use_summary_cache  # pyright: ignore[reportImplicitRelativeImport]
+from agents.streaming import (  # pyright: ignore[reportImplicitRelativeImport]
+    StreamSink,
+    bind_stream_sink,
+    stream_enabled,
+)
 from agents.llm import model_error_hint  # pyright: ignore[reportImplicitRelativeImport]
 from agents.graphs.pipeline import run_pipeline  # pyright: ignore[reportImplicitRelativeImport]
 from conversations.entity.dto import ConversationRecord  # pyright: ignore[reportImplicitRelativeImport]
@@ -376,7 +383,8 @@ def _resume_turn_heavy(
     }
 
 
-async def _chat_turn(req: ChatRequest, request: Request) -> dict[str, object]:
+def _prepare_chat_turn(req: ChatRequest) -> dict[str, Any]:
+    """前置编排（会话 / 角色 / 技能 / 团队 / 历史），流式与非流式共用。"""
     prepared = conversations_service.open_for_chat(req.conversation_id, req.message)
     # 群组注册：req.group_members 非空时随消息透传补注册（合并去重）。
     # 角色 id 列表持久化到 chats.chat_groups 独立表，团队模式 / 群组 @ 依赖它。
@@ -419,7 +427,7 @@ async def _chat_turn(req: ChatRequest, request: Request) -> dict[str, object]:
             append_user=req.append_user_message,
         )
         insight = conversations_service.workspace_insight(conversation_id)
-        return {
+        early = {
             "reply": reply,
             "from": "agents",
             "difficulty": "simple",
@@ -438,6 +446,7 @@ async def _chat_turn(req: ChatRequest, request: Request) -> dict[str, object]:
             "assistant_message": assistant_msg,
             "workspace": insight,
         }
+        return {"early": early}
     memory_limit = 24
     if role_runtime and role_runtime.get("memory") is not None:
         try:
@@ -490,36 +499,31 @@ async def _chat_turn(req: ChatRequest, request: Request) -> dict[str, object]:
     db_path = session_db_path(
         conversations_service.workspace_root_for(prepared["workspace_dir"])
     )
-    # 长耗时链路（追踪 + 会话沙箱 + LangGraph 对话 + token 统计）整体进工作线程：
-    # trace / 沙箱靠线程内 ContextVar 传递，run_pipeline 与它必须同线程；异步路由因此
-    # 不再占住事件循环，也不挤占同步路由的线程池。
-    heavy = await asyncio.to_thread(
-        _run_chat_heavy,
-        req,
-        prepared,
-        role_runtime,
-        turn_id,
-        db_path,
-        history,
-        thread_id_for(prepared["id"], turn_id),
-    )
+    return {
+        "early": None,
+        "req": req,
+        "prepared": prepared,
+        "role_runtime": role_runtime,
+        "turn_id": turn_id,
+        "db_path": db_path,
+        "history": history,
+        "thread_id": thread_id_for(prepared["id"], turn_id),
+    }
+
+
+def _persist_turn(
+    req: ChatRequest, prep: dict[str, Any], heavy: dict[str, Any]
+) -> dict[str, object]:
+    """把本轮结果落库并组装完整响应体（流式 done 事件 / 非流式响应共用）。"""
+    prepared = prep["prepared"]
+    role_runtime = prep["role_runtime"]
+    turn_id = prep["turn_id"]
     result = heavy["result"]
     tokens = heavy["tokens"]
     duration_ms = heavy["duration_ms"]
     reply = str(result.get("reply") or "")
     route = str(result.get("difficulty") or result.get("route") or "simple")
     tool_trace = list(result.get("tool_trace") or [])
-    # 客户端已断开（前端停止 / 关闭）：跳过落库，否则记录会在前端停止后
-    # 稍后写入，留下「幽灵消息」要前端轮询清理。
-    if await request.is_disconnected():
-        return _aborted_payload(
-            result=result,
-            tokens=tokens,
-            duration_ms=duration_ms,
-            turn_id=turn_id,
-            route=route,
-            tool_trace=tool_trace,
-        )
     conversation_id, user_msg, assistant_msg = conversations_service.save_exchange(
         prepared["id"],
         req.message,
@@ -557,6 +561,146 @@ async def _chat_turn(req: ChatRequest, request: Request) -> dict[str, object]:
     }
 
 
+async def _chat_turn(req: ChatRequest, request: Request) -> dict[str, object]:
+    """非流式总编排：前置编排 → 工作线程跑图 → 落库（断开则不落库）。"""
+    prep = _prepare_chat_turn(req)
+    if prep.get("early"):
+        return prep["early"]
+    # 长耗时链路（追踪 + 会话沙箱 + LangGraph 对话 + token 统计）整体进工作线程：
+    # trace / 沙箱靠线程内 ContextVar 传递，run_pipeline 与它必须同线程；异步路由因此
+    # 不再占住事件循环，也不挤占同步路由的线程池。
+    heavy = await asyncio.to_thread(
+        _run_chat_heavy,
+        prep["req"],
+        prep["prepared"],
+        prep["role_runtime"],
+        prep["turn_id"],
+        prep["db_path"],
+        prep["history"],
+        prep["thread_id"],
+        None,
+    )
+    # 客户端已断开（前端停止 / 关闭）：跳过落库，否则记录会在前端停止后
+    # 稍后写入，留下「幽灵消息」要前端轮询清理。
+    if await request.is_disconnected():
+        result = heavy["result"]
+        return _aborted_payload(
+            result=result,
+            tokens=heavy["tokens"],
+            duration_ms=heavy["duration_ms"],
+            turn_id=prep["turn_id"],
+            route=str(result.get("difficulty") or "simple"),
+            tool_trace=list(result.get("tool_trace") or []),
+        )
+    return _persist_turn(prep["req"], prep, heavy)
+
+
+def _sse_frame(event: str, data: dict[str, Any]) -> str:
+    return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
+
+
+_STREAM_END: dict[str, Any] = {"event": "", "data": {}}
+
+
+async def _stream_events(req: ChatRequest, request: Request):
+    """SSE 生成器：工作线程推事件，这里只负责切帧与心跳。"""
+    prep = _prepare_chat_turn(req)
+    if prep.get("early"):
+        yield _sse_frame("done", dict(prep["early"]))
+        return
+    loop = asyncio.get_running_loop()
+    queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+    sink = StreamSink(queue, loop)
+    turn_id = prep["turn_id"]
+    finished = {"done": False}
+
+    async def producer() -> None:
+        try:
+            heavy = await asyncio.to_thread(
+                _run_chat_heavy,
+                prep["req"],
+                prep["prepared"],
+                prep["role_runtime"],
+                prep["turn_id"],
+                prep["db_path"],
+                prep["history"],
+                prep["thread_id"],
+                sink,
+            )
+            if await request.is_disconnected():
+                # 前端已断开：不落库，按取消收尾（现场保留，见 1.3）。
+                await queue.put(
+                    {"event": "cancelled", "data": {"turn_id": turn_id, "resumable": True}}
+                )
+                return
+            payload = await asyncio.to_thread(_persist_turn, prep["req"], prep, heavy)
+            finished["done"] = True
+            await queue.put({"event": "done", "data": dict(payload)})
+        except TurnCancelled:
+            await queue.put(
+                {"event": "cancelled", "data": {"turn_id": turn_id, "resumable": True}}
+            )
+        except Exception as exc:  # noqa: BLE001
+            await queue.put(
+                {
+                    "event": "error",
+                    "data": {
+                        "code": "chat_failed",
+                        "message": model_error_hint(exc),
+                        "retryable": True,
+                        "turn_id": turn_id,
+                    },
+                }
+            )
+        finally:
+            await queue.put(_STREAM_END)
+
+    task = asyncio.create_task(producer())
+    try:
+        while True:
+            try:
+                item = await asyncio.wait_for(queue.get(), timeout=15.0)
+            except asyncio.TimeoutError:
+                # 长模型调用期间保住连接，避免代理层按空闲超时掐断。
+                yield ": ping\n\n"
+                continue
+            if item is _STREAM_END:
+                break
+            yield _sse_frame(str(item["event"]), dict(item["data"]))
+    finally:
+        if not task.done():
+            # 前端中途关闭流：让后端尽快停手，保留现场供 1.3 恢复。
+            cancel_turn(turn_id)
+            task.cancel()
+        if not finished["done"]:
+            cancel_turn(turn_id)
+
+
+@app.post(
+    "/api/chat/stream",
+    tags=["chat"],
+    summary="对话主入口（SSE token 流式）",
+)
+async def chat_stream(req: ChatRequest, request: Request):
+    """与 ``POST /api/chat`` 同语义，只是把增量 token / 工具进度实时推给前端。
+
+    ``CHATVEIN_STREAM=0`` 时直接 409：调用方应回落到旧接口，而不是拿到半成品。
+    """
+    if not stream_enabled():
+        raise HTTPException(
+            status_code=409, detail="流式已关闭（CHATVEIN_STREAM=0），请使用 /api/chat"
+        )
+    return StreamingResponse(
+        _stream_events(req, request),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
 def _run_chat_heavy(
     req: ChatRequest,
     prepared: ConversationRecord,
@@ -565,6 +709,7 @@ def _run_chat_heavy(
     db_path: Path,
     history: list[dict[str, Any]] | None,
     thread_id: str | None = None,
+    sink: StreamSink | None = None,
 ) -> dict[str, Any]:
     """长耗时部分：追踪 + 会话沙箱 + LangGraph 对话 + token 统计。
 
@@ -588,6 +733,7 @@ def _run_chat_heavy(
                 use_conversation_sandbox(prepared["workspace_dir"]),
                 use_summary_cache(db_path),
                 tool_scope(turn_id),
+                bind_stream_sink(sink),
             ):
                 if _usage_callback is not None:
                     with _usage_callback() as usage_cb:

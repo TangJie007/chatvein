@@ -1,4 +1,4 @@
-import { backendRequest } from "./client";
+import { backendRequest, backendStream, type SSEEvent } from "./client";
 
 export type ChatRole = "user" | "assistant" | "system";
 
@@ -112,6 +112,36 @@ export function updateConversationSkills(conversationId: string, skills: string[
  *  用默认 30s 会把正常长任务误判成「已取消」，这里放宽到 20 分钟。 */
 const CHAT_TIMEOUT_MS = 20 * 60 * 1000;
 
+/** 一轮生成的完整响应：流式 `done` 事件与非流式接口完全一致。 */
+export interface ChatResponse {
+  reply: string;
+  from: string;
+  difficulty: string;
+  rewritten?: string;
+  route: string;
+  route_reason?: string;
+  tool_plan_reason?: string;
+  selected_tools: string[];
+  tool_trace: Array<{
+    tool_name: string;
+    tool_call_id?: string | null;
+    arguments?: unknown;
+    result_text?: string;
+    status?: string;
+  }>;
+  used_llm: boolean;
+  turn_id: string;
+  tokens: number;
+  duration_ms: number;
+  conversation_id: string;
+  user_message: ChatMessageRecord;
+  assistant_message: ChatMessageRecord;
+  workspace?: ConversationWorkspace;
+}
+
+/** 流式事件：token 增量 / tool 进度 / trace 阶段 / done / cancelled / error。 */
+export type ChatStreamEvent = SSEEvent;
+
 /** Run one chat turn against the agent pipeline.
  *  ``turnId`` 由前端预先生成：后端按它逐步落追踪，UI 可边等边轮询思考流进度。
  *  ``appendUser=false`` 用于群里 @ 多人时的第 2 个及之后的成员：同一句提问只落一次用户消息。 */
@@ -125,31 +155,24 @@ export function sendChat(
   appendUser: boolean = true,
   groupMembers?: string[] | null
 ) {
-  return backendRequest<{
-    reply: string;
-    from: string;
-    difficulty: string;
-    rewritten?: string;
-    route: string;
-    route_reason?: string;
-    tool_plan_reason?: string;
-    selected_tools: string[];
-    tool_trace: Array<{
-      tool_name: string;
-      tool_call_id?: string | null;
-      arguments?: unknown;
-      result_text?: string;
-      status?: string;
-    }>;
-    used_llm: boolean;
-    turn_id: string;
-    tokens: number;
-    duration_ms: number;
-    conversation_id: string;
-    user_message: ChatMessageRecord;
-    assistant_message: ChatMessageRecord;
-    workspace?: ConversationWorkspace;
-  }>("/api/chat", "POST", {
+  return backendRequest<ChatResponse>("/api/chat", "POST", chatBody(message, conversationId, roleId, skills, turnId, appendUser, groupMembers), {
+    signal: signal ?? undefined,
+    // 一轮生成可能跑很久（工具链、图片处理、命令审批等待），不能用默认 30s；
+    // 用户随时可点停止，这里只留一个很长的兜底上限。
+    timeoutMs: CHAT_TIMEOUT_MS,
+  });
+}
+
+function chatBody(
+  message: string,
+  conversationId?: string | null,
+  roleId?: string | null,
+  skills?: string[] | null,
+  turnId?: string | null,
+  appendUser: boolean = true,
+  groupMembers?: string[] | null
+) {
+  return {
     message,
     conversation_id: conversationId ?? null,
     role_id: roleId ?? null,
@@ -161,12 +184,30 @@ export function sendChat(
     append_user_message: appendUser,
     // 群组成员：随消息透传，后端注册 / 补注册到 chats 群组表（合并去重）
     group_members: groupMembers ?? null,
-  }, {
-    signal: signal ?? undefined,
-    // 一轮生成可能跑很久（工具链、图片处理、命令审批等待），不能用默认 30s；
-    // 用户随时可点停止，这里只留一个很长的兜底上限。
-    timeoutMs: CHAT_TIMEOUT_MS,
-  });
+  };
+}
+
+/** SSE 版本：``onEvent`` 拿到 token/tool/trace 增量，``done``/``cancelled`` 收尾后 resolve。
+ *  参数与 ``sendChat`` 完全对齐，便于不支持流式的环境一键回落。 */
+export function sendChatStream(
+  message: string,
+  conversationId?: string | null,
+  roleId?: string | null,
+  skills?: string[] | null,
+  turnId?: string | null,
+  signal?: AbortSignal | null,
+  appendUser: boolean = true,
+  groupMembers?: string[] | null,
+  onEvent?: (event: ChatStreamEvent) => void
+) {
+  return backendStream(
+    "/api/chat/stream",
+    chatBody(message, conversationId, roleId, skills, turnId, appendUser, groupMembers),
+    {
+      signal,
+      onEvent: onEvent ?? (() => undefined),
+    }
+  );
 }
 
 /** 真·取消：通知后端停掉这一轮（只 abort HTTP 不会让后端停手）。

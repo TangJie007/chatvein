@@ -53,7 +53,7 @@
   1.4 长期记忆（事实/偏好抽取 + 巩固 + 召回）
         ↓ 依赖 1.3 的 checkpointer 作为 HITL 断点基础
 批次 2 体验与生态
-  2.1 token 级流式（SSE）
+  2.1 token 级流式（SSE）                                 ← 已实现
   2.2 统一 HITL 审批（interrupt）
   2.3 真 MCP 协议客户端（stdio / SSE / Streamable HTTP）
   2.4 多 agent 并行编排（fan-out + 聚合）

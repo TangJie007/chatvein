@@ -4,15 +4,26 @@ import * as api from "../../api";
 import type { ChatMessageRecord, TurnTrace } from "../../api";
 import { toChatMessages, toLiveSteps, useChatSession } from "./useChatSession";
 
-vi.mock("../../api", () => ({
-  cancelChat: vi.fn().mockResolvedValue({ turn_id: "t", accepted: true }),
-  createConversation: vi.fn(),
-  deleteLastTurn: vi.fn(),
-  getConversation: vi.fn(),
-  getConversationWorkspace: vi.fn(),
-  getTrace: vi.fn(),
-  sendChat: vi.fn(),
-}));
+vi.mock("../../api", () => {
+  // 单测环境没有可读流：默认让流式直接抛「不支持」，覆盖 sendChat 回落路径。
+  class StreamUnsupportedError extends Error {
+    constructor() {
+      super("test: no readable stream");
+      this.name = "StreamUnsupportedError";
+    }
+  }
+  return {
+    StreamUnsupportedError,
+    cancelChat: vi.fn().mockResolvedValue({ turn_id: "t", accepted: true }),
+    createConversation: vi.fn(),
+    deleteLastTurn: vi.fn(),
+    getConversation: vi.fn(),
+    getConversationWorkspace: vi.fn(),
+    getTrace: vi.fn(),
+    sendChat: vi.fn(),
+    sendChatStream: vi.fn(() => Promise.reject(new StreamUnsupportedError())),
+  };
+});
 
 /** 最小的成功回复：sendChat 成功路径用到的字段都在这里。 */
 function chatReply(overrides: Record<string, unknown> = {}) {
@@ -92,6 +103,36 @@ describe("useChatSession（发送 / 撤回 / 清理基线）", () => {
       tool_plan_reason: "",
       steps: [],
     } as never);
+    // 默认回落到 sendChat（单测无真流）；单个用例可覆盖成「流式可用」。
+    vi.mocked(api.sendChatStream).mockImplementation(() =>
+      Promise.reject(new api.StreamUnsupportedError())
+    );
+  });
+
+  it("流式：token 增量追加到占位气泡，done 事件回填权威消息", async () => {
+    vi.mocked(api.sendChatStream).mockImplementation(
+      (_text, _conv, _role, _skills, _turn, _signal, _append, _group, onEvent) => {
+        onEvent?.({ event: "token", data: { text: "你" } });
+        onEvent?.({ event: "token", data: { text: "好" } });
+        onEvent?.({ event: "done", data: chatReply({ reply: "你好" }) });
+        return Promise.resolve();
+      }
+    );
+
+    const { result } = renderHook(() =>
+      useChatSession({ conversationId: "c1", roleId: null })
+    );
+    await settleInitialLoad();
+
+    await act(async () => {
+      await result.current.send("hello");
+    });
+
+    expect(api.sendChat).not.toHaveBeenCalled();
+    expect(api.sendChatStream).toHaveBeenCalledTimes(1);
+    const agent = result.current.messages.find((m) => m.role === "agent");
+    expect(agent?.content).toBe("你好");
+    expect(result.current.sending).toBe(false);
   });
 
   /** 等初始会话加载的异步落定（getConversation → getConversationWorkspace 链），

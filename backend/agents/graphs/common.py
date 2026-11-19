@@ -19,6 +19,12 @@ from langchain.agents.middleware import (
 from langchain_core.messages import ToolMessage
 
 from agents.cancellation import TurnCancelled, raise_if_cancelled  # pyright: ignore[reportImplicitRelativeImport]
+from agents.streaming import (  # pyright: ignore[reportImplicitRelativeImport]
+    emit_token,
+    emit_tool,
+    message_text,
+    stream_enabled,
+)
 from mcps.resilience import (  # pyright: ignore[reportImplicitRelativeImport]
     execute_tool_call,
     recent_failed_tools,
@@ -159,10 +165,17 @@ def resilient_tool_middleware() -> list[Any]:
     @wrap_tool_call(name="ResilientTool")
     def _resilient(request: Any, handler: Any) -> Any:
         name, _args, call_id = _tool_call_fields(request.tool_call)
+        emit_tool(name, "running", tool_call_id=call_id)
         result = execute_tool_call(
             tool_name=name,
             call_id=call_id,
             invoke=lambda: handler(request),
+        )
+        emit_tool(
+            name,
+            "ok" if result.ok else "error",
+            tool_call_id=call_id,
+            detail="" if result.ok else (result.error_kind or result.code),
         )
         return ToolMessage(
             content=result.content,
@@ -376,6 +389,20 @@ def build_react_graph(
     )
 
 
+def _react_stream_chunk(chunk: Any) -> None:
+    """``stream_mode="messages"`` 的原始 chunk → token 事件。
+
+    只推「纯文本增量」：带 ``tool_call_chunks`` / ``tool_calls`` 的块是模型在
+    组织工具参数，推给用户就是噪点；真正答复的块不带工具调用。
+    """
+    message = chunk[0] if isinstance(chunk, tuple) and chunk else chunk
+    if getattr(message, "tool_call_chunks", None):
+        return
+    if getattr(message, "tool_calls", None):
+        return
+    emit_token(message_text(message))
+
+
 def invoke_react(
     agent: Any,
     payload: dict[str, Any],
@@ -403,9 +430,19 @@ def invoke_react(
     def _run() -> Any:
         last: dict[str, Any] | None = None
         try:
-            for chunk in agent.stream(payload, config=cfg, stream_mode="values"):
-                if isinstance(chunk, dict):
-                    last = chunk
+            if stream_enabled():
+                # 同时要 values（最终状态）与 messages（token 增量）。
+                for mode, chunk in agent.stream(
+                    payload, config=cfg, stream_mode=["values", "messages"]
+                ):
+                    if mode == "values" and isinstance(chunk, dict):
+                        last = chunk
+                    elif mode == "messages":
+                        _react_stream_chunk(chunk)
+            else:
+                for chunk in agent.stream(payload, config=cfg, stream_mode="values"):
+                    if isinstance(chunk, dict):
+                        last = chunk
         except GraphRecursionError as exc:
             raise StepLimitReached(
                 f"ReAct 达到图步上限（recursion_limit={recursion_limit}）",

@@ -8,6 +8,8 @@
 
 ## 2.1 token 级流式（SSE）
 
+> **状态：已实现（2026-11-19）**。新增 `agents/streaming.py`（ContextVar 事件桥 + `StreamSink`）、`POST /api/chat/stream`；直答走 `model.stream()`，ReAct 走 `stream_mode=["values","messages"]` 只推纯文本增量；工具进度/阶段事件由中间件与图节点上报。前端 `backendStream`（`client.ts`）+ `sendChatStream`；拿不到可读流 / 后端 409 时自动回落旧接口。开关 `CHATVEIN_STREAM`（默认开）。
+
 ### 现状（证据）
 
 - 全仓无 `StreamingResponse`；`sendChat`（`src/api/conversations.ts:118`）是一次性 POST，靠 `turn_id` 轮询 `GET /traces/{turn}` 看进度。

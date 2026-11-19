@@ -7,7 +7,10 @@ import {
   getConversationWorkspace,
   getTrace,
   sendChat,
+  sendChatStream,
+  StreamUnsupportedError,
   type ChatMessageRecord,
+  type ChatResponse,
   type ConversationWorkspace,
   type TurnTrace,
 } from "../../api";
@@ -314,18 +317,71 @@ export function useChatSession({
           const controller = new AbortController();
           abortRef.current = controller;
           try {
-            const result = await sendChat(
-              text,
-              activeConversationId,
-              targets[index] ?? null,
-              slugs,
-              turnId,
-              controller.signal,
-              // 同一句提问只在第一轮落库，后续成员只追加各自那条助手回复。
-              index === 0,
-              // 群成员透传：后端注册进 chat_groups 并装配团队模式（delegate 分工）。
-              groupMemberIds
-            );
+            // 优先流式：token 增量直接追加到占位气泡；done 事件带回权威响应体。
+            let streamed: ChatResponse | null = null;
+            let streamCancelled = false;
+            let streamFailure: string | null = null;
+            let streamOpened = false;
+            try {
+              await sendChatStream(
+                text,
+                activeConversationId,
+                targets[index] ?? null,
+                slugs,
+                turnId,
+                controller.signal,
+                // 同一句提问只在第一轮落库，后续成员只追加各自那条助手回复。
+                index === 0,
+                // 群成员透传：后端注册进 chat_groups 并装配团队模式（delegate 分工）。
+                groupMemberIds,
+                (event) => {
+                  if (event.event === "token") {
+                    const delta = (event.data as { text?: string }).text ?? "";
+                    if (!delta) return;
+                    setMessages((prev) =>
+                      prev.map((m) =>
+                        m.id === pendingId ? { ...m, content: m.content + delta } : m
+                      )
+                    );
+                  } else if (event.event === "done") {
+                    streamed = event.data as ChatResponse;
+                  } else if (event.event === "cancelled") {
+                    streamCancelled = true;
+                  } else if (event.event === "error") {
+                    streamFailure =
+                      (event.data as { message?: string }).message ?? "流式生成失败";
+                  }
+                }
+              );
+              streamOpened = true;
+            } catch (err) {
+              // 环境不支持流式 / 后端显式关流式：回落普通请求，不能把功能弄丢。
+              const fallback =
+                err instanceof StreamUnsupportedError ||
+                (err instanceof Error && err.message.includes("流式已关闭"));
+              if (!fallback) throw err;
+            }
+            if (streamCancelled) {
+              setMessages((prev) => prev.filter((m) => m.id !== pendingId));
+              setError("已取消本次生成", "muted");
+              return;
+            }
+            if (streamFailure) throw new Error(streamFailure);
+            const result: ChatResponse =
+              streamOpened && streamed
+                ? streamed
+                : await sendChat(
+                    text,
+                    activeConversationId,
+                    targets[index] ?? null,
+                    slugs,
+                    turnId,
+                    controller.signal,
+                    // 同一句提问只在第一轮落库，后续成员只追加各自那条助手回复。
+                    index === 0,
+                    // 群成员透传：后端注册进 chat_groups 并装配团队模式（delegate 分工）。
+                    groupMemberIds
+                  );
             // 兜底：后端换了会话（理论上不会），切过去时同样跳过整表重载。
             if (result.conversation_id !== activeConversationId) {
               skipNextLoadRef.current = result.conversation_id;
