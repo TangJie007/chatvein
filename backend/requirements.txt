@@ -27,8 +27,12 @@ fastembed>=0.8,<1.0
 # 抓取：Firecrawl → httpx/bs4。可选 env：TAVILY_API_KEY / FIRECRAWL_API_KEY / CLAW_SEARCH_MCP_URL。
 # 见 mcps/tools/web.py。
 ddgs>=9.0,<10
+# 全项目统一 HTTP 客户端：web 抓取、skills 代理、ocr、ipwhois、models 连通性探测。
+httpx>=0.27,<1.0
 beautifulsoup4>=4.12,<5
 lxml>=5.0,<7
+# 仅 embeddings 的 ModelScope 下载用 requests（依赖 urllib3 的 Retry 做退避重试）。
+requests>=2.32,<3.0
 # Browser 自动化（mcp-browser）：进程内 Playwright，工具对齐 @playwright/mcp。
 # 浏览器二进制不随包装；需本机 `playwright install chromium`（见 docs/agents.md）。
 # aria_snapshot(mode="ai") 需较新版本（约 >=1.59）。

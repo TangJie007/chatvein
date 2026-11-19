@@ -129,14 +129,8 @@ def _clear_failure() -> None:
 
 
 def _sha256_file(path: Path) -> str:
-    h = hashlib.sha256()
     with path.open("rb") as f:
-        while True:
-            chunk = f.read(1024 * 1024)
-            if not chunk:
-                break
-            h.update(chunk)
-    return h.hexdigest()
+        return hashlib.file_digest(f, "sha256").hexdigest()
 
 
 def _download_zip(urls: tuple[str, ...], dest: Path, *, expect_sha: str) -> None:

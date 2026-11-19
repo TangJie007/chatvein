@@ -293,21 +293,13 @@ async def _chat_turn(req: ChatRequest, request: Request) -> dict[str, object]:
         conversation_id=prepared["id"],
         limit=memory_limit,
     )
-    # --- 技能接线（目录注入 + load_skill 按需加载）---
-    # 完整链路：前端勾选 slug → PUT /api/conversations/{id}/skills 持久化到会话
-    #   → /api/chat 读取会话技能 → skill_prompt_blocks 生成技能目录
-    #   （name + description + slug，不注入正文）→ 追加进 role_runtime["prompt"]
-    #   → run_pipeline → agents/graphs/pipeline.py 组装 system prompt（# Role 段，
-    #   prompts.py build_agent_system）→ create_agent(system_prompt=...) →
-    #   agents/llm.py get_chat_model 按 role.model_id 发出模型请求。
-    #   模型需要时调用 load_skill(slug) 工具（mcps/tools/skills.py）把 SKILL.md
-    #   完整正文按需拉进上下文，避免几千米的长技能挤爆上下文。
-    #   相关文件：skills/service.py → skills/local_store.py → mcps/tools/skills.py
-    #   → agents/graphs/medium.py & hard.py（react_node 无条件附加 load_skill）。
-    # 常驻技能（角色级 resident_skills）与会话级技能（conversations.skills）去重合并：
-    #  * 常驻技能：每次会话都会自动带上，来自角色配置；Composer 面板中不重复勾选
-    #  * 会话级技能：Composer 勾选后持久化到当前会话，本会话内持续生效
-    # 使用 dict.fromkeys 保序去重，保证 role prompt 里的技能顺序稳定
+    # --- 技能接线：目录注入 + load_skill 按需加载 ---
+    # 链路：Composer 勾选 slug → PUT /api/conversations/{id}/skills 持久化 →
+    #   /api/chat 用 skill_prompt_blocks 生成「目录」（name + description + slug，不含正文）
+    #   追加进 role prompt → pipeline 组装 system prompt → 模型按需 load_skill 拉 SKILL.md 全文
+    #   （正文读取：skills/local_store.py → mcps/tools/skills.py），避免长技能挤爆上下文。
+    # 常驻技能（角色 resident_skills，每轮自动带上）与会话级技能（Composer 勾选、本会话生效）
+    # 用 dict.fromkeys 保序去重，保证 prompt 里技能顺序稳定。
     resident_slugs = [str(s) for s in (role_runtime.get("resident_skills") or [])] if role_runtime else []
     session_slugs = conversations_service.get_conversation_skills(prepared["id"])
     merged_slugs = list(dict.fromkeys(resident_slugs + session_slugs))

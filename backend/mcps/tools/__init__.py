@@ -93,13 +93,7 @@ def heuristic_hits(message: str) -> list[str]:
         modules.append(browser)
     for group in modules:
         names.extend(group.heuristic(text))
-    seen: set[str] = set()
-    out: list[str] = []
-    for n in names:
-        if n not in seen:
-            seen.add(n)
-            out.append(n)
-    return out
+    return list(dict.fromkeys(names))
 
 
 __all__ = [

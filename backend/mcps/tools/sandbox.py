@@ -22,26 +22,15 @@ from mcps.sandbox import (  # pyright: ignore[reportImplicitRelativeImport]
     venv_python,
 )
 
+from ._output import clip
+
 _MAX_CODE = 100_000
-_MAX_OUTPUT = 12_000
 _PKG = re.compile(
     r"^[A-Za-z0-9][A-Za-z0-9._\-]*"
     r"(?:\[[A-Za-z0-9,_\-]+\])?"
     r"(?:==|>=|<=|~=|!=|>|<|=)?"
     r"[A-Za-z0-9.*!+_]*$"
 )
-
-
-def _clip(text: str | bytes | None) -> str:
-    if text is None:
-        return ""
-    if isinstance(text, bytes):
-        value = text.decode("utf-8", errors="replace")
-    else:
-        value = text
-    if len(value) <= _MAX_OUTPUT:
-        return value
-    return value[:_MAX_OUTPUT] + "\n…(输出已截断)"
 
 
 def _guard_write(path: Path) -> str | None:
@@ -85,15 +74,15 @@ def _run(cmd: list[str], *, cwd: Path, timeout: int, env: dict[str, str] | None 
     except subprocess.TimeoutExpired as exc:
         return (
             f"超时（{timeout}s）已终止\n"
-            f"stdout:\n{_clip(exc.stdout)}\n"
-            f"stderr:\n{_clip(exc.stderr)}"
+            f"stdout:\n{clip(exc.stdout)}\n"
+            f"stderr:\n{clip(exc.stderr)}"
         )
     except OSError as exc:
         return f"执行失败: {exc}"
     return (
         f"exit={completed.returncode}\n"
-        f"stdout:\n{_clip(completed.stdout)}\n"
-        f"stderr:\n{_clip(completed.stderr)}"
+        f"stdout:\n{clip(completed.stdout)}\n"
+        f"stderr:\n{clip(completed.stderr)}"
     )
 
 

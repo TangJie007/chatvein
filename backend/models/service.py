@@ -8,13 +8,12 @@
 
 from __future__ import annotations
 
-import json
 import os
 import time
 from datetime import datetime, timezone
 from typing import Any
-from urllib.error import HTTPError
-from urllib.request import Request, urlopen
+
+import httpx
 
 from .crypto import decrypt_secret, encrypt_secret
 from .entity import (
@@ -151,41 +150,41 @@ class ModelsService:
             headers["Authorization"] = f"Bearer {decrypt_secret(entity.api_key) or ''}"
 
         started = time.perf_counter()
-        req = Request(url, headers=headers, method="GET")
         try:
-            with urlopen(req, timeout=15) as resp:
-                body = resp.read(2048)
-                latency_ms = int((time.perf_counter() - started) * 1000)
-                # 粗看是否像模型列表
-                model_count: int | None = None
-                try:
-                    parsed = json.loads(body.decode("utf-8", errors="replace"))
-                    if isinstance(parsed, dict) and isinstance(parsed.get("data"), list):
-                        model_count = len(parsed["data"])
-                except (json.JSONDecodeError, UnicodeError):
-                    pass
-                return {
-                    "ok": True,
-                    "status_code": resp.status,
-                    "latency_ms": latency_ms,
-                    "message": (
-                        f"连接成功"
-                        + (f"，列出 {model_count} 个模型" if model_count is not None else "")
-                    ),
-                    "url": url,
-                }
-        except HTTPError as exc:
+            with httpx.Client(timeout=15) as client:
+                resp = client.get(url, headers=headers)
+            if resp.status_code >= 300:  # 与 urllib 口径一致：重定向 / 错误码都算探测失败
+                raise httpx.HTTPStatusError(
+                    f"HTTP {resp.status_code}", request=resp.request, response=resp
+                )
             latency_ms = int((time.perf_counter() - started) * 1000)
-            detail = exc.read(512).decode("utf-8", errors="replace") if exc.fp else ""
+            # 粗看是否像模型列表；非 JSON 响应也算「连上了」
+            model_count: int | None = None
+            try:
+                parsed = resp.json()
+                if isinstance(parsed, dict) and isinstance(parsed.get("data"), list):
+                    model_count = len(parsed["data"])
+            except ValueError:
+                pass
             return {
-                "ok": False,
-                "status_code": exc.code,
+                "ok": True,
+                "status_code": resp.status_code,
                 "latency_ms": latency_ms,
-                "message": f"HTTP {exc.code}" + (f"：{detail[:200]}" if detail else ""),
+                "message": f"连接成功" + (f"，列出 {model_count} 个模型" if model_count is not None else ""),
                 "url": url,
             }
-        except Exception as exc:  # noqa: BLE001 — 探测接口需吞掉网络类异常
+        except Exception as exc:  # noqa: BLE001 — 探测接口：连接 / 超时 / 非法 URL 都转成失败信息
             latency_ms = int((time.perf_counter() - started) * 1000)
+            if isinstance(exc, httpx.HTTPStatusError):
+                code = exc.response.status_code
+                detail = exc.response.text[:200]
+                return {
+                    "ok": False,
+                    "status_code": code,
+                    "latency_ms": latency_ms,
+                    "message": f"HTTP {code}" + (f"：{detail}" if detail else ""),
+                    "url": url,
+                }
             return {
                 "ok": False,
                 "status_code": None,

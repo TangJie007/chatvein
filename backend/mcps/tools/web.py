@@ -187,7 +187,7 @@ def _rows_to_result(source: str, rows: list[tuple[str, str, str]]) -> str | None
     return f"source={source}\n" + _format_hits(rows)
 
 
-# ── Claw Search（Parallel Search Free MCP）──────────────────────────────────
+# ── Claw Search（Parallel Search Free MCP） ──
 
 
 def _search_claw(query: str, limit: int) -> str | None:
@@ -284,7 +284,7 @@ def _search_claw(query: str, limit: int) -> str | None:
     return _rows_to_result("claw-search", rows)
 
 
-# ── Tavily Keyless ───────────────────────────────────────────────────────────
+# ── Tavily Keyless ──
 
 
 def _search_tavily(query: str, limit: int) -> str | None:
@@ -332,7 +332,7 @@ def _search_tavily(query: str, limit: int) -> str | None:
     return _rows_to_result(source, rows)
 
 
-# ── Firecrawl Keyless / keyed ────────────────────────────────────────────────
+# ── Firecrawl Keyless / keyed ──
 
 
 def _fc_headers() -> dict[str, str]:

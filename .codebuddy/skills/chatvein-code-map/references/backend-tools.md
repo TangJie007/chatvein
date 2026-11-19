@@ -31,6 +31,7 @@ backend/mcps/
 ├─ browser_runtime.py / browser_session.py
 ├─ ipwhois_runtime.py
 └─ tools/               16 个工具模块（core / fs / web / sqlite / kb / sandbox / ip / ocr / pdf / skills / docx / pptx / excel / bash / powershell / browser）
+                        └─ _output.py   bash / powershell / sandbox 共用的输出截断（不是工具模块）
 ```
 
 ## 1. 装配与执行

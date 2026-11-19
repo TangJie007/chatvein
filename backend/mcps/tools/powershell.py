@@ -13,17 +13,9 @@ from mcps.bash_runtime import resolve_powershell  # pyright: ignore[reportImplic
 from mcps.powershell_policy import classify_powershell  # pyright: ignore[reportImplicitRelativeImport]
 from mcps.sandbox import current_sandbox, venv_python  # pyright: ignore[reportImplicitRelativeImport]
 
-_MAX_OUTPUT = 12_000
+from ._output import clip
+
 _cwd: dict[str, Path] = {}
-
-
-def _clip(text: str | bytes | None) -> str:
-    if text is None:
-        return ""
-    value = text.decode("utf-8", errors="replace") if isinstance(text, bytes) else text
-    if len(value) <= _MAX_OUTPUT:
-        return value
-    return value[:_MAX_OUTPUT] + "\n…(输出已截断)"
 
 
 def _working_dir(root: Path) -> Path:
@@ -98,7 +90,7 @@ def _execute(command: str, *, timeout: int) -> str:
             check=False,
         )
     except subprocess.TimeoutExpired as exc:
-        return f"超时（{timeout}s）已终止\nstdout:\n{_clip(exc.stdout)}\nstderr:\n{_clip(exc.stderr)}"
+        return f"超时（{timeout}s）已终止\nstdout:\n{clip(exc.stdout)}\nstderr:\n{clip(exc.stderr)}"
     except OSError as exc:
         return f"执行失败: {exc}"
 
@@ -122,8 +114,8 @@ def _execute(command: str, *, timeout: int) -> str:
     return (
         f"cwd={shown}\n"
         f"exit={completed.returncode}\n"
-        f"stdout:\n{_clip(completed.stdout)}\n"
-        f"stderr:\n{_clip(completed.stderr)}{note}"
+        f"stdout:\n{clip(completed.stdout)}\n"
+        f"stderr:\n{clip(completed.stderr)}{note}"
     )
 
 
