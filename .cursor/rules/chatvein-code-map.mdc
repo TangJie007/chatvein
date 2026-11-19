@@ -1,0 +1,43 @@
+---
+description: ChatVein 代码地图与需求落点。需要定位前端页面、后端接口、Agent 图、工具、Tauri 启动/打包文件时读取。
+alwaysApply: false
+---
+
+# ChatVein 代码地图
+
+三层：`src/`（React 19 + Vite + Tailwind）→ `src-tauri/`（Tauri 2 + Rust）→ `backend/`（FastAPI + LangGraph + SQLite）。Rust 拉起后端并注入随机端口 + token；前端请求统一走 `src/api/client.ts`（自动带 `X-Chatvein-Token`）。
+
+## 需求 → 文件
+
+| 需求 | 先改 | 连带 |
+|---|---|---|
+| 新页面/导航 | `src/types/view.ts`、`src/App.tsx` | `src/components/layout/AppShell.tsx`、`Sidebar.tsx` |
+| 聊天流式/停止 | `src/components/chat/useChatSession.ts` | `ChatPanel.tsx`、`Composer.tsx`、`src/api/conversations.ts` |
+| 单轮编排 | `backend/main.py`（`/api/chat`） | `backend/conversations/service.py`、`backend/agents/service.py` |
+| 难度路由/改写 | `backend/agents/router.py` | `backend/agents/graphs/pipeline.py` |
+| Agent 决策 | `backend/agents/graphs/{simple,medium,hard}.py` | `common.py`、`prompts.py` |
+| 工具选择 | `backend/agents/tool_selector.py`、`tool_retriever.py` | `backend/mcps/registry.py` |
+| 新增工具 | `backend/mcps/tools/<module>.py` | `backend/mcps/tools/__init__.py`、`src/components/settings/prefs.ts`、`src/lib/rolesStore.ts` |
+| 工具执行/审批 | `backend/mcps/registry.py` | `bash.py`、`bash_policy.py`、`bash_approval.py` |
+| 工作区/沙箱 | `backend/mcps/sandbox.py`、`workspace.py`、`path_access.py` | `backend/main.py`（uploads） |
+| 新后端接口 | `backend/<module>/controller.py` | `module.py`、`main.py include_router`、`src/api/*.ts` |
+| 会话/群组 | `backend/conversations/`、`backend/chats/` | `src/api/conversations.ts`、`src/api/db.ts` |
+| 角色/技能/知识库 | `backend/{roles,skills,knowledge}/` | 对应 `src/components/views/*`、`src/api/*.ts` |
+| 追踪 | `backend/trace/`、`src/components/trace/*` | `insightData.ts`、`src/lib/openTrace.ts` |
+| 提示词 | `backend/agents/graphs/prompts.py` | `router.py`、`tool_selector.py` |
+| 启动/端口/token | `src-tauri/src/backend.rs` | `src/api/client.ts`、`BackendGate.tsx` |
+| 打包/更新 | `src-tauri/tauri.conf.json`、`tools/release_updater.ps1` | `src/lib/updater.ts`、`tools/build_backend.ps1` |
+
+## 硬约定
+
+1. 后端禁止顶层 import 重依赖；初始化放 `lifespan`。
+2. 新模块 = `controller.py` + `service.py` + `module.py`（`APIRouter(prefix="/api/...")`）。
+3. 工具必须导出 `TOOLS` + `heuristic`；分组同步 `tools/__init__.py`、`prefs.ts`、`rolesStore.ts`。
+4. 文件/命令走 `path_access` / `bash_policy`；工作区用 `current_sandbox()`。
+5. 对话无 SSE：乐观插入 + 轮询 `/traces/{turn_id}`；停止调 `/api/chat/cancel`。
+6. 主库迁移只追加且幂等；消息不存主库（在会话工作区 `logs/session.sqlite`）。
+7. 长任务 `asyncio.to_thread`；`ContextVar` 不跨线程。
+
+## 深度地图
+
+`AGENTS.md`（总入口），或按需读 `.codebuddy/skills/chatvein-code-map/references/{frontend,backend-core,backend-tools,tauri-build}.md`。
