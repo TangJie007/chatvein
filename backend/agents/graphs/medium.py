@@ -11,7 +11,7 @@ from mcps.registry import invoke_tools, resolve_tools  # pyright: ignore[reportI
 
 from .. import llm as llm_mod
 from .. import tool_selector
-from ..memory import to_lc_messages
+from ..context import assemble_context
 from trace.recording import (
     note,
     record_tools_if_absent,
@@ -122,21 +122,29 @@ def build_medium_graph(
             }
         try:
             role_prompt = str((role or {}).get("prompt") or "").strip()
+            system_prompt = build_agent_system(
+                tier="medium",
+                role_prompt=role_prompt or None,
+            )
             agent = build_react_graph(
                 model,
                 tools,
-                system_prompt=build_agent_system(
-                    tier="medium",
-                    role_prompt=role_prompt or None,
-                ),
+                system_prompt=system_prompt,
                 name=name,
                 max_model_calls=_MAX_MODEL_CALLS,
                 max_tool_calls=_MAX_TOOL_CALLS,
                 max_web_search=_MAX_WEB_SEARCH,
             )
-            prior = to_lc_messages(state.get("history"))
+            # 按 token 预算装配历史：超预算才压缩较早对话，否则原样送入。
+            assembled = assemble_context(
+                state.get("history"),
+                message=text or "请执行工具",
+                system_prompt=system_prompt,
+                role=role,
+                summarizer_model=model,
+            )
             messages: list[BaseMessage] = [
-                *prior,
+                *assembled.messages,
                 HumanMessage(content=text or "请执行工具"),
             ]
             with span("react"):

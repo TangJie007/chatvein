@@ -46,6 +46,17 @@ CREATE TABLE IF NOT EXISTS messages (
     created_at TEXT NOT NULL
 );
 """ + _TOOL_CALLS_DDL.replace("CREATE TABLE", "CREATE TABLE IF NOT EXISTS", 1) + """
+CREATE TABLE IF NOT EXISTS context_summaries (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    first_message_id INTEGER NOT NULL,
+    last_message_id INTEGER NOT NULL,
+    summary TEXT NOT NULL,
+    kept_facts_json TEXT,
+    tokens INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_context_summaries_range
+ON context_summaries(first_message_id, last_message_id);
 CREATE INDEX IF NOT EXISTS idx_messages_id ON messages(id);
 """
 
@@ -379,3 +390,55 @@ def list_artifacts(output_path: Path) -> list[dict[str, Any]]:
             }
         )
     return items[:100]
+
+
+def get_context_summary(
+    db_path: Path, first_message_id: int, last_message_id: int
+) -> str | None:
+    """取同一消息区间已有的上下文摘要（没有则 ``None``）。"""
+    ensure_session_db(db_path)
+    with _connect(db_path) as conn:
+        row = conn.execute(
+            "SELECT summary FROM context_summaries "
+            "WHERE first_message_id = ? AND last_message_id = ?",
+            (int(first_message_id), int(last_message_id)),
+        ).fetchone()
+    return str(row["summary"]) if row else None
+
+
+def save_context_summary(
+    db_path: Path,
+    *,
+    first_message_id: int,
+    last_message_id: int,
+    summary: str,
+    kept_facts: list[str] | None = None,
+    tokens: int = 0,
+) -> None:
+    """写入/覆盖某区间的上下文摘要。"""
+    ensure_session_db(db_path)
+    text = summary if len(summary) <= 8000 else summary[:8000] + "\n…(截断)"
+    facts_json = None
+    if kept_facts:
+        try:
+            facts_json = json.dumps(kept_facts, ensure_ascii=False, default=str)
+        except TypeError:
+            facts_json = json.dumps([str(f) for f in kept_facts], ensure_ascii=False)
+    with _connect(db_path) as conn:
+        conn.execute(
+            "INSERT INTO context_summaries("
+            "first_message_id, last_message_id, summary, kept_facts_json, tokens, created_at"
+            ") VALUES (?, ?, ?, ?, ?, ?) "
+            "ON CONFLICT(first_message_id, last_message_id) DO UPDATE SET "
+            "summary = excluded.summary, "
+            "kept_facts_json = excluded.kept_facts_json, "
+            "tokens = excluded.tokens",
+            (
+                int(first_message_id),
+                int(last_message_id),
+                text,
+                facts_json,
+                int(tokens or 0),
+                _iso_now(),
+            ),
+        )

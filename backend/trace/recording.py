@@ -254,6 +254,7 @@ def _path(difficulty: str) -> list[dict[str, Any]]:
     return [
         {"id": "understand", "label": "理解", "taken": True},
         {"id": "route", "label": "路由", "taken": True},
+        {"id": "context", "label": "上下文", "taken": True},
         {"id": "simple", "label": "直答", "taken": level == "simple"},
         {"id": "plan", "label": "规划", "taken": is_hard},
         {"id": "select_tools", "label": "筛选工具", "taken": branched},

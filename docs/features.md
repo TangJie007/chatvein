@@ -16,7 +16,7 @@ Agent 图细节见 [`agent-graphs.md`](./agent-graphs.md)；工具矩阵见 [`ag
 | 工具缩集 | 按改写文本（hard 含计划）从目录选工具 | `agents/tool_selector.py` |
 | 角色覆盖 | 提示词叠在挡位 system 上；模型 / 温度 / max_tokens 等 | `roles/` + `pipeline._merged_system` |
 | 角色工具白名单 | 勾选 MCP **分组 id**（或工具名）限制候选集；空=不限制 | `rolesStore.TOOLSET` + `tool_selector.expand_allowlist` |
-| 短期记忆 | 会话 `logs/session.sqlite`；条数 ≈ 角色 `memory × 2` | `conversations/service.py` + `main.py` chat |
+| 短期记忆 | 会话 `logs/session.sqlite`；条数 ≈ 角色 `memory × 2`；送模型前按 token 预算装配，超预算把较早对话压成摘要 | `conversations/service.py` + `agents/context.py` |
 | 技能注入 | `POST /api/chat` 的 `skills[]` 把本机 `SKILL.md` 并入 system | `skills/local_store.py` |
 | 轮次追踪 | span 树、LLM 请求/响应、工具、token；按 turn 落库 | `trace/` |
 | HTTP 入口 | `POST /api/chat` 同事务写用户+助手消息，回写 workspace 洞察 | `main.py` |

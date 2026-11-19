@@ -18,7 +18,7 @@ from mcps.registry import invoke_tools, resolve_tools  # pyright: ignore[reportI
 
 from .. import llm as llm_mod
 from .. import tool_selector
-from ..memory import to_lc_messages
+from ..context import assemble_context
 from trace.recording import (
     note,
     record_tools_if_absent,
@@ -291,9 +291,16 @@ def build_hard_graph(
                 max_tool_calls=_MAX_TOOL_CALLS,
                 max_web_search=_MAX_WEB_SEARCH,
             )
-            prior = to_lc_messages(state.get("history"))
+            # 按 token 预算装配历史：超预算才压缩较早对话，否则原样送入。
+            assembled = assemble_context(
+                state.get("history"),
+                message=user_blob or "请执行工具",
+                system_prompt=prompt,
+                role=role,
+                summarizer_model=model,
+            )
             messages: list[BaseMessage] = [
-                *prior,
+                *assembled.messages,
                 HumanMessage(content=user_blob or "请执行工具"),
             ]
             with span("react"):

@@ -139,9 +139,11 @@ def test_offline_pipeline_trace_exposes_route(monkeypatch) -> None:
     trace = out["trace"]
     assert trace["status"] == "done"
     assert trace["difficulty"] == "simple"
-    assert trace["path"][2]["id"] == "simple"
+    assert trace["path"][2]["id"] == "context"
     assert trace["path"][2]["taken"] is True
-    assert trace["path"][3]["taken"] is False
+    assert trace["path"][3]["id"] == "simple"
+    assert trace["path"][3]["taken"] is True
+    assert trace["path"][4]["taken"] is False
     kinds = [step["kind"] for step in trace["steps"]]
     assert "route" in kinds
     assert any(step.get("status") == "offline" for step in trace["steps"])

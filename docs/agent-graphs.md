@@ -53,7 +53,9 @@ HTTP 落库 + 会话 workspace 洞察
 | hard | `agents/graphs/hard.py` | plan → 选型 → ReAct → verify |
 | 选型 | `agents/tool_selector.py` | 候选工具缩集 + 角色白名单展开；允许空工具集（直答） |
 | 状态 | `agents/graphs/state.py` | `ChatState` TypedDict |
-| 记忆 | `agents/memory.py` | 历史 → LangChain messages |
+| 记忆 | `agents/memory.py` | 历史 → LangChain messages（底层转换 / 降级） |
+| 上下文 | `agents/context.py` | 按 token 预算装配历史；超预算时压缩较早对话为摘要 |
+| 预算 | `agents/token_budget.py` | token 估算与四段预算分配 |
 | 共用 | `agents/graphs/common.py` | `last_text` / `allowed_from_role` / `build_react_graph` / `merge_tool_traces` |
 
 ---
@@ -121,7 +123,7 @@ difficulty == "medium" → medium
 
 ### 4.4 收尾
 
-`run_pipeline` 在 `tracing` 上下文中 `invoke` 总图，再 `complete(...)` 生成整轮 `trace`（含 path：理解 → 路由 → 直答或 规划/筛选/ReAct/核对）。
+`run_pipeline` 在 `tracing` 上下文中 `invoke` 总图，再 `complete(...)` 生成整轮 `trace`（含 path：理解 → 路由 → 上下文 → 直答或 规划/筛选/ReAct/核对）。
 
 ---
 
@@ -309,6 +311,7 @@ role.memory  ──────→ history 条数（HTTP 层）  │
 | --- | --- | --- | --- | --- |
 | understand | 理解 | ✓ | ✓ | ✓ |
 | route | 路由 | ✓ | ✓ | ✓ |
+| context | 上下文 | ✓ | ✓ | ✓ |
 | simple | 直答 | ✓ | | |
 | plan | 规划 | | | ✓ |
 | select_tools | 筛选工具 | | ✓ | ✓ |

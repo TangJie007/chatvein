@@ -21,6 +21,7 @@ const STEP_LABEL: Record<string, string> = {
   react: "ReAct",
   verify: "核对",
   route: "路由",
+  context: "上下文",
 };
 
 function stepLabel(name: string): string {

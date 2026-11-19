@@ -9,8 +9,9 @@
 - **消息只在会话空间库**：主库（`conversations` 表）只存会话元数据（`id / title / workspace_dir / created_at / updated_at / skills`），具体消息、工具轨迹、推理字段全部落在会话工作区的 `logs/session.sqlite`。这样：
   - 会话级数据跟随 workspace 走，可随 workspace 归档 / 删除；
   - 主库始终轻量，会话列表 / 预览查询不必扫描消息表。
-- **短期记忆 = 最近 N 条落库消息**：不做摘要、不做向量召回、不做跨会话检索——严格限定在"同一 `workspace_dir` 下最近 N 条"。
-- **窗口以「条数」为单位**：`limit` 指消息行数（user + assistant 混合计数），不按 token 严格预算。
+- **短期记忆 = 最近 N 条落库消息**：不做跨会话检索、不做向量召回——严格限定在"同一 `workspace_dir` 下最近 N 条"；`short_term_memory` 本身只读取，不改写。
+- **读取窗口以「条数」为单位**：`limit` 指消息行数（user + assistant 混合计数），读取阶段不按 token 预算。
+- **送入模型前再按 token 预算装配**（`backend/agents/context.py::assemble_context`）：历史能装下就原样送入；超预算才把较早对话压成摘要并保留最近若干轮原文，避免按条数硬截断丢掉关键事实。
 - **不回放 tool 消息**：`tool_calls` 是审计信息，只写不落回模型上下文，避免脏 `tool_call_id`。
 
 ---
@@ -123,7 +124,7 @@ def short_term_memory(self, workspace_dir, *, conversation_id=None, limit=24):
 
 ## 5. 送入 Agent：`to_lc_messages`
 
-`backend/agents/memory.py` 只有一个函数：把落库消息转成 LangChain 的 `BaseMessage` 列表。
+`backend/agents/context.py::assemble_context` 是送模型的统一入口（按 token 预算装配、超预算压缩较早历史）；`backend/agents/memory.py::to_lc_messages` 作为底层转换与降级路径保留——关闭压缩（`CHATVEIN_CTX_COMPACT=0`）或装配异常时，仍按最近 24 条截断，与旧行为一致。
 
 ```python
 DEFAULT_HISTORY_LIMIT = 24
@@ -174,7 +175,9 @@ if role_runtime and role_runtime.get("memory") is not None:
 
 - 角色 `memory` 字段是"轮次数"，乘 2 转成消息条数（每轮 = 1 user + 1 assistant）；
 - 硬 clamp 到 `[0, 60]`：0 表示完全无上下文，60 是硬上限（约 30 轮）；
-- 类型异常回退到 24。
+- 类型异常回退到 24；
+- **token 预算优先于条数**：`assemble_context` 按模型 `context_window_k` / `max_tokens` 推导历史预算（`CHATVEIN_CTX_WINDOW` / `CHATVEIN_CTX_OUTPUT_RESERVE` 可覆盖）；最近 `CHATVEIN_CTX_RECENT_TURNS`（默认 6）轮保留原文，更早的压成摘要；
+- 摘要写回会话库 `context_summaries`（按 `first_message_id + last_message_id` 唯一），同区间复用，不重复付费。
 
 代码索引：[main.py](file:///e:/project/chatvein/backend/main.py#L175-L185)
 
@@ -202,7 +205,7 @@ POST /api/chat
 要点：
 
 - `history` 作为 `ChatState.history` 字段一路传递（`_simple_node / _medium_node / _hard_node` 里 `list(state.get("history") or [])`）；
-- 各子图的 `run_*` 内部对 `history` 调 `to_lc_messages` 再拼 system prompt + 本轮 user 句；
+- 各子图的 `run_*` 内部对 `history` 调 `assemble_context`（内部按 token 预算装配，必要时压缩较早历史）再拼本轮 user 句；
 - `understand`（意图理解 / 难度判定）**不吃 history**，只做单句改写与路由；这样路由不受历史噪声干扰。
 
 代码索引：[pipeline.py](file:///e:/project/chatvein/backend/agents/graphs/pipeline.py)、[service.py (agents)](file:///e:/project/chatvein/backend/agents/graphs/pipeline.py)
@@ -218,7 +221,8 @@ POST /api/chat
 | assistant 消息 `tokens=0` | `list_messages` 用 trace 事后补齐，`apply_turn_metrics` 只补 0 值 |
 | 工具结果超大 | `append_tool_call` 硬截断到 50_000 字并追加 `\n…(截断)` |
 | 角色未配置模型 | main.py 提前返回 `reply="暂未给角色配置模型"` + 独立 `turn_id`，跳过 Agent 但**仍然 save_exchange**，让撤回 / 历史可查 |
-| 首次对话无 history | `short_term_memory` 返回 `[]`，`to_lc_messages` 返回 `[]`，Agent 只带 system prompt |
+| 首次对话无 history | `short_term_memory` 返回 `[]`，`assemble_context` 返回空 messages，Agent 只带 system prompt |
+| 上下文装配异常 / 关闭压缩 | 回退 `to_lc_messages` 的最近 24 条截断，与旧行为一致（`CHATVEIN_CTX_COMPACT=0`） |
 | 会话 workspace 缺失 | `_session_db_for` 返回 `None`，`list_messages` / `delete_last_exchange` 短路返回空 / 0 |
 | 跨 workspace 混入 | 由 `session_db_path(workspace_root_for(workspace_dir))` 路径约束，天然隔离 |
 

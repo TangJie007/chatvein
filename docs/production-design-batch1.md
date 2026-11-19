@@ -8,6 +8,8 @@
 
 ## 1.1 上下文工程：自动压缩 + token 预算
 
+> **状态：已实现（2026-11-19）**。新增 `agents/token_budget.py` / `agents/context.py`，三张图接入，摘要缓存落会话库 `context_summaries`，trace 增 `context` 节点；开关 `CHATVEIN_CTX_COMPACT`（默认开）。
+
 ### 现状（证据）
 
 - `agents/memory.py::to_lc_messages()` 仅 `history[-limit:]`，`tool` 角色消息直接丢弃；limit 由 `main.py:285-295` 算 `clamp(role.memory*2, 0, 60)`，默认 24。

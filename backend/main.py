@@ -31,6 +31,7 @@ from agents.cancellation import (  # pyright: ignore[reportImplicitRelativeImpor
     cancel_turn,
     clear_turn,
 )
+from agents.context import use_summary_cache  # pyright: ignore[reportImplicitRelativeImport]
 from agents.llm import model_error_hint  # pyright: ignore[reportImplicitRelativeImport]
 from agents.graphs.pipeline import run_pipeline  # pyright: ignore[reportImplicitRelativeImport]
 from conversations.entity.dto import ConversationRecord  # pyright: ignore[reportImplicitRelativeImport]
@@ -426,7 +427,10 @@ def _run_chat_heavy(
             turn_id=turn_id,
             role=role_runtime,
         ):
-            with use_conversation_sandbox(prepared["workspace_dir"]):
+            with (
+                use_conversation_sandbox(prepared["workspace_dir"]),
+                use_summary_cache(db_path),
+            ):
                 if _usage_callback is not None:
                     with _usage_callback() as usage_cb:
                         result = run_pipeline(req.message, history=history, role=role_runtime)

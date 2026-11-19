@@ -8,7 +8,7 @@ from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
 from langgraph.graph import END, START, MessagesState, StateGraph
 
 from .. import llm as llm_mod
-from ..memory import to_lc_messages
+from ..context import assemble_context
 from trace.recording import note, runnable_config, span
 
 from .common import last_text
@@ -52,8 +52,18 @@ def run_simple(
         )
         return reply, False
     try:
-        prior = to_lc_messages(history)
-        messages: list[BaseMessage] = [*prior, HumanMessage(content=text or "你好")]
+        # 按 token 预算装配历史：超预算才压缩较早对话，否则原样送入。
+        assembled = assemble_context(
+            history,
+            message=text or "你好",
+            system_prompt=system_prompt,
+            role=role,
+            summarizer_model=model,
+        )
+        messages: list[BaseMessage] = [
+            *assembled.messages,
+            HumanMessage(content=text or "你好"),
+        ]
         with span("simple"):
             out = build_simple_graph(model, system_prompt=system_prompt).invoke(
                 {"messages": messages},
