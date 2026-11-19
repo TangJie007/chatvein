@@ -19,6 +19,7 @@ from langchain.agents.middleware import (
 from langchain_core.messages import ToolMessage
 
 from agents.cancellation import TurnCancelled, raise_if_cancelled  # pyright: ignore[reportImplicitRelativeImport]
+from mcps.approval import bind_tool_call  # pyright: ignore[reportImplicitRelativeImport]
 from agents.streaming import (  # pyright: ignore[reportImplicitRelativeImport]
     emit_token,
     emit_tool,
@@ -166,11 +167,13 @@ def resilient_tool_middleware() -> list[Any]:
     def _resilient(request: Any, handler: Any) -> Any:
         name, _args, call_id = _tool_call_fields(request.tool_call)
         emit_tool(name, "running", tool_call_id=call_id)
-        result = execute_tool_call(
-            tool_name=name,
-            call_id=call_id,
-            invoke=lambda: handler(request),
-        )
+        # 审批用 turn_id + tool_call_id 生成确定性 id：恢复一轮时能复用旧决定。
+        with bind_tool_call(call_id):
+            result = execute_tool_call(
+                tool_name=name,
+                call_id=call_id,
+                invoke=lambda: handler(request),
+            )
         emit_tool(
             name,
             "ok" if result.ok else "error",

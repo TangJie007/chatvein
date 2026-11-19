@@ -6,12 +6,15 @@ import {
   getConversation,
   getConversationWorkspace,
   getTrace,
+  listResumable,
+  resumeTurn,
   sendChat,
   sendChatStream,
   StreamUnsupportedError,
   type ChatMessageRecord,
   type ChatResponse,
   type ConversationWorkspace,
+  type ResumableTurn,
   type TurnTrace,
 } from "../../api";
 import { errorMessage } from "../../lib/errors";
@@ -139,6 +142,8 @@ export function useChatSession({
   /** 会话级技能（Composer 受控）；群组不使用，保持空数组。 */
   const [skills, setSkills] = useState<ComposerSkill[]>([]);
   const [metaById, setMetaById] = useState<Record<string, ChatSessionMeta>>({});
+  /** 1.3 断点：停止 / 崩溃后仍可继续的轮次（没有则为 null）。 */
+  const [resumable, setResumable] = useState<ResumableTurn | null>(null);
 
   /** 当前在途请求的取消控制器；非 null 表示 Agent 正在生成。 */
   const abortRef = useRef<AbortController | null>(null);
@@ -169,6 +174,20 @@ export function useChatSession({
     []
   );
 
+  // 1.3：停止 / 崩溃后仍留有 checkpoint 的轮次，用于「继续生成 / 放弃」。
+  const refreshResumable = useCallback(async (id: string | null) => {
+    if (!id) {
+      setResumable(null);
+      return;
+    }
+    try {
+      const data = await listResumable(id);
+      setResumable(data.turns[0] ?? null);
+    } catch {
+      setResumable(null);
+    }
+  }, []);
+
   const loadConversation = useCallback(async (id: string) => {
     const data = await getConversation(id);
     const msgs = toChatMessages(data.messages);
@@ -186,7 +205,8 @@ export function useChatSession({
     } catch {
       setWorkspace(null);
     }
-  }, []);
+    void refreshResumable(id);
+  }, [refreshResumable]);
 
   // 切换会话：清掉上一个会话残留的错误（含挂在提问气泡下的那条）。
   useEffect(() => {
@@ -194,6 +214,7 @@ export function useChatSession({
       setMessages([]);
       setWorkspace(null);
       setSkills([]);
+      setResumable(null);
       setError(null);
       return;
     }
@@ -461,6 +482,11 @@ export function useChatSession({
             prev.filter((m) => !(leftover.agentIds.includes(m.id) && m.streaming))
           );
         }
+        // 停止 / 非用户中断会在后端留下 checkpoint：稍等一拍再查能否续跑。
+        if (conversationId) {
+          const id = conversationId;
+          window.setTimeout(() => void refreshResumable(id), 600);
+        }
       }
     },
     [
@@ -469,11 +495,41 @@ export function useChatSession({
       groupMemberIds,
       onRefreshList,
       onSelectConversation,
+      refreshResumable,
       roleId,
       sending,
       setError,
     ]
   );
+
+  /** 1.3：从断点继续本轮（后端只补写助手消息），完成后整表重载。 */
+  const resumeInterrupted = useCallback(async () => {
+    if (!conversationId || !resumable || sending) return;
+    setSending(true);
+    setError(null);
+    try {
+      await resumeTurn(conversationId, resumable.turn_id, "continue");
+      await loadConversation(conversationId);
+      setResumable(null);
+      setError("已从中断点继续", "muted");
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setSending(false);
+    }
+  }, [conversationId, loadConversation, resumable, sending, setError]);
+
+  /** 放弃现场：删掉 checkpoint，无法再续跑。 */
+  const discardInterrupted = useCallback(async () => {
+    if (!conversationId || !resumable || sending) return;
+    try {
+      await resumeTurn(conversationId, resumable.turn_id, "discard");
+      setResumable(null);
+      setError("已放弃这次中断的生成", "muted");
+    } catch (err) {
+      setError(errorMessage(err));
+    }
+  }, [conversationId, resumable, sending, setError]);
 
   /** 后端已改为断连时不落库：停止 HTTP 后不会再「稍后写入」本轮记录。
    *  这里只留少量重试兜底「落库已完成 / 断开信号到达」之间的瞬间竞态（LLM 恰好在
@@ -582,5 +638,8 @@ export function useChatSession({
     setWorkspace,
     send,
     cancel,
+    resumable,
+    resumeInterrupted,
+    discardInterrupted,
   };
 }

@@ -5,6 +5,8 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+from mcps.approval import request_approval, unified_enabled  # pyright: ignore[reportImplicitRelativeImport]
+from mcps.approval_policy import path_approval  # pyright: ignore[reportImplicitRelativeImport]
 from mcps.bash_approval import create_pending, wait_decision  # pyright: ignore[reportImplicitRelativeImport]
 from mcps.sandbox import current_sandbox  # pyright: ignore[reportImplicitRelativeImport]
 
@@ -54,11 +56,14 @@ def resolve_agent_path(path: str, *, action: str) -> Path:
     if _inside(target, root):
         return target
 
-    approval_id = create_pending(
-        f"{action}\n{target}",
-        str(target.parent if str(target.parent) not in {"", "."} else target),
-    )
-    decision = wait_decision(approval_id, _approval_timeout())
+    if unified_enabled():
+        decision = request_approval(path_approval(target, action))
+    else:
+        approval_id = create_pending(
+            f"{action}\n{target}",
+            str(target.parent if str(target.parent) not in {"", "."} else target),
+        )
+        decision = wait_decision(approval_id, _approval_timeout())
     if decision != "allow":
         label = {"deny": "已拒绝", "timeout": "超时未确认"}.get(decision, decision)
         raise ValueError(f"会话外路径{label}: {target}")

@@ -210,6 +210,43 @@ export function sendChatStream(
   );
 }
 
+export interface ResumableTurn {
+  turn_id: string;
+  created_at?: string;
+}
+
+export interface ResumeResult {
+  reply?: string;
+  turn_id: string;
+  resumed?: boolean;
+  already_done?: boolean;
+  discarded?: boolean;
+  conversation_id?: string;
+  assistant_message?: ChatMessageRecord;
+  workspace?: ConversationWorkspace;
+}
+
+/** 停止 / 崩溃后仍有 checkpoint 的轮次（用于「继续生成」入口）。 */
+export function listResumable(conversationId: string) {
+  return backendRequest<{ turns: ResumableTurn[] }>(
+    `/api/conversations/${conversationId}/resumable`
+  );
+}
+
+/** ``continue`` 从断点继续并补写助手消息；``discard`` 只清现场。 */
+export function resumeTurn(
+  conversationId: string,
+  turnId: string,
+  action: "continue" | "discard"
+) {
+  return backendRequest<ResumeResult>(
+    `/api/conversations/${conversationId}/resume`,
+    "POST",
+    { turn_id: turnId, action },
+    { timeoutMs: CHAT_TIMEOUT_MS }
+  );
+}
+
 /** 真·取消：通知后端停掉这一轮（只 abort HTTP 不会让后端停手）。
  *  后端在下一个模型 / 工具检查点抛 TurnCancelled，本轮追踪收尾为 cancelled。
  *  轮次已结束 / id 未知时无害（标记 30 分钟后过期）。 */

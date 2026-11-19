@@ -37,6 +37,11 @@ def create_pending(command: str, cwd: str) -> str:
 
 
 def list_pending() -> list[dict[str, str | float]]:
+    # 统一审批开启时，旧入口读同一份登记表（保证新旧前端看到一样的东西）。
+    from .approval import pending as _unified_pending, unified_enabled
+
+    if unified_enabled():
+        return _unified_pending()  # type: ignore[return-value]
     with _lock:
         items = sorted(_pending.values(), key=lambda item: item.created_at)
     return [
@@ -52,6 +57,10 @@ def list_pending() -> list[dict[str, str | float]]:
 
 
 def decide(approval_id: str, *, allow: bool) -> bool:
+    from .approval import decide as _unified_decide, unified_enabled
+
+    if unified_enabled():
+        return _unified_decide(approval_id, allow=allow)
     with _lock:
         item = _pending.get(approval_id)
         if item is None or item.decision is not None:

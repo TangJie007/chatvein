@@ -367,6 +367,9 @@ export function ChatView({ newRequestId = 0, onConversationCount }: ChatViewProp
           errorAnchorId={errorAnchorId}
           meta={meta}
           onStop={() => cancel("stop")}
+          resumable={!!chat.resumable}
+          onResume={() => void chat.resumeInterrupted()}
+          onDiscardResume={() => void chat.discardInterrupted()}
           onEditMessage={() => cancel("edit")}
           onRecallMessage={() => cancel("recall")}
           restoreText={restoreText}

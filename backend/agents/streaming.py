@@ -69,6 +69,12 @@ class StreamSink:
     def stage(self, node: str) -> None:
         self.push("trace", {"node": node})
 
+    def approval(self, payload: dict[str, Any]) -> None:
+        self.push("approval", payload)
+
+    def approval_resolved(self, payload: dict[str, Any]) -> None:
+        self.push("approval_resolved", payload)
+
     def close(self) -> None:
         self._closed = True
 
@@ -104,6 +110,18 @@ def emit_stage(node: str) -> None:
         sink.stage(node)
 
 
+def emit_approval(payload: dict[str, Any]) -> None:
+    sink = _sink.get()
+    if sink is not None:
+        sink.approval(payload)
+
+
+def emit_approval_resolved(payload: dict[str, Any]) -> None:
+    sink = _sink.get()
+    if sink is not None:
+        sink.approval_resolved(payload)
+
+
 def message_text(message: Any) -> str:
     """从 ``AIMessageChunk`` / ``AIMessage`` 抽纯文本（兼容 content block 列表）。"""
     content = getattr(message, "content", None)
@@ -124,6 +142,8 @@ __all__ = [
     "StreamSink",
     "bind_stream_sink",
     "current_sink",
+    "emit_approval",
+    "emit_approval_resolved",
     "emit_stage",
     "emit_token",
     "emit_tool",

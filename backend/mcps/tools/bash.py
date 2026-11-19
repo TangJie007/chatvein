@@ -12,6 +12,8 @@ from pathlib import Path
 
 from langchain_core.tools import BaseTool, tool
 
+from mcps.approval import request_approval, unified_enabled  # pyright: ignore[reportImplicitRelativeImport]
+from mcps.approval_policy import shell_approval  # pyright: ignore[reportImplicitRelativeImport]
 from mcps.bash_approval import create_pending, wait_decision  # pyright: ignore[reportImplicitRelativeImport]
 from mcps.bash_policy import classify  # pyright: ignore[reportImplicitRelativeImport]
 from mcps.bash_runtime import resolve_bash  # pyright: ignore[reportImplicitRelativeImport]
@@ -191,8 +193,13 @@ def bash_run(command: str, timeout_seconds: int = 30) -> str:
             shown = cwd.resolve().relative_to(root.resolve()).as_posix() or "."
         except ValueError:
             shown = "."
-        approval_id = create_pending(command.strip(), shown)
-        decision = wait_decision(approval_id, _approval_timeout())
+        if unified_enabled():
+            decision = request_approval(
+                shell_approval(command.strip(), shell="bash", cwd=shown)
+            )
+        else:
+            approval_id = create_pending(command.strip(), shown)
+            decision = wait_decision(approval_id, _approval_timeout())
         if decision != "allow":
             return "未执行：用户拒绝或确认超时。不要改写命令绕过确认。"
     return _execute(command.strip(), timeout=timeout)

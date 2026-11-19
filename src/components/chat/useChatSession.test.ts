@@ -20,6 +20,8 @@ vi.mock("../../api", () => {
     getConversation: vi.fn(),
     getConversationWorkspace: vi.fn(),
     getTrace: vi.fn(),
+    listResumable: vi.fn().mockResolvedValue({ turns: [] }),
+    resumeTurn: vi.fn(),
     sendChat: vi.fn(),
     sendChatStream: vi.fn(() => Promise.reject(new StreamUnsupportedError())),
   };

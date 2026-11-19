@@ -58,6 +58,20 @@ CREATE TABLE IF NOT EXISTS context_summaries (
 CREATE UNIQUE INDEX IF NOT EXISTS idx_context_summaries_range
 ON context_summaries(first_message_id, last_message_id);
 CREATE INDEX IF NOT EXISTS idx_messages_id ON messages(id);
+CREATE TABLE IF NOT EXISTS approvals (
+    id TEXT PRIMARY KEY,
+    turn_id TEXT,
+    kind TEXT NOT NULL,
+    title TEXT NOT NULL,
+    detail TEXT NOT NULL,
+    risk TEXT NOT NULL DEFAULT 'medium',
+    tool_call_id TEXT,
+    status TEXT NOT NULL DEFAULT 'pending',
+    decision TEXT,
+    created_at TEXT NOT NULL,
+    decided_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_approvals_status ON approvals(status);
 """
 
 
@@ -317,6 +331,94 @@ def append_tool_call(
             (turn_id, tool_name, tool_call_id, args_json, clipped, status, _iso_now()),
         )
         return int(cur.lastrowid or 0)
+
+
+def save_approval(
+    db_path: Path,
+    *,
+    request_id: str,
+    turn_id: str = "",
+    kind: str = "bash",
+    title: str = "",
+    detail: str = "",
+    risk: str = "medium",
+    tool_call_id: str = "",
+    status: str = "pending",
+    decision: str | None = None,
+) -> None:
+    """登记 / 更新一条审批（同一 request_id 幂等）。"""
+    ensure_session_db(db_path)
+    now = _iso_now()
+    with _connect(db_path) as conn:
+        conn.execute(
+            "INSERT INTO approvals(id, turn_id, kind, title, detail, risk, "
+            "tool_call_id, status, decision, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+            "ON CONFLICT(id) DO UPDATE SET "
+            "kind = excluded.kind, title = excluded.title, detail = excluded.detail, "
+            "risk = excluded.risk, tool_call_id = excluded.tool_call_id",
+            (
+                request_id,
+                turn_id or None,
+                kind,
+                title,
+                detail,
+                risk,
+                tool_call_id or None,
+                status,
+                decision,
+                now,
+            ),
+        )
+
+
+def decide_approval(db_path: Path, request_id: str, decision: str) -> bool:
+    """把某条待批记为已决定；已是 decided 的不覆盖。"""
+    ensure_session_db(db_path)
+    with _connect(db_path) as conn:
+        cur = conn.execute(
+            "UPDATE approvals SET status = 'decided', decision = ?, "
+            "decided_at = ? WHERE id = ? AND status = 'pending'",
+            (decision, _iso_now(), request_id),
+        )
+        return bool(cur.rowcount)
+
+
+def expire_approval(db_path: Path, request_id: str) -> bool:
+    """等待超时：作废这条待批，但保留现场（恢复时会重新提问）。"""
+    ensure_session_db(db_path)
+    with _connect(db_path) as conn:
+        cur = conn.execute(
+            "UPDATE approvals SET status = 'expired', decided_at = ? "
+            "WHERE id = ? AND status = 'pending'",
+            (_iso_now(), request_id),
+        )
+        return bool(cur.rowcount)
+
+
+def get_approval(db_path: Path, request_id: str) -> dict[str, Any] | None:
+    ensure_session_db(db_path)
+    with _connect(db_path) as conn:
+        row = conn.execute(
+            "SELECT id, turn_id, kind, title, detail, risk, tool_call_id, "
+            "status, decision, created_at, decided_at FROM approvals WHERE id = ?",
+            (request_id,),
+        ).fetchone()
+    if row is None:
+        return None
+    return {key: row[key] for key in row.keys()}
+
+
+def list_pending_approvals(db_path: Path) -> list[dict[str, Any]]:
+    """会话库里仍待批准的动作（重启后 / 恢复前查询）。"""
+    ensure_session_db(db_path)
+    with _connect(db_path) as conn:
+        rows = conn.execute(
+            "SELECT id, turn_id, kind, title, detail, risk, tool_call_id, "
+            "status, decision, created_at, decided_at FROM approvals "
+            "WHERE status = 'pending' ORDER BY created_at"
+        ).fetchall()
+    return [{key: row[key] for key in row.keys()} for row in rows]
 
 
 def list_tool_calls(db_path: Path, *, limit: int = 50) -> list[dict[str, Any]]:

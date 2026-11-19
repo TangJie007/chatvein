@@ -153,6 +153,9 @@ export function GroupChatView({
       }
       thinkingHint={sending ? thinkingHint : null}
       onStop={() => cancel("stop")}
+      resumable={!!chat.resumable}
+      onResume={() => void chat.resumeInterrupted()}
+      onDiscardResume={() => void chat.discardInterrupted()}
       onEditMessage={() => cancel("edit")}
       onRecallMessage={() => cancel("recall")}
       restoreText={restoreText}

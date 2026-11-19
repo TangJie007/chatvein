@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AlertCircle, Bot, Check, Copy, PanelRight, Pencil, Undo2 } from "lucide-react";
 import { Badge } from "../ui/badge";
+import { Button } from "../ui/button";
 import { ScrollArea } from "../ui/scroll-area";
 import { cn } from "../../lib/cn";
 import { avatarUrl, USER_AVATAR } from "../../lib/rolesStore";
@@ -99,6 +100,10 @@ type ChatPanelProps = {
   restoreText?: string | null;
   /** Composer 消费 restoreText 后回调，父组件据此清空。 */
   onRestored?: () => void;
+  /** 1.3：上一轮中断但还能从断点继续（Composer 上方展示续跑条）。 */
+  resumable?: boolean;
+  onResume?: () => void;
+  onDiscardResume?: () => void;
   /** 会话级已选技能（透传给 Composer，受控）。 */
   skills?: ComposerSkill[];
   /** 勾选 / 移除技能回调（透传给 Composer，父组件负责持久化到会话）。 */
@@ -150,6 +155,9 @@ export function ChatPanel({
   onRecallMessage,
   restoreText,
   onRestored,
+  resumable = false,
+  onResume,
+  onDiscardResume,
   skills = [],
   onSkillsChange,
   residentSkills = [],
@@ -557,6 +565,20 @@ export function ChatPanel({
             ) : null}
           </div>
         </ScrollArea>
+
+        {resumable ? (
+          <div className="mx-4 mb-2 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-line bg-tint px-3 py-2 text-[12.5px] text-ink-500">
+            <span>上一次生成中断了，可从断点继续（已完成的步骤不会重跑）。</span>
+            <div className="flex gap-2">
+              <Button variant="ghost" size="sm" onClick={onDiscardResume}>
+                放弃
+              </Button>
+              <Button variant="secondary" size="sm" disabled={sending} onClick={onResume}>
+                继续生成
+              </Button>
+            </div>
+          </div>
+        ) : null}
 
         <Composer
           variant={variant}

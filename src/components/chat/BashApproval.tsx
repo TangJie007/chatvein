@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { approveBash, denyBash, listBashPending, type BashPending } from "../../api";
+import { decideApproval, listApprovals, type ApprovalItem } from "../../api";
 import { Button } from "../ui/button";
 import {
   Dialog,
@@ -9,9 +9,9 @@ import {
   DialogTitle,
 } from "../ui/dialog";
 
-/** 应用打开期间轮询待确认的操作（Shell 命令 / 会话外文件路径）。 */
+/** 应用打开期间轮询待确认的动作（命令 / 会话外路径 / 需要审批的工具调用）。 */
 export function BashApproval() {
-  const [current, setCurrent] = useState<BashPending | null>(null);
+  const [current, setCurrent] = useState<ApprovalItem | null>(null);
   const [busy, setBusy] = useState(false);
   const handled = useRef<string | null>(null);
 
@@ -24,7 +24,7 @@ export function BashApproval() {
     let backoff = FAST;
     const tick = async () => {
       try {
-        const data = await listBashPending();
+        const data = await listApprovals();
         if (cancelled) return;
         const next = data.pending[0] ?? null;
         setCurrent((prev) => {
@@ -52,34 +52,39 @@ export function BashApproval() {
     handled.current = current.id;
     setBusy(true);
     try {
-      if (allow) await approveBash(current.id);
-      else await denyBash(current.id);
+      await decideApproval(current.id, allow);
     } catch {
-      /* 已经确认过时接口会 404 */
+      /* 已超时 / 已被其他入口决定时接口返回 404 */
     } finally {
       setBusy(false);
       setCurrent(null);
     }
   };
 
-  const isPathOp = Boolean(current?.command?.includes("\n"));
+  const kind = current?.kind ?? "bash";
+  const isPath = kind === "path";
+  const hint = isPath
+    ? "会话工作区内的文件操作可直接执行；会话外路径需要你确认。拒绝或关闭都不会执行。"
+    : kind === "bash" || kind === "powershell"
+      ? "Bash / PowerShell 都只在当前会话目录里运行。拒绝或关闭都不会执行。"
+      : "这个操作会改动工作区或会话数据，需要你确认后才会执行。";
+  const riskLabel = current?.risk === "high" ? "较高风险" : current?.risk === "low" ? "低风险" : "";
+  const kindLabel = isPath ? "路径" : kind === "bash" || kind === "powershell" ? "命令" : "操作";
 
   return (
     <Dialog open={current !== null} onOpenChange={(open) => !open && void finish(false)}>
       <DialogContent className="max-w-lg">
         <DialogHeader>
-          <DialogTitle>{isPathOp ? "允许访问此路径？" : "允许执行这条命令？"}</DialogTitle>
-          <DialogDescription>
-            {isPathOp
-              ? "会话工作区内的文件操作可直接执行；会话外路径需要你确认。拒绝或关闭都不会执行。"
-              : "Bash / PowerShell 都只在当前会话目录里运行。拒绝或关闭都不会执行。"}
-          </DialogDescription>
+          <DialogTitle>{current?.title || "允许这个操作？"}</DialogTitle>
+          <DialogDescription>{hint}</DialogDescription>
         </DialogHeader>
         <pre className="select-text max-h-40 overflow-auto rounded-xl bg-page px-3 py-2 text-[12.5px] leading-5 text-ink-800">
-          {current?.command}
+          {current?.detail || current?.command}
         </pre>
         <p className="mt-2 text-[12px] text-ink-400">
-          {isPathOp ? "位置" : "目录"} {current?.cwd || "."}
+          {kindLabel}
+          {current?.cwd && current.cwd !== "." ? ` · ${current.cwd}` : ""}
+          {riskLabel ? ` · ${riskLabel}` : ""}
         </p>
         <div className="mt-4 flex justify-end gap-2">
           <Button variant="secondary" disabled={busy} onClick={() => void finish(false)}>

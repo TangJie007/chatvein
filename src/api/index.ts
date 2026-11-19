@@ -1,4 +1,5 @@
 export * from "./client";
+export * from "./approvals";
 export * from "./db";
 export * from "./conversations";
 export * from "./traces";

@@ -62,6 +62,11 @@ from mcps.registry import (  # pyright: ignore[reportImplicitRelativeImport]
     tool_catalog,
     tool_groups,
 )
+from mcps.approval import (  # pyright: ignore[reportImplicitRelativeImport]
+    decide as decide_approval_request,
+    pending as pending_approvals,
+    unified_enabled,
+)
 from mcps.bash_approval import decide, list_pending  # pyright: ignore[reportImplicitRelativeImport]
 from mcps.resilience import tool_scope  # pyright: ignore[reportImplicitRelativeImport]
 from mcps.sandbox import (  # pyright: ignore[reportImplicitRelativeImport]
@@ -802,21 +807,66 @@ class BashDecision(BaseModel):
 
 @app.get("/api/bash/pending", tags=["bash"], summary="待确认的 Git Bash 命令")
 def bash_pending():
+    """旧入口：统一审批开启时读同一份登记表，保证新旧前端看到一样的东西。"""
+    if unified_enabled():
+        return {"pending": pending_approvals()}
     return {"pending": list_pending()}
 
 
 @app.post("/api/bash/approve", tags=["bash"], summary="允许一条 Git Bash 命令")
 def bash_approve(body: BashDecision):
-    if not decide(body.id, allow=True):
+    ok = (
+        decide_approval_request(body.id, allow=True)
+        if unified_enabled()
+        else decide(body.id, allow=True)
+    )
+    if not ok:
         raise HTTPException(status_code=404, detail="没有这条待确认命令")
     return {"ok": True}
 
 
 @app.post("/api/bash/deny", tags=["bash"], summary="拒绝一条 Git Bash 命令")
 def bash_deny(body: BashDecision):
-    if not decide(body.id, allow=False):
+    ok = (
+        decide_approval_request(body.id, allow=False)
+        if unified_enabled()
+        else decide(body.id, allow=False)
+    )
+    if not ok:
         raise HTTPException(status_code=404, detail="没有这条待确认命令")
     return {"ok": True}
+
+
+class ApprovalDecision(BaseModel):
+    allow: bool = True
+    reason: str | None = None
+
+
+@app.get(
+    "/api/approvals/pending",
+    tags=["approvals"],
+    summary="待确认的动作（命令 / 会话外路径 / 工具调用）",
+)
+def approvals_pending():
+    return {"pending": pending_approvals()}
+
+
+@app.post(
+    "/api/approvals/{request_id}/decision",
+    tags=["approvals"],
+    summary="批准或拒绝一个待确认动作",
+)
+def approvals_decide(request_id: str, body: ApprovalDecision):
+    """``allow=false`` 等价于拒绝；已超时/已决定的请求返回 404。"""
+    if not decide_approval_request(request_id, allow=body.allow):
+        raise HTTPException(
+            status_code=404, detail="该待确认动作已结束或不存在（可能已超时）"
+        )
+    return {
+        "request_id": request_id,
+        "decision": "allow" if body.allow else "deny",
+        "reason": body.reason,
+    }
 
 
 @app.get("/api/health", tags=["health"], summary="健康检查")
