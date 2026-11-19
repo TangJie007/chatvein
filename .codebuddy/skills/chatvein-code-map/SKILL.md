@@ -41,6 +41,7 @@ description: ChatVein 桌面 Agent（Tauri 2 外壳 + React 19 + Python FastAPI 
 | 主库（会话索引/模型/角色） | `<data>/chatvein.db` | `backend/db.py::resolve_db_path` / `init_db` |
 | 知识库 + 向量 | `<data>/kb.sqlite`（`kb_docs` / `kb_vec_map` / sqlite-vec） | `backend/mcps/tools/kb.py::kb_db_path` |
 | 会话工作区 | `<主空间>/<YYYYMMDD-HHMMSS-xxxxx>/`，含 `output/` `logs/` `runs/`（上传时另建 `uploads/`） | `backend/mcps/sandbox.py` |
+| 审计 | `<data>/audit.sqlite`（`audit_events`，只追加；`CHATVEIN_AUDIT_DB_PATH` 可覆盖） | `backend/mcps/audit.py` |
 | 会话消息 / 短期记忆 / 追踪 | `<工作区>/logs/session.sqlite`（`turn_traces` 表） | `conversations/session_store.py`、`trace/store.py` |
 | 长期记忆 | `<data>/memory.sqlite`（`memories` 表；`CHATVEIN_MEMORY_DB_PATH` 可覆盖） | `backend/memory/store.py::memory_db_path` |
 | 已安装技能 | `<data>/skills/<slug>/SKILL.md` + `manifest.json` | `backend/skills/local_store.py` |
@@ -161,6 +162,8 @@ description: ChatVein 桌面 Agent（Tauri 2 外壳 + React 19 + Python FastAPI 
 | 改工具选择 / 预筛 | `agents/tool_selector.py`、`tool_retriever.py` | `mcps/registry.py` |
 | 新增内置工具 | `backend/mcps/tools/<module>.py` | `tools/__init__.py`、`prefs.ts` 的 `MCP_SERVERS`、`common.py::ALWAYS_ON_TOOLS`（常驻才加） |
 | 工具审批 / 沙箱 / 越界访问 | `mcps/bash_policy.py`、`path_access.py`、`bash_approval.py`、`powershell_policy.py` | `mcps/registry.py`、`BashApproval.tsx` |
+| 执行加固（env / 限额 / 网络 / pip 源） | `mcps/sandbox_guard.py`（入口 `run_limited`） | `tools/sandbox.py`、`tools/bash.py`、`tools/powershell.py`、`graphs/common.py::always_on_tools` |
+| 审计留痕 | `mcps/audit.py::record_event` | `audit.sqlite`（`<data>/audit.sqlite`，只追加） |
 | 模型接入 / 报错提示 / 用量 | `backend/models/service.py`、`agents/llm.py` | `src/api/models.ts`、`ModelsView`、`AddModelDialog`、`lib/tokens.ts` |
 | 角色配置 / 常驻技能 / 记忆 | `backend/roles/service.py::get_runtime`、`controller.py` | `api/roles.ts`、`RolesView`、`views/roles/*` |
 | 技能市场 / 安装 / 注入 | `backend/skills/service.py`、`local_store.py` | `SkillsView`、`SkillDetailDrawer`、`mcps/tools/skills.py` |
@@ -188,7 +191,7 @@ description: ChatVein 桌面 Agent（Tauri 2 外壳 + React 19 + Python FastAPI 
 7. **长请求**：`sendChat` 用 `timeoutMs: 0` + `AbortController`；区分「用户停止 / 超时 / 后端掉线」，停止要走 `/api/chat/cancel` 上报，光断 HTTP 不会停后端。
 8. **数据归属**：模型/角色/会话索引在主库；消息与追踪只在会话 `session.sqlite`（v5 起主库不存消息）；群组和设置偏好只在 localStorage。
 9. **主入口是 SSE**：`POST /api/chat/stream`（`token` / `tool` / `trace` / `done` / `cancelled` / `error`）；不支持可读流或 `CHATVEIN_STREAM=0` 才回落 `POST /api/chat` + 轮询 trace。
-10. **安全默认收紧**：Bash 逐条审批（`bash_policy` + `bash_approval`）；工作区外路径走 `path_access` 人工确认；API Key 由 `models/crypto.py` 加解密，禁止写入日志。
+10. **安全默认收紧**：Bash 逐条审批（`bash_policy` + `bash_approval`）；工作区外路径走 `path_access` 人工确认；API Key 由 `models/crypto.py` 加解密，禁止写入日志；子进程必须走 `sandbox_guard.run_limited`（env 清洗 + 限额），网络隔离是软隔离（文档别写成「安全边界」），执行留痕写 `audit.sqlite`。
 11. UI 文案与注释保持中文风格；不要引入新的全局状态库（现有仅 localStorage + React context）。
 12. 文档可能滞后：`docs/项目目录总结.md` 仍把 `chats` 写成「预留」，实际已是群组表模块；**以代码为准**。
 13. **记忆召回只改 role prompt 副本**（`memory.recall_into_role`）：`role_runtime` 跨轮/跨会话缓存，原地注入会串台；抽取必须在消息落盘之后异步跑，且明细只在 `memory.sqlite`（主库不建表）。
@@ -236,7 +239,7 @@ description: ChatVein 桌面 Agent（Tauri 2 外壳 + React 19 + Python FastAPI 
 |---|---|
 | `backend/main.py::_chat_turn` | 技能注入、团队装配、trace/沙箱 ContextVar、断连落库顺序；顺序错会导致追踪丢失或幽灵消息 |
 | `backend/agents/graphs/hard.py` | 规划/验证循环、步数上限、递归上限；容易死循环或提前截断 |
-| `backend/agents/graphs/common.py` | `ALWAYS_ON_TOOLS`、`recursion_limit`、工具合并；改错会影响所有会话 |
+| `backend/agents/graphs/common.py` | `always_on_tools(role)`（`!工具名` 显式拒绝）、`recursion_limit`、工具合并；改错会影响所有会话 |
 | `backend/mcps/registry.py` + `tools/__init__.py` | import 时探测运行时；新增分组/工具名冲突 |
 | `backend/mcps/bash_policy.py` / `path_access.py` | 安全边界；放宽等于允许任意命令/任意路径 |
 | `backend/db.py` 迁移 | 必须幂等、按 `SCHEMA_VERSION` 递增；不要新增 Alembic |

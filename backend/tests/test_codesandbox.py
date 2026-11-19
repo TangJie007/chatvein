@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 
+import pytest
 from sqlmodel import Session
 
 import db
@@ -63,7 +64,8 @@ def test_open_for_chat_reuses_folder_and_backfills_old_rows() -> None:
     assert (workspace_root() / fresh["workspace_dir"]).is_dir()
 
 
-def test_sandbox_rejects_escape_then_runs_python() -> None:
+def test_sandbox_rejects_escape_then_runs_python(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("CHATVEIN_SANDBOX_NETWORK", raising=False)
     service = ConversationsService()
     created = service.create_conversation(CreateConversationDto())
     name = created["workspace_dir"]
@@ -113,6 +115,41 @@ def test_sandbox_rejects_escape_then_runs_python() -> None:
 
         rejected = sandbox_pip_install.invoke({"packages": "-r requirements.txt"})
         assert "不合法" in str(rejected)
+
+        # §3.1 加固：返回值自报状态；网络软隔离钩子落在 runs/.chatvein-guard
+        assert "guard=" in text
+        hook = root / "runs" / ".chatvein-guard" / "sitecustomize.py"
+        assert hook.is_file(), "网络软隔离钩子未注入"
+        assert "chatvein-sandbox-guard" in hook.read_text(encoding="utf-8")
+
+        # §3.1 加固：脚本进程看不到宿主密钥
+        monkeypatch.setenv("OPENAI_API_KEY", "sk-should-not-leak")
+        env_probe = sandbox_run_python.invoke(
+            {
+                "path": "env_probe.py",
+                "code": (
+                    "import os\n"
+                    "print(repr(os.environ.get('OPENAI_API_KEY', '<none>')))\n"
+                    "print(os.environ.get('PATH', '') != '')\n"
+                ),
+                "timeout_seconds": 30,
+            }
+        )
+        assert "'<none>'" in str(env_probe)
+        assert "True" in str(env_probe)
+
+        # §3.1 加固：外网默认连不出去（本机回环不受影响）
+        blocked_net = sandbox_run_python.invoke(
+            {
+                "path": "net_probe.py",
+                "code": (
+                    "import socket\n"
+                    "socket.create_connection(('example.com', 80), timeout=3)\n"
+                ),
+                "timeout_seconds": 30,
+            }
+        )
+        assert "沙箱网络已禁用" in str(blocked_net)
 
     outside = workspace_root().parent / "outside.py"
     assert not outside.exists()

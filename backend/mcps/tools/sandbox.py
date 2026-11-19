@@ -9,17 +9,29 @@ from __future__ import annotations
 
 import os
 import re
-import subprocess
 import sys
+import time
 from pathlib import Path
 
 from langchain_core.tools import BaseTool, tool
 
+from mcps.audit import record_event  # pyright: ignore[reportImplicitRelativeImport]
 from mcps.sandbox import (  # pyright: ignore[reportImplicitRelativeImport]
     current_sandbox,
     resolve_in_runs,
     runs_dir,
     venv_python,
+)
+from mcps.sandbox_guard import (  # pyright: ignore[reportImplicitRelativeImport]
+    apply_network_env,
+    dropped_env_keys,
+    ensure_network_guard,
+    guard_note,
+    network_enabled,
+    pip_base_args,
+    run_limited,
+    sanitize_env,
+    with_guard_pythonpath,
 )
 
 from ._output import clip
@@ -57,33 +69,58 @@ def _interpreter() -> tuple[Path, None] | tuple[None, str]:
     return resolved, None
 
 
-def _run(cmd: list[str], *, cwd: Path, timeout: int, env: dict[str, str] | None = None) -> str:
+def _run(
+    cmd: list[str],
+    *,
+    cwd: Path,
+    timeout: int,
+    env: dict[str, str] | None = None,
+    tool_name: str = "sandbox",
+    audit_args: dict[str, object] | None = None,
+) -> str:
+    """统一执行入口：资源限额 + 审计 + 与旧版一致的三段式输出。"""
+    started = time.perf_counter()
+    payload = dict(audit_args or {})
+    payload.setdefault("cmd", cmd[0] if cmd else "")
+    payload.setdefault("timeout", timeout)
     try:
-        completed = subprocess.run(
-            cmd,
-            cwd=cwd,
-            env=env,
-            capture_output=True,
-            timeout=timeout,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            shell=False,
-            check=False,
-        )
-    except subprocess.TimeoutExpired as exc:
-        return (
-            f"超时（{timeout}s）已终止\n"
-            f"stdout:\n{clip(exc.stdout)}\n"
-            f"stderr:\n{clip(exc.stderr)}"
-        )
+        result = run_limited(cmd, cwd=cwd, env=env, timeout=timeout)
     except OSError as exc:
+        record_event(
+            "sandbox.exec",
+            tool=tool_name,
+            scope=str(cwd),
+            args=payload,
+            result_code="SPAWN_FAILED",
+            duration_ms=int((time.perf_counter() - started) * 1000),
+        )
         return f"执行失败: {exc}"
-    return (
-        f"exit={completed.returncode}\n"
-        f"stdout:\n{clip(completed.stdout)}\n"
-        f"stderr:\n{clip(completed.stderr)}"
+    duration = int((time.perf_counter() - started) * 1000)
+    if result.timed_out:
+        code = "TIMEOUT"
+    elif result.returncode < 0:
+        code = "SIGNAL"
+    elif result.returncode != 0:
+        code = "FAILED"
+    else:
+        code = "OK"
+    record_event(
+        "sandbox.exec",
+        tool=tool_name,
+        scope=str(cwd),
+        args=payload,
+        result_code=code,
+        duration_ms=duration,
     )
+    body = (
+        f"stdout:\n{clip(result.stdout)}\n"
+        f"stderr:\n{clip(result.stderr)}"
+    )
+    if result.timed_out:
+        return f"超时（{timeout}s）已终止\n{body}"
+    if result.returncode < 0:
+        return f"exit={result.returncode}（进程被信号终止，可能触发{guard_note()}）\n{body}"
+    return f"exit={result.returncode}\n{body}"
 
 
 @tool
@@ -99,13 +136,16 @@ def sandbox_info() -> str:
         return str(exc)
     python = venv_python()
     ready = python.is_file()
+    dropped = dropped_env_keys()
     return (
         f"workspace={root}\n"
         f"runs={runs}\n"
         f"output={root / 'output'}\n"
         f"logs={root / 'logs'}\n"
         f"venv={'ready' if ready else 'missing'}\n"
-        f"python={python}"
+        f"python={python}\n"
+        f"guard={guard_note()}\n"
+        f"env=cleaned（子进程已移除 {len(dropped)} 个敏感变量）"
     )
 
 
@@ -176,10 +216,17 @@ def sandbox_pip_install(packages: str) -> str:
     for part in parts:
         if part.startswith("-") or _PKG.fullmatch(part) is None:
             return f"包名不合法: {part}"
+    try:
+        base = pip_base_args()
+    except ValueError as exc:
+        return str(exc)
+    # pip 必须联网（源站是唯一出口），因此这里不注入黑洞代理；源地址由 pip_base_args 固定。
     return _run(
-        [str(python), "-m", "pip", "install", *parts],
+        [str(python), "-m", "pip", "install", *base, *parts],
         cwd=runs,
         timeout=180,
+        tool_name="sandbox_pip_install",
+        audit_args={"packages": parts, "index": "custom" if len(base) > 2 else "default"},
     )
 
 
@@ -216,15 +263,46 @@ def sandbox_run_python(path: str = "", code: str = "", timeout_seconds: int = 30
         return blocked
     if not target.is_file():
         return f"文件不存在: runs/{rel}"
-    env = os.environ.copy()
+    # 密钥不进子进程：先清洗再补沙箱自己需要的变量（详见 mcps/sandbox_guard.py）。
+    env = sanitize_env()
     scripts = python.parent
     env["VIRTUAL_ENV"] = str((runs / ".venv").resolve())
     env["PATH"] = str(scripts) + os.pathsep + env.get("PATH", "")
     env["PYTHONNOUSERSITE"] = "1"
     env["PYTHONIOENCODING"] = "utf-8"
+    env = apply_network_env(env)
+    # 层 1 网络隔离：钩子目录前置到 PYTHONPATH，sitecustomize 才会被导入
+    # （软隔离，见 mcps/sandbox_guard.py 模块 docstring）
+    _, guard_status = ensure_network_guard(python)
+    env = with_guard_pythonpath(env, python)
+    # 只记被移除的键名（绝不记值），供审计与 3.2 的权限面板回看。
+    removed = dropped_env_keys()
+    if removed:
+        record_event(
+            "sandbox.env",
+            tool="sandbox_run_python",
+            scope=str(root),
+            args={"dropped": removed},
+            result_code="CLEANED",
+        )
     # cwd = 会话根：与 write_file / bash 同一工作区地址；脚本在 runs/，产物可写 output/
-    result = _run([str(python), str(target)], cwd=root, timeout=timeout, env=env)
-    return f"file=runs/{target.relative_to(runs).as_posix()}\ncwd={root}\n{result}"
+    result = _run(
+        [str(python), str(target)],
+        cwd=root,
+        timeout=timeout,
+        env=env,
+        tool_name="sandbox_run_python",
+        audit_args={
+            "file": f"runs/{target.relative_to(runs).as_posix()}",
+            "network": "on" if network_enabled() else "off",
+        },
+    )
+    return (
+        f"file=runs/{target.relative_to(runs).as_posix()}\n"
+        f"cwd={root}\n"
+        f"guard={guard_status}\n"
+        f"{result}"
+    )
 
 
 TOOLS: tuple[BaseTool, ...] = (

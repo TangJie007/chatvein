@@ -88,13 +88,22 @@ def with_session_context(system_prompt: str) -> str:
 
 
 def allowed_from_role(role: dict[str, Any] | None) -> list[str] | None:
-    """角色勾选的工具/分组；空列表表示不限制。"""
+    """角色勾选的工具/分组；空列表表示不限制。
+
+    以 ``!`` / ``-`` 开头的条目是「显式拒绝」（见 ``always_on_tools``），
+    不参与白名单，否则 ``expand_allowlist`` 会把它们当未知名字吞掉。
+    """
     if not role:
         return None
     tools = role.get("tools")
     if not isinstance(tools, list) or not tools:
         return None
-    return [str(t) for t in tools if str(t).strip()]
+    picked = [
+        str(t).strip()
+        for t in tools
+        if str(t).strip() and not str(t).strip().startswith(_DENY_MARKERS)
+    ]
+    return picked or None
 
 
 #: 常驻工具：不参与 ``select_tools`` 选型，也不受角色工具白名单过滤，
@@ -104,6 +113,35 @@ def allowed_from_role(role: dict[str, Any] | None) -> list[str] | None:
 #: - get_current_time：当前时间 / 时区。时间类问题极常见且必须准确，
 #:   不能依赖选型命中或角色勾选，故常驻（时区换算仍走 convert_time，由选型带上）
 ALWAYS_ON_TOOLS: tuple[str, ...] = ("load_skill", "sandbox_run_python", "get_current_time")
+
+#: 角色显式拒绝常驻工具的标记前缀（``!`` 或 ``-``）。
+#: 只有显式拒绝才移除：``tools`` 为空表示「不限制」，若按「没勾选」推断拒绝，
+#: 没配工具的角色会连时间/沙箱一起失去。
+_DENY_MARKERS: tuple[str, ...] = ("!", "-")
+
+
+def denied_tools(role: dict[str, Any] | None) -> set[str]:
+    """角色显式拒绝的工具名：``tools`` 里的 ``!name`` / ``-name``，或 ``deny_tools`` 列表。"""
+    if not role:
+        return set()
+    denied: set[str] = set()
+    for item in role.get("deny_tools") or []:
+        text = str(item).strip()
+        if text:
+            denied.add(text)
+    for item in role.get("tools") or []:
+        text = str(item).strip()
+        if len(text) > 1 and text.startswith(_DENY_MARKERS):
+            denied.add(text[1:].strip())
+    return denied
+
+
+def always_on_tools(role: dict[str, Any] | None = None) -> tuple[str, ...]:
+    """本轮真正常驻的工具：默认全集，角色显式拒绝的剔除。"""
+    denied = denied_tools(role)
+    if not denied:
+        return ALWAYS_ON_TOOLS
+    return tuple(name for name in ALWAYS_ON_TOOLS if name not in denied)
 
 
 def tool_call_fingerprint(name: str, args: Any) -> str:

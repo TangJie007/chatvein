@@ -1,6 +1,6 @@
 # 生产级增强 · 第三批：安全与运维（详细设计评审稿）
 
-> 对应总纲 [`production-roadmap.md`](./production-roadmap.md)。**设计评审中，尚未改代码**。
+> 对应总纲 [`production-roadmap.md`](./production-roadmap.md)。**3.1 已实现（2026-11-20）；3.2 / 3.3 设计中**。
 > 边界：本批**不引入容器/OS 级隔离**（需求已确认），只在现有「路径约束 + 正则策略 + 审批」模型上加固。
 > 依赖前两批：3.1 复用 1.2 错误模型；3.2 复用 2.2 审批策略 + 2.3 外部工具契约；3.3 复用全链路 trace。
 > 三个能力：3.1 沙箱加固 / 3.2 细粒度权限 + 审计 / 3.3 eval 闭环 + OTel 可观测。
@@ -8,6 +8,9 @@
 ---
 
 ## 3.1 沙箱加固（不做容器）
+
+> **状态：已实现（2026-11-20）**。新增 `backend/mcps/sandbox_guard.py` + `backend/mcps/audit.py`；沙箱 / bash / powershell 统一走 `run_limited()`（env 清洗 + 限额 + 黑洞代理），`sandbox_run_python` 额外注入 `sitecustomize` 网络钩子；`ALWAYS_ON_TOOLS` 改为 `always_on_tools(role)`。
+> 开关：`CHATVEIN_SANDBOX_GUARD=0`（整体回退）、`CHATVEIN_SANDBOX_LIMITS=0`、`CHATVEIN_SANDBOX_NETWORK=1`、`CHATVEIN_SANDBOX_CPU_SECONDS` / `_MEMORY_MB` / `_FILE_MB`、`CHATVEIN_SANDBOX_ENV_PASSTHROUGH`、`CHATVEIN_PIP_INDEX_URL`、`CHATVEIN_AUDIT=0`。
 
 ### 现状（证据）
 
@@ -67,6 +70,29 @@
 - 默认网络关闭时，脚本 `socket.create_connection(("8.8.8.8", 80))` 被 hook 拒绝且给出人话提示；`CHATVEIN_SANDBOX_NETWORK=1` 后可连通。
 - 角色显式拒绝 `sandbox_run_python` 后该工具不挂载。
 - 关闭加固开关后行为与当前一致。
+
+### 实现纪要
+
+| 文件 | 内容 |
+|---|---|
+| `backend/mcps/sandbox_guard.py` | `sanitize_env` / `is_sensitive_key` / `dropped_env_keys`（只回键名）；`limits()` + `limits_notice()`；`network_enabled()` + `apply_network_env()`（黑洞代理）；`ensure_network_guard` / `guard_pythonpath` / `with_guard_pythonpath`（`sitecustomize` 钩子）；`pip_index_url` / `pip_base_args`；`run_limited()`（POSIX `setrlimit`、Windows Job Object、超时兜底） |
+| `backend/mcps/audit.py` | 独立 `audit.sqlite`、`audit_events` 只追加；`record_event` 永不抛错；`redact` / `mask_secrets` 递归脱敏（键名命中、`sk-` / `Bearer` / `token=` 形态） |
+| `backend/mcps/tools/sandbox.py` | `_run()` 统一走 `run_limited` + 审计（`sandbox.exec`）；`sandbox_run_python` 接 env 清洗 / 黑洞代理 / `sitecustomize` / `guard=` 提示行 / `sandbox.env` 审计；`sandbox_pip_install` 接源白名单；`sandbox_info` 报 `guard=` 与清洗数量 |
+| `backend/mcps/tools/bash.py` / `powershell.py` | `_child_env` 起点改为 `sanitize_env()`，末尾 `apply_network_env()`；执行改 `run_limited` 并写 `shell.exec` 审计 |
+| `backend/agents/graphs/common.py` | `always_on_tools(role)` + `denied_tools(role)`；`allowed_from_role` 过滤 `!` / `-` 条目 |
+| `backend/agents/graphs/medium.py` / `hard.py` / `agents/delegation.py` | 常驻工具改用 `always_on_tools(role)` |
+| `backend/tests/test_sandbox_guard.py` | 24 项：清洗 / 透传 / 开关、网络两层、钩子幂等与 PYTHONPATH、pip 源校验、子进程环境、超时、内存上限、审计脱敏与开关、常驻工具拒绝 |
+| `backend/tests/test_codesandbox.py` | 集成补：`guard=` 自报、钩子落盘、脚本看不到 `OPENAI_API_KEY`、`example.com` 被拒 |
+
+与评审稿的差异：
+
+1. **env 清洗用「按类别黑名单」而非纯白名单**：白名单会把 `JAVA_HOME` / `GOPATH` / 自定义 `NPM_CONFIG_*` 一起砍掉，脚本会莫名跑不起来。现在只删敏感类别（`KEY/TOKEN/SECRET/PASSWORD/CREDENTIAL/AUTH/COOKIE/SESSION/API`）与全部 `CHATVEIN_*`，验收要求（打印 `os.environ` 不含 token/key）仍然成立。
+2. **`sitecustomize` 不放 `site-packages`**：实测宿主只要设了 `PYTHONPATH`（IDE / 启动脚本很常见），`import sitecustomize` 会先命中宿主那份，venv 里的钩子根本不生效。改为写 `runs/.chatvein-guard/sitecustomize.py` 并**前置**到子进程 `PYTHONPATH`，同时把钩子注入 bash / powershell（shell 里起的 python 也受控）。
+3. **`apply_limits(process)` 改为 `run_limited(cmd, ...)`**：Windows Job Object 必须在 spawn 之后立刻拿到 pid/句柄，而 `subprocess.run` 不暴露进程对象，包一层执行器才能跨平台一致。
+4. **bash / powershell 与沙箱共用同一执行器**：评审稿只要求「沙箱进程」限额，但 shell 才是最容易跑飞的入口；统一后 `shell.exec` 也有了审计记录（限额仍宽松，可用 `CHATVEIN_SANDBOX_LIMITS=0` 回退）。
+5. **`deny_tools` 不落库**：用角色 `tools` 里的 `!工具名` / `-工具名` 表达显式拒绝（运行时也认 `deny_tools` 键，留给 3.2 的权限模型接管），因此没有迁移、没有改角色 DTO / 前端表单。
+6. **pip 未做 `requirements.lock`**：只固定源（`CHATVEIN_PIP_INDEX_URL`，强制 http(s)）与包名白名单；锁文件固定版本的价值等到 3.2 配额 / 供应链策略一起做。
+7. **审计粒度**：一次执行写一条 `sandbox.exec`（带 `duration_ms` + `result_code`：`OK` / `FAILED` / `TIMEOUT` / `SIGNAL` / `SPAWN_FAILED`），env 清洗另写一条 `sandbox.env`（只含被移除的键名）。启动/结束拆两条会让事件数翻倍，回放价值不变。
 
 ---
 

@@ -7,17 +7,25 @@
 from __future__ import annotations
 
 import os
-import subprocess
+import time
 from pathlib import Path
 
 from langchain_core.tools import BaseTool, tool
 
 from mcps.approval import request_approval, unified_enabled  # pyright: ignore[reportImplicitRelativeImport]
 from mcps.approval_policy import shell_approval  # pyright: ignore[reportImplicitRelativeImport]
+from mcps.audit import record_event  # pyright: ignore[reportImplicitRelativeImport]
 from mcps.bash_approval import create_pending, wait_decision  # pyright: ignore[reportImplicitRelativeImport]
 from mcps.bash_policy import classify  # pyright: ignore[reportImplicitRelativeImport]
 from mcps.bash_runtime import resolve_bash  # pyright: ignore[reportImplicitRelativeImport]
 from mcps.sandbox import current_sandbox, venv_python  # pyright: ignore[reportImplicitRelativeImport]
+from mcps.sandbox_guard import (  # pyright: ignore[reportImplicitRelativeImport]
+    apply_network_env,
+    ensure_network_guard,
+    run_limited,
+    sanitize_env,
+    with_guard_pythonpath,
+)
 
 from ._output import clip
 
@@ -75,7 +83,8 @@ def _inside(path: Path, root: Path) -> bool:
 
 
 def _child_env(root: Path, bash: Path) -> dict[str, str]:
-    env = os.environ.copy()
+    # 密钥不进子进程（见 mcps/sandbox_guard.py）；随后再补 Git Bash 需要的变量。
+    env = sanitize_env()
     git_root = bash.parent.parent
     prefix = [
         git_root / "cmd",
@@ -89,11 +98,14 @@ def _child_env(root: Path, bash: Path) -> dict[str, str]:
         extra = str(python.parent) + (os.pathsep + extra if extra else "")
         env["VIRTUAL_ENV"] = str(python.parent.parent.resolve())
         env["PYTHONNOUSERSITE"] = "1"
+        # shell 里起的 python 也走同一层网络软隔离（钩子目录前置到 PYTHONPATH）
+        ensure_network_guard(python)
+        env = with_guard_pythonpath(env, python)
     if extra:
         env["PATH"] = extra + os.pathsep + env.get("PATH", "")
     env["MSYS_NO_PATHCONV"] = "1"
     env["PYTHONIOENCODING"] = "utf-8"
-    return env
+    return apply_network_env(env)
 
 
 def _execute(command: str, *, timeout: int) -> str:
@@ -105,8 +117,9 @@ def _execute(command: str, *, timeout: int) -> str:
     marker_dir = root / ".chatvein"
     marker_dir.mkdir(parents=True, exist_ok=True)
     marker = marker_dir / "cwd"
+    started = time.perf_counter()
     try:
-        completed = subprocess.run(
+        result = run_limited(
             [
                 str(bash),
                 "--noprofile",
@@ -120,18 +133,26 @@ def _execute(command: str, *, timeout: int) -> str:
             ],
             cwd=cwd,
             env=_child_env(root, bash),
-            capture_output=True,
             timeout=timeout,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            shell=False,
-            check=False,
         )
-    except subprocess.TimeoutExpired as exc:
-        return f"超时（{timeout}s）已终止\nstdout:\n{clip(exc.stdout)}\nstderr:\n{clip(exc.stderr)}"
     except OSError as exc:
         return f"执行失败: {exc}"
+    record_event(
+        "shell.exec",
+        tool="bash_run",
+        scope=str(root),
+        args={"command": command},
+        result_code=(
+            "TIMEOUT" if result.timed_out else ("OK" if result.returncode == 0 else "FAILED")
+        ),
+        duration_ms=int((time.perf_counter() - started) * 1000),
+    )
+    if result.timed_out:
+        return (
+            f"超时（{timeout}s）已终止\n"
+            f"stdout:\n{clip(result.stdout)}\n"
+            f"stderr:\n{clip(result.stderr)}"
+        )
 
     note = ""
     if marker.is_file():
@@ -152,9 +173,9 @@ def _execute(command: str, *, timeout: int) -> str:
         shown = "."
     return (
         f"cwd={shown}\n"
-        f"exit={completed.returncode}\n"
-        f"stdout:\n{clip(completed.stdout)}\n"
-        f"stderr:\n{clip(completed.stderr)}{note}"
+        f"exit={result.returncode}\n"
+        f"stdout:\n{clip(result.stdout)}\n"
+        f"stderr:\n{clip(result.stderr)}{note}"
     )
 
 

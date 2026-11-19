@@ -9,7 +9,9 @@
 | 我要… | 去这里 |
 |---|---|
 | 新增一个工具 | `tools/<module>.py` → `tools/__init__.py::build_tool_groups` → `prefs.ts` → `rolesStore.ts` |
-| 改工具分组 / 常驻工具 | `tools/__init__.py` + `agents/graphs/common.py::ALWAYS_ON_TOOLS` |
+| 改工具分组 / 常驻工具 | `tools/__init__.py` + `agents/graphs/common.py::always_on_tools`（角色可用 `!工具名` 显式拒绝） |
+| 改执行加固（env / 限额 / 网络） | `sandbox_guard.py`（入口 `run_limited`） |
+| 改审计 / 留痕 | `audit.py::record_event`（库 `<data>/audit.sqlite`，只追加） |
 | 改按角色勾选哪些工具 | `registry.py::resolve_tools` / `heuristic_tool_names` |
 | 改离线直调执行 | `mcps/registry.py::invoke_tools` |
 | 改审批 / 命令策略 | `bash_policy.py` / `powershell_policy.py` / `bash_approval.py`；统一入口 `approval.py` + `approval_policy.py` |
@@ -23,6 +25,8 @@ backend/mcps/
 ├─ __init__.py          仅包说明，不做 re-export
 ├─ registry.py          注册表、分组、解析、目录元数据、离线直调
 ├─ sandbox.py           会话工作区 + ContextVar + 执行 cwd
+├─ sandbox_guard.py     执行加固：env 清洗 / 限额 / 网络软隔离 / pip 源（run_limited）
+├─ audit.py             审计写入（audit.sqlite，只追加 + 脱敏）
 ├─ workspace.py         主空间解析
 ├─ path_access.py       路径解析 + 越界审批
 ├─ bash_policy.py       Bash 命令分类
@@ -103,6 +107,9 @@ backend/mcps/
 - **异常**：工具异常转成「错误文本」回给模型，不要让整轮聊天 500。
 - **追踪**：工具参数/结果由 `trace/recording.py` 记录；新增工具无需自己写 trace。
 - **安全**：不要把 API Key、token、密钥写进工具输出或日志。
+- **子进程**：必须用 `sandbox_guard.run_limited`（不要裸 `subprocess.run`），env 从 `sanitize_env()` 起。宿主的 `*_KEY` / `*_TOKEN` / `CHATVEIN_*` 不进子进程；限额默认 CPU 120s / 内存 1GB / 文件 100MB（`CHATVEIN_SANDBOX_LIMITS=0` 回退）。
+- **网络**：默认禁用，靠 `runs/.chatvein-guard/sitecustomize.py`（前置 `PYTHONPATH`）+ 黑洞代理两层**软**隔离；脚本重绑 socket 即可绕过，别当安全边界。`CHATVEIN_SANDBOX_NETWORK=1` 放开。
+- **审计**：新增会执行外部动作的工具，调 `record_event(action, tool=..., result_code=..., duration_ms=...)` 留痕；审计只追加、写前脱敏、永不抛错。
 
 ## 5. 运行时与环境变量
 
@@ -113,5 +120,10 @@ backend/mcps/
 | `CHATVEIN_DB_PATH` | 主库路径覆盖 | `db.py` |
 | `CHATVEIN_WORKSPACE` | 主空间覆盖 | `mcps/workspace.py` |
 | `CHATVEIN_PORT` / `--port` | 后端端口（Rust 探测后传入） | `main.py` |
+| `CHATVEIN_SANDBOX_GUARD` / `_LIMITS` / `_NETWORK` | 执行加固总开关 / 只关限额 / 放开网络 | `mcps/sandbox_guard.py` |
+| `CHATVEIN_SANDBOX_CPU_SECONDS` / `_MEMORY_MB` / `_FILE_MB` | 限额数值 | `mcps/sandbox_guard.py::limits` |
+| `CHATVEIN_SANDBOX_ENV_PASSTHROUGH` | 允许透传的敏感变量名（逗号分隔） | `mcps/sandbox_guard.py` |
+| `CHATVEIN_PIP_INDEX_URL` | pip 源（只接受 http/https） | `mcps/sandbox_guard.py::pip_index_url` |
+| `CHATVEIN_AUDIT` / `CHATVEIN_AUDIT_DB_PATH` | 审计开关 / 库路径 | `mcps/audit.py` |
 
 工具运行时状态在 `GET /api/mcps/catalog` 返回（shell / powershell / browser 是否可用），设置页据此置灰。

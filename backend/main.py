@@ -487,7 +487,7 @@ def _prepare_chat_turn(req: ChatRequest) -> dict[str, Any]:
     merged_slugs = list(dict.fromkeys(resident_slugs + session_slugs))
     # 1) skill_prompt_blocks 生成技能目录文本（未安装的 slug 会被过滤）
     # 2) _skill_slugs 随 role 下传标记"本会话已启用技能"（load_skill 为常驻工具，
-    #    已由 graphs/common.ALWAYS_ON_TOOLS 无条件挂进 medium/hard 工具列表）
+    #    默认由 graphs/common.always_on_tools 挂进 medium/hard，角色可用 "!load_skill" 拒绝）
     # 3) 有角色：把技能目录追加到角色 prompt 之后，模型先看角色再看技能
     # 4) 无角色：把技能目录直接当 role_runtime.prompt，工具面默认放开
     skill_block = skill_prompt_blocks(merged_slugs if merged_slugs else None)

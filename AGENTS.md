@@ -35,7 +35,7 @@
 | `src/lib/` | 路由、store、tokens、trace、updater、错误人话 |
 | `backend/main.py` | FastAPI 入口：/api/chat、/api/chat/stream（SSE）、uploads、bash 审批、health、workspace、db |
 | `backend/agents/` | 难度路由、理解/改写、工具选择、ReAct 图、提示词、取消、委派 |
-| `backend/mcps/` | 工具注册表、分组、执行、沙箱、Bash/浏览器运行时；`external/` 为外部 MCP 协议客户端 |
+| `backend/mcps/` | 工具注册表、分组、执行、沙箱、Bash/浏览器运行时；`sandbox_guard.py` 执行加固、`audit.py` 审计；`external/` 为外部 MCP 协议客户端 |
 | `backend/conversations/` | 会话 CRUD、成员、turn 编排、历史装配 |
 | `backend/chats/` | 群会话与成员（chat_groups / chat_group_members） |
 | `backend/roles/` | 角色 CRUD、多角色种子、运行时解析 |
@@ -65,6 +65,7 @@
 | 团队并行派发 | `backend/agents/orchestration.py` | `delegation.py`（`run_member_task`）、`graphs/medium\|hard.py`、`trace/recording.py`（`child_span`）、`session_store.py`（`agent_tasks`）、`src/api/conversations.ts`（`listAgentTasks`） |
 | 外部 MCP 服务 | `backend/mcps/external/{config,client,state}.py` | `controller.py`、`service.py`、`repository.py`、`module.py`、`db.py`（v14 表）、`src/api/mcpServers.ts`、`McpExternalSection.tsx` |
 | 工作区/沙箱 | `backend/mcps/sandbox.py`、`workspace.py`、`path_access.py` | `backend/main.py`（uploads） |
+| 执行加固 / 审计 | `backend/mcps/sandbox_guard.py`、`backend/mcps/audit.py` | `tools/sandbox.py`、`tools/bash.py`、`tools/powershell.py`、`agents/graphs/common.py`（`always_on_tools`） |
 | 新后端接口 | `backend/<module>/controller.py` | `module.py`、`main.py include_router`、`src/api/*.ts` |
 | 会话/群组数据 | `backend/conversations/`、`backend/chats/` | `src/api/conversations.ts`、`src/api/db.ts` |
 | 角色 | `backend/roles/service.py`、`src/components/views/RolesView.tsx` | `src/components/roles/*`、`rolesStore.ts` |
@@ -83,7 +84,7 @@
 - **单轮**：`useChatSession.send` → `sendChatStream`（`POST /api/chat/stream`，SSE 增量）→ 环境不支持时回落 `sendChat` → `POST /api/chat` → `router.understand` → `conversations.prepare_turn`（历史/短期记忆/技能/群成员）→ `pipeline.run_pipeline` → `trace.recording` → 历史落盘 + `done` 事件回填（回落路径轮询 `/traces/{turn_id}`）。
 - **群组**：`ChatView/GroupChatView` → `mode` + `members` → 后端 `is_group` → `chats.assemble_team` → `tool_selector` 限定发言角色工具 → `delegate_to_agent`。
 - **技能**：`SkillsView` → `/api/skills` → 保存 SKILL.md → 渲染技能目录进 prompt → `load_skill` 读全文。
-- **工具**：角色勾选 → `registry.resolve_tools` → 图内调用工具；离线直调 `registry.invoke_tools`。Bash/PowerShell 在工具内部走审批，文件越界走 `path_access`。
+- **工具**：角色勾选 → `registry.resolve_tools` → 图内调用工具；离线直调 `registry.invoke_tools`。Bash/PowerShell 在工具内部走审批，文件越界走 `path_access`；子进程统一经 `sandbox_guard.run_limited`（env 清洗 + 限额 + 审计留痕）。
 - **记忆**：`main.py::_run_chat_heavy` → `memory_service.recall_into_role`（role prompt 副本）→ 图；落盘后 `maybe_extract_async` → `memory.sqlite`（默认 `pending`）→ `PATCH /api/memories/{id}` 确认 → 后续轮召回。
 - **追踪**：`agents/graphs/pipeline.run_pipeline` → `trace.recording.tracing` → span 树 → `turn_traces.payload_json` → `/api/conversations/{id}/traces/{turn}` → `TraceWindow`。
 
@@ -110,6 +111,9 @@
 19. 外部 server 的凭据（env / headers）只以密文进 `mcp_servers` 表，响应里只回 `env_keys` / `header_keys`；任何日志、trace、错误文案都不得打印值。
 20. 召回只能改 `role_runtime` 的**副本**（`memory.recall_into_role`），绝不原地注入：`role_runtime` 跨轮/跨会话复用缓存，原地改会把记忆串台。抽取必须在消息落盘之后、用 daemon 线程异步跑，失败只打日志不影响响应；记忆明细只在 `memory.sqlite`，主库不建表。
 21. 并行派发（`orchestration.parallel_delegate`）必须：每条任务 `copy_context()` 后再提交线程、成员在 `child_span` 内跑（`TraceRecorder` 的 `_parents` 是单线程栈，直接 `span()` 会串台）、单成员异常只记该条失败（`TurnCancelled` 必须冒泡）。不要再往 `delegate_to_agent` 里加并行——LangGraph 对同一条消息的多个 `tool_call` 是串行的。
+22. 起子进程一律用 `mcps/sandbox_guard.py::run_limited`（不要裸 `subprocess.run`），环境一律从 `sanitize_env()` 起：宿主的 `*_KEY` / `*_TOKEN` / `CHATVEIN_*` 不得进子进程；需要额外透传走 `CHATVEIN_SANDBOX_ENV_PASSTHROUGH`。加固开关见该模块 docstring。
+23. 网络隔离是**软**的（`sitecustomize` + 黑洞代理），文档与提示文案不得写成「已隔离 / 安全边界」。`sitecustomize` 必须放 `runs/.chatvein-guard` 并前置 `PYTHONPATH`，放 site-packages 会被宿主 `PYTHONPATH` 抢掉导入。
+24. 审计（`mcps/audit.py`）只追加、永不抛错、写前脱敏；新工具要留痕就调 `record_event`，不要新建审计库或直连 SQLite。审计与 trace 是两回事：trace 给用户看思考过程，审计给事后查证据。
 
 ## 6. 常用命令
 

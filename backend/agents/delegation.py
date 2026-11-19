@@ -23,7 +23,7 @@ from langchain_core.tools import BaseTool, tool
 from pydantic import BaseModel, Field
 
 from agents.graphs.common import (  # pyright: ignore[reportImplicitRelativeImport]
-    ALWAYS_ON_TOOLS,
+    always_on_tools,
     build_react_graph,
     invoke_react,
     last_text,
@@ -154,7 +154,7 @@ def run_member_task(
     member_tools = [
         str(t) for t in (member_runtime.get("tools") or []) if str(t).strip()
     ]
-    names = list(dict.fromkeys([*member_tools, *ALWAYS_ON_TOOLS]))
+    names = list(dict.fromkeys([*member_tools, *always_on_tools(member_runtime)]))
     tools = resolve_tools(names)
     member_prompt = str(member_runtime.get("prompt") or "").strip()
     agent = build_react_graph(

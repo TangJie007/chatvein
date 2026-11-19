@@ -27,7 +27,7 @@ from trace.recording import (
 )
 
 from .common import (
-    ALWAYS_ON_TOOLS,
+    always_on_tools,
     allowed_from_role,
     build_react_graph,
     concise_failure,
@@ -238,8 +238,9 @@ def build_hard_graph(
             user_blob = f"{user_blob}\n\n请针对缺口补做：{focus}"
 
         selected = list(state.get("selected_tools") or [])
-        # 常驻工具见 graphs/common.py::ALWAYS_ON_TOOLS：不参与选型 / 白名单，始终挂载。
-        names = list(dict.fromkeys([*selected, *ALWAYS_ON_TOOLS]))
+        # 常驻工具见 graphs/common.py::always_on_tools：不参与选型 / 白名单，
+        # 角色可用 "!工具名" 显式拒绝。
+        names = list(dict.fromkeys([*selected, *always_on_tools(role)]))
         tools = resolve_tools(names)
         # 团队模式：并行 fan-out（parallel_delegate）+ 串行派发（delegate_to_agent）；
         # 开关关闭时只挂串行入口，见 agents/orchestration.py::parallel_enabled。

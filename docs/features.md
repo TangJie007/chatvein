@@ -50,7 +50,7 @@ Agent 图细节见 [`agent-graphs.md`](./agent-graphs.md)；工具矩阵见 [`ag
 | `mcp-web` | 搜索：Claw → Tavily Keyless → Firecrawl → ddgs；抓取：Firecrawl → httpx |
 | `mcp-sqlite` | 只读查 ChatVein SQLite |
 | `mcp-kb` | 笔记沉淀、向量/关键词检索、消息检索、工作区索引 |
-| `mcp-codesandbox` | 会话 `runs/` 内 venv + pip + 跑 Python |
+| `mcp-codesandbox` | 会话 `runs/` 内 venv + pip + 跑 Python；默认清洗敏感环境变量、限额（CPU 120s / 内存 1GB / 文件 100MB）、外网软隔离（`sitecustomize` + 黑洞代理），`CHATVEIN_SANDBOX_NETWORK=1` 放开 |
 | `mcp-bash` | Git Bash（可按需下 MinGit）；限会话目录 + 危险拦截 + 确认 |
 | `mcp-powershell` | Windows PowerShell；策略同 Bash |
 | `mcp-browser` | Playwright Core+Tabs；本机有 Chromium 才注册 |
@@ -87,6 +87,7 @@ Agent 图细节见 [`agent-graphs.md`](./agent-graphs.md)；工具矩阵见 [`ag
 | Markdown | Streamdown + CJK / 代码高亮 | 助手气泡 |
 | 输入区 | 模型名、上下文占比、添加技能、添加文件、拖放上传 | `Composer` |
 | 统一确认卡片 | 命令 / 会话外路径 / 危险工具统一弹窗批准，决定落会话库、续跑复用 | `BashApproval` + `mcps/approval.py` |
+| 执行加固 | 子进程默认拿不到宿主的 `*_KEY` / `*_TOKEN` / `CHATVEIN_*`；沙箱与 shell 统一走限额执行器；沙箱进程启动/超时/失败与 shell 命令写 `audit.sqlite`（不知情就不静默） | `mcps/sandbox_guard.py` + `mcps/audit.py` |
 | 中断续跑 | 停止或崩溃后消息流上方出现「继续生成 / 放弃」 | `useChatSession` → `/api/conversations/{id}/resume` |
 | 追踪窗口 | 独立窗看整轮 path / LLM / 工具 / token | `TraceWindow` |
 | 群组 | 左栏整栏是群对话列表（一行 = 一个群组），建群时选成员并开好群对话；右栏是独立的群聊面板：无模型条、无技能，上下文用量放在气泡上方；输入区可「@ 指派」给某个成员，由该成员绑定模型单独执行，气泡与指派记录按成员显示 | `GroupView` / `GroupChatView` |
@@ -100,7 +101,7 @@ Agent 图细节见 [`agent-graphs.md`](./agent-graphs.md)；工具矩阵见 [`ag
 
 知识库管理已上线（`KnowledgeView.tsx` + `knowledge/` 模块 + `backend/knowledge/` REST）：左栏文档列表 / 搜索（向量模型就绪时语义召回，否则关键词兜底）、新建 / 编辑 / 删除 / 批量导入（文本文件或粘贴）/ 清空 / 全量重建索引；与 Agent 侧 `kb_*` 工具共用同一份 `kb.sqlite`（`kb_vec_map` 表做 rowid 映射，WAL + busy_timeout 支撑并发）。应用偏好里的托盘 / 开机启动 / 自动更新尚未接 Tauri 插件。
 
-团队模式能力边界见 [`群组模式.md`](./群组模式.md)：成员角色无模型 / 主 agent 无模型时退化，不支持嵌套派发（子 agent 不挂 `delegate_to_agent` / `parallel_delegate`）。并行派发的实现差异见 [`production-design-batch2.md`](./production-design-batch2.md) §2.4「实现纪要」，长期记忆见 [`production-design-batch1.md`](./production-design-batch1.md) §1.4「实现纪要」。
+团队模式能力边界见 [`群组模式.md`](./群组模式.md)：成员角色无模型 / 主 agent 无模型时退化，不支持嵌套派发（子 agent 不挂 `delegate_to_agent` / `parallel_delegate`）。并行派发的实现差异见 [`production-design-batch2.md`](./production-design-batch2.md) §2.4「实现纪要」，长期记忆见 [`production-design-batch1.md`](./production-design-batch1.md) §1.4「实现纪要」，沙箱加固见 [`production-design-batch3.md`](./production-design-batch3.md) §3.1「实现纪要」。
 
 ---
 

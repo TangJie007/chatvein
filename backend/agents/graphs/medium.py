@@ -20,7 +20,7 @@ from trace.recording import (
 )
 
 from .common import (
-    ALWAYS_ON_TOOLS,
+    always_on_tools,
     allowed_from_role,
     build_react_graph,
     concise_failure,
@@ -84,8 +84,9 @@ def build_medium_graph(
     def react_node(state: ChatState) -> dict[str, Any]:
         text = (state.get("rewritten") or state.get("message") or "").strip()
         selected = list(state.get("selected_tools") or [])
-        # 常驻工具见 graphs/common.py::ALWAYS_ON_TOOLS：不参与选型 / 白名单，始终挂载。
-        names = list(dict.fromkeys([*selected, *ALWAYS_ON_TOOLS]))
+        # 常驻工具见 graphs/common.py::always_on_tools：不参与选型 / 白名单，
+        # 角色可用 "!工具名" 显式拒绝。
+        names = list(dict.fromkeys([*selected, *always_on_tools(role)]))
         tools = resolve_tools(names)
         # 团队模式：挂派发工具（主 agent 把子任务交给成员）。
         # 工具从团队上下文读花名册；未开启团队模式时 role 无 _team_mode，不会挂载。
