@@ -31,7 +31,7 @@ def _role_meta(role: dict[str, Any] | None) -> dict[str, Any]:
         return meta
     meta["model_name"] = entity.model_id
     meta["config_name"] = entity.name
-    window_k = int(getattr(entity, "context_window_k", 0) or 0)
+    window_k = int(entity.context_window_k or 0)
     if window_k:
         meta["context_window"] = window_k * 1000
     return meta

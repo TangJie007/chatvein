@@ -162,7 +162,7 @@ def run_pipeline(
     history: list[dict[str, Any]] | None = None,
     role: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """入口：跑总图，返回 ``run_chat`` 所需字段，并附上 ``trace``。"""
+    """入口：跑总图，返回 ``run_pipeline`` 所需字段，并附上 ``trace``。"""
     text = (message or "").strip()
     with tracing(text):
         out = build_pipeline().invoke(

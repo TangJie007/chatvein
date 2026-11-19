@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from agents.graphs.pipeline import build_pipeline, run_pipeline
-from agents.service import run_chat
+from agents.graphs.pipeline import run_pipeline
 
 
 def test_pipeline_routes_simple(monkeypatch) -> None:
@@ -95,7 +95,7 @@ def test_pipeline_hard_uses_hard_graph(monkeypatch) -> None:
 def test_run_chat_offline_simple(monkeypatch) -> None:
     monkeypatch.setattr("agents.router.llm_mod.get_chat_model", lambda **_kwargs: None)
     monkeypatch.setattr("agents.graphs.simple.llm_mod.get_chat_model", lambda **_kwargs: None)
-    out = run_chat("你好")
+    out = run_pipeline("你好")
     assert out["difficulty"] == "simple"
     assert out["used_llm"] is False
     assert "离线" in out["reply"]
@@ -106,10 +106,10 @@ def test_run_chat_offline_medium_runs_tools(monkeypatch) -> None:
     monkeypatch.setattr("agents.tool_selector.llm_mod.get_chat_model", lambda **_kwargs: None)
     monkeypatch.setattr("agents.graphs.medium.llm_mod.get_chat_model", lambda **_kwargs: None)
     monkeypatch.setattr(
-        "agents.graphs.medium.run_tools",
+        "agents.graphs.medium.invoke_tools",
         lambda _text, names: f"TOOL:{','.join(names)}",
     )
-    out = run_chat("现在几点")
+    out = run_pipeline("现在几点")
     assert out["difficulty"] == "medium"
     assert out["used_llm"] is False
     assert "get_current_time" in out["selected_tools"]
@@ -130,7 +130,7 @@ def test_run_chat_offline_hard_plan_verify(monkeypatch) -> None:
         },
     )
     monkeypatch.setattr(
-        "agents.graphs.hard.run_tools",
+        "agents.graphs.hard.invoke_tools",
         lambda _text, names: f"HARD:{','.join(names)}",
     )
     monkeypatch.setattr(
@@ -142,7 +142,7 @@ def test_run_chat_offline_hard_plan_verify(monkeypatch) -> None:
             "used_llm": False,
         },
     )
-    out = run_chat("修到通过")
+    out = run_pipeline("修到通过")
     assert out["difficulty"] == "hard"
     assert out["used_llm"] is False
     assert out["reply"].startswith("HARD:")

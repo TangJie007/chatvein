@@ -14,7 +14,7 @@ ChatVein 对话 Agent 用 **LangGraph** 编排：总图先理解并判难度，�
 | 工具面可控 | 先选型缩集，再 `create_agent`；角色可再收窄分组 |
 | 复杂任务可核对 | hard 用结构化 success_criteria，对照回复与 tool_trace |
 | 可观测 | 节点写 `trace.note` / `span`；追踪窗展示 path |
-| 可离线降级 | 无 API Key 时启发式路由与直接 `run_tools`，不拖垮会话 |
+| 可离线降级 | 无 API Key 时启发式路由与直接 `invoke_tools`，不拖垮会话 |
 
 **不在图内做的事**：流式 token 推送、HITL 审批节点（Bash 确认在工具层）、多智能体并行分发。
 
@@ -45,7 +45,7 @@ HTTP 落库 + 会话 workspace 洞察
 
 | 模块 | 路径 | 职责 |
 | --- | --- | --- |
-| 入口 | `agents/service.py` → `run_chat` | 对外唯一聊天入口 |
+| 入口 | `agents/graphs/pipeline.py` → `run_pipeline` | 对外唯一聊天入口 |
 | 总图 | `agents/graphs/pipeline.py` | understand + 条件边分流 |
 | 理解 | `agents/router.py` | structured：改写 + 难度 |
 | simple | `agents/graphs/simple.py` | 无工具直答 |
@@ -166,7 +166,7 @@ START → select_tools → react → END
    Identity → **Environment（本轮会话绝对路径，靠前）** → Workspace → Tooling → Stopping → Response → Tier。
 3. `invoke({messages: history + HumanMessage(rewritten)})`，`recursion_limit = 2 × max_model_calls + 10`（默认 34）。
 4. 抽最后文本为 `reply`；`extract_tool_trace` 记工具调用。
-5. 无模型：跳过 LLM，直接 `run_tools(text, names)`。
+5. 无模型：跳过 LLM，直接 `invoke_tools(text, names)`。
 
 适合「一两跳工具就能答」的任务；**空转**靠工具/模型 call limit 收束，图步数只当安全网（须大于预算，避免天气「定位+搜索」误撞限）。
 
@@ -261,7 +261,7 @@ skill_prompt_blocks(skills) → 并入 role.prompt
 use_conversation_sandbox(workspace_dir)   # 沙箱/文件工具绑本会话
         │
         ▼
-run_chat → run_pipeline → LangGraph
+run_pipeline → run_pipeline → LangGraph
         │
         ▼
 save_exchange（主库消息 + route=difficulty）
@@ -354,7 +354,7 @@ role.memory  ──────→ history 条数（HTTP 层）  │
 
 ```text
 backend/agents/
-  service.py              run_chat
+  graphs/pipeline.py      run_pipeline（聊天入口）
   router.py               understand
   tool_selector.py        select_tools / expand_allowlist
   memory.py               to_lc_messages

@@ -68,7 +68,7 @@ Token：Rust 通过 `CHATVEIN_TOKEN` 注入，前端带 `X-ChatVein-Token`，中
 | `CancelChatRequest` | `turn_id` |
 | `chat()` | async 路由；断连不落库；`TurnCancelled` 返回占位而非 500；异常经 `model_error_hint` 转人话 |
 | `_chat_turn()` | **核心编排**：开/取会话 → 角色运行时 → 历史 → 技能目录 → 团队装配 → `to_thread(_run_chat_heavy)` → `save_exchange` → `workspace_insight` |
-| `_run_chat_heavy()` | 工作线程内：`bind_turn` → `trace_service.recording` → `use_conversation_sandbox` → `run_chat` → token 统计 |
+| `_run_chat_heavy()` | 工作线程内：`bind_turn` → `trace_service.recording` → `use_conversation_sandbox` → `run_pipeline` → token 统计 |
 | `_collect_tokens()` | 从 usage callback 汇总 `total_tokens` |
 | `_aborted_payload()` | 客户端断开时的占位响应（不落库） |
 
@@ -97,7 +97,6 @@ Token：Rust 通过 `CHATVEIN_TOKEN` 注入，前端带 `X-ChatVein-Token`，中
 
 | 文件 | 等级 | 职责 | 关键符号 |
 |---|---|---|---|
-| `service.py` | a | 聊天总入口：调用 pipeline；无模型时离线直答 | `run_chat` |
 | `router.py` | b | 理解/改写 + 难度判定（simple/medium/hard）；无模型走启发式 | `understand`、`UnderstandDecision`、`_offline` |
 | `graphs/pipeline.py` | a | 按难度分发到三张图；构图缓存 | `run_pipeline`、`build_pipeline`、`reset_pipeline_cache` |
 | `graphs/simple.py` | b | 直答图：system prompt + 最近历史 | `run_simple`、`build_simple_graph` |

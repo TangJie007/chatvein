@@ -8,6 +8,7 @@ Agent 对话里「记一条笔记」和知识库管理页看到的文档是同�
 
 from __future__ import annotations
 
+import sqlite3
 import threading
 import uuid
 from typing import Any
@@ -34,7 +35,7 @@ class KnowledgeService:
                 indexed = int(
                     conn.execute("SELECT count(*) FROM kb_vec_map").fetchone()[0]
                 )
-        except Exception:  # noqa: BLE001 — 状态查询不允许打挂请求
+        except sqlite3.OperationalError:  # 库还没初始化：按 0 条展示
             pass
         embed = get_embedding_service()
         return {
@@ -161,7 +162,7 @@ class KnowledgeService:
                 conn.execute("DELETE FROM kb_docs")
                 try:
                     conn.execute("DELETE FROM kb_vec")
-                except Exception:  # noqa: BLE001 — 向量表未创建时跳过
+                except sqlite3.OperationalError:  # 向量表未创建时跳过
                     pass
                 conn.execute("DELETE FROM kb_vec_map")
                 conn.commit()
@@ -212,7 +213,7 @@ class KnowledgeService:
                 # 全量重建：清空旧向量，再从 kb_docs 逐批重新向量化。
                 try:
                     conn.execute("DELETE FROM kb_vec")
-                except Exception:  # noqa: BLE001
+                except sqlite3.OperationalError:  # 向量表未创建时跳过
                     pass
                 conn.execute("DELETE FROM kb_vec_map")
                 conn.commit()

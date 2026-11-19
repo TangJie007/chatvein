@@ -11,7 +11,7 @@
 | 新增一个工具 | `tools/<module>.py` → `tools/__init__.py::build_tool_groups` → `prefs.ts` → `rolesStore.ts` |
 | 改工具分组 / 常驻工具 | `tools/__init__.py` + `agents/graphs/common.py::ALWAYS_ON_TOOLS` |
 | 改按角色勾选哪些工具 | `registry.py::resolve_tools` / `heuristic_tool_names` |
-| 改离线兜底执行 | `service.py::run_tools` → `registry.invoke_tools` |
+| 改离线直调执行 | `mcps/registry.py::invoke_tools` |
 | 改审批 / 命令策略 | `bash_policy.py` / `powershell_policy.py` / `bash_approval.py` |
 | 改文件越界判定 | `path_access.py` |
 | 改工作区目录结构 | `sandbox.py`（`output/` `logs/` `runs/`，上传时才有 `uploads/`） |
@@ -19,9 +19,8 @@
 
 ```text
 backend/mcps/
-├─ __init__.py          对外导出（resolve_tools / run_tools / tool_catalog …）
+├─ __init__.py          仅包说明，不做 re-export
 ├─ registry.py          注册表、分组、解析、目录元数据、离线直调
-├─ service.py           离线/直调入口
 ├─ sandbox.py           会话工作区 + ContextVar + 执行 cwd
 ├─ workspace.py         主空间解析
 ├─ path_access.py       路径解析 + 越界审批
@@ -38,10 +37,9 @@ backend/mcps/
 
 | 文件 | 等级 | 职责 | 关键符号 |
 |---|---|---|---|
-| `__init__.py` | a | 对外暴露注册/解析/执行 | `resolve_tools`、`run_tools`、`tool_catalog`、`tool_catalog_text`、`tool_groups`、`shell_runtime`、`suggest_tools_route` |
+| `__init__.py` | e | 仅包说明；调用方直接 import 子模块 | — |
 | `registry.py` | a | 工具注册表、分组定义、按角色勾选解析、目录元数据、离线直调 | `all_tools`、`tool_groups`、`tool_catalog`、`tool_catalog_text`、`resolve_tools`、`heuristic_tool_names`、`invoke_tools`（自动填参、异常转文本）、`suggest_tools_route` |
 | `tools/__init__.py` | a | **分组装配**：把各模块 `TOOLS` 汇成 `core` / `mcp-*` 分组；运行时可用才加 `mcp-bash` / `mcp-powershell` / `mcp-browser` | `build_tool_groups` |
-| `service.py` | b | 离线/直调入口：按工具名自动填参执行（在线由 Agent 图直接调工具） | `run_tools(message, names)` → `registry.invoke_tools` |
 | `sandbox.py` | a | 会话工作区布局 + ContextVar + 执行 cwd；`output/` `logs/` `runs/` `uploads/` | `use_conversation_sandbox`、`current_sandbox`、`conversation_root` |
 | `workspace.py` | b | 主空间解析：设置文件 > `CHATVEIN_WORKSPACE` > `<data>/workspace` | `workspace_root`、`set/reset` |
 | `path_access.py` | a | 路径解析与越界访问审批（工作区内直接放行，工作区外人工确认） | `resolve_path`、越界审批 |

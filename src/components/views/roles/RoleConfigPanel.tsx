@@ -14,8 +14,7 @@ import { Switch } from "../../ui/switch";
 import { Collapsible, Row, Select, Slider, Textarea, TextInput } from "./formFields";
 import { ModelSelect } from "./ModelSelect";
 import { ResidentSkillPicker } from "./ResidentSkillPicker";
-import type { RoleForm } from "./roleForm";
-import { toForm } from "./roleForm";
+
 import { TONE } from "./tone";
 import { TryRunDialog } from "./TryRunDialog";
 
@@ -29,12 +28,12 @@ export function RoleConfig({
   role: RoleRecord;
   models: LlmModelRecord[];
   loadingModels: boolean;
-  onSave: (form: RoleForm) => Promise<void>;
+  onSave: (form: RoleRecord) => Promise<void>;
   onDelete: () => void;
 }) {
   const tone = TONE[role.tone] || TONE.brand;
-  const [form, setForm] = useState<RoleForm>(() => toForm(role));
-  const set = <K extends keyof RoleForm>(key: K, value: RoleForm[K]) =>
+  const [form, setForm] = useState<RoleRecord>(() => ({ ...role }));
+  const set = <K extends keyof RoleRecord>(key: K, value: RoleRecord[K]) =>
     setForm((f) => ({ ...f, [key]: value }));
   const toggleTool = (id: string) =>
     set(
@@ -385,7 +384,7 @@ export function RoleConfig({
             已保存到云端
           </span>
         )}
-        <Button variant="secondary" size="sm" onClick={() => setForm(toForm(role))}>
+        <Button variant="secondary" size="sm" onClick={() => setForm({ ...role })}>
           还原
         </Button>
         <Button variant="primary" size="sm" onClick={() => void handleSave()}>

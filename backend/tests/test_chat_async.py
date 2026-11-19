@@ -84,7 +84,7 @@ def _patch_deps(*, prepared_role_id: str | None = None):
         patch("roles.service.RolesService.resolve_for_chat", resolve),
         patch("skills.service.skill_prompt_blocks", return_value=""),
         patch.object(main, "session_db_path", return_value=Path("C:/tmp/x.db")),
-        patch.object(main, "run_chat", return_value=dict(_DUMMY_RESULT)),
+        patch.object(main, "run_pipeline", return_value=dict(_DUMMY_RESULT)),
         patch.object(main, "trace_service", MagicMock(recording=recording)),
         patch.object(main, "use_conversation_sandbox", sandbox),
         patch.object(main, "_usage_callback", None),

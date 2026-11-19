@@ -1,26 +1,10 @@
 """MCP / 工具域：注册表 + 按名执行。
 
-- 工具选择 Agent → ``agents.tool_selector``（只缩候选集，省 token）
-- Tool-calling Agent → ``agents.service``（绑子集后跑一轮）
-- 本包不建 Agent；工具实现见 ``mcps.tools``
+调用方直接用子模块，不在这里 re-export：
+
+- 工具注册与解析 → ``mcps.registry``（``resolve_tools`` / ``invoke_tools`` / ``tool_catalog``）
+- 工具实现 → ``mcps.tools``
+- 工作区与审批 → ``mcps.sandbox`` / ``mcps.workspace`` / ``mcps.bash_policy``
 """
 
-from .registry import (
-    resolve_tools,
-    shell_runtime,
-    suggest_tools_route,
-    tool_catalog,
-    tool_catalog_text,
-    tool_groups,
-)
-from .service import run_tools
-
-__all__ = [
-    "run_tools",
-    "resolve_tools",
-    "shell_runtime",
-    "suggest_tools_route",
-    "tool_catalog",
-    "tool_catalog_text",
-    "tool_groups",
-]
+__all__: list[str] = []

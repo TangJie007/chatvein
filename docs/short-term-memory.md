@@ -189,7 +189,7 @@ POST /api/chat
   └─ main.py chat()
        ├─ conversations_service.short_term_memory(workspace_dir, limit=memory_limit)
        │      → list_messages(limit=N)   → 最近 N 条 dict
-       ├─ run_chat(message, history=history, role=role_runtime)
+       ├─ run_pipeline(message, history=history, role=role_runtime)
        │      → run_pipeline(message, history=..., role=...)
        │            → build_pipeline().invoke({"message", "history", "role"})
        │                  ├─ understand: router.understand(text, role=role)   # 只吃本轮，不吃 history
@@ -205,7 +205,7 @@ POST /api/chat
 - 各子图的 `run_*` 内部对 `history` 调 `to_lc_messages` 再拼 system prompt + 本轮 user 句；
 - `understand`（意图理解 / 难度判定）**不吃 history**，只做单句改写与路由；这样路由不受历史噪声干扰。
 
-代码索引：[pipeline.py](file:///e:/project/chatvein/backend/agents/graphs/pipeline.py)、[service.py (agents)](file:///e:/project/chatvein/backend/agents/service.py)
+代码索引：[pipeline.py](file:///e:/project/chatvein/backend/agents/graphs/pipeline.py)、[service.py (agents)](file:///e:/project/chatvein/backend/agents/graphs/pipeline.py)
 
 ---
 
@@ -233,7 +233,7 @@ POST /api/chat
 | [backend/conversations/service.py: short_term_memory](file:///e:/project/chatvein/backend/conversations/service.py#L279-L289) | 对外短记忆读取入口 |
 | [backend/conversations/service.py: save_exchange](file:///e:/project/chatvein/backend/conversations/service.py#L193-L265) | 主写入路径 |
 | [backend/conversations/service.py: list_messages](file:///e:/project/chatvein/backend/conversations/service.py#L126-L152) | UI 历史读取 + trace 补齐 |
-| [backend/agents/service.py](file:///e:/project/chatvein/backend/agents/service.py) | `run_chat` 转发 |
+| [backend/agents/graphs/pipeline.py](file:///e:/project/chatvein/backend/agents/graphs/pipeline.py) | `run_pipeline` 转发 |
 | [backend/agents/graphs/pipeline.py](file:///e:/project/chatvein/backend/agents/graphs/pipeline.py) | `run_pipeline` / `_simple_node` / `_medium_node` / `_hard_node` |
 | [backend/main.py](file:///e:/project/chatvein/backend/main.py#L175-L185) | `memory_limit` 计算 + `short_term_memory` 调用 |
 

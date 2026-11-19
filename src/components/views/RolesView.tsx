@@ -14,7 +14,7 @@ import { makeNewRole } from "../../lib/rolesStore";
 import { Button } from "../ui/button";
 import { RoleConfig } from "./roles/RoleConfigPanel";
 import { RoleListSidebar } from "./roles/RoleListSidebar";
-import type { RoleForm } from "./roles/roleForm";
+
 
 export function RolesView() {
   const [roles, setRoles] = useState<RoleRecord[]>([]);
@@ -85,7 +85,7 @@ export function RolesView() {
     setActiveId((cur) => (cur === id ? roles.find((r) => r.id !== id)?.id ?? "" : cur));
   };
 
-  const handleSave = async (form: RoleForm) => {
+  const handleSave = async (form: RoleRecord) => {
     const payload: UpdateRolePayload = {
       name: form.name,
       description: form.description,

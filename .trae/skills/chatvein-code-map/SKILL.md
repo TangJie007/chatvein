@@ -56,7 +56,7 @@ description: ChatVein 桌面 Agent（Tauri 2 外壳 + React 19 + Python FastAPI 
 | 等级 | 含义 | 典型文件 | 改动要求 |
 |---|---|---|---|
 | **a** | 全局骨架：进程入口、请求底座、会话引擎、Agent 装配、工具注册表、数据模型、外壳监督 | `backend/main.py::_chat_turn`、`backend/agents/graphs/common.py`、`backend/mcps/registry.py`、`backend/db.py`、`src/api/client.ts`、`src/App.tsx`、`src/components/chat/useChatSession.ts`、`src-tauri/src/backend.rs` | 必读上下文 + 全链路回归 |
-| **b** | 主干业务：单一业务域的主 service / 主页面 / 主组件 | `conversations/service.py`、`agents/service.py`、`agents/router.py`、`roles/service.py`、`skills/service.py`、`knowledge/service.py`、`views/ChatView.tsx`、`chat/ChatPanel.tsx`、`lib/groupsStore.ts` | 读同目录全部文件 + 对端 |
+| **b** | 主干业务：单一业务域的主 service / 主页面 / 主组件 | `conversations/service.py`、`agents/graphs/pipeline.py`、`agents/router.py`、`roles/service.py`、`skills/service.py`、`knowledge/service.py`、`views/ChatView.tsx`、`chat/ChatPanel.tsx`、`lib/groupsStore.ts` | 读同目录全部文件 + 对端 |
 | **c** | 模块内实现：控制器、DTO、子组件、单个 composable / 小组件 | `*/controller.py`、`views/roles/*`、`group/*`、`knowledge/*`、`skills/*`、`layout/*` | 局部影响，注意入参与契约 |
 | **d** | 契约层：前端 api 封装、后端 DTO、跨层类型 | `src/api/*.ts`（除 `client.ts`）、`src/types/view.ts`、`backend/*/entity/dto.py` | 单侧改动必须双向同步，否则字段静默丢失 |
 | **e** | 支撑设施：工具函数、UI 基础组件、样式、脚本 | `src/lib/{cn,errors,creationSteps}.ts`、`src/components/ui/*`、`src/styles.css`、`tools/*.ps1` | 低频但影响面广，先全局搜引用 |
@@ -80,9 +80,9 @@ description: ChatVein 桌面 Agent（Tauri 2 外壳 + React 19 + Python FastAPI 
    - `short_term_memory` 取历史；`skill_prompt_blocks` 合并「常驻技能 + 会话技能」成目录
    - `chats_service.assemble_team`（有群成员则注入花名册 + `_team_mode`）
    - 生成/接收 `turn_id`，定位 `session.sqlite`
-3. `asyncio.to_thread(_run_chat_heavy)`：`bind_turn` → `trace_service.recording` → `use_conversation_sandbox` → `run_chat`。
-4. `agents/service.py::run_chat` → `graphs/pipeline.py`：`router.understand`（难度）→ `simple` / `medium` / `hard`。
-   - 工具：`tool_retriever` 预筛 → `tool_selector.select_tools` → `registry.resolve_tools` → 图内调用工具（离线兜底 `mcps.service.run_tools` → `registry.invoke_tools`）。
+3. `asyncio.to_thread(_run_chat_heavy)`：`bind_turn` → `trace_service.recording` → `use_conversation_sandbox` → `run_pipeline`。
+4. `agents/graphs/pipeline.py::run_pipeline`：`router.understand`（难度）→ `simple` / `medium` / `hard`。
+   - 工具：`tool_retriever` 预筛 → `tool_selector.select_tools` → `registry.resolve_tools` → 图内调用工具（离线直调 `registry.invoke_tools`）。
 5. 返回后 `save_exchange` 写 `session.sqlite` 并回写主库预览；`workspace_insight` 返回产物列表。
 6. 前端先插乐观气泡，生成中轮询 `GET /api/conversations/{id}/traces/{turn_id}` 渲染思考流。
 
@@ -104,7 +104,7 @@ description: ChatVein 桌面 Agent（Tauri 2 外壳 + React 19 + Python FastAPI 
 
 角色勾选的分组/工具 → `tool_selector.expand_allowlist` → 候选池（`tool_retriever` 向量 + BM25 预筛）
 → LLM 精选 `ToolPlan`（无模型走 `heuristic_hits`）→ `registry.resolve_tools`
-→ ReAct 图内调用工具（在线）；离线直调走 `mcps/service.run_tools` → `registry.invoke_tools`
+→ ReAct 图内调用工具（在线）；离线直调走 `registry.invoke_tools`
 → 文件越界 `path_access`、Bash 策略/审批在工具内部 `bash_policy` / `bash_approval`、工作区 `sandbox.current_sandbox()`。
 
 ### F. 追踪
@@ -149,7 +149,7 @@ description: ChatVein 桌面 Agent（Tauri 2 外壳 + React 19 + Python FastAPI 
 | 改 ReAct / 步数 / 提示词 | `agents/graphs/medium.py`、`hard.py`、`common.py`、`prompts.py` | `simple.py`、`state.py` |
 | 改工具选择 / 预筛 | `agents/tool_selector.py`、`tool_retriever.py` | `mcps/registry.py` |
 | 新增内置工具 | `backend/mcps/tools/<module>.py` | `tools/__init__.py`、`prefs.ts` 的 `MCP_SERVERS`、`common.py::ALWAYS_ON_TOOLS`（常驻才加） |
-| 工具审批 / 沙箱 / 越界访问 | `mcps/bash_policy.py`、`path_access.py`、`bash_approval.py`、`powershell_policy.py` | `mcps/service.py`、`BashApproval.tsx` |
+| 工具审批 / 沙箱 / 越界访问 | `mcps/bash_policy.py`、`path_access.py`、`bash_approval.py`、`powershell_policy.py` | `mcps/registry.py`、`BashApproval.tsx` |
 | 模型接入 / 报错提示 / 用量 | `backend/models/service.py`、`agents/llm.py` | `src/api/models.ts`、`ModelsView`、`AddModelDialog`、`lib/tokens.ts` |
 | 角色配置 / 常驻技能 / 记忆 | `backend/roles/service.py::get_runtime`、`controller.py` | `api/roles.ts`、`RolesView`、`views/roles/*` |
 | 技能市场 / 安装 / 注入 | `backend/skills/service.py`、`local_store.py` | `SkillsView`、`SkillDetailDrawer`、`mcps/tools/skills.py` |
@@ -170,7 +170,7 @@ description: ChatVein 桌面 Agent（Tauri 2 外壳 + React 19 + Python FastAPI 
 1. **Python 顶层根是 `backend/`**：所有跨模块 import 写 `import db` / `from agents import ...`，**禁止** `from backend.xxx`；`pyrightconfig.json` 的 `extraPaths` 已指向 `backend`。
 2. **后端模块分层固定**：`module.py`（`APIRouter(prefix=...)` + service 单例 + `register_routes`）→ `controller.py`（纯路由）→ `service.py`（业务）→ `repository.py`（SQLModel/CRUD）→ `entity/{entity,dto}.py`。新模块必须在 `main.py` 里 `include_router`。
 3. **工具模块契约**：每个 `mcps/tools/*.py` 导出 `TOOLS: tuple[BaseTool, ...]` 与 `heuristic(text) -> list[str]`；并在 `tools/__init__.py::build_tool_groups` 注册 group id（`core` / `mcp-fs` / `mcp-web` / `mcp-sqlite` / `mcp-kb` / `mcp-codesandbox` / `mcp-ip` / `mcp-ocr` / `mcp-pdf` / `mcp-skills` / `mcp-docx` / `mcp-pptx` / `mcp-excel` / 运行时按需 `mcp-bash` / `mcp-powershell` / `mcp-browser`）。
-4. **长任务必须 `asyncio.to_thread`**：`trace` / `sandbox` / `turn` 用 ContextVar，**设置与读取必须同一线程**；不要随意把 `run_chat` 拆到别的线程池。
+4. **长任务必须 `asyncio.to_thread`**：`trace` / `sandbox` / `turn` 用 ContextVar，**设置与读取必须同一线程**；不要随意把 `run_pipeline` 拆到别的线程池。
 5. **取消是协作式**：每轮 `bind_turn(turn_id)`，`agents/cancellation.py` 的检查点负责抛 `TurnCancelled`；不要吞掉这个异常。
 6. **前端只经 `src/api/*` 访问后端**，不要页面里直接 `fetch`；新增 API 必须加进 `src/api/index.ts` 桶导出。
 7. **长请求**：`sendChat` 用 `timeoutMs: 0` + `AbortController`；区分「用户停止 / 超时 / 后端掉线」，停止要走 `/api/chat/cancel` 上报，光断 HTTP 不会停后端。

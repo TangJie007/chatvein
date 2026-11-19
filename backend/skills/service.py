@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import os
 import re
-from typing import Any
+from typing import Any, NoReturn
 
 import httpx
 
@@ -143,7 +143,7 @@ def _http_client() -> httpx.Client:
     )
 
 
-def _raise_http(exc: Exception) -> None:
+def _raise_http(exc: Exception) -> NoReturn:
     """把 httpx / json 异常翻译成面向用户的中文报错（供 controller 转 HTTPException）。"""
     if isinstance(exc, httpx.TimeoutException):
         raise RuntimeError("SkillHub 请求超时，请稍后重试") from exc
@@ -277,7 +277,6 @@ def list_skills(
             payload = response.json()
     except Exception as exc:
         _raise_http(exc)
-        raise  # pragma: no cover
 
     if not isinstance(payload, dict):
         raise RuntimeError("SkillHub 响应格式异常")
@@ -341,7 +340,6 @@ def get_skill(slug: str) -> dict[str, Any]:
             skill_md = _fetch_skill_md(client, cleaned)
     except Exception as exc:
         _raise_http(exc)
-        raise  # pragma: no cover
 
     if not isinstance(payload, dict):
         raise RuntimeError("SkillHub 详情格式异常")

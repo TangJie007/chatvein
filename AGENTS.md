@@ -54,12 +54,12 @@
 |---|---|---|
 | 新页面/导航 | `src/types/view.ts`、`src/App.tsx` | `src/components/layout/Sidebar.tsx`、`src/styles.css` |
 | 聊天交互/流式/停止 | `src/components/chat/useChatSession.ts` | `ChatPanel.tsx`、`Composer.tsx`、`src/api/conversations.ts` |
-| 单轮对话编排 | `backend/main.py`（`/api/chat`） | `backend/conversations/service.py`、`backend/agents/service.py` |
+| 单轮对话编排 | `backend/main.py`（`/api/chat`） | `backend/conversations/service.py`、`backend/agents/graphs/pipeline.py` |
 | 难度路由/改写 | `backend/agents/router.py` | `backend/agents/graphs/pipeline.py` |
 | Agent 决策逻辑 | `backend/agents/graphs/{simple,medium,hard}.py` | `common.py`、`prompts.py`、`state.py` |
 | 工具选择/预筛 | `backend/agents/tool_selector.py`、`tool_retriever.py` | `backend/mcps/registry.py` |
 | 新增工具 | `backend/mcps/tools/<module>.py` | `backend/mcps/tools/__init__.py`、`src/components/settings/prefs.ts`、`src/lib/rolesStore.ts` |
-| 工具执行/审批 | `backend/mcps/registry.py`、`backend/mcps/service.py` | `bash.py`、`bash_policy.py`、`bash_approval.py` |
+| 工具执行/审批 | `backend/mcps/registry.py` | `bash.py`、`bash_policy.py`、`bash_approval.py` |
 | 工作区/沙箱 | `backend/mcps/sandbox.py`、`workspace.py`、`path_access.py` | `backend/main.py`（uploads） |
 | 新后端接口 | `backend/<module>/controller.py` | `module.py`、`main.py include_router`、`src/api/*.ts` |
 | 会话/群组数据 | `backend/conversations/`、`backend/chats/` | `src/api/conversations.ts`、`src/api/db.ts` |
@@ -78,8 +78,8 @@
 - **单轮**：`useChatSession.send` → `sendChat` → `POST /api/chat` → `router.understand` → `conversations.prepare_turn`（历史/短期记忆/技能/群成员）→ `pipeline.run_pipeline` → `trace.recording` → 历史落盘 + 前端轮询 `/traces/{turn_id}`。
 - **群组**：`ChatView/GroupChatView` → `mode` + `members` → 后端 `is_group` → `chats.assemble_team` → `tool_selector` 限定发言角色工具 → `delegate_to_agent`。
 - **技能**：`SkillsView` → `/api/skills` → 保存 SKILL.md → 渲染技能目录进 prompt → `load_skill` 读全文。
-- **工具**：角色勾选 → `registry.resolve_tools` → 图内调用工具；离线兜底 `run_tools`/`invoke_tools`。Bash/PowerShell 在工具内部走审批，文件越界走 `path_access`。
-- **追踪**：`agent/service.run_chat` → `trace.recording.tracing` → span 树 → `turn_traces.payload_json` → `/api/conversations/{id}/traces/{turn}` → `TraceWindow`。
+- **工具**：角色勾选 → `registry.resolve_tools` → 图内调用工具；离线直调 `registry.invoke_tools`。Bash/PowerShell 在工具内部走审批，文件越界走 `path_access`。
+- **追踪**：`agents/graphs/pipeline.run_pipeline` → `trace.recording.tracing` → span 树 → `turn_traces.payload_json` → `/api/conversations/{id}/traces/{turn}` → `TraceWindow`。
 
 ## 5. 硬约定
 

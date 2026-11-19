@@ -389,29 +389,27 @@ export function Composer({
       setUploadError(null);
       try {
         const res = await uploadFiles(items, conversationId);
-      const results = res?.files ?? [];
-      const accepted = results.filter(
-        (f): f is { name: string; path: string } => !!f && !f.error && !!f.path
-      );
-      if (accepted.length > 0) {
-        setFiles((prev) => {
-          const seen = new Set(prev.map((f) => f.path));
-          const next = [...prev];
-          for (const f of accepted) {
-            if (seen.has(f.path)) continue;
-            seen.add(f.path);
-            next.push({ path: f.path, name: f.name });
-          }
-          return next;
-        });
-      }
-      const failed = results.filter((f) => !!f && !!f.error);
-      if (failed.length > 0) {
-        setUploadError(
-          failed.map((f) => (f as { error: string }).error).join("；")
+        const results = res?.files ?? [];
+        const accepted = results.filter(
+          (f): f is { name: string; path: string } => !!f && !f.error && !!f.path
         );
-      }
-    } catch (err) {
+        if (accepted.length > 0) {
+          setFiles((prev) => {
+            const seen = new Set(prev.map((f) => f.path));
+            const next = [...prev];
+            for (const f of accepted) {
+              if (seen.has(f.path)) continue;
+              seen.add(f.path);
+              next.push({ path: f.path, name: f.name });
+            }
+            return next;
+          });
+        }
+        const failed = results.filter((f) => !!f && !!f.error);
+        if (failed.length > 0) {
+          setUploadError(failed.map((f) => (f as { error: string }).error).join("；"));
+        }
+      } catch (err) {
       setUploadError(err instanceof Error ? err.message : "文件上传失败");
     }
   }, [conversationId]);

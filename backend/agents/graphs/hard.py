@@ -14,7 +14,7 @@ from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
 from langgraph.graph import END, START, StateGraph
 from pydantic import BaseModel, Field
 
-from mcps import resolve_tools, run_tools  # pyright: ignore[reportImplicitRelativeImport]
+from mcps.registry import invoke_tools, resolve_tools  # pyright: ignore[reportImplicitRelativeImport]
 
 from .. import llm as llm_mod
 from .. import tool_selector
@@ -265,7 +265,7 @@ def build_hard_graph(
             if not selected:
                 reply = f"（离线）{user_blob}" if user_blob else "（离线）未配置 LLM。"
             else:
-                reply = run_tools(user_blob, selected)
+                reply = invoke_tools(user_blob, selected)
             note(
                 "llm",
                 name="react",
@@ -321,7 +321,7 @@ def build_hard_graph(
             raise
         except StepLimitReached as exc:
             # 步数触顶：已跑过的工具结果仍然有效，收束给用户而不是整轮报错
-            fallback = run_tools(user_blob, selected) if selected else ""
+            fallback = invoke_tools(user_blob, selected) if selected else ""
             return {
                 "reply": step_limit_reply(exc.partial, fallback),
                 "used_llm": False,
@@ -330,7 +330,7 @@ def build_hard_graph(
                 ),
             }
         except Exception as exc:  # noqa: BLE001
-            verbose = run_tools(user_blob, selected) if selected else ""
+            verbose = invoke_tools(user_blob, selected) if selected else ""
             # 详细工具输出写入追踪，气泡只保留一句话提示（避免把路径/日志铺满聊天框）
             if verbose:
                 note(

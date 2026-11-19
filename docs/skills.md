@@ -37,7 +37,7 @@ MCP 工具（执行能力）     ──→  真正"怎么做"
               └─ local_store.format_skill_catalog_for_prompt()  # name+description+slug
       → 技能目录追加进 role_runtime["prompt"]（有角色时）
       → role_runtime["_skill_slugs"] = merged_slugs        # 下传给下游图
-      → run_chat → agents/graphs/pipeline.py 组装 system prompt
+      → run_pipeline → agents/graphs/pipeline.py 组装 system prompt
           └─ prompts.py build_agent_system → "# Role\n{role}" 段
       → medium / hard 图 react_node：
           load_skill 为常驻工具（graphs/common.ALWAYS_ON_TOOLS），无条件挂进工具列表

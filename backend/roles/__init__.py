@@ -18,10 +18,9 @@ __all__ = ["roles_router"]
 
 
 def __getattr__(name: str) -> Any:
+    """懒加载 router：``db`` 注册实体时不能提前拉起 repository（会循环导入）。"""
     if name == "roles_router":
-        from .module import roles_router as router
+        from .module import roles_router
 
-        if not isinstance(router, APIRouter):
-            raise TypeError(f"roles_router 必须是 APIRouter，实际是 {type(router).__name__}")
-        return router
+        return roles_router
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

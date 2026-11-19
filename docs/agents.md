@@ -11,7 +11,7 @@
 | --- | --- |
 | `agents/router.py` | 一次 structured：`rewritten` + `difficulty` |
 | `agents/tool_selector.py` | 只缩工具集（吃改写后文本；hard 另附计划） |
-| `agents/service.py` | 入口 `run_chat` → 总图 |
+| `agents/graphs/pipeline.py` | 入口 `run_pipeline` → 总图 |
 | `agents/graphs/` | LangGraph：总图路由 + simple / medium / hard 子图 |
 | `mcps/` | 工具注册 + 按名 invoke（实现见 `mcps/tools/`） |
 

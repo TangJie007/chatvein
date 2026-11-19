@@ -296,6 +296,7 @@ export function KnowledgeView() {
   }
 
   const showSearchMode = q.trim().length > 0;
+  // hits 为 null 表示还没搜索过，此时按「无结果」展示。
   const list: ListItem[] = showSearchMode ? (hits ?? []) : docs.map(toListItem);
 
   return (

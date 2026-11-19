@@ -166,7 +166,7 @@ class ModelsService:
                     pass
                 return {
                     "ok": True,
-                    "status_code": getattr(resp, "status", 200),
+                    "status_code": resp.status,
                     "latency_ms": latency_ms,
                     "message": (
                         f"连接成功"

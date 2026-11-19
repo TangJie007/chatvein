@@ -32,7 +32,7 @@ from agents.graphs.common import (  # pyright: ignore[reportImplicitRelativeImpo
 from agents.graphs.prompts import build_agent_system  # pyright: ignore[reportImplicitRelativeImport]
 from agents.llm import get_chat_model  # pyright: ignore[reportImplicitRelativeImport]
 from agents.memory import to_lc_messages  # pyright: ignore[reportImplicitRelativeImport]
-from mcps import resolve_tools  # pyright: ignore[reportImplicitRelativeImport]
+from mcps.registry import resolve_tools  # pyright: ignore[reportImplicitRelativeImport]
 
 # 成员子 agent 的护栏量级（对齐 medium 图默认值）。
 _LLM_TIMEOUT = 120.0
@@ -161,8 +161,8 @@ def delegate_to_agent(role_id: str, task: str, instruction: str | None = None) -
             route="delegate",
             actor_id=role_id,
         )
-    except Exception:  # noqa: BLE001
-        pass
+    except Exception as exc:  # noqa: BLE001 — 成员记忆落库失败不该打断主 agent
+        print(f"CHATVEIN_DELEGATE record_turn failed: {exc}", flush=True)
 
     return f"[成员 {member_name} 的回复]\n{reply}"
 

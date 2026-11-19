@@ -7,7 +7,7 @@ from typing import Any
 from langchain_core.messages import BaseMessage, HumanMessage
 from langgraph.graph import END, START, StateGraph
 
-from mcps import resolve_tools, run_tools  # pyright: ignore[reportImplicitRelativeImport]
+from mcps.registry import invoke_tools, resolve_tools  # pyright: ignore[reportImplicitRelativeImport]
 
 from .. import llm as llm_mod
 from .. import tool_selector
@@ -104,7 +104,7 @@ def build_medium_graph(
             if not selected:
                 reply = f"（离线）{text}" if text else "（离线）未配置 LLM。"
             else:
-                reply = run_tools(text, selected)
+                reply = invoke_tools(text, selected)
             note(
                 "llm",
                 name="react",
@@ -172,7 +172,7 @@ def build_medium_graph(
                 "tool_trace": traced,
             }
         except Exception as exc:  # noqa: BLE001
-            verbose = run_tools(text, selected) if selected else ""
+            verbose = invoke_tools(text, selected) if selected else ""
             # 详细工具输出写入追踪，气泡只保留一句话提示（避免把路径/日志铺满聊天框）
             if verbose:
                 note(

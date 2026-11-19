@@ -464,10 +464,7 @@ class TraceRecorder:
     def flush(self) -> dict[str, Any]:
         payload = self.snapshot()
         if self.on_change is not None:
-            try:
-                self.on_change(payload)
-            except Exception:
-                return payload
+            self.on_change(payload)
         return payload
 
     def _offset_ms(self) -> int:

@@ -21,7 +21,7 @@ Agent 图细节见 [`agent-graphs.md`](./agent-graphs.md)；工具矩阵见 [`ag
 | 轮次追踪 | span 树、LLM 请求/响应、工具、token；按 turn 落库 | `trace/` |
 | HTTP 入口 | `POST /api/chat` 同事务写用户+助手消息，回写 workspace 洞察 | `main.py` |
 
-离线回落：无主模型时 understand / 选型走启发式，simple 返回「离线」文案，medium/hard 直接 `run_tools`。
+离线回落：无主模型时 understand / 选型走启发式，simple 返回「离线」文案，medium/hard 直接 `invoke_tools`。
 
 ---
 

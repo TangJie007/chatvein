@@ -32,7 +32,8 @@ from agents.cancellation import (  # pyright: ignore[reportImplicitRelativeImpor
     clear_turn,
 )
 from agents.llm import model_error_hint  # pyright: ignore[reportImplicitRelativeImport]
-from agents.service import run_chat  # pyright: ignore[reportImplicitRelativeImport]
+from agents.graphs.pipeline import run_pipeline  # pyright: ignore[reportImplicitRelativeImport]
+from conversations.entity.dto import ConversationRecord  # pyright: ignore[reportImplicitRelativeImport]
 from chats.module import (  # pyright: ignore[reportImplicitRelativeImport]
     chats_router,
     chats_service,
@@ -41,7 +42,11 @@ from conversations.module import (  # pyright: ignore[reportImplicitRelativeImpo
     conversations_router,
     conversations_service,
 )
-from mcps import shell_runtime, tool_catalog, tool_groups  # pyright: ignore[reportImplicitRelativeImport]
+from mcps.registry import (  # pyright: ignore[reportImplicitRelativeImport]
+    shell_runtime,
+    tool_catalog,
+    tool_groups,
+)
 from mcps.bash_approval import decide, list_pending  # pyright: ignore[reportImplicitRelativeImport]
 from mcps.sandbox import (  # pyright: ignore[reportImplicitRelativeImport]
     session_db_path,
@@ -292,7 +297,7 @@ async def _chat_turn(req: ChatRequest, request: Request) -> dict[str, object]:
     # 完整链路：前端勾选 slug → PUT /api/conversations/{id}/skills 持久化到会话
     #   → /api/chat 读取会话技能 → skill_prompt_blocks 生成技能目录
     #   （name + description + slug，不注入正文）→ 追加进 role_runtime["prompt"]
-    #   → run_chat → agents/graphs/pipeline.py 组装 system prompt（# Role 段，
+    #   → run_pipeline → agents/graphs/pipeline.py 组装 system prompt（# Role 段，
     #   prompts.py build_agent_system）→ create_agent(system_prompt=...) →
     #   agents/llm.py get_chat_model 按 role.model_id 发出模型请求。
     #   模型需要时调用 load_skill(slug) 工具（mcps/tools/skills.py）把 SKILL.md
@@ -338,7 +343,7 @@ async def _chat_turn(req: ChatRequest, request: Request) -> dict[str, object]:
         conversations_service.workspace_root_for(prepared["workspace_dir"])
     )
     # 长耗时链路（追踪 + 会话沙箱 + LangGraph 对话 + token 统计）整体进工作线程：
-    # trace / 沙箱靠线程内 ContextVar 传递，run_chat 与它必须同线程；异步路由因此
+    # trace / 沙箱靠线程内 ContextVar 传递，run_pipeline 与它必须同线程；异步路由因此
     # 不再占住事件循环，也不挤占同步路由的线程池。
     heavy = await asyncio.to_thread(
         _run_chat_heavy,
@@ -405,7 +410,7 @@ async def _chat_turn(req: ChatRequest, request: Request) -> dict[str, object]:
 
 def _run_chat_heavy(
     req: ChatRequest,
-    prepared: dict[str, Any],
+    prepared: ConversationRecord,
     role_runtime: dict[str, Any] | None,
     turn_id: str,
     db_path: Path,
@@ -414,8 +419,8 @@ def _run_chat_heavy(
     """长耗时部分：追踪 + 会话沙箱 + LangGraph 对话 + token 统计。
 
     整体在一个工作线程里执行：trace 回调 / 沙箱工具靠线程内 ContextVar 传递，
-    与 ``run_chat`` 必须同线程；SQLite 连接在 ``check_same_thread=False`` 下
-    可跨线程使用，但这里仍保持「谁跑 run_chat 谁写库」的单线程语义。
+    与 ``run_pipeline`` 必须同线程；SQLite 连接在 ``check_same_thread=False`` 下
+    可跨线程使用，但这里仍保持「谁跑 run_pipeline 谁写库」的单线程语义。
     """
     started = time.perf_counter()
     result: dict[str, Any] = {}
@@ -432,10 +437,10 @@ def _run_chat_heavy(
             with use_conversation_sandbox(prepared["workspace_dir"]):
                 if _usage_callback is not None:
                     with _usage_callback() as usage_cb:
-                        result = run_chat(req.message, history=history, role=role_runtime)
+                        result = run_pipeline(req.message, history=history, role=role_runtime)
                     tokens = _collect_tokens(usage_cb)
                 else:
-                    result = run_chat(req.message, history=history, role=role_runtime)
+                    result = run_pipeline(req.message, history=history, role=role_runtime)
                     tokens = 0
     finally:
         clear_turn(turn_id)
