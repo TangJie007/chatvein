@@ -295,6 +295,7 @@
 5. **`OtelBridge` 不是 trace callbacks 的附加 handler**：回调拿到的是整棵树的快照，逐帧 diff 既容易错、也会丢父子关系；改为 `tracing()` 结束时一次性导出。实时性换成正确性，外部 APM 拿到的是完整瀑布图。
 6. **OTel 依赖不进 `requirements.txt`**：桌面安装包不该为可选导出多背体积；`pip install opentelemetry-sdk`（要 OTLP 再加 `opentelemetry-exporter-otlp-proto-http`）即可，缺依赖静默跳过。
 7. **前端指标条幅放在追踪窗侧栏**，不是「洞察」页：`InsightPanel` 是产物 / 线程视图，健康度属于追踪上下文，放一起才能「看到告警 → 点进某轮」。
+8. **复查修正（2026-11-20）**：`otel.py` 两处缺陷——①父 span 原先用 `start_span(parent=...)` 传，真实 SDK 的 `Tracer` 只认 `context=`（`set_span_in_context`），会 TypeError 并被 `export_turn` 吞掉，导致整轮 span 全丢；现改为 `_parent_kwargs()` 按是否有 OTel 依赖走 `context` / `parent` 两条路。②根 span 收尾时没带 `elapsed_ms`，结束时间等于开始时间，瀑布图里父比子短；现补整轮耗时，并在测试里断言「根覆盖所有子 span」。
 8. **用例暂不支持按例准备文件**（评审稿也没要求）：沙箱是空的，先只覆盖「不需要预置本地文件」的用例；要测文件类工具再加 `${case_dir}` 约定。
 9. **没有 CI 门禁接线**：仓库当前没有 workflow 文件，先把退出码规范好（`0/1/2`），接入 CI 是纯配置动作，不阻塞能力交付。
 

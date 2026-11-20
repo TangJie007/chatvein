@@ -1,9 +1,10 @@
 # ChatVein Agent 生产级增强路线图（设计评审稿）
 
-> 状态：**1.1–1.4 / 2.1–2.4 / 3.1–3.3 全部已实现**；§4 横切中 4.3 统一错误模型、4.4 prompt 治理、成本预算与跨模型 fallback 尚未排期。本文件是总纲；三批能力的详细技术方案见
+> 状态：**1.1–1.4 / 2.1–2.4 / 3.1–3.3 全部已实现**；§4 横切的 4.3 统一错误模型、4.4 Prompt 治理、4.7 成本预算与 fallback **设计稿已出（batch4），尚未改代码**。本文件是总纲；各批详细技术方案见
 > [`production-design-batch1.md`](./production-design-batch1.md)（内核韧性）、
 > [`production-design-batch2.md`](./production-design-batch2.md)（体验与生态）、
-> [`production-design-batch3.md`](./production-design-batch3.md)（安全与运维）。
+> [`production-design-batch3.md`](./production-design-batch3.md)（安全与运维）、
+> [`production-design-batch4.md`](./production-design-batch4.md)（横切治理）。
 > 现有功能边界见 [`features.md`](./features.md) / [`agent-graphs.md`](./agent-graphs.md)；改代码前须同步这些文档。
 
 ## 1. 目标与边界
@@ -70,9 +71,11 @@
 
 ## 4. 贯穿三批的横切设计
 
+> 4.3 / 4.4 / 4.7 的详细方案见 [`production-design-batch4.md`](./production-design-batch4.md)（评审中，尚未改代码）；4.1 / 4.2 / 4.5 / 4.6 是已生效的既有约定。
+
 ### 4.1 数据落点扩展（统一原则）
 
-现有：`backend/db.py` `SCHEMA_VERSION=13`，主库存会话索引/模型/角色，消息与追踪在会话 `session.sqlite`（`logs/`）。
+现有：`backend/db.py` `SCHEMA_VERSION=14`，主库存会话索引/模型/角色/外部 MCP 配置，消息与追踪在会话 `session.sqlite`（`logs/`）。
 
 新增数据一律遵循「主库只加索引、明细进会话库」：
 
@@ -95,6 +98,8 @@
 
 ### 4.3 错误模型统一（贯穿 1.2 / 2.x / 3.x）
 
+> 状态：**设计评审中**（[batch4 §4.3](./production-design-batch4.md)）。落地物是 `backend/errors.py` + `AgentError`。
+
 引入统一结构化错误，`main.py` 与前端 `src/api/client.ts` 共用一套 code：
 
 ```text
@@ -109,6 +114,8 @@ AgentError(code, message, retryable, stage, detail)
 - 不再用裸字符串匹配判断是否可重试（现有 `_failed_tool_names` 仅作展示兼容）。
 
 ### 4.4 Prompt / 配置治理（贯穿三批）
+
+> 状态：**设计评审中**（[batch4 §4.4](./production-design-batch4.md)）。本批只做登记 + 版本 + trace 联动，提示词文本不搬家。
 
 - 现有 prompt 分散在 `router.py`、`tool_selector.py`、`graphs/prompts.py`、`hard.py`。新增 `backend/agents/prompt_registry.py`：集中管理模板 + 版本号，返回带 `prompt_version` 的构建结果，写入 trace。
 - 每批新增的可调参数统一从 `CHATVEIN_*` 环境变量读取，默认值写进 `docs/`，不散落魔数。
@@ -133,6 +140,14 @@ npm run build
 ```
 
 人工冒烟固定 4 条：① 纯闲聊（simple）② 一次联网搜索 + 总结（medium）③ 改代码→跑沙箱→再改（hard）④ 停止生成后无幽灵消息。涉及 MCP / 流式 / 断点另加对应专项冒烟（见各批文档）。
+
+### 4.7 成本预算与模型 fallback（本批新增编号）
+
+> 状态：**设计评审中**（[batch4 §4.7](./production-design-batch4.md)）。对应 §2 横切行的「token/成本预算、模型降级与 fallback」。
+>
+> - 单轮 token 预算 `CHATVEIN_TURN_TOKEN_BUDGET`（默认 `0` = 不限）：超限不硬断，改为注入收尾提示并禁后续工具调用，本轮照常落盘。
+> - 备用模型 `models.fallback_config_id`（主库迁移 v15，可空）：只覆盖**结构化调用**（路由 / 工具选择 / plan / verify / 摘要 / 记忆 / judge），流式主循环不降级；每轮最多降一次，必留 trace。
+> - 金额只做可选展示（价格由用户填），不内置价目表、不做币种换算。
 
 ## 5. 风险登记（整体）
 
