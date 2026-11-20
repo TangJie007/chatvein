@@ -25,4 +25,4 @@ Chromium 等本体数百 MB，对桌面安装包不可接受。只依赖 `playwr
 | `network` | 网络相关（超出已有 console/network 列表时） | 与现有 `browser_network_*` 去重后再扩 |
 | `testing` | 测试断言 | 偏 harness，非日常 Agent 主路径 |
 
-补齐原则：设置页按 cap 开关 + 缺依赖时灰掉；**不要**借 caps 顺带引入 `browser_run_code_unsafe`。产品 backlog 总表见 `docs/agents.md`「当前不做、后期需要补」。
+补齐原则：设置页按 cap 开关 + 缺依赖时灰掉；**不要**借 caps 顺带引入 `browser_run_code_unsafe`。产品 backlog 总表见 `docs/Agent流水线.md`「当前不做、后期需要补」。

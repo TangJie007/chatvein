@@ -1,6 +1,6 @@
 """SkillHub 技能市场：浏览、本机安装、对话注入。
 
-模块内文件分工（实现索引详见 docs/skills.md 第 9 节）：
+模块内文件分工（实现索引详见 docs/技能系统.md 第 9 节）：
 - controller.py  HTTP 路由（/api/skills*）
 - service.py     SkillHub 代理 + 注入接线入口 ``skill_prompt_blocks()``
 - local_store.py 本机落盘（SKILL.md / meta.json）+ 技能目录生成

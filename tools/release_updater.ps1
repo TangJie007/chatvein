@@ -7,7 +7,7 @@
 #   1. 已用 `npx tauri signer generate -w $HOME/.tauri/chatvein.key --ci` 生成过密钥对；
 #   2. 私钥文件路径可通过环境变量 TAURI_SIGNING_PRIVATE_KEY_PATH 覆盖；
 #   3. 已用 `npm run tauri build` 产出 NSIS 安装包（构建时用 --config 注入真实 endpoint，
-#      见 docs/release.md「每次发版流程」；仓库内 tauri.conf.json 的 endpoints 保持空数组）。
+#      见 docs/发布清单.md「每次发版流程」；仓库内 tauri.conf.json 的 endpoints 保持空数组）。
 #
 # 产出：
 #   dist-updater/latest.json   ← 上传到 COS 桶的 updater/ 目录

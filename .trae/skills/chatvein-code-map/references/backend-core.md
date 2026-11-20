@@ -282,4 +282,4 @@ Token：Rust 通过 `CHATVEIN_TOKEN` 注入，前端带 `X-ChatVein-Token`，中
 | `eval/cases/*.json` | — | 用例集；字段：`id` `message` `expect_tools` `forbid_tools` `expect_substring` `forbid_substring` `rubric` |
 | `tools/run_eval.ps1` | e | PowerShell 入口（`-Cases` / `-Judge` / `-Report` / `-Rest` 透传），退出码直接传 |
 
-要点：不写 `turn_traces`（不污染真实会话指标）；报告 `results[].status` 取 `pass/fail/error`；`reply` 超 4000 字截断。细节见 `docs/eval.md`。
+要点：不写 `turn_traces`（不污染真实会话指标）；报告 `results[].status` 取 `pass/fail/error`；`reply` 超 4000 字截断。细节见 `离线评测.md`。

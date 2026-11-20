@@ -105,10 +105,13 @@ Rust 只负责把真实后端 URL 交给前端，新增接口无需改动 Rust �
 
 文档：
 
-- [已实现功能](docs/features.md)
-- [Agent 图设计](docs/agent-graphs.md)
-- [流水线与 MCP 矩阵](docs/agents.md)
-- [工作区](docs/workspace.md)
+- [文档索引](docs/README.md)
+- [架构总览](docs/架构总览.md)
+- [Agent 流水线与 MCP 矩阵](docs/Agent流水线.md)
+- [已实现功能](docs/功能清单.md)
+- [工作区](docs/工作区模型.md)
+- [生产级增强设计](docs/生产级增强设计.md)
+- [工具测试用例](docs/工具测试用例.md)
 
 ## 数据持久化（SQLite）
 

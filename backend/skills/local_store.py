@@ -10,7 +10,7 @@
   把完整正文拉进上下文再执行；
 - 真正的动作仍走已注册的 MCP 工具，不在此处。
 
-关键函数（实现索引详见 docs/skills.md 第 9 节）：
+关键函数（实现索引详见 docs/技能系统.md 第 9 节）：
     - 落盘：``install_skill`` / ``uninstall_skill`` / ``is_installed`` / ``read_skill_md``
     - 目录生成：``load_skill_catalog`` / ``format_skill_catalog_for_prompt``
     - 全文兼容：``load_skill_blocks`` / ``format_skills_for_prompt``

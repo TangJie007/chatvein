@@ -89,7 +89,7 @@ lib.rs::run()
 | `src-tauri/target/` | f | 构建产物（勿提交/勿搜索） |
 
 npm 脚本对应：`npm run prepare:backend`、`npm run prepare:runtime`、`npm run app:dev`、`npm run build`、`npm test`、`npm run test:backend`。
-发布说明见 `docs/release.md`。
+发布说明见 `发布清单.md`。
 
 ## 4. 前端与外壳的交互
 
@@ -118,17 +118,21 @@ npm 脚本对应：`npm run prepare:backend`、`npm run prepare:runtime`、`npm 
 
 | 文档 | 何时读 |
 |---|---|
-| `docs/agent-graphs.md` | simple / medium / hard 图、ReAct、工具循环、提示词 |
-| `docs/agents.md` | 理解/改写、工具选择、上下文装配 |
-| `docs/skills.md` | 技能市场、安装、注入、`load_skill` |
-| `docs/workspace.md` | 主空间、会话工作区、沙箱、产物 |
-| `docs/short-term-memory.md` | 历史裁剪、短期记忆 |
+| `docs/README.md` | 文档索引（改代码前先看这里） |
+| `docs/架构总览.md` | 拓扑、关键决策、核心机制、设计哲学（先读这个） |
+| `docs/Agent流水线.md` | simple / medium / hard 图、ReAct、工具循环、提示词、工具矩阵 |
+| `docs/生产级增强设计.md` | 四批增强的评审稿 + 实现纪要 + 与原设计的偏差 |
+| `docs/功能清单.md` | 功能全景与边界 |
+| `docs/配置总表.md` | 所有 `CHATVEIN_*` 开关（改配置必查） |
+| `docs/离线评测.md` | 评测用例 / 报告 / 退出码 |
+| `docs/技能系统.md` | 技能市场、安装、注入、`load_skill` |
+| `docs/工作区模型.md` | 主空间、会话工作区、沙箱、产物 |
+| `docs/短期记忆.md` | 历史裁剪、短期记忆 |
 | `docs/群组模式.md` | 群组、团队、@、delegate |
-| `docs/features.md` | 功能全景 |
-| `docs/release.md` | 构建、签名、更新源 |
-| `docs/项目目录总结.md` | 目录速览（**部分内容滞后，以代码为准**） |
-| `docs/核心架构总结.md` / `docs/设计架构总结.md` / `docs/实现思想总结.md` | 设计背景 |
-| `docs/test/` | 探测/验证脚本 |
+| `docs/发布清单.md` | 构建、签名、更新源 |
+| `docs/工具测试用例.md` | 工具人工测试集（自然语言验收） |
+| `docs/项目目录.md` | 目录速览（**部分内容滞后，以代码为准**） |
+| `backend/scripts/` | 探测/验证脚本 |
 | `.agents/notes/` | 开发过程笔记（非权威） |
 
 ## 7. 排障顺序

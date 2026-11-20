@@ -1,6 +1,6 @@
 # Hard 挡位独立图
 
-正式设计文档见 [`docs/agent-graphs.md`](../../docs/agent-graphs.md) §7。
+正式设计文档见 [`docs/Agent流水线.md`](../../docs/Agent流水线.md) §8。
 
 摘要：
 

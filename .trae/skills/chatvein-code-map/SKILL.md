@@ -176,7 +176,7 @@ description: ChatVein 桌面 Agent（Tauri 2 外壳 + React 19 + Python FastAPI 
 | 技能市场 / 安装 / 注入 | `backend/skills/service.py`、`local_store.py` | `SkillsView`、`SkillDetailDrawer`、`mcps/tools/skills.py` |
 | 知识库 / RAG | `backend/knowledge/service.py`、`mcps/tools/kb.py` | `embeddings/service.py`、`KnowledgeView`、`KbDocEditor`、`KbImportDialog` |
 | 追踪 / 思考流 | `backend/trace/recording.py`、`store.py`、`service.py` | `TraceWindow`、`lib/openTrace.ts`、`useChatSession` 轮询、`insightData.ts` |
-| 离线评测 / 用例 / 报告 | `backend/eval/cases.py`、`backend/eval/runner.py` | `eval/judge.py`、`eval/cases/*.json`、`tools/run_eval.ps1`、`docs/eval.md` |
+| 离线评测 / 用例 / 报告 | `backend/eval/cases.py`、`backend/eval/runner.py` | `eval/judge.py`、`eval/cases/*.json`、`tools/run_eval.ps1`、`离线评测.md` |
 | 质量指标 / 告警 / OTel | `backend/trace/metrics.py`、`backend/trace/otel.py` | `trace/{store,service,controller}.py`、`TraceWindow` 侧栏、`src/api/traces.ts` |
 | 长期记忆 抽取 / 召回 / 整理 | `backend/memory/service.py` | `store.py`、`main.py`（`recall_into_role` + `maybe_extract_async`）、`trace/recording.py`、`api/memories.ts`、`settings/MemorySection.tsx` |
 | 会话 / 消息 / 撤回 / 工作区 | `conversations/service.py`、`session_store.py` | `mcps/sandbox.py`、`ChatView`、`SessionList`、`useChatSession` |
@@ -184,7 +184,7 @@ description: ChatVein 桌面 Agent（Tauri 2 外壳 + React 19 + Python FastAPI 
 | 设置页 / 工具目录 | `components/settings/*`、`prefs.ts` | `main.py /api/mcps/catalog`、`registry.py::tool_catalog` |
 | 数据库表 / 迁移 | `backend/db.py`（`SCHEMA_VERSION` + 迁移） | 模块 `entity/entity.py`、`repository.py` |
 | 启动 / 端口 / token / 后端掉线 | `src-tauri/src/backend.rs`、`lib.rs`、`commands.rs` | `src/api/client.ts`、`BackendGate.tsx` |
-| 打包 / 运行时 / 更新 | `tools/build_backend.ps1`、`prepare_runtime.ps1`、`release_updater.ps1` | `tauri.conf.json`、`lib/updater.ts`、`docs/release.md` |
+| 打包 / 运行时 / 更新 | `tools/build_backend.ps1`、`prepare_runtime.ps1`、`release_updater.ps1` | `tauri.conf.json`、`lib/updater.ts`、`发布清单.md` |
 | 文件上传 / 导入 | `main.py` 的 `/api/uploads` | `knowledge` 导入、`KbImportDialog`、`Composer` 附件 |
 | 追踪窗口 / 外部链接 | `lib/openTrace.ts`、`lib/openExternal.ts`、`TraceWindow` | `src-tauri/capabilities/*.json`、`tauri.conf.json` |
 | 测试 | `backend/tests/*.py`、`useChatSession.test.ts` | `tools/test_backend.py` |
@@ -202,7 +202,7 @@ description: ChatVein 桌面 Agent（Tauri 2 外壳 + React 19 + Python FastAPI 
 9. **主入口是 SSE**：`POST /api/chat/stream`（`token` / `tool` / `trace` / `done` / `cancelled` / `error`）；不支持可读流或 `CHATVEIN_STREAM=0` 才回落 `POST /api/chat` + 轮询 trace。
 10. **安全默认收紧**：Bash 逐条审批（`bash_policy` + `bash_approval`）；工作区外路径走 `path_access` 人工确认；API Key 由 `models/crypto.py` 加解密，禁止写入日志；子进程必须走 `sandbox_guard.run_limited`（env 清洗 + 限额），网络隔离是软隔离（文档别写成「安全边界」），执行留痕写 `audit.sqlite`。
 11. UI 文案与注释保持中文风格；不要引入新的全局状态库（现有仅 localStorage + React context）。
-12. 文档可能滞后：`docs/项目目录总结.md` 仍把 `chats` 写成「预留」，实际已是群组表模块；**以代码为准**。
+12. 文档可能滞后：`项目目录.md` 仍把 `chats` 写成「预留」，实际已是群组表模块；**以代码为准**。
 13. **记忆召回只改 role prompt 副本**（`memory.recall_into_role`）：`role_runtime` 跨轮/跨会话缓存，原地注入会串台；抽取必须在消息落盘之后异步跑，且明细只在 `memory.sqlite`（主库不建表）。
 14. **权限只有一个拦截点**：`graphs/common.py::permission_gate_middleware`（`permissions.check` 顺序首命中，`ask` 复用 `approval.py`，`deny` 返回 `TOOL_DENIED`）；`resolve_tools` 只用 `static_deny` 摘「无参数条件」的工具。规则文件解析失败只能退回空策略 + 暴露 `error`，不得静默放行/拒绝。审计动作名 `tool.call` / `tool.deny` / `permission.config`，`decision_by` 写清来源。
 15. **评测断言必跑、judge 默认关**：规则断言（`eval.cases.check_rules`）是硬门槛，`--judge` 只影响分数；用例在临时会话沙箱里跑、跑完即删，不写 `turn_traces`。指标（`trace/metrics.py`）查询时聚合、**不落表**，阈值只在那一处定义；OTel 默认关（`CHATVEIN_OTEL=0`），SDK 不进安装包，导出失败必须吞掉。
@@ -226,16 +226,19 @@ description: ChatVein 桌面 Agent（Tauri 2 外壳 + React 19 + Python FastAPI 
 
 | 文档 | 何时读 |
 |---|---|
-| `docs/agent-graphs.md` | 改 simple/medium/hard 图、工具循环、提示词 |
-| `docs/agents.md` | 改理解/改写、工具选择、上下文装配 |
-| `docs/features.md` | 了解功能边界 |
-| `docs/eval.md` | 改评测用例 / 报告 / 退出码 |
-| `docs/skills.md` | 改技能市场/安装/注入 |
-| `docs/workspace.md` | 改工作区/沙箱/产物 |
-| `docs/short-term-memory.md` | 改历史/短期记忆 |
+| `docs/README.md` | 文档索引，先看这里 |
+| `docs/架构总览.md` | 需要整体背景（拓扑 / 决策 / 机制 / 哲学）时 |
+| `docs/Agent流水线.md` | 改图（simple/medium/hard）、工具循环、提示词、改写与选型 |
+| `docs/生产级增强设计.md` | 改四批增强的既有能力，先看实现纪要与偏差 |
+| `docs/功能清单.md` | 了解功能边界 |
+| `docs/配置总表.md` | 加/改 `CHATVEIN_*` 开关（`tests/test_config.py` 会校验这张表） |
+| `docs/离线评测.md` | 改评测用例 / 报告 / 退出码 |
+| `docs/技能系统.md` | 改技能市场/安装/注入 |
+| `docs/工作区模型.md` | 改工作区/沙箱/产物 |
+| `docs/短期记忆.md` | 改历史/短期记忆 |
 | `docs/群组模式.md` | 改群组/团队/@ |
-| `docs/release.md` | 改打包/更新 |
-| `docs/项目目录总结.md`、`docs/核心架构总结.md`、`docs/设计架构总结.md`、`docs/实现思想总结.md` | 需要整体背景时 |
+| `docs/发布清单.md` | 改打包/更新 |
+| `docs/工具测试用例.md` | 改工具后的人工验收 |
 
 ## 7. 参考索引（按域打开）
 

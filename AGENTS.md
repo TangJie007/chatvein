@@ -78,7 +78,7 @@
 | 模型/向量模型 | `backend/models/`、`backend/embeddings/` | `src/api/models.ts`、`src/api/embeddings.ts`、`src/components/models/*` |
 | 长期记忆（抽取/召回/整理） | `backend/memory/service.py` | `store.py`、`controller.py`、`main.py`（召回注入 + 异步抽取）、`backend/trace/recording.py`、`src/components/settings/MemorySection.tsx` |
 | 追踪/面板 | `backend/trace/`、`src/components/trace/*`、`insightData.ts` | `src/lib/openTrace.ts`、`src/api/traces.ts` |
-| 离线评测 / 用例 / 报告 | `backend/eval/cases.py`、`backend/eval/runner.py` | `backend/eval/judge.py`、`backend/eval/cases/*.json`、`tools/run_eval.ps1`、`docs/eval.md` |
+| 离线评测 / 用例 / 报告 | `backend/eval/cases.py`、`backend/eval/runner.py` | `backend/eval/judge.py`、`backend/eval/cases/*.json`、`tools/run_eval.ps1`、`docs/离线评测.md` |
 | 质量指标 / 告警 / OTel | `backend/trace/metrics.py`、`backend/trace/otel.py` | `backend/trace/{store,service,controller}.py`、`TraceWindow.tsx`、`src/api/traces.ts` |
 | 提示词 | `backend/agents/graphs/prompts.py` | `router.py`、`tool_selector.py`、`hard.py`；版本登记在 `agents/prompt_registry.py`（改文案后跑 `run_eval.ps1 --dry-run`） |
 | 成本预算 / 模型降级 | `backend/agents/cost.py`、`agents/llm.py`（`invoke_structured`） | `graphs/common.py::budget_middlewares`、`graphs/pipeline.py`（每轮 `begin_turn`/复位）、`db.py`（v15 三列）、`models/*`、`ModelsView.tsx`、`TraceWindow.tsx` |

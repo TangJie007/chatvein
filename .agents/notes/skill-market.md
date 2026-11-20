@@ -18,4 +18,4 @@
 2. **更新检测**：对比 SkillHub 版本。
 3. **Registry**：SkillHub URL 可配置（默认已可用环境变量）。
 
-与 MCP 工具轨分离：市场装的是程序性知识包，不是再列一套 `mcp-*` 开关。总表见 `docs/agents.md`。
+与 MCP 工具轨分离：市场装的是程序性知识包，不是再列一套 `mcp-*` 开关。总表见 `docs/Agent流水线.md`。

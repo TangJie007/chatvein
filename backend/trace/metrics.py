@@ -1,7 +1,7 @@
 """追踪聚合指标：把 ``turn_traces`` 摘要压成趋势、健康度与告警。
 
 只读、查询时计算、不落库：指标是「由已有追踪推导出来的视图」，再建一张
-``trace_metrics`` 表只会带来清理和漂移问题（见 production-design-batch3.md §3.3）。
+``trace_metrics`` 表只会带来清理和漂移问题（见 docs/生产级增强设计.md §3.3）。
 
 输出字段与前端 ``ConversationMetrics``（``src/api/traces.ts``）一一对应，改字段要两边一起改。
 """
