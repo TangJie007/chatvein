@@ -380,8 +380,16 @@ class _FakeTracer:
     def __init__(self) -> None:
         self.spans: list[_FakeSpan] = []
 
-    def start_span(self, name: str, *, parent: Any = None, start_time: int | None = None) -> _FakeSpan:
-        span = _FakeSpan(name, parent, start_time)
+    def start_span(
+        self,
+        name: str,
+        *,
+        parent: Any = None,
+        context: Any = None,
+        start_time: int | None = None,
+    ) -> _FakeSpan:
+        # 真实 SDK 只认 context（set_span_in_context 的结果），假 tracer 里 context 就是父 span
+        span = _FakeSpan(name, parent if parent is not None else context, start_time)
         self.spans.append(span)
         return span
 
@@ -415,3 +423,6 @@ def test_otel_maps_span_tree() -> None:
     assert root.attributes["chatvein.turn.id"] == "t1"
     assert tool_span.attributes["chatvein.tool.arguments"] == '{"expr": "1+1"}'
     assert tool_span.ended is not None and tool_span.ended > (tool_span.start_time or 0)
+    # 根 span 覆盖整轮：父 span 的结束时间必须晚于所有子 span（否则瀑布图倒挂）
+    assert root.ended == (root.start_time or 0) + 200 * 1_000_000
+    assert root.ended > max(llm_span.ended or 0, tool_span.ended or 0)

@@ -104,6 +104,20 @@ def export_turn(payload: dict[str, Any], *, turn_id: str | None = None) -> bool:
         return False
 
 
+def _parent_kwargs(parent: Any) -> dict[str, Any]:
+    """父 span 只能经 ``context`` 传。
+
+    OTel 的 ``Tracer.start_span`` 没有 ``parent=`` 参数（那样会 TypeError，被
+    ``export_turn`` 吞掉后整轮 span 全部丢失）；只有没装 OTel（可选依赖）或测试用
+    假 tracer 时才退回直接传父 span。
+    """
+    try:
+        from opentelemetry.trace import set_span_in_context
+    except Exception:  # noqa: BLE001 - 未安装 OTel
+        return {"parent": parent}
+    return {"context": set_span_in_context(parent)}
+
+
 def _export(tracer: Any, payload: dict[str, Any], *, turn_id: str | None) -> None:
     started = time.time_ns() - max(0, int(payload.get("elapsed_ms") or 0)) * 1_000_000
     base = started
@@ -134,8 +148,8 @@ def _export(tracer: Any, payload: dict[str, Any], *, turn_id: str | None) -> Non
         start_ns = base + max(0, offset_ms) * 1_000_000
         span = tracer.start_span(
             f"chatvein.{step.get('kind') or 'step'}.{step.get('name') or 'unknown'}",
-            parent=parent,
             start_time=start_ns,
+            **_parent_kwargs(parent),
         )
         span.set_attribute("chatvein.step.id", str(step.get("id") or ""))
         span.set_attribute("chatvein.step.kind", str(step.get("kind") or ""))
@@ -155,7 +169,12 @@ def _export(tracer: Any, payload: dict[str, Any], *, turn_id: str | None) -> Non
     # 先收尾子 span 再收尾根：OTel 的隐式 context 是栈，逆序 end 才不会留悬挂。
     for span, step, start_ns in reversed(pending):
         _finish(span, step, start_ns)
-    _finish(root, {"status": str(payload.get("status") or "done")}, base)
+    # 根 span 必须带整轮耗时：否则它在所有子 span 还没结束时就闭合，瀑布图里父比子短
+    _finish(
+        root,
+        {"status": str(payload.get("status") or "done"), "elapsed_ms": payload.get("elapsed_ms")},
+        base,
+    )
 
 
 def _finish(span: Any, step: dict[str, Any], start_ns: int) -> None:
