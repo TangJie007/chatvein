@@ -13,7 +13,8 @@ from typing import Any
 DEFAULT_CASES = Path(__file__).with_name("cases") / "smoke.json"
 
 #: 列表型字段：写成字符串视为单元素列表（手写用例时少一层括号）。
-_LIST_FIELDS = ("expect_tools", "forbid_tools", "expect_substring", "forbid_substring")
+#: ``runner`` 的 ``--dry-run`` 也读它来打印规则摘要，新增规则字段只改这一处。
+RULE_FIELDS = ("expect_tools", "forbid_tools", "expect_substring", "forbid_substring")
 
 
 class CaseError(ValueError):
@@ -49,7 +50,7 @@ def normalize_case(raw: Any, index: int) -> dict[str, Any]:
         "message": message,
         "rubric": str(raw.get("rubric") or "").strip(),
     }
-    for field in _LIST_FIELDS:
+    for field in RULE_FIELDS:
         case[field] = _as_list(raw.get(field), field, case_id)
     return case
 
@@ -97,6 +98,11 @@ def _check(name: str, ok: bool, detail: str = "") -> dict[str, Any]:
     return {"name": name, "ok": bool(ok), "detail": detail}
 
 
+def _detail(prefix: str, items: list[str]) -> str:
+    """失败明细：``未调用: a, b``；没有 items 就返回空串（``_check`` 用它表示「通过」）。"""
+    return f"{prefix}: {', '.join(items)}" if items else ""
+
+
 def check_rules(case: dict[str, Any], result: dict[str, Any]) -> list[dict[str, Any]]:
     """返回逐条断言结果；调用方把所有 ``ok`` 取与即为是否通过。
 
@@ -111,19 +117,17 @@ def check_rules(case: dict[str, Any], result: dict[str, Any]) -> list[dict[str, 
     expected = case.get("expect_tools") or []
     if expected:
         missing = [name for name in expected if name not in names]
-        checks.append(_check("expect_tools", not missing, f"未调用: {', '.join(missing)}" if missing else ""))
+        checks.append(_check("expect_tools", not missing, _detail("未调用", missing)))
     forbidden = case.get("forbid_tools") or []
     if forbidden:
         hit = [name for name in forbidden if name in names]
-        checks.append(_check("forbid_tools", not hit, f"不该调用: {', '.join(hit)}" if hit else ""))
+        checks.append(_check("forbid_tools", not hit, _detail("不该调用", hit)))
     wanted = case.get("expect_substring") or []
     if wanted:
         missing = [frag for frag in wanted if frag not in reply]
-        checks.append(
-            _check("expect_substring", not missing, f"回复缺少: {', '.join(missing)}" if missing else "")
-        )
+        checks.append(_check("expect_substring", not missing, _detail("回复缺少", missing)))
     banned = case.get("forbid_substring") or []
     if banned:
         hit = [frag for frag in banned if frag in reply]
-        checks.append(_check("forbid_substring", not hit, f"回复出现禁用片段: {', '.join(hit)}" if hit else ""))
+        checks.append(_check("forbid_substring", not hit, _detail("回复出现禁用片段", hit)))
     return checks

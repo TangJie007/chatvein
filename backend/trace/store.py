@@ -56,6 +56,15 @@ def save_turn_trace(db_path: Path, turn_id: str, payload: dict[str, Any]) -> Non
         )
 
 
+def _decode_payload(raw: Any) -> dict[str, Any] | None:
+    """``payload_json`` → dict。坏行（非法 JSON / 非对象）返回 ``None``，由调用方跳过。"""
+    try:
+        payload = json.loads(str(raw))
+    except json.JSONDecodeError:
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
 def _totals(payload: dict[str, Any]) -> dict[str, int]:
     raw = payload.get("totals") if isinstance(payload.get("totals"), dict) else {}
     totals = {
@@ -99,11 +108,8 @@ def list_turn_traces(db_path: Path) -> list[dict[str, Any]]:
         ).fetchall()
     items: list[dict[str, Any]] = []
     for row in rows:
-        try:
-            payload = json.loads(str(row["payload_json"]))
-        except json.JSONDecodeError:
-            continue
-        if not isinstance(payload, dict):
+        payload = _decode_payload(row["payload_json"])
+        if payload is None:
             continue
         payload.setdefault("turn_id", str(row["turn_id"]))
         items.append(summary_of(payload, str(row["created_at"])))
@@ -121,11 +127,7 @@ def get_turn_trace(db_path: Path, turn_id: str) -> dict[str, Any] | None:
         ).fetchone()
     if row is None:
         return None
-    try:
-        payload = json.loads(str(row["payload_json"]))
-    except json.JSONDecodeError:
-        return None
-    return payload if isinstance(payload, dict) else None
+    return _decode_payload(row["payload_json"])
 
 
 def iter_turn_payloads(db_path: Path, *, limit: int = 100) -> list[dict[str, Any]]:
@@ -144,10 +146,7 @@ def iter_turn_payloads(db_path: Path, *, limit: int = 100) -> list[dict[str, Any
         ).fetchall()
     payloads: list[dict[str, Any]] = []
     for row in rows:
-        try:
-            payload = json.loads(str(row["payload_json"]))
-        except json.JSONDecodeError:
-            continue
-        if isinstance(payload, dict):
+        payload = _decode_payload(row["payload_json"])
+        if payload is not None:
             payloads.append(payload)
     return payloads

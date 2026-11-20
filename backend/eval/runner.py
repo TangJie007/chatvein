@@ -31,7 +31,7 @@ if str(_BACKEND_ROOT) not in sys.path:
 import db  # noqa: E402  # pyright: ignore[reportImplicitRelativeImport]
 from agents.cancellation import bind_turn, clear_turn  # noqa: E402
 from agents.graphs.pipeline import run_pipeline  # noqa: E402
-from eval.cases import DEFAULT_CASES, CaseError, check_rules, load_cases  # noqa: E402
+from eval.cases import DEFAULT_CASES, RULE_FIELDS, CaseError, check_rules, load_cases  # noqa: E402
 from eval.judge import JudgeUnavailable, judge_case, resolve_model  # noqa: E402
 from mcps.sandbox import (  # noqa: E402
     create_conversation_dir,
@@ -40,8 +40,10 @@ from mcps.sandbox import (  # noqa: E402
 )
 from roles.service import RolesService  # noqa: E402
 
-SCHEMA_VERSION = 1
+REPORT_SCHEMA_VERSION = 1
 _REPLY_CLIP = 4000
+#: judge 四维均分（0-5）的默认达标线；``--judge-threshold`` 与 ``run_one`` 共用这一处。
+DEFAULT_JUDGE_THRESHOLD = 3.5
 
 
 def _parse(argv: list[str] | None) -> argparse.Namespace:
@@ -51,7 +53,12 @@ def _parse(argv: list[str] | None) -> argparse.Namespace:
     parser.add_argument("--limit", type=int, default=0, help="只跑前 N 条（调试用）")
     parser.add_argument("--judge", action="store_true", help="启用 LLM 评分（默认关闭）")
     parser.add_argument("--judge-model", default=None, help="评分用的模型配置 id；缺省复用被测模型")
-    parser.add_argument("--judge-threshold", type=float, default=3.5, help="评分达标线（0-5）")
+    parser.add_argument(
+        "--judge-threshold",
+        type=float,
+        default=DEFAULT_JUDGE_THRESHOLD,
+        help="评分达标线（0-5）",
+    )
     parser.add_argument("--report", default="eval-report.json", help="报告路径；'-' 表示打到 stdout")
     parser.add_argument("--max-seconds", type=float, default=0.0, help="整批时间预算；超出后剩余用例跳过")
     parser.add_argument("--dry-run", action="store_true", help="只校验用例文件，不跑模型")
@@ -93,9 +100,13 @@ def run_one(
     *,
     role: dict[str, Any] | None,
     judge_model: Any = None,
-    threshold: float = 3.5,
+    threshold: float = DEFAULT_JUDGE_THRESHOLD,
 ) -> dict[str, Any]:
-    """执行一条用例并给出判定。异常不抛出，记为 ``status="error"``。"""
+    """执行一条用例并给出判定。
+
+    ``status`` 只有三种：``pass``（规则全过且 judge 达标）/ ``fail`` / ``error``（跑崩了，
+    例如模型不可用）；异常一律不抛出，避免一条用例带走整批。
+    """
     started = time.perf_counter()
     record: dict[str, Any] = {
         "id": case["id"],
@@ -159,7 +170,7 @@ def build_report(
     errors = sum(1 for item in results if item["status"] == "error")
     scored = [float(item["judge"]["score"]) for item in results if item.get("judge")]
     return {
-        "schema_version": SCHEMA_VERSION,
+        "schema_version": REPORT_SCHEMA_VERSION,
         "suite": suite,
         "cases": cases_path,
         "generated_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
@@ -227,7 +238,7 @@ def _print_dry(suite: str, cases: list[dict[str, Any]]) -> None:
     print(f"用例文件 OK：{suite} · {len(cases)} 条")
     for case in cases:
         bits = []
-        for field in ("expect_tools", "forbid_tools", "expect_substring", "forbid_substring"):
+        for field in RULE_FIELDS:
             if case.get(field):
                 bits.append(f"{field}={len(case[field])}")
         if case.get("rubric"):

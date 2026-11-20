@@ -118,76 +118,110 @@ def _parent_kwargs(parent: Any) -> dict[str, Any]:
     return {"context": set_span_in_context(parent)}
 
 
-def _export(tracer: Any, payload: dict[str, Any], *, turn_id: str | None) -> None:
-    started = time.time_ns() - max(0, int(payload.get("elapsed_ms") or 0)) * 1_000_000
-    base = started
+def _start_span(tracer: Any, name: str, *, parent: Any, start_time: int) -> Any:
+    """建 span 并挂到 ``parent``。
 
-    root = tracer.start_span("chatvein.turn", start_time=base)
+    父 span 的传法统一收在这里（原因见 ``_parent_kwargs``），调用点只表达「谁的子节点」，
+    不必各自去猜 ``parent=`` 还是 ``context=``。
+    """
+    kwargs: dict[str, Any] = {"start_time": start_time}
+    if parent is not None:
+        kwargs.update(_parent_kwargs(parent))
+    return tracer.start_span(name, **kwargs)
+
+
+def _set_root_attributes(span: Any, payload: dict[str, Any], *, turn_id: str | None) -> None:
+    """根 span 只放「这一轮是什么」；步骤细节留在子 span，避免两处重复。"""
+    span.set_attribute("chatvein.turn.id", str(turn_id or payload.get("turn_id") or ""))
+    span.set_attribute("chatvein.difficulty", str(payload.get("difficulty") or "unknown"))
+    span.set_attribute("chatvein.status", str(payload.get("status") or "done"))
+    span.set_attribute("chatvein.input", _clip(payload.get("input"), 120))
+    span.set_attribute("chatvein.role_name", str(payload.get("role_name") or ""))
+    span.set_attribute("chatvein.model", str(payload.get("model_name") or ""))
     totals = payload.get("totals") if isinstance(payload.get("totals"), dict) else {}
-    root.set_attribute("chatvein.turn.id", str(turn_id or payload.get("turn_id") or ""))
-    root.set_attribute("chatvein.difficulty", str(payload.get("difficulty") or "unknown"))
-    root.set_attribute("chatvein.status", str(payload.get("status") or "done"))
-    root.set_attribute("chatvein.input", _clip(payload.get("input"), 120))
-    root.set_attribute("chatvein.role_name", str(payload.get("role_name") or ""))
-    root.set_attribute("chatvein.model", str(payload.get("model_name") or ""))
     for key in ("total_tokens", "input_tokens", "output_tokens"):
-        root.set_attribute(f"chatvein.tokens.{key}", int(totals.get(key) or 0))
+        span.set_attribute(f"chatvein.tokens.{key}", int(totals.get(key) or 0))
     for key in ("llm_calls", "tool_calls"):
-        root.set_attribute(f"chatvein.{key}", int(totals.get(key) or 0))
+        span.set_attribute(f"chatvein.{key}", int(totals.get(key) or 0))
     if payload.get("elapsed_ms"):
-        root.set_attribute("chatvein.elapsed_ms", int(payload.get("elapsed_ms") or 0))
+        span.set_attribute("chatvein.elapsed_ms", int(payload.get("elapsed_ms") or 0))
+
+
+def _start_step_span(
+    tracer: Any,
+    step: dict[str, Any],
+    *,
+    root: Any,
+    live: dict[str, Any],
+    base: int,
+) -> tuple[Any, int]:
+    """建一步的 span 并登记到 ``live``（供它的子步骤当父节点），返回 ``(span, start_ns)``。"""
+    parent = live.get(str(step.get("parent_id") or ""), root)
+    start_ns = base + max(0, int(step.get("start_ms") or 0)) * 1_000_000
+    span = _start_span(
+        tracer,
+        f"chatvein.{step.get('kind') or 'step'}.{step.get('name') or 'unknown'}",
+        parent=parent,
+        start_time=start_ns,
+    )
+    span.set_attribute("chatvein.step.id", str(step.get("id") or ""))
+    span.set_attribute("chatvein.step.kind", str(step.get("kind") or ""))
+    span.set_attribute("chatvein.step.name", str(step.get("name") or ""))
+    span.set_attribute("chatvein.step.status", _status_of(step))
+    if step.get("arguments") is not None:
+        span.set_attribute("chatvein.tool.arguments", _clip(step.get("arguments")))
+    if step.get("error"):
+        span.set_attribute("chatvein.error", _clip(step.get("error"), 200))
+    usage = step.get("usage") if isinstance(step.get("usage"), dict) else {}
+    if usage:
+        span.set_attribute("chatvein.step.input_tokens", int(usage.get("input_tokens") or 0))
+        span.set_attribute("chatvein.step.output_tokens", int(usage.get("output_tokens") or 0))
+    live[str(step.get("id") or "")] = span
+    return span, start_ns
+
+
+def _export(tracer: Any, payload: dict[str, Any], *, turn_id: str | None) -> None:
+    """把一轮的步骤树映射成 OTel span。
+
+    起点由 ``elapsed_ms`` 反推，子步骤再按 ``start_ms`` 偏移，导出的瀑布图才和面板一致。
+    """
+    elapsed_ms = int(payload.get("elapsed_ms") or 0)
+    base = time.time_ns() - max(0, elapsed_ms) * 1_000_000
+
+    root = _start_span(tracer, "chatvein.turn", parent=None, start_time=base)
+    _set_root_attributes(root, payload, turn_id=turn_id)
 
     live: dict[str, Any] = {}
     pending: list[tuple[Any, dict[str, Any], int]] = []
     for step in payload.get("steps") or []:
         if not isinstance(step, dict):
             continue
-        parent_id = str(step.get("parent_id") or "")
-        parent = live.get(parent_id, root)
-        offset_ms = int(step.get("start_ms") or 0)
-        start_ns = base + max(0, offset_ms) * 1_000_000
-        span = tracer.start_span(
-            f"chatvein.{step.get('kind') or 'step'}.{step.get('name') or 'unknown'}",
-            start_time=start_ns,
-            **_parent_kwargs(parent),
-        )
-        span.set_attribute("chatvein.step.id", str(step.get("id") or ""))
-        span.set_attribute("chatvein.step.kind", str(step.get("kind") or ""))
-        span.set_attribute("chatvein.step.name", str(step.get("name") or ""))
-        span.set_attribute("chatvein.step.status", _status_of(step))
-        if step.get("arguments") is not None:
-            span.set_attribute("chatvein.tool.arguments", _clip(step.get("arguments")))
-        if step.get("error"):
-            span.set_attribute("chatvein.error", _clip(step.get("error"), 200))
-        usage = step.get("usage") if isinstance(step.get("usage"), dict) else None
-        if usage:
-            span.set_attribute("chatvein.step.input_tokens", int(usage.get("input_tokens") or 0))
-            span.set_attribute("chatvein.step.output_tokens", int(usage.get("output_tokens") or 0))
-        live[str(step.get("id") or "")] = span
+        span, start_ns = _start_step_span(tracer, step, root=root, live=live, base=base)
         pending.append((span, step, start_ns))
 
     # 先收尾子 span 再收尾根：OTel 的隐式 context 是栈，逆序 end 才不会留悬挂。
     for span, step, start_ns in reversed(pending):
-        _finish(span, step, start_ns)
-    # 根 span 必须带整轮耗时：否则它在所有子 span 还没结束时就闭合，瀑布图里父比子短
-    _finish(
-        root,
-        {"status": str(payload.get("status") or "done"), "elapsed_ms": payload.get("elapsed_ms")},
-        base,
-    )
+        _finish(
+            span,
+            status=_status_of(step),
+            elapsed_ms=int(step.get("elapsed_ms") or 0),
+            start_ns=start_ns,
+        )
+    # 根 span 必须带整轮耗时：否则它在所有子 span 还没结束时就闭合，瀑布图里父比子短。
+    _finish(root, status=str(payload.get("status") or "done").lower(), elapsed_ms=elapsed_ms, start_ns=base)
 
 
-def _finish(span: Any, step: dict[str, Any], start_ns: int) -> None:
-    status = _status_of(step)
+def _finish(span: Any, *, status: str, elapsed_ms: int, start_ns: int) -> None:
+    """收尾：错误 / 取消置 OTel ERROR 状态，并按 ``elapsed_ms`` 还原真实结束时间。"""
     if status in ("error", "cancelled"):
         try:
             from opentelemetry.trace import Status, StatusCode
 
             span.set_status(Status(StatusCode.ERROR, status))
-        except Exception:  # noqa: BLE001
+        except Exception:  # noqa: BLE001 - 没装 OTel 时假 span 没有 set_status
             pass
-    end_ns = start_ns + max(0, int(step.get("elapsed_ms") or 0)) * 1_000_000
+    end_ns = start_ns + max(0, elapsed_ms) * 1_000_000
     try:
         span.end(end_time=end_ns)
-    except TypeError:
+    except TypeError:  # 少数实现不接受 end_time
         span.end()

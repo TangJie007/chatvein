@@ -52,6 +52,40 @@ function formatTokens(n: number): string {
   return n.toLocaleString("zh-CN");
 }
 
+/** 与后端 `trace/metrics.py::ERROR_RATE_WARN` 对齐：这里只决定条幅颜色，不参与判定。 */
+const ERROR_RATE_DANGER = 0.2;
+
+/** 侧栏顶部的健康度条幅：只读展示后端 `/metrics` 的聚合结果，不在前端重算口径。 */
+function MetricsStrip({ metrics }: { metrics: ConversationMetrics }) {
+  const overall = metrics.overall;
+  if (overall.turns <= 0) return null;
+  const danger = overall.error_rate >= ERROR_RATE_DANGER;
+  const alert = metrics.alerts[0];
+  return (
+    <div className="mx-2 mb-2 rounded-md bg-tint px-2.5 py-2 text-[11px] leading-4 text-ink-500">
+      <div className="flex items-center justify-between">
+        <span>
+          近 {metrics.window_days} 天 · {overall.turns} 轮
+        </span>
+        <span className={cn("tabular-nums", danger ? "text-danger-600" : "text-ink-700")}>
+          成功 {Math.round(overall.success_rate * 100)}%
+        </span>
+      </div>
+      <div className="mt-1 flex items-center justify-between text-ink-400">
+        <span>平均 {formatTokens(overall.avg_tokens)} tok</span>
+        <span>P95 {formatTokens(overall.p95_tokens)} tok</span>
+      </div>
+      {overall.tool_failure_rate != null ? (
+        <div className="mt-1 text-ink-400">
+          工具失败 {Math.round(overall.tool_failure_rate * 100)}%（
+          {overall.tool_failures ?? 0} 次）
+        </div>
+      ) : null}
+      {alert ? <div className="mt-1.5 text-danger-600">{alert.message}</div> : null}
+    </div>
+  );
+}
+
 function statusTone(status: string): BadgeTone {
   if (status === "error") return "danger";
   if (status === "offline") return "warn";
@@ -345,36 +379,7 @@ export function TraceWindow({
             刷新
           </button>
         </div>
-        {metrics && metrics.overall.turns > 0 ? (
-          <div className="mx-2 mb-2 rounded-md bg-tint px-2.5 py-2 text-[11px] leading-4 text-ink-500">
-            <div className="flex items-center justify-between">
-              <span>
-                近 {metrics.window_days} 天 · {metrics.overall.turns} 轮
-              </span>
-              <span
-                className={cn(
-                  "tabular-nums",
-                  metrics.overall.error_rate >= 0.2 ? "text-danger-600" : "text-ink-700"
-                )}
-              >
-                成功 {Math.round(metrics.overall.success_rate * 100)}%
-              </span>
-            </div>
-            <div className="mt-1 flex items-center justify-between text-ink-400">
-              <span>平均 {formatTokens(metrics.overall.avg_tokens)} tok</span>
-              <span>P95 {formatTokens(metrics.overall.p95_tokens)} tok</span>
-            </div>
-            {metrics.overall.tool_failure_rate != null ? (
-              <div className="mt-1 text-ink-400">
-                工具失败 {Math.round(metrics.overall.tool_failure_rate * 100)}%
-                （{metrics.overall.tool_failures ?? 0} 次）
-              </div>
-            ) : null}
-            {metrics.alerts.length > 0 ? (
-              <div className="mt-1.5 text-[11px] text-danger-600">{metrics.alerts[0].message}</div>
-            ) : null}
-          </div>
-        ) : null}
+        {metrics ? <MetricsStrip metrics={metrics} /> : null}
         <div className="min-h-0 flex-1 overflow-auto px-2 pb-3">
           {summaries.length === 0 ? (
             <p className="px-1 py-6 text-center text-[12px] leading-5 text-ink-400">

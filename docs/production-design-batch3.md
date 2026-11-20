@@ -296,6 +296,7 @@
 6. **OTel 依赖不进 `requirements.txt`**：桌面安装包不该为可选导出多背体积；`pip install opentelemetry-sdk`（要 OTLP 再加 `opentelemetry-exporter-otlp-proto-http`）即可，缺依赖静默跳过。
 7. **前端指标条幅放在追踪窗侧栏**，不是「洞察」页：`InsightPanel` 是产物 / 线程视图，健康度属于追踪上下文，放一起才能「看到告警 → 点进某轮」。
 8. **复查修正（2026-11-20）**：`otel.py` 两处缺陷——①父 span 原先用 `start_span(parent=...)` 传，真实 SDK 的 `Tracer` 只认 `context=`（`set_span_in_context`），会 TypeError 并被 `export_turn` 吞掉，导致整轮 span 全丢；现改为 `_parent_kwargs()` 按是否有 OTel 依赖走 `context` / `parent` 两条路。②根 span 收尾时没带 `elapsed_ms`，结束时间等于开始时间，瀑布图里父比子短；现补整轮耗时，并在测试里断言「根覆盖所有子 span」。
+9. **可读性整理（2026-11-20，行为不变）**：`metrics.py` 的 `compute_metrics` 拆成 `_overall / _day_rows / _difficulty_rows / _alerts` 四个分块，状态分桶与 `totals` 取值收敛成 helper（未知状态统一算 `error`，坏 `totals` 不再可能崩接口），阈值/窗口/回看轮数提成命名常量并由 service / controller / 前端共用；`otel.py` 建 span 与收尾抽成 `_start_span / _start_step_span / _set_root_attributes / _finish`，去掉隐式 kwargs 与伪 step 字典；`eval` 的规则字段、报告 schema、judge 阈值各留一处常量，`--dry-run` 不再手抄字段名；`trace/store.py` 三处 JSON 解码合并成 `_decode_payload`。指标口径已用「旧版 vs 新版同输入逐字段对照」验证，唯一差异是负值 token / 耗时统一按 0 计（旧版日/难度维度会显示负数）。
 8. **用例暂不支持按例准备文件**（评审稿也没要求）：沙箱是空的，先只覆盖「不需要预置本地文件」的用例；要测文件类工具再加 `${case_dir}` 约定。
 9. **没有 CI 门禁接线**：仓库当前没有 workflow 文件，先把退出码规范好（`0/1/2`），接入 CI 是纯配置动作，不阻塞能力交付。
 

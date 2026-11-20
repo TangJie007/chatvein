@@ -173,7 +173,10 @@ export interface ConversationMetrics {
   alerts: MetricsAlert[];
 }
 
-export function getConversationMetrics(conversationId: string, days = 14) {
+/** 与后端 `backend/trace/metrics.py::DEFAULT_WINDOW_DAYS` 保持一致。 */
+const METRICS_WINDOW_DAYS = 14;
+
+export function getConversationMetrics(conversationId: string, days = METRICS_WINDOW_DAYS) {
   return backendRequest<ConversationMetrics>(
     `/api/conversations/${conversationId}/metrics?days=${days}`
   );

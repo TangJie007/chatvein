@@ -6,7 +6,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Iterator
 
-from .metrics import compute_metrics, merge_tool_stats
+from .metrics import DEFAULT_SCAN_TURNS, DEFAULT_WINDOW_DAYS, compute_metrics, merge_tool_stats
 from .recording import TraceRecorder, tracing
 from .store import get_turn_trace, iter_turn_payloads, list_turn_traces, save_turn_trace
 
@@ -79,7 +79,13 @@ class TraceService:
             return None
         return get_turn_trace(db, turn_id)
 
-    def metrics(self, conversation_id: str, *, days: int = 14, scan: int = 100) -> dict[str, Any] | None:
+    def metrics(
+        self,
+        conversation_id: str,
+        *,
+        days: int = DEFAULT_WINDOW_DAYS,
+        scan: int = DEFAULT_SCAN_TURNS,
+    ) -> dict[str, Any] | None:
         """会话健康度。会话不存在返回 ``None``。
 
         轮次指标按 ``days`` 窗口过滤；工具失败率按最近 ``scan`` 轮的 payload 统计
