@@ -52,6 +52,12 @@ function formatTokens(n: number): string {
   return n.toLocaleString("zh-CN");
 }
 
+/** 金额最多 6 位小数并去尾零：0.012 不写成 0.012000，0.000001 也不被四舍五入成 0。 */
+function formatAmount(value: number): string {
+  const fixed = value.toFixed(6).replace(/0+$/, "").replace(/\.$/, "");
+  return fixed || "0";
+}
+
 /** 与后端 `trace/metrics.py::ERROR_RATE_WARN` 对齐：这里只决定条幅颜色，不参与判定。 */
 const ERROR_RATE_DANGER = 0.2;
 
@@ -449,7 +455,7 @@ export function TraceWindow({
                 {trace.totals.tool_ms ? <span>工具耗时 {formatElapsed(trace.totals.tool_ms)}</span> : null}
                 {trace.totals.cost_amount != null ? (
                   <span title="按模型里填的单价估算">
-                    ≈ {trace.totals.currency ?? "CNY"} {trace.totals.cost_amount.toFixed(4)}
+                    ≈ {trace.totals.currency ?? "CNY"} {formatAmount(trace.totals.cost_amount)}
                   </span>
                 ) : null}
                 {trace.budget && trace.budget.token_limit > 0 ? (
@@ -468,10 +474,10 @@ export function TraceWindow({
               {trace.model_fallback ? (
                 // 结论来自备用模型：先看这里，再去怀疑主模型或提示词。
                 <p className="mt-2 rounded-lg bg-warn-50 px-2 py-1.5 text-[11.5px] leading-5 text-warn-600">
-                  本轮降级到备用模型（{trace.model_fallback.code}）：
+                  本轮由备用模型接管（{trace.model_fallback.code}）：
                   {trace.model_fallback.from_config || "主模型"} →{" "}
-                  {trace.model_fallback.to_config || "备用模型"}。每轮最多降级一次，见{" "}
-                  <code>agents/llm.py</code>。
+                  {trace.model_fallback.to_config || "备用模型"}。每轮最多降级一次；正文
+                  流式生成中途失败不在其列。见 <code>agents/llm.py</code>。
                 </p>
               ) : null}
               {trace.prompts && Object.keys(trace.prompts).length > 0 ? (

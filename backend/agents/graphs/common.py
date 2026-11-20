@@ -439,9 +439,18 @@ def budget_middlewares() -> list[Any]:
             return handler(request)
         call = getattr(request, "tool_call", None) or {}
         call_id = str(call.get("id") or "") if isinstance(call, dict) else ""
+        tool_name = str(call.get("name") or "") if isinstance(call, dict) else ""
+        # 不标 error 的话模型会当成「成功但内容为空」，继续绕着换参数重试。
+        note(
+            "budget",
+            name="budget.block",
+            status="warn",
+            detail={"tool": tool_name, "tool_call_id": call_id},
+        )
         return ToolMessage(
             content="本轮 token 预算已用完，该工具不再执行。请直接基于已有信息给出结论。",
             tool_call_id=call_id,
+            status="error",
         )
 
     return [_block, _curtail]

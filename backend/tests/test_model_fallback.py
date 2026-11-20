@@ -103,6 +103,39 @@ def test_switches_to_fallback_on_rate_limit(monkeypatch: pytest.MonkeyPatch) -> 
         assert recorder.snapshot()["model_fallback"]["to_config"] == "backup"
 
 
+def test_note_uses_readable_config_names(monkeypatch: pytest.MonkeyPatch) -> None:
+    """追踪里给人看名字（A → B），不是一串 uuid。"""
+    models = _wire(monkeypatch)
+    primary = _Model("main", error=_HttpError("rate limit 429", 429))
+    primary._chatvein_config_name = "主模型"
+    models["backup"]._chatvein_config_name = "备用模型"
+
+    with tracing("测试") as recorder:
+        llm.invoke_structured(primary, UnderstandDecision, [HumanMessage(content="你好")])
+        assert recorder.meta["model_fallback"]["from_config"] == "主模型"
+        assert recorder.meta["model_fallback"]["to_config"] == "备用模型"
+
+
+def test_fallback_allowance_is_shared_across_copied_contexts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """并行派发是 copy_context() 后再跑：额度必须共享，否则每个成员都能降级一次。"""
+    import contextvars
+
+    _wire(monkeypatch)
+    copied = contextvars.copy_context()
+    first = _Model("main", error=_HttpError("timeout", 408))
+    copied.run(
+        lambda: llm.invoke_structured(
+            first, UnderstandDecision, [HumanMessage(content="你好")]
+        )
+    )
+
+    second = _Model("main", error=_HttpError("timeout", 408))
+    with pytest.raises(_HttpError):
+        llm.invoke_structured(second, UnderstandDecision, [HumanMessage(content="你好")])
+
+
 def test_auth_error_is_not_a_reason_to_switch(monkeypatch: pytest.MonkeyPatch) -> None:
     """鉴权失败多半是 Key 填错：换模型只会掩盖真因。"""
     _wire(monkeypatch)

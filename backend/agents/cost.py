@@ -6,12 +6,15 @@
 预算按「一轮」计（含并行成员派发出去的调用）：``begin_turn`` 存进 ContextVar，
 ``note_usage`` 在每个 LLM 回调里累加，ReAct 循环用它决定要不要提前收尾。
 
-开关：``CHATVEIN_TURN_TOKEN_BUDGET``，0 表示不限（默认）。
+账本只记 token：金额由 ``trace/recording.py`` 按 role 单价另算，这里不再抄一份
+单价（否则同一个数有两处口径，删掉的是「从没被传过」的那一份）。
+
+开关：``CHATVEIN_TURN_TOKEN_BUDGET``，0 表示不限（默认）。``simple`` 路径是一次
+调用、没有后续循环可挡，超预算只在 trace 里看得出，不会追加收尾提示。
 """
 
 from __future__ import annotations
 
-import os
 from contextvars import ContextVar, Token
 from dataclasses import dataclass
 from typing import Any, Final
@@ -38,9 +41,6 @@ class TurnBudget:
     llm_calls: int = 0
     #: 预算触发过没有：只提醒模型一次，避免每轮都塞同一条话。
     curtailed: bool = False
-    #: 单价从模型配置抄一份，只用于「消费了多少」的展示。
-    price_input: float | None = None
-    price_output: float | None = None
 
     @property
     def total_tokens(self) -> int:
@@ -58,18 +58,8 @@ class TurnBudget:
         self.output_tokens += _int(usage.get("output_tokens"))
         self.llm_calls += 1
 
-    def amount(self) -> float | None:
-        if self.price_input is None and self.price_output is None:
-            return None
-        return estimate_amount(
-            self.input_tokens,
-            self.output_tokens,
-            self.price_input,
-            self.price_output,
-        )
-
     def as_dict(self) -> dict[str, Any]:
-        payload: dict[str, Any] = {
+        return {
             "token_limit": self.token_limit,
             "input_tokens": self.input_tokens,
             "output_tokens": self.output_tokens,
@@ -77,11 +67,6 @@ class TurnBudget:
             "llm_calls": self.llm_calls,
             "curtailed": self.curtailed,
         }
-        amount = self.amount()
-        if amount is not None:
-            payload["cost_amount"] = amount
-            payload["currency"] = currency()
-        return payload
 
 
 def _int(value: Any) -> int:
@@ -112,7 +97,7 @@ def estimate_amount(
 
 def currency() -> str:
     """金额单位，纯展示。默认 ``CNY``（用户多在国内充值），可用环境变量换。"""
-    return (os.environ.get("CHATVEIN_PRICE_CURRENCY") or "CNY").strip() or "CNY"
+    return config.text("CHATVEIN_PRICE_CURRENCY", "CNY")
 
 
 _current: ContextVar[TurnBudget | None] = ContextVar("chatvein_turn_budget", default=None)
@@ -127,19 +112,13 @@ def validate() -> None:
     config.number("CHATVEIN_TURN_TOKEN_BUDGET", 0, minimum=0)
 
 
-def begin_turn(
-    *,
-    price_input: float | None = None,
-    price_output: float | None = None,
-) -> Token[TurnBudget | None]:
+def begin_turn() -> Token[TurnBudget | None]:
     """开一轮账本。返回的 token 必须交给 ``end_turn``，否则同线程后续轮会串账。
 
     预算值每轮现读：改环境变量后无需重启进程（评测 / 测试也方便）。
     """
     budget = TurnBudget(
-        token_limit=config.number("CHATVEIN_TURN_TOKEN_BUDGET", 0, minimum=0),
-        price_input=price_input,
-        price_output=price_output,
+        token_limit=config.number("CHATVEIN_TURN_TOKEN_BUDGET", 0, minimum=0)
     )
     return _current.set(budget)
 
@@ -172,7 +151,8 @@ def mark_curtailed() -> bool:
     「不断道歉但不出结论」。
     """
     budget = _current.get()
-    if budget is None or budget.curtailed:
+    # 没过预算也调用是调用方的 bug：收尾提示不能因为「传错」而白白注入一次。
+    if budget is None or budget.curtailed or not budget.exceeded:
         return False
     budget.curtailed = True
     return True

@@ -22,7 +22,7 @@ from agents import config
 _BACKEND = Path(__file__).resolve().parent.parent
 _DOC = _BACKEND.parent / "docs" / "configuration.md"
 #: 读环境变量的函数名（属性名或函数名，大小写不敏感）。
-_ENV_READERS = frozenset({"getenv", "flag", "number"})
+_ENV_READERS = frozenset({"getenv", "flag", "number", "decimal", "text"})
 
 
 def _callee_name(node: ast.Call) -> str:
@@ -104,3 +104,19 @@ def test_number_rejects_bad_values(monkeypatch: pytest.MonkeyPatch, raw: str) ->
     monkeypatch.setenv("CHATVEIN_TEST_NUM", raw)
     with pytest.raises(ValueError):
         config.number("CHATVEIN_TEST_NUM", 5, minimum=1)
+
+
+def test_decimal_parses_and_rejects(monkeypatch: pytest.MonkeyPatch) -> None:
+    """秒数/倍率这类小数开关：能读小数，写错同样抛。"""
+    monkeypatch.setenv("CHATVEIN_TEST_DEC", "0.5")
+    assert config.decimal("CHATVEIN_TEST_DEC", 1.0, minimum=0.0) == 0.5
+    monkeypatch.setenv("CHATVEIN_TEST_DEC", "5s")
+    with pytest.raises(ValueError):
+        config.decimal("CHATVEIN_TEST_DEC", 1.0, minimum=0.0)
+
+
+def test_text_treats_blank_as_unset(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("CHATVEIN_TEST_TEXT", "   ")
+    assert config.text("CHATVEIN_TEST_TEXT", "CNY") == "CNY"
+    monkeypatch.setenv("CHATVEIN_TEST_TEXT", " USD ")
+    assert config.text("CHATVEIN_TEST_TEXT", "CNY") == "USD"

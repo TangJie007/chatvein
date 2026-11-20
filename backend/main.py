@@ -110,11 +110,13 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
     on_roles_init()
     on_embeddings_init()
     on_mcp_servers_init()
-    # 数字型开关（如 CHATVEIN_TURN_TOKEN_BUDGET）写错要在启动时报错，
-    # 不要拖到每一轮聊天都变成「内部错误」。
+    # 数字型开关（预算 / 退避参数）写错要在启动时报错，
+    # 不要拖到第一轮聊天、或第一次限流才炸。
     from agents import cost as turn_cost  # noqa: PLC0415 — 启动期一次性导入
+    from agents import llm as agent_llm  # noqa: PLC0415
 
     turn_cost.validate()
+    agent_llm.validate_config()
     try:
         yield
     finally:

@@ -27,7 +27,7 @@
 | `CHATVEIN_SKILLHUB_API` / `CHATVEIN_SKILLHUB_SITE` | `https://api.skillhub.cn` / `https://skillhub.cn` | 技能市场地址（自建市场时改） |
 | `CHATVEIN_LOCAL_TIMEZONE` | 系统时区 | 提示词里的「现在几点」按此计算 |
 | `CHATVEIN_OCR_SPACE_KEY` | 内置公共额度 | OCR 空间 Key，见 `knowledge/ocr.py` |
-| `CHATVEIN_MODEL_FALLBACK` | 开 | `0` 关闭「主模型限流/超时/5xx 时切备用模型」（结构化调用，见 4.7） |
+| `CHATVEIN_MODEL_FALLBACK` | 开 | `0` 关闭「主模型限流/超时/5xx 时切备用模型」（结构化调用 + 直答尚未吐字时，见 4.7）；正文流中途不换模型 |
 | `CHATVEIN_PRICE_CURRENCY` | `CNY` | 追踪里金额展示的单位；单价在「模型」页按每百万 token 填 |
 | `CHATVEIN_LLM_RATE_LIMIT_RETRIES` | `3` | 429 长退避重试次数（openai SDK 那层 2 次秒级退避对配额无效） |
 | `CHATVEIN_LLM_RATE_LIMIT_DELAY` | `10` 秒 | 长退避首次间隔 |

@@ -8,8 +8,9 @@ audit / memory 里各写一遍，默认值和判据还不一样：``CHATVEIN_AUD
 - **没设** → 用调用点给的默认值；
 - **显式设了** → ``""`` / ``0`` / ``false`` / ``no`` / ``off`` 算关，其余算开。
 
-新开关一律 ``config.flag("CHATVEIN_XXX", default)`` 或 ``config.number(...)``，
-并同步 ``docs/configuration.md``（``tests/test_config.py`` 会检查文档漏没漏）。
+新开关一律 ``config.flag("CHATVEIN_XXX", default)`` / ``config.number(...)`` /
+``config.decimal(...)`` / ``config.text(...)``，并同步 ``docs/configuration.md``
+（``tests/test_config.py`` 会检查文档漏没漏）。
 
 注意：``CHATVEIN_*_PATH`` 这类「读路径」的变量不走这里，由各自模块直接读。
 """
@@ -42,3 +43,23 @@ def number(name: str, default: int, *, minimum: int | None = None) -> int:
     if minimum is not None and value < minimum:
         raise ValueError(f"{name} 不能小于 {minimum}，当前是 {value}")
     return value
+
+
+def decimal(name: str, default: float, *, minimum: float | None = None) -> float:
+    """小数字开关（秒数、倍率）。与 ``number`` 同口径：**写错就抛**。"""
+    raw = (os.environ.get(name) or "").strip()
+    if not raw:
+        return default
+    try:
+        value = float(raw)
+    except ValueError as exc:
+        raise ValueError(f"{name} 需要数字，当前是 {raw!r}") from exc
+    if minimum is not None and value < minimum:
+        raise ValueError(f"{name} 不能小于 {minimum}，当前是 {value}")
+    return value
+
+
+def text(name: str, default: str) -> str:
+    """文本开关：去掉首尾空白，空值按「没设」处理（避免 ``=`` 得到空串）。"""
+    raw = (os.environ.get(name) or "").strip()
+    return raw or default

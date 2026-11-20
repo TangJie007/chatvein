@@ -362,6 +362,12 @@ function ModelConfig({
   const [banner, setBanner] = useState<string | null>(null);
   // 备用模型只能选「别的、已启用」的配置；自己不能当自己的备用
   const fallbackCandidates = models.filter((m) => m.id !== model.id && m.enabled);
+  // 已保存的备用可能后来被停用/删除：下拉里保留它，否则显示空白、看起来像没设过
+  const staleFallback = models.find(
+    (m) => m.id === form.fallbackId && !fallbackCandidates.some((c) => c.id === m.id)
+  );
+  const fallbackInvalid =
+    !!form.fallbackId && !fallbackCandidates.some((c) => c.id === form.fallbackId);
 
   useEffect(() => {
     setForm(toForm(model));
@@ -377,6 +383,11 @@ function ModelConfig({
     const issue = priceIssue(form);
     if (issue) {
       setBanner(`保存失败：${issue}`);
+      return;
+    }
+    // 后端也会拒，但提交前说清楚更省一轮往返（四.3 的「错误给可执行下一步」）
+    if (fallbackInvalid) {
+      setBanner("保存失败：备用模型已停用或已删除，请改选一个已启用的模型，或清空");
       return;
     }
     setSaving(true);
@@ -524,7 +535,7 @@ function ModelConfig({
 
           <Card
             title="备用模型与价格"
-            desc="主模型限流、超时或 5xx 时，路由/选型/规划这类结构化调用改走备用模型（每轮最多降级一次）"
+            desc="主模型限流、超时或 5xx 时自动换一次：路由/选型/规划这类结构化调用，以及直答还没开始吐字时（每轮最多降级一次）。正文流式生成到一半失败不换模型——点错误条上的「再试一次」。"
           >
             <Field label="备用模型" hint="留空表示不降级">
               <SelectInput
@@ -532,12 +543,25 @@ function ModelConfig({
                 onChange={(v) => set("fallbackId", v)}
                 options={[
                   { value: "", label: "不使用备用模型" },
+                  ...(staleFallback
+                    ? [
+                        {
+                          value: staleFallback.id,
+                          label: `${staleFallback.name}（已停用，保存前请改选）`,
+                        },
+                      ]
+                    : []),
                   ...fallbackCandidates.map((m) => ({
                     value: m.id,
                     label: `${m.name} · ${m.model_id || m.provider}`,
                   })),
                 ]}
               />
+              {fallbackInvalid ? (
+                <p className="mt-1 text-[11.5px] leading-5 text-warn-600">
+                  当前备用模型已停用或已删除，保存会被拒绝；请改选一个已启用的模型，或清空。
+                </p>
+              ) : null}
             </Field>
             <Field
               label="输入价"

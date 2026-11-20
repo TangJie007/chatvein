@@ -13,7 +13,6 @@
 
 from __future__ import annotations
 
-import os
 import random
 import time
 from contextvars import ContextVar
@@ -53,20 +52,20 @@ _DEFAULT_TIMEOUT = 300.0
 T = TypeVar("T")
 
 
-def _env_number(name: str, default: float) -> float:
-    raw = (os.environ.get(name) or "").strip()
-    try:
-        return float(raw) if raw else default
-    except ValueError:
-        return default
-
-
 #: 供应商限流（429 / TPM·RPM 超限）时的退避重试参数。
 #: openai SDK 自带 2 次秒级退避，对「按分钟结算」的配额基本没用，
 #: 所以上层再补一层长退避；配额释放通常在几十秒量级。
-_RATE_LIMIT_RETRIES = int(_env_number("CHATVEIN_LLM_RATE_LIMIT_RETRIES", 3))
-_RATE_LIMIT_INITIAL_DELAY = _env_number("CHATVEIN_LLM_RATE_LIMIT_DELAY", 10.0)
-_RATE_LIMIT_MAX_DELAY = _env_number("CHATVEIN_LLM_RATE_LIMIT_MAX_DELAY", 60.0)
+#: 每次现读、口径走 ``agents/config.py``（写错就抛，不静默回默认）。
+def _rate_limit_retries() -> int:
+    return agent_config.number("CHATVEIN_LLM_RATE_LIMIT_RETRIES", 3, minimum=0)
+
+
+def _rate_limit_initial_delay() -> float:
+    return agent_config.decimal("CHATVEIN_LLM_RATE_LIMIT_DELAY", 10.0, minimum=0.0)
+
+
+def _rate_limit_max_delay() -> float:
+    return agent_config.decimal("CHATVEIN_LLM_RATE_LIMIT_MAX_DELAY", 60.0, minimum=0.0)
 
 #: 值得在气泡里直说的「模型侧」码；其余错误由调用方组织人话。
 _MODEL_HINT_CODES = frozenset(
@@ -77,14 +76,38 @@ _MODEL_HINT_CODES = frozenset(
 #: 鉴权失败不降级——多半是密钥填错，备用模型走同类网关也一样失败，只会掩盖真因。
 _FALLBACK_CODES = frozenset({MODEL_RATE_LIMIT, MODEL_TIMEOUT, MODEL_FAILED})
 
-#: 一轮是否已经降级过。降级只在结构化调用里做，且整轮最多一次，
-#: 否则主备会随着两边抖动来回切换，一轮发出好几份结论。
-_fallback_used: ContextVar[bool] = ContextVar("chatvein_fallback_used", default=False)
+class _FallbackState:
+    """一轮是否已经降级过。降级整轮最多一次，否则主备随两边抖动来回切换，
+    一轮能发出好几份结论。
+
+    用**可变对象**放 ContextVar：``copy_context()`` 复制的是引用，并行派发的
+    成员因此共享同一个实例；换成 ``ContextVar[bool]`` 的话每个线程各得一份，
+    等于每个成员都能降级一次。
+    """
+
+    __slots__ = ("used",)
+
+    def __init__(self) -> None:
+        self.used = False
+
+
+_fallback_state: ContextVar[_FallbackState | None] = ContextVar(
+    "chatvein_fallback_state", default=None
+)
 
 
 def reset_fallback_used() -> None:
     """每轮开始清一次（``graphs/pipeline.py`` 调）。"""
-    _fallback_used.set(False)
+    _fallback_state.set(_FallbackState())
+
+
+def _turn_state() -> _FallbackState:
+    """当前轮状态；不在轮次里（离线 / 单测直调）现造一个，行为与以前一致。"""
+    state = _fallback_state.get()
+    if state is None:
+        state = _FallbackState()
+        _fallback_state.set(state)
+    return state
 
 
 def is_rate_limit_error(exc: BaseException) -> bool:
@@ -116,25 +139,33 @@ def describe_model_error(exc: BaseException) -> str:
 
 def rate_limit_retries() -> int:
     """限流时最多重试几次（不含首次调用）。"""
-    return _RATE_LIMIT_RETRIES
+    return _rate_limit_retries()
 
 
 def rate_limit_wait(attempt: int) -> None:
     """第 ``attempt`` 次重试前的退避等待（可被用户取消打断）。"""
-    delay = min(_RATE_LIMIT_INITIAL_DELAY * (2**attempt), _RATE_LIMIT_MAX_DELAY)
+    delay = min(_rate_limit_initial_delay() * (2**attempt), _rate_limit_max_delay())
     _wait_interruptible(delay + random.uniform(0.0, delay * 0.25))
 
 
 def call_with_rate_limit_retry(fn: Callable[[], T]) -> T:
     """调用 LLM，遇到限流就退避重试；其余异常照常抛出。"""
-    for attempt in range(_RATE_LIMIT_RETRIES + 1):
+    retries = rate_limit_retries()
+    for attempt in range(retries + 1):
         try:
             return fn()
         except Exception as exc:  # noqa: BLE001
-            if attempt >= _RATE_LIMIT_RETRIES or not is_rate_limit_error(exc):
+            if attempt >= retries or not is_rate_limit_error(exc):
                 raise
             rate_limit_wait(attempt)
     raise AssertionError("unreachable")  # pragma: no cover
+
+
+def validate_config() -> None:
+    """启动自检：退避参数写错要立刻报，而不是等到第一次限流才炸。"""
+    rate_limit_retries()
+    _rate_limit_initial_delay()
+    _rate_limit_max_delay()
 
 
 def _wait_interruptible(total: float) -> None:
@@ -158,6 +189,8 @@ class ChatOpenAICompat(ChatOpenAI):
 
     #: 这条实例来自哪条 ``llm_models`` 配置；结构化调用失败时据此找回备用模型。
     _chatvein_config_id: str | None = PrivateAttr(default=None)
+    #: 配置的可读名字：追踪里显示「A → B」，不显示一串 uuid。
+    _chatvein_config_name: str | None = PrivateAttr(default=None)
 
     def _get_request_payload(
         self,
@@ -180,6 +213,7 @@ class ChatDeepSeekReact(ChatDeepSeek):
 
     #: 同 ``ChatOpenAICompat``：标记配置来源，供备用模型查找。
     _chatvein_config_id: str | None = PrivateAttr(default=None)
+    _chatvein_config_name: str | None = PrivateAttr(default=None)
 
     def _get_request_payload(
         self,
@@ -300,7 +334,17 @@ def get_chat_model(
         chat = ChatOpenAICompat(**kwargs)
     # 单测会用 SimpleNamespace 顶替配置实体（没有 id）——那时就是「不可降级」
     chat._chatvein_config_id = str(getattr(cfg, "id", "") or "") or None
+    chat._chatvein_config_name = str(getattr(cfg, "name", "") or "") or None
     return chat
+
+
+def config_label(model: BaseChatModel) -> str:
+    """追踪里显示可读名字：配置名优先，老实例 / 测试桩回落到 id。"""
+    return str(
+        getattr(model, "_chatvein_config_name", None)
+        or getattr(model, "_chatvein_config_id", None)
+        or ""
+    )
 
 
 def fallback_model(model: BaseChatModel) -> BaseChatModel | None:
@@ -308,7 +352,7 @@ def fallback_model(model: BaseChatModel) -> BaseChatModel | None:
 
     开关 ``CHATVEIN_MODEL_FALLBACK``（默认开）。
     """
-    if _fallback_used.get() or not agent_config.flag("CHATVEIN_MODEL_FALLBACK", True):
+    if _turn_state().used or not agent_config.flag("CHATVEIN_MODEL_FALLBACK", True):
         return None
     primary_id = getattr(model, "_chatvein_config_id", None)
     if not primary_id:
@@ -329,22 +373,34 @@ def fallback_model(model: BaseChatModel) -> BaseChatModel | None:
     return get_chat_model(role={"model_id": cfg.id}, streaming=False, thinking=False)
 
 
+def try_fallback(model: BaseChatModel, exc: BaseException) -> BaseChatModel | None:
+    """主模型失败后找一次备用：命中可降级码且本轮没用过才给实例，并记账。
+
+    返回 ``None`` 时调用方照原样抛出，不掩盖真因。
+    """
+    err = classify(exc, stage="llm")
+    if err.code not in _FALLBACK_CODES:
+        return None
+    backup = fallback_model(model)
+    if backup is None:
+        return None
+    _turn_state().used = True
+    note_model_fallback(
+        from_config=config_label(model),
+        to_config=config_label(backup),
+        code=err.code,
+    )
+    return backup
+
+
 def invoke_structured(model: BaseChatModel, schema: type, messages: list[Any]) -> Any:
     """按结构化结果调用模型；主模型命中限流 / 超时 / 5xx 时整轮降级一次。"""
     try:
         return _structured_call(model, schema, messages)
     except Exception as exc:  # noqa: BLE001
-        if classify(exc, stage="llm").code not in _FALLBACK_CODES:
-            raise
-        backup = fallback_model(model)
+        backup = try_fallback(model, exc)
         if backup is None:
             raise
-        _fallback_used.set(True)
-        note_model_fallback(
-            from_config=str(getattr(model, "_chatvein_config_id", "") or ""),
-            to_config=str(getattr(backup, "_chatvein_config_id", "") or ""),
-            code=classify(exc, stage="llm").code,
-        )
         return _structured_call(backup, schema, messages)
 
 

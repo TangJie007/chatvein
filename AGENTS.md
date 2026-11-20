@@ -127,7 +127,7 @@
 27. 评测里**规则断言必跑、judge 默认关**（`--judge` 才开）：改 prompt / 工具 / 路由要同步跑一次 `tools/run_eval.ps1`，或至少 `--dry-run` 校验用例文件。新能力要加用例，不要在评测里绕过临时沙箱去写用户工作区。
 28. 指标是**查询时聚合的视图**，不要再建 `trace_metrics` 表；告警阈值/口径只在 `trace/metrics.py` 定义一处（前端只展示，不自己算）。OTel 默认关（`CHATVEIN_OTEL=0`）、SDK 不进安装包，导出失败必须吞掉——可观测性不能反过来打断对话。
 29. 单轮预算只在 `agents/cost.py` 记账（用量由 `TraceHandler.on_llm_end` 回灌，禁止另建计量）；超预算的处理是**收尾**（注入提示 + `budget_middlewares` 挡工具），不是报错或硬中断。`begin_turn`/`end_turn` 必须成对出现在 `pipeline.run_pipeline`，否则串轮。
-30. 模型降级只有一处：`agents/llm.py::invoke_structured`（每轮最多一次，`pipeline` 调 `reset_fallback_used`），且只对 429/超时/5xx；流式主循环不降级。备用配置由 `llm_models.fallback_config_id` 单向引用（无外键，悬空即「无备用」），新字段的校验只写在 `models/service.py`。
+30. 模型降级只有两处，且都必须经 `agents/llm.py::try_fallback`（判码 429/超时/5xx + 取备 + 记账）：①`invoke_structured`（结构化调用）；②`graphs/simple.py` 的流式直答在**尚未吐字**时换线重跑一次。正文流中途不换模型（会混两种风格的增量，且已推给前端无法撤回）。每轮最多一次，`pipeline` 调 `reset_fallback_used`；额度是 `ContextVar` 里的**可变对象**，并行派发成员共享一份。备用配置由 `llm_models.fallback_config_id` 单向引用（无外键，悬空即「无备用」），新字段的校验只写在 `models/service.py`。
 
 ## 6. 常用命令
 

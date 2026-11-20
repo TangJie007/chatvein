@@ -78,7 +78,18 @@ def test_block_tool_when_over_budget() -> None:
     result = block(request, handler)
     assert isinstance(result, ToolMessage)
     assert "预算" in str(result.content)
+    # 标 error 才会被模型当成「执行失败」；默认 success 会让它继续换参数重试。
+    assert result.status == "error"
     assert ran == []
+
+
+def test_mark_curtailed_requires_exceeded() -> None:
+    """没过预算就调是调用方的 bug：不能白记一次「已收尾」。"""
+    current = cost.current_turn()
+    assert current is not None
+    current.token_limit = 1000
+    current.add({"input_tokens": 100})
+    assert cost.mark_curtailed() is False
 
 
 def test_tool_still_runs_within_budget() -> None:

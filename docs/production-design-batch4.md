@@ -278,6 +278,7 @@ def turn_usage() -> TurnBudget                     # ContextVar，与 tool_scope
 - `models` 表追加 `fallback_config_id`（`db.py` 迁移 v15，追加列 + 幂等，`SCHEMA_VERSION=14 → 15`）；外键不建（模型可被删除，悬空引用按「无 fallback」处理）。
 - `llm.py` 新增 `with_fallback(model, fallback)`：返回一个**轻量包装对象**，只实现 `invoke` / `with_structured_output().invoke`（即**结构化调用**：router / tool_selector / plan / verify / summary / memory / judge）——这些是单次调用，降级语义清晰。
 - **流式主循环不包装**：中途换模型会把两种风格的增量混在一起（且已推给前端无法撤回）。主循环失败仍走 4.3 的 `MODEL_*` 错误 + 前端「再试一次」。
+  > **实现修正（2026-11-20）**：`graphs/simple.py` 的直答路径在**尚未吐字**时也走一次降级（换备用模型 + 一次性 `invoke`），因为此时没有增量可混；已吐字则原样抛出。判定与取备统一收在 `llm.py::try_fallback`，不在调用点各写一套。
 - 降级触发条件（全部满足才降）：①`classify(exc).retryable` 为真且 code ∈ {`MODEL_AUTH`, `MODEL_RATE_LIMIT`, `MODEL_TIMEOUT`, `MODEL_NOT_FOUND`, `MODEL_FAILED`}；②已配置且 `enabled=True` 的 `fallback_config_id`；③本轮**尚未因降级切换过**（每轮最多一次，防抖与防循环）；④不处于取消中。
 - 降级留痕：`note("model_fallback", status="warn", from_config=..., to_config=..., code=...)`；`snapshot()` 加轮级 `model_fallback: {from, to, code}`；`TraceWindow` 顶部条幅提示「本轮已降级到 <name>」（用现有 `config_name` 字段展示）。
 - `resolve_budget()` 与 fallback 的模型参数（温度、max_tokens）各自独立：备用模型用自己的配置，不继承主模型参数。
@@ -356,14 +357,14 @@ def turn_usage() -> TurnBudget                     # ContextVar，与 tool_scope
 | 4.4 提示词版本 | `agents/prompt_registry.py`：7 个 spec（framework / agent.medium / agent.hard / route.understand / tools.select / team.aggregate / eval.judge）、版本 = 原文 sha256 前 8 位 | 进 `pipeline` 的 trace meta、`TraceWindow` 头部、eval 报告与 `--dry-run` 输出 |
 | 4.4 配置口径 | `agents/config.py::flag/number` + `docs/configuration.md` 全量表 | `backend/tests/test_config.py` 用 AST 扫「真的读环境变量」的调用，漏写即失败 |
 | 4.7 预算 | `agents/cost.py`（`TurnBudget` / `begin_turn` / `note_usage` / `over_budget` / `mark_curtailed`）、`common.budget_middlewares()`（`before_model` 注入收尾提示 + `wrap_tool_call` 挡工具）、`pipeline` 轮开始/结束复位 | 用量来自 `TraceHandler.on_llm_end` 回灌，不另起计量口径 |
-| 4.7 fallback | `llm.invoke_structured` 内部：命中 `MODEL_RATE_LIMIT/TIMEOUT/FAILED` 且配置了备用模型时切一次；`reset_fallback_used()` 每轮复位 | 流式主循环不降级（中途换模型会混增量） |
+| 4.7 fallback | `llm.try_fallback`（判码 + 取备 + 记账）：`invoke_structured` 命中 `MODEL_RATE_LIMIT/TIMEOUT/FAILED` 切一次；`graphs/simple.py` 直答**尚未吐字**时换线 + 一次性 `invoke`；`reset_fallback_used()` 每轮复位 | 正文流中途不换模型（会混增量）；额度放在 `ContextVar` 的**可变对象**里，并行派发成员共享，一轮只降一次 |
 | 4.7 数据 | `db.py` v15（可空三列，幂等）、`models` entity/dto/service/controller（写入即校验） | 悬空 `fallback_config_id` 运行期按「无备用」处理 |
 | 4.7 展示 | `ModelsView` 备用模型下拉 + 两个价格输入；`TraceWindow` 降级条幅、金额、预算进度 | 金额只在填了单价时出现（`CHATVEIN_PRICE_CURRENCY` 仅换单位） |
 
 ### 与原设计的偏差（有意为之）
 
 1. **提示词不搬文本、也不在导入期 `register()`**：注册表用 `ast` 读源码字符串常量，避免把「提示词版本」变成启动期依赖与循环依赖；代价是 `verify()` 只能校验「源符号存在 / id 唯一 / 常量可读」，不能做 `Template.substitute` 渲染校验。`CHATVEIN_PROMPT_REGISTRY` 开关取消——没有需要回滚的运行时行为。
-2. **fallback 不做成 `with_fallback(model, fallback)` 包装**：降级逻辑收在 `invoke_structured` 内部（它是全仓库唯一的结构化调用入口），调用点无需改动；模型实例构造时打 `_chatvein_config_id` 私有标记，用于找回备用配置。
+2. **fallback 不做成 `with_fallback(model, fallback)` 包装**：降级逻辑收在 `try_fallback` 一处（`invoke_structured` 与 `graphs/simple.py` 共用），调用点无需各自判断；模型实例构造时打 `_chatvein_config_id` / `_chatvein_config_name` 私有标记，分别用于找回备用配置与在追踪里显示可读名字。
 3. **降级触发码收窄为 429 / 超时 / 5xx**：鉴权错（`MODEL_AUTH`）与「模型名不存在」不降级——多半是配置填错，备用模型往往同样失败，只会掩盖真因。
 4. **金额只做展示**：单价由用户在模型表单填（每百万 token），未填只报 token；不内置价目表、不做币种换算（`CHATVEIN_PRICE_CURRENCY` 只影响符号）。
 5. **配置口径统一到「新开关 + 本次触碰的开关」**：`mcps/resilience.py`、`agents/orchestration.py`、`token_budget.py` 的数值开关保留各自的钳位函数（有上下限、支持小数），已在 `docs/configuration.md` 第 5 节标注。
@@ -383,7 +384,7 @@ def turn_usage() -> TurnBudget                     # ContextVar，与 tool_scope
 4. **4.4 不搬提示词文本**：本批只做登记 + 版本 + trace，文本留在原模块。是否同意「搬文本」拆到后续单独一批（便于 eval 归因）？
 5. **配置治理只做文档 + 新开关入口**：旧的 30+ 处 `os.getenv` 不强制迁移。是否接受（否则本批会扩散到 20 个文件）？
 6. **成本只做 token 预算，金额可选**：不内置价目表、不做币种换算，价格由用户在模型表单填。是否需要把价格换成「按模型 ID 内置默认价」？
-7. **fallback 只覆盖结构化调用**，流式主循环不降级（中途换模型会混增量）。是否接受？若必须覆盖主循环，建议改成「失败后整轮重跑」（另开一项，不在本批）。
+7. **fallback 的覆盖面**（已按主流做法落地）：结构化调用全量 + 直答**尚未吐字**时换线重跑（此时无增量可混）；正文流中途不换模型，失败仍交前端「再试一次」。若要让正文流也换线，只能做成「失败后整轮重跑并撤回已推内容」，另开一项。
 
 ## 附录：`CHATVEIN_*` 现状清单（`docs/configuration.md` 以此为源）
 

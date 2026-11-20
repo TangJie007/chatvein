@@ -146,7 +146,7 @@ npm run build
 > 状态：**设计评审中**（[batch4 §4.7](./production-design-batch4.md)）。对应 §2 横切行的「token/成本预算、模型降级与 fallback」。
 >
 > - 单轮 token 预算 `CHATVEIN_TURN_TOKEN_BUDGET`（默认 `0` = 不限）：超限不硬断，改为注入收尾提示并禁后续工具调用，本轮照常落盘。
-> - 备用模型 `models.fallback_config_id`（主库迁移 v15，可空）：只覆盖**结构化调用**（路由 / 工具选择 / plan / verify / 摘要 / 记忆 / judge），流式主循环不降级；每轮最多降一次，必留 trace。
+> - 备用模型 `models.fallback_config_id`（主库迁移 v15，可空）：覆盖**结构化调用**（路由 / 工具选择 / plan / verify / 摘要 / 记忆 / judge）与**尚未吐字的流式直答**；正文流中途不换模型；每轮最多降一次（并行派发共享同一份额度），必留 trace。
 > - 金额只做可选展示（价格由用户填），不内置价目表、不做币种换算。
 
 ## 5. 风险登记（整体）

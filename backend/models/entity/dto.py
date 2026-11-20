@@ -3,10 +3,24 @@
 模型之间没有主次之分，配置项不再包含 ``is_default`` / ``is_primary`` 字段。
 """
 
-from pydantic import BaseModel, Field
+from typing import Any
+
+from pydantic import BaseModel, Field, field_validator
 
 
-class CreateLlmModelDto(BaseModel):
+class _PriceFields(BaseModel):
+    """价格字段的口径：空串与 ``null`` 都表示「清除」。
+
+    前端清空输入框时会发 ``""``；不做这一步就只能 422，用户看到的是「保存失败」。
+    """
+
+    @field_validator("price_input", "price_output", mode="before", check_fields=False)
+    @classmethod
+    def _blank_price_is_none(cls, value: Any) -> Any:
+        return None if isinstance(value, str) and not value.strip() else value
+
+
+class CreateLlmModelDto(_PriceFields):
     name: str = Field(min_length=1, max_length=120)
     provider: str = Field(default="openai", max_length=80)
     model_id: str = Field(min_length=1, max_length=120)
@@ -28,7 +42,7 @@ class CreateLlmModelDto(BaseModel):
     description: str = Field(default="", max_length=500)
 
 
-class UpdateLlmModelDto(BaseModel):
+class UpdateLlmModelDto(_PriceFields):
     """部分更新：未传字段保持原值；``api_key`` 传空字符串表示清空。"""
 
     name: str | None = Field(default=None, min_length=1, max_length=120)
@@ -45,7 +59,7 @@ class UpdateLlmModelDto(BaseModel):
     retries: int | None = Field(default=None, ge=0, le=10)
     context_window_k: int | None = Field(default=None, ge=1, le=10_000)
     enabled: bool | None = None
-    #: 传空字符串表示清除备用模型 / 价格。
+    #: 传空字符串表示清除备用模型（价格见 ``_PriceFields``）。
     fallback_config_id: str | None = None
     price_input: float | None = Field(default=None, ge=0)
     price_output: float | None = Field(default=None, ge=0)

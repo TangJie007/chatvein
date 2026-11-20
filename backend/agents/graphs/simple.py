@@ -7,6 +7,8 @@ from typing import Any
 from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
 from langgraph.graph import END, START, MessagesState, StateGraph
 
+from errors import classify
+
 from .. import llm as llm_mod
 from ..context import assemble_context
 from ..streaming import emit_token, message_text, stream_enabled
@@ -33,9 +35,17 @@ def build_simple_graph(model: Any, *, system_prompt: str = _SYSTEM):
     return graph.compile(name="simple_chat")
 
 
-def _stream_simple(model: Any, messages: list[BaseMessage]) -> str:
-    """逐块推 token；模型不支持流式（或抛错）由调用方回落 invoke。"""
-    chunks: list[str] = []
+def _stream_simple(
+    model: Any,
+    messages: list[BaseMessage],
+    partial: list[str] | None = None,
+) -> str:
+    """逐块推 token；模型不支持流式（或抛错）由调用方回落 invoke。
+
+    ``partial`` 记录已经推给用户的内容：调用方据此判断还能不能换模型重跑——
+    已经吐过字就重跑会同一句说两遍。
+    """
+    chunks = partial if partial is not None else []
     for chunk in model.stream(messages, config=runnable_config()):
         delta = message_text(chunk)
         if delta:
@@ -78,9 +88,16 @@ def run_simple(
         ]
         with span("simple"):
             if stream_enabled():
+                partial: list[str] = []
                 try:
-                    reply = _stream_simple(model, messages)
-                except Exception:  # noqa: BLE001 —— 流式不可用时回落到一次性 invoke
+                    reply = _stream_simple(model, messages, partial)
+                except Exception as exc:  # noqa: BLE001
+                    if partial:
+                        # 已经吐字：重跑会重复，原样抛给外层（错误条会带「再试一次」）
+                        raise
+                    # 还没吐字：先试备用模型，再回落到一次性 invoke。这是唯一
+                    # 能安全换线的地方（正文流中途换模型会混增量）。
+                    model = llm_mod.try_fallback(model, exc) or model
                     out = build_simple_graph(
                         model, system_prompt=system_prompt
                     ).invoke({"messages": messages}, config=runnable_config())
@@ -95,4 +112,7 @@ def run_simple(
             return reply, True
         return "（无文本回复）", True
     except Exception as exc:  # noqa: BLE001
-        return f"直接回答失败: {exc}", False
+        # 原文只进追踪（可能含后端路径 / 网关报文），气泡里给码表的人话。
+        err = classify(exc, stage="simple")
+        note("llm", name="simple", status="error", detail={"code": err.code})
+        return f"直接回答失败：{err.message}", False
