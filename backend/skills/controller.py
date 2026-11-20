@@ -13,7 +13,7 @@
     - RuntimeError → 502（SkillHub 代理失败）；若报错包含"未找到"则用 404。
 
 注入说明：聊天时的技能注入不经过本文件，入口是 main.py 技能接线段
-→ service.skill_prompt_blocks()（见 skills/service.py / docs/技能系统.md）。
+→ service.skill_prompt_blocks()（见 skills/service.py / docs/机制详解.md §技能系统）。
 """
 
 from fastapi import APIRouter, HTTPException, Query

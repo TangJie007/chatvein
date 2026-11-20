@@ -2,7 +2,7 @@
 
 两个承诺：
 1. ``agents/config.py`` 的判定口径固定（``""``/``0``/``false``/``no``/``off`` 算关）。
-2. ``配置总表.md`` 是唯一全量表：代码里真的读环境变量的 ``CHATVEIN_*``
+2. ``运维手册.md`` 的「配置总表」分区是唯一全量表：代码里真的读环境变量的 ``CHATVEIN_*``
    必须出现在表里，漏写就失败。
 
 只扫「读环境变量」的调用（``os.getenv`` / ``os.environ.get`` / ``_env_flag`` /
@@ -20,7 +20,7 @@ import pytest
 from agents import config
 
 _BACKEND = Path(__file__).resolve().parent.parent
-_DOC = _BACKEND.parent / "docs" / "配置总表.md"
+_DOC = _BACKEND.parent / "docs" / "运维手册.md"
 #: 读环境变量的函数名（属性名或函数名，大小写不敏感）。
 _ENV_READERS = frozenset({"getenv", "flag", "number", "decimal", "text"})
 
@@ -66,7 +66,7 @@ def test_every_env_switch_is_documented() -> None:
     doc = _DOC.read_text(encoding="utf-8")
     missing = sorted(name for name in _env_names() if name not in doc)
     assert not missing, (
-        "配置总表.md 漏了这些开关（表格里要有一行，不写会被当成没实现）："
+        "运维手册.md §配置总表 漏了这些开关（表格里要有一行，不写会被当成没实现）："
         + "、".join(missing)
     )
 

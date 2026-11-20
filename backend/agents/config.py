@@ -9,7 +9,7 @@ audit / memory 里各写一遍，默认值和判据还不一样：``CHATVEIN_AUD
 - **显式设了** → ``""`` / ``0`` / ``false`` / ``no`` / ``off`` 算关，其余算开。
 
 新开关一律 ``config.flag("CHATVEIN_XXX", default)`` / ``config.number(...)`` /
-``config.decimal(...)`` / ``config.text(...)``，并同步 ``docs/配置总表.md``
+``config.decimal(...)`` / ``config.text(...)``，并同步 ``docs/运维手册.md §配置总表``
 （``tests/test_config.py`` 会检查文档漏没漏）。
 
 注意：``CHATVEIN_*_PATH`` 这类「读路径」的变量不走这里，由各自模块直接读。

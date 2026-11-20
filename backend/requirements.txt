@@ -34,7 +34,8 @@ lxml>=5.0,<7
 # 仅 embeddings 的 ModelScope 下载用 requests（依赖 urllib3 的 Retry 做退避重试）。
 requests>=2.32,<3.0
 # Browser 自动化（mcp-browser）：进程内 Playwright，工具对齐 @playwright/mcp。
-# 浏览器二进制不随包装；需本机 `playwright install chromium`（见 docs/agents.md）。
+# 浏览器二进制不随包装；需本机 `playwright install chromium`
+# （探测逻辑见 mcps/browser_runtime.py，人工验收见 docs/运维手册.md §工具测试用例 10「浏览器」）。
 # aria_snapshot(mode="ai") 需较新版本（约 >=1.59）。
 playwright>=1.59,<2
 # IP 归属地（mcp-ip）：免费降级 ipinfo → ipwhois-python → ip-api（均无 Key）。

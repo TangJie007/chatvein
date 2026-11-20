@@ -14,13 +14,16 @@
 
 ## 1. 项目是什么
 
-**ChatVein 桌面 Agent**：Tauri 2 外壳 + React 19 界面 + Python FastAPI 内核 + LangGraph Agent。后端由 Rust 作为子进程拉起，随机端口 + 一次性 token。
+**ChatVein 桌面 Agent**：Tauri 2 外壳 + React 18 界面 + Python FastAPI 内核 + LangGraph Agent。后端由 Rust 作为子进程拉起，随机端口 + 一次性 token。
 
 | 层 | 技术 | 位置 | 职责 |
 |---|---|---|---|
-| 前端 | React 19 + Vite 7 + Tailwind 4 + TS | `src/` | 聊天、群组、角色、技能、知识库、模型、设置、追踪 |
+| 前端 | React 18 + Vite 5 + Tailwind 4 + TS | `src/` | 聊天、群组、角色、技能、知识库、模型、设置、追踪 |
 | 外壳 | Tauri 2 + Rust | `src-tauri/` | 启动后端、端口/token、窗口、更新、打包 |
-| 后端 | Python 3.11+ + FastAPI + LangGraph | `backend/` | Agent 图、工具、持久化、追踪、文件与命令沙箱 |
+| 后端 | Python 3.13 + FastAPI + LangGraph | `backend/` | Agent 图、工具、持久化、追踪、文件与命令沙箱 |
+
+> 前端依赖版本以 `package.json` / `package-lock.json` 为准（React 18.3、Vite 5.4、TS 5.9）；
+> 后端锁定 **Python 3.13**（见 `pyrightconfig.json`）。不要凭记忆按 React 19 / Vite 7 写代码。
 
 ## 2. 目录速查
 
@@ -78,7 +81,7 @@
 | 模型/向量模型 | `backend/models/`、`backend/embeddings/` | `src/api/models.ts`、`src/api/embeddings.ts`、`src/components/models/*` |
 | 长期记忆（抽取/召回/整理） | `backend/memory/service.py` | `store.py`、`controller.py`、`main.py`（召回注入 + 异步抽取）、`backend/trace/recording.py`、`src/components/settings/MemorySection.tsx` |
 | 追踪/面板 | `backend/trace/`、`src/components/trace/*`、`insightData.ts` | `src/lib/openTrace.ts`、`src/api/traces.ts` |
-| 离线评测 / 用例 / 报告 | `backend/eval/cases.py`、`backend/eval/runner.py` | `backend/eval/judge.py`、`backend/eval/cases/*.json`、`tools/run_eval.ps1`、`docs/离线评测.md` |
+| 离线评测 / 用例 / 报告 | `backend/eval/cases.py`、`backend/eval/runner.py` | `backend/eval/judge.py`、`backend/eval/cases/*.json`、`tools/run_eval.ps1`、`docs/运维手册.md §离线评测` |
 | 质量指标 / 告警 / OTel | `backend/trace/metrics.py`、`backend/trace/otel.py` | `backend/trace/{store,service,controller}.py`、`TraceWindow.tsx`、`src/api/traces.ts` |
 | 提示词 | `backend/agents/graphs/prompts.py` | `router.py`、`tool_selector.py`、`hard.py`；版本登记在 `agents/prompt_registry.py`（改文案后跑 `run_eval.ps1 --dry-run`） |
 | 成本预算 / 模型降级 | `backend/agents/cost.py`、`agents/llm.py`（`invoke_structured`） | `graphs/common.py::budget_middlewares`、`graphs/pipeline.py`（每轮 `begin_turn`/复位）、`db.py`（v15 三列）、`models/*`、`ModelsView.tsx`、`TraceWindow.tsx` |
