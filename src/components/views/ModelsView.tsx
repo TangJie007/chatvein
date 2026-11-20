@@ -72,6 +72,17 @@ function parsePrice(raw: string): number | null | undefined {
   return Number.isFinite(value) && value >= 0 ? value : undefined;
 }
 
+/**
+ * 保存前的价格校验：非法输入会被 `formToPayload` 丢掉，不提前拦就是
+ * 「提示已保存、价格其实没存」——比报错更难查。
+ */
+function priceIssue(form: ModelForm): string | null {
+  if (parsePrice(form.priceInput) === undefined) return "输入价需要是不小于 0 的数字";
+  if (parsePrice(form.priceOutput) === undefined)
+    return "输出价需要是不小于 0 的数字";
+  return null;
+}
+
 function formToPayload(form: ModelForm): UpdateLlmModelPayload {
   const payload: UpdateLlmModelPayload = {
     name: form.name.trim(),
@@ -363,6 +374,11 @@ function ModelConfig({
   };
 
   const handleSave = async () => {
+    const issue = priceIssue(form);
+    if (issue) {
+      setBanner(`保存失败：${issue}`);
+      return;
+    }
     setSaving(true);
     setBanner(null);
     try {

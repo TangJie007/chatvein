@@ -88,5 +88,20 @@ def test_http_detail_keeps_old_contract() -> None:
 
 def test_unknown_code_does_not_leak_traceback() -> None:
     err = errors.AgentError("SOMETHING_NEW")
-    assert err.message.startswith("出错了：")
+    assert err.message.startswith("出错了（SOMETHING_NEW）")
     assert "Traceback" not in err.message
+
+
+def test_internal_message_does_not_embed_raw_text() -> None:
+    """``raw`` 里有后端路径，可能还有带 Key 的 URL：只能留在 detail。"""
+    err = errors.classify(RuntimeError(r"open failed: C:\Users\me\secret.txt"))
+    assert err.code == errors.INTERNAL
+    assert "secret.txt" not in err.message
+    assert err.detail["raw"].startswith("open failed")
+
+
+def test_401_wins_over_denied_wording() -> None:
+    """中文网关常把 401 写成「未授权」：要判成模型鉴权，别引用户去改工具权限。"""
+    err = errors.classify(_Status("未授权访问：denied", 401))
+    assert err.code == errors.MODEL_AUTH
+    assert err.http_status == 401

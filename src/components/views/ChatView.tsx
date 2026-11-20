@@ -113,6 +113,7 @@ export function ChatView({ newRequestId = 0, onConversationCount }: ChatViewProp
     setError,
     setWorkspace,
     send,
+    retryLastFailure,
     cancel,
   } = chat;
 
@@ -126,10 +127,9 @@ export function ChatView({ newRequestId = 0, onConversationCount }: ChatViewProp
         navigate(VIEW_PATH.models);
         return;
       }
-      const lastAsk = [...messages].reverse().find((m) => m.role === "user");
-      if (lastAsk) void send(lastAsk.content);
+      void retryLastFailure();
     },
-    [messages, navigate, send]
+    [navigate, retryLastFailure]
   );
 
   useEffect(() => {

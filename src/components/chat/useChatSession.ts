@@ -638,6 +638,19 @@ export function useChatSession({
 
   const onRestored = useCallback(() => setRestoreText(null), []);
 
+  /**
+   * 重试失败的轮次：先摘掉上一轮留下的提问气泡再重发。
+   * 失败轮不会落库（`save_exchange` 只在成功后调用），气泡留着只会让同一句
+   * 在界面上出现两次——一次带错误条，一次在重试。
+   */
+  const retryLastFailure = useCallback(async () => {
+    const anchor = errorAnchorId;
+    const failed = anchor ? messages.find((m) => m.id === anchor) : undefined;
+    if (!failed) return;
+    setMessages((prev) => prev.filter((m) => m.id !== anchor));
+    await send(failed.content);
+  }, [errorAnchorId, messages, send]);
+
   return {
     messages,
     workspace,
@@ -660,6 +673,7 @@ export function useChatSession({
     /** 新建会话时后端工作区就绪后可直接回填，省一次重载。 */
     setWorkspace,
     send,
+    retryLastFailure,
     cancel,
     resumable,
     resumeInterrupted,

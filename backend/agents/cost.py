@@ -118,6 +118,15 @@ def currency() -> str:
 _current: ContextVar[TurnBudget | None] = ContextVar("chatvein_turn_budget", default=None)
 
 
+def validate() -> None:
+    """启动自检：数字型开关写错要在这里报错。
+
+    否则 ``begin_turn`` 在每一轮里抛 ``ValueError`` → 对外只剩「内部错误」，
+    用户永远猜不到是自己把 ``CHATVEIN_TURN_TOKEN_BUDGET`` 写成了 ``5k``。
+    """
+    config.number("CHATVEIN_TURN_TOKEN_BUDGET", 0, minimum=0)
+
+
 def begin_turn(
     *,
     price_input: float | None = None,

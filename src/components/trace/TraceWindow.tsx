@@ -447,7 +447,7 @@ export function TraceWindow({
                 <span>工具 {trace.totals.tool_calls}</span>
                 {trace.totals.llm_ms ? <span>模型 {formatElapsed(trace.totals.llm_ms)}</span> : null}
                 {trace.totals.tool_ms ? <span>工具耗时 {formatElapsed(trace.totals.tool_ms)}</span> : null}
-                {trace.totals.cost_amount ? (
+                {trace.totals.cost_amount != null ? (
                   <span title="按模型里填的单价估算">
                     ≈ {trace.totals.currency ?? "CNY"} {trace.totals.cost_amount.toFixed(4)}
                   </span>

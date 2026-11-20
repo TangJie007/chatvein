@@ -70,7 +70,9 @@ MESSAGES: Final[dict[str, str]] = {
     CHECKPOINT_EXPIRED: "中断现场已失效：需要重新生成这一轮。",
     CANCELLED: "已取消本次生成。",
     EVAL_CASE_INVALID: "评测用例不合法：请检查 cases 文件里的字段与类型。",
-    INTERNAL: "出错了：{raw}",
+    # 不要把 {raw} 放进 message：它会被塞进 REST 的 detail 与 SSE 帧，等于把
+    # 后端路径 / URL / 可能的密钥给用户。原文留在本模块的 detail，只进日志与 trace。
+    INTERNAL: "内部错误：这一步没有跑通，可重试；连续失败请到「追踪」面板查看该轮详情。",
     STREAM_DISABLED: "流式已关闭（CHATVEIN_STREAM=0），请使用 /api/chat",
 }
 
@@ -169,7 +171,8 @@ def _rid_suffix(rid: str) -> str:
 def _render(code: str, status: int | None, rid: str, detail: dict[str, Any]) -> str:
     template = MESSAGES.get(code)
     if template is None:
-        return f"出错了：{detail.get('raw') or code}"
+        # 未知码同样不外发原文（理由见 MESSAGES 里 INTERNAL 的注释）
+        return f"出错了（{code}）：请到「追踪」面板查看该轮详情。"
     fields = _Fields(detail)
     fields["status_suffix"] = _status_suffix(status)
     fields["rid_suffix"] = _rid_suffix(rid)
@@ -238,10 +241,11 @@ def classify(exc: BaseException, *, stage: str = "") -> AgentError:
     1. 已是 ``AgentError``（只补 stage）；
     2. 异常自带 ``tool_code``（外部 MCP 客户端打的标）；
     3. 用户取消；
-    4. 沙箱越界 → 拒绝（两者都不重试，但下一步提示不同）；
-    5. HTTP 状态码（429 / 401·403 / 404 / 408·504 / 5xx）；
-    6. 报文特征（限流 → 超时 → 连接）；
-    7. 兜底 ``INTERNAL``。
+    4. 401（鉴权，先于「拒绝」字样，见下方注释）；
+    5. 沙箱越界 → 拒绝（两者都不重试，但下一步提示不同）；
+    6. HTTP 状态码（429 / 403 / 404 / 408·504 / 5xx）；
+    7. 报文特征（限流 → 超时 → 连接）；
+    8. 兜底 ``INTERNAL``。
     """
     if isinstance(exc, AgentError):
         if stage and not exc.stage:
@@ -258,6 +262,17 @@ def classify(exc: BaseException, *, stage: str = "") -> AgentError:
 
     text = f"{type(exc).__name__} {exc}"
     low = text.lower()
+    status = _status_code(exc)
+    rid = _request_id(exc)
+    # 401 本身就说明是鉴权问题。中文网关常把「未授权」写进报文，若按下面的
+    # 拒绝字样先判，会变成 TOOL_DENIED——把用户引去改权限，而该改的是 Key。
+    if status == 401:
+        return AgentError(
+            MODEL_AUTH,
+            stage=stage,
+            status_code=status,
+            detail={"status": status, "request_id": rid, "raw": str(exc)},
+        )
     if any(marker in low for marker in _SANDBOX_MARKERS):
         return AgentError(SANDBOX_VIOLATION, stage=stage, detail={"raw": str(exc)})
     if isinstance(exc, PermissionError) or any(
@@ -265,8 +280,6 @@ def classify(exc: BaseException, *, stage: str = "") -> AgentError:
     ):
         return AgentError(TOOL_DENIED, stage=stage, detail={"raw": str(exc)})
 
-    status = _status_code(exc)
-    rid = _request_id(exc)
     by_status = _code_for_status(status)
     if by_status:
         return AgentError(

@@ -110,6 +110,11 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
     on_roles_init()
     on_embeddings_init()
     on_mcp_servers_init()
+    # 数字型开关（如 CHATVEIN_TURN_TOKEN_BUDGET）写错要在启动时报错，
+    # 不要拖到每一轮聊天都变成「内部错误」。
+    from agents import cost as turn_cost  # noqa: PLC0415 — 启动期一次性导入
+
+    turn_cost.validate()
     try:
         yield
     finally:
@@ -650,7 +655,18 @@ _STREAM_END: dict[str, Any] = {"event": "", "data": {}}
 
 async def _stream_events(req: ChatRequest, request: Request):
     """SSE 生成器：工作线程推事件，这里只负责切帧与心跳。"""
-    prep = _prepare_chat_turn(req)
+    try:
+        prep = _prepare_chat_turn(req)
+    except Exception as exc:  # noqa: BLE001
+        # 响应头已经发出去了，这里再抛只会让客户端看到「空流」；改成 error 帧，
+        # 前端才拿得到 code（否则 MODEL_AUTH 之类的按钮永远不出现）。
+        if isinstance(exc, HTTPException):
+            message = str(exc.detail)
+            data = {"code": "", "message": message, "retryable": False, "stage": "chat"}
+        else:
+            data = errors.classify(exc, stage="chat").to_dict()
+        yield _sse_frame("error", data)
+        return
     if prep.get("early"):
         yield _sse_frame("done", dict(prep["early"]))
         return

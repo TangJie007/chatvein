@@ -101,3 +101,10 @@ def test_curtail_injected_only_once() -> None:
     assert cost.CURTAIL_MESSAGE in str(first["messages"][0].content)
     # 第二次模型调用不再重复注入，否则模型会一直道歉不收敛
     assert before({}, None) is None
+
+
+def test_validate_rejects_bad_budget_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """启动自检：数字写错要在这里报，别拖到每一轮聊天都变成「内部错误」。"""
+    monkeypatch.setenv("CHATVEIN_TURN_TOKEN_BUDGET", "5k")
+    with pytest.raises(ValueError):
+        cost.validate()

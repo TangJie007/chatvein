@@ -1,6 +1,7 @@
 import { act, renderHook } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as api from "../../api";
+import { HttpError } from "../../api/client";
 import type { ChatMessageRecord, TurnTrace } from "../../api";
 import { toChatMessages, toLiveSteps, useChatSession } from "./useChatSession";
 
@@ -281,5 +282,38 @@ describe("useChatSession（发送 / 撤回 / 清理基线）", () => {
     expect(result.current.messages[0]).toMatchObject({ role: "user" });
     expect(result.current.sending).toBe(false);
     expect(result.current.error).toBe("本轮生成已中断，未收到结果");
+  });
+
+  it("重试：先摘掉失败轮的提问气泡，同一句不会在界面上出现两次", async () => {
+    vi.mocked(api.sendChat).mockReset();
+    vi.mocked(api.sendChat).mockRejectedValueOnce(
+      new HttpError(429, "模型触发限流", {
+        code: "MODEL_RATE_LIMIT",
+        retryable: true,
+        stage: "model",
+      })
+    );
+
+    const { result } = renderHook(() =>
+      useChatSession({ conversationId: "c1", roleId: null })
+    );
+    await settleInitialLoad();
+
+    await act(async () => {
+      await result.current.send("重试这一句");
+    });
+    // 失败轮：提问气泡留下（错误挂在它下面），错误码推导出「再试一次」
+    expect(result.current.errorAction).toBe("retry");
+    expect(result.current.messages.filter((m) => m.role === "user")).toHaveLength(1);
+
+    vi.mocked(api.sendChat).mockResolvedValueOnce(chatReply() as never);
+    await act(async () => {
+      await result.current.retryLastFailure();
+    });
+
+    const users = result.current.messages.filter((m) => m.role === "user");
+    expect(users).toHaveLength(1);
+    expect(users[0]?.content).toBe("重试这一句");
+    expect(result.current.error).toBeNull();
   });
 });
