@@ -1,6 +1,6 @@
 # 生产级增强 · 第二批：体验与生态（详细设计评审稿）
 
-> 对应总纲 [`production-roadmap.md`](./production-roadmap.md)。**设计评审中，尚未改代码**。
+> 对应总纲 [`production-roadmap.md`](./production-roadmap.md)。**2.1–2.4 全部已实现（2026-11-19）**。
 > 依赖第一批：2.2 依赖 1.3 checkpointer；2.3/2.4 复用 1.2 结构化错误模型。
 > 四个能力：2.1 token 级流式 / 2.2 统一 HITL 审批 / 2.3 真 MCP 协议客户端 / 2.4 多 agent 并行编排。
 

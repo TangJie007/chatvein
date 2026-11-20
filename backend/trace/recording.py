@@ -280,8 +280,11 @@ class TraceRecorder:
         *,
         meta: dict[str, Any] | None = None,
         on_change: Callable[[dict[str, Any]], None] | None = None,
+        turn_id: str | None = None,
     ) -> None:
         self.input = message
+        #: 只用于 OTel 导出（payload 里不放，避免多一条需要前后兼容的字段）。
+        self.turn_id = turn_id or ""
         self.started = time.perf_counter()
         self.started_at = _iso_now()
         self.finished_at = self.started_at
@@ -834,6 +837,7 @@ def tracing(
     *,
     meta: dict[str, Any] | None = None,
     on_change: Callable[[dict[str, Any]], None] | None = None,
+    turn_id: str | None = None,
 ) -> Iterator[TraceRecorder]:
     """开始一轮追踪。已经在追踪中时复用当前记录，避免嵌套各写一份。"""
     current = _recorder.get()
@@ -842,9 +846,11 @@ def tracing(
             current.meta.update({key: value for key, value in meta.items() if value is not None})
         if on_change is not None and current.on_change is None:
             current.on_change = on_change
+        if turn_id:
+            current.turn_id = turn_id
         yield current
         return
-    recorder = TraceRecorder(message, meta=meta, on_change=on_change)
+    recorder = TraceRecorder(message, meta=meta, on_change=on_change, turn_id=turn_id)
     recorder.handler = TraceHandler(recorder)
     token = _recorder.set(recorder)
     try:
@@ -857,5 +863,9 @@ def tracing(
     finally:
         if recorder.status == "running":
             recorder.status = "done"
-        recorder.flush()
+        payload = recorder.flush()
         _recorder.reset(token)
+        # 默认关闭（CHATVEIN_OTEL=0）；在 finally 里导出，取消 / 报错的轮次也能带走。
+        from . import otel  # pyright: ignore[reportImplicitRelativeImport]
+
+        otel.export_turn(payload, turn_id=recorder.turn_id or None)

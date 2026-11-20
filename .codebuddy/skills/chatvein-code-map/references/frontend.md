@@ -58,7 +58,7 @@ src/
 |---|---|---|---|
 | `client.ts` | a | 请求底座：后端 URL/token、超时、重试、掉线广播 | `backendRequest`、`waitForBackend`、`getBackendUrl`、`getBackendToken`、`markBackendReady`、`markBackendLost`、`onBackendLost`、`RequestTimeoutError` |
 | `conversations.ts` | b | 会话/消息/群成员/技能/工作区/产物 | `sendChat`（长请求 `timeoutMs: 0`）、`cancelChat`、`deleteLastTurn`、`listConversations`、`getConversation`、`createConversation`、`deleteConversation`、`clearHistory`、`updateConversationRole`、`updateConversationSkills`、`registerGroupMembers`、`getGroupMembers`、`getConversationWorkspace`、`openConversationWorkspace`、`openArtifactLocation` |
-| `traces.ts` | b | 每轮追踪 | `listTraces`、`getTrace`；`TurnTrace` / `TraceStep` 类型 |
+| `traces.ts` | b | 每轮追踪 + 会话健康度 | `listTraces`、`getTrace`、`getConversationMetrics`；`TurnTrace` / `TraceStep` / `ConversationMetrics` 类型 |
 | `mcps.ts` | b | 工具目录 + Bash 审批 | `mcpCatalog`、`listBashPending`、`approveBash`、`denyBash` |
 | `models.ts` | c | 模型 CRUD + 连通性测试 | `listModels`、`createModel`、`updateModel`、`deleteModel`、`testModelConnection` |
 | `roles.ts` | c | 角色 CRUD | `listRoles`、`getRole`、`createRole`、`updateRole`、`deleteRole`；`RoleRecord`、`RoleTone` |
@@ -131,7 +131,7 @@ src/
 | `layout/CenterHint.tsx` | e | 居中提示/加载 |
 | `layout/ErrorBoundary.tsx` | c | 顶层错误边界 |
 | `embedding/EmbeddingProvider.tsx` | c | 向量模型状态上下文：`getEmbeddingStatus` / `prepareEmbedding` 轮询，供知识库页使用 |
-| `trace/TraceWindow.tsx` | c | 独立追踪窗口（`/trace/:conversationId`）：轮次列表 + span 树 + payload |
+| `trace/TraceWindow.tsx` | c | 独立追踪窗口（`/trace/:conversationId`）：轮次列表（顶部「近 14 天」健康度条幅：成功率 / P95 token / 工具失败率 / 首条告警）+ span 树 + payload |
 | `trace/JsonBlock.tsx` | e | JSON/参数折叠展示 |
 | `ui/*.tsx` | e | Radix/shadcn 基础组件：button、input、dialog、select、sheet、tooltip、scroll-area、switch、slider、badge、avatar-picker 等 |
 | `ui/index.ts` | e | UI 组件桶导出 |

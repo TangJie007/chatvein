@@ -222,12 +222,16 @@ Token：Rust 通过 `CHATVEIN_TOKEN` 注入，前端带 `X-ChatVein-Token`，中
 | 文件 | 等级 | 职责 |
 |---|---|---|
 | `recording.py` | a | LangChain 回调 → span 树 / LLM / 工具 / 参数 / 用量；上下文管理器 `tracing`；`span`、`note`、`trace_checkpoint`、`record_tools_if_absent`、`complete`、`cancel_current_turn` |
-| `store.py` | b | 会话库 `turn_traces(turn_id, payload_json, created_at)` 读写 |
-| `service.py` | b | `recording`、`list_traces`、`get_trace`、`_session_db`（定位会话库） |
-| `controller.py` | c | `/api/conversations/{id}/traces` 与 `/{turn_id}` |
+| `store.py` | b | 会话库 `turn_traces(turn_id, payload_json, created_at)` 读写；`iter_turn_payloads`（指标扫描用，`created_at DESC, rowid DESC`） |
+| `metrics.py` | c | `compute_metrics`（成功率 / 取消率 / 错误率 / 平均与 P95 token·耗时 / 按天 / 按难度 / 告警）、`count_tool_failures`、`merge_tool_stats`；**查询时聚合，不落表** |
+| `otel.py` | c | 可选 OTel：`enabled()`（`CHATVEIN_OTEL`）、`export_turn()`；`tracing` 结束时一次性导出整棵 span 树，时间戳按 `start_ms` 还原 |
+| `service.py` | b | `recording`、`list_traces`、`get_trace`、`metrics`、`_session_db`（定位会话库） |
+| `controller.py` | c | `/api/conversations/{id}/traces`、`/{turn_id}`、`/{id}/metrics` |
 | `module.py` | b | `APIRouter(prefix="/api/conversations")`（与 conversations 同前缀，注册顺序需注意） |
 
-前端对应：`api/traces.ts`、`useChatSession.toLiveSteps`、`InsightPanel`、`TraceWindow`、`lib/openTrace.ts`。
+前端对应：`api/traces.ts`、`useChatSession.toLiveSteps`、`InsightPanel`、`TraceWindow`（侧栏拉 `/metrics` 显示健康度）、`lib/openTrace.ts`。
+
+要点：指标口径只在这里定义一处；`/metrics` 的轮次指标来自摘要（按 `days` 过滤），工具失败率来自最近 `scan`（默认 100）轮 payload 扫描，两个分母不同，报告里分开列。
 
 ## 13. 长期记忆（`backend/memory/`）
 
@@ -266,3 +270,16 @@ Token：Rust 通过 `CHATVEIN_TOKEN` 注入，前端带 `X-ChatVein-Token`，中
 5. 迁移：`db.py` 手写幂等迁移，版本号严格递增；禁止新增 Alembic。
 6. ContextVar（trace / sandbox / turn / team）只在 `_run_chat_heavy` 同线程使用。
 7. 新增字段要同步：`entity` → `dto` → `service` → `controller` → 前端 `api` 类型 → 组件。
+8. 评测：规则断言（`eval.cases.check_rules`）必跑，judge 默认关；新能力要加用例。指标不要落表（`trace/metrics.py` 查询时聚合）；OTel 默认关、SDK 不进安装包，导出失败一律吞掉。
+
+## 16. 离线评测（backend/eval/）
+
+| 文件 | 等级 | 内容 |
+|---|---|---|
+| `eval/cases.py` | c | `load_cases` / `normalize_case`（校验 id、message、列表字段）、`check_rules`（工具是否被调用、回复关键/禁用片段、非空） |
+| `eval/judge.py` | c | `JudgeScores`（relevance/correctness/tool_use/format 0-5 + reason）、`resolve_model`、`judge_case`（`invoke_structured` 走 `with_structured_output`） |
+| `eval/runner.py` | c | CLI：`--cases/--role/--limit/--judge/--judge-model/--judge-threshold/--report/--max-seconds/--dry-run/--quiet`；每条用例临时沙箱 + `bind_turn`，退出码 `0/1/2` |
+| `eval/cases/*.json` | — | 用例集；字段：`id` `message` `expect_tools` `forbid_tools` `expect_substring` `forbid_substring` `rubric` |
+| `tools/run_eval.ps1` | e | PowerShell 入口（`-Cases` / `-Judge` / `-Report` / `-Rest` 透传），退出码直接传 |
+
+要点：不写 `turn_traces`（不污染真实会话指标）；报告 `results[].status` 取 `pass/fail/error`；`reply` 超 4000 字截断。细节见 `docs/eval.md`。

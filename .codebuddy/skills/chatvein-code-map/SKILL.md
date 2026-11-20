@@ -43,6 +43,8 @@ description: ChatVein 桌面 Agent（Tauri 2 外壳 + React 19 + Python FastAPI 
 | 会话工作区 | `<主空间>/<YYYYMMDD-HHMMSS-xxxxx>/`，含 `output/` `logs/` `runs/`（上传时另建 `uploads/`） | `backend/mcps/sandbox.py` |
 | 审计 | `<data>/audit.sqlite`（`audit_events`，只追加；`CHATVEIN_AUDIT_DB_PATH` 可覆盖） | `backend/mcps/audit.py` |
 | 权限策略 | `<data>/permissions.json`（用户可编辑；`CHATVEIN_PERMISSIONS_PATH` 可覆盖） | `backend/mcps/permissions.py` |
+| 质量指标 | **不落库**：由 `turn_traces` 查询时聚合（`GET /api/conversations/{id}/metrics`） | `backend/trace/metrics.py` |
+| 评测报告 | `eval-report.json`（路径由 `--report` 决定，不入库；`-` 打到 stdout） | `backend/eval/runner.py` |
 | 会话消息 / 短期记忆 / 追踪 | `<工作区>/logs/session.sqlite`（`turn_traces` 表） | `conversations/session_store.py`、`trace/store.py` |
 | 长期记忆 | `<data>/memory.sqlite`（`memories` 表；`CHATVEIN_MEMORY_DB_PATH` 可覆盖） | `backend/memory/store.py::memory_db_path` |
 | 已安装技能 | `<data>/skills/<slug>/SKILL.md` + `manifest.json` | `backend/skills/local_store.py` |
@@ -117,6 +119,7 @@ description: ChatVein 桌面 Agent（Tauri 2 外壳 + React 19 + Python FastAPI 
 → `trace/store.save_turn_trace` 写 `session.sqlite.turn_traces`
 → `GET /api/conversations/{id}/traces` / `.../{turn_id}` → `openTraceWindow` 打开独立窗口
 → `TraceWindow` + `JsonBlock` 展示；聊天内 `insightData` / `InsightPanel` 复用同一 payload。
+→ `tracing` 结束时 `trace/otel.export_turn`（`CHATVEIN_OTEL=1` 才生效）；侧栏再拉 `/metrics`（`trace/metrics.py` 查询时聚合，不落表）。
 
 ### G. 长期记忆
 
@@ -142,7 +145,7 @@ description: ChatVein 桌面 Agent（Tauri 2 外壳 + React 19 + Python FastAPI 
 |---|---|
 | `/api/chat`、`/api/chat/cancel`、`/api/bash/*`、`/api/health`、`/api/mcps/catalog`、`/api/workspace`、`/api/uploads`、`/api/db/*` | `backend/main.py` |
 | `/api/conversations` | `backend/conversations/module.py` |
-| `/api/conversations/{id}/traces` | `backend/trace/module.py`（与 conversations 同前缀，注意顺序） |
+| `/api/conversations/{id}/traces`、`/{id}/metrics` | `backend/trace/module.py`（与 conversations 同前缀，注意顺序） |
 | `/api/models` | `backend/models/module.py` |
 | `/api/roles` | `backend/roles/module.py` |
 | `/api/skills` | `backend/skills/module.py` |
@@ -173,6 +176,8 @@ description: ChatVein 桌面 Agent（Tauri 2 外壳 + React 19 + Python FastAPI 
 | 技能市场 / 安装 / 注入 | `backend/skills/service.py`、`local_store.py` | `SkillsView`、`SkillDetailDrawer`、`mcps/tools/skills.py` |
 | 知识库 / RAG | `backend/knowledge/service.py`、`mcps/tools/kb.py` | `embeddings/service.py`、`KnowledgeView`、`KbDocEditor`、`KbImportDialog` |
 | 追踪 / 思考流 | `backend/trace/recording.py`、`store.py`、`service.py` | `TraceWindow`、`lib/openTrace.ts`、`useChatSession` 轮询、`insightData.ts` |
+| 离线评测 / 用例 / 报告 | `backend/eval/cases.py`、`backend/eval/runner.py` | `eval/judge.py`、`eval/cases/*.json`、`tools/run_eval.ps1`、`docs/eval.md` |
+| 质量指标 / 告警 / OTel | `backend/trace/metrics.py`、`backend/trace/otel.py` | `trace/{store,service,controller}.py`、`TraceWindow` 侧栏、`src/api/traces.ts` |
 | 长期记忆 抽取 / 召回 / 整理 | `backend/memory/service.py` | `store.py`、`main.py`（`recall_into_role` + `maybe_extract_async`）、`trace/recording.py`、`api/memories.ts`、`settings/MemorySection.tsx` |
 | 会话 / 消息 / 撤回 / 工作区 | `conversations/service.py`、`session_store.py` | `mcps/sandbox.py`、`ChatView`、`SessionList`、`useChatSession` |
 | 群组 / @ / 团队分工 | `lib/groupsStore.ts`、`GroupView`、`GroupChatView`、`group/*` | `chats/service.py`、`agents/delegation.py` |
@@ -200,6 +205,7 @@ description: ChatVein 桌面 Agent（Tauri 2 外壳 + React 19 + Python FastAPI 
 12. 文档可能滞后：`docs/项目目录总结.md` 仍把 `chats` 写成「预留」，实际已是群组表模块；**以代码为准**。
 13. **记忆召回只改 role prompt 副本**（`memory.recall_into_role`）：`role_runtime` 跨轮/跨会话缓存，原地注入会串台；抽取必须在消息落盘之后异步跑，且明细只在 `memory.sqlite`（主库不建表）。
 14. **权限只有一个拦截点**：`graphs/common.py::permission_gate_middleware`（`permissions.check` 顺序首命中，`ask` 复用 `approval.py`，`deny` 返回 `TOOL_DENIED`）；`resolve_tools` 只用 `static_deny` 摘「无参数条件」的工具。规则文件解析失败只能退回空策略 + 暴露 `error`，不得静默放行/拒绝。审计动作名 `tool.call` / `tool.deny` / `permission.config`，`decision_by` 写清来源。
+15. **评测断言必跑、judge 默认关**：规则断言（`eval.cases.check_rules`）是硬门槛，`--judge` 只影响分数；用例在临时会话沙箱里跑、跑完即删，不写 `turn_traces`。指标（`trace/metrics.py`）查询时聚合、**不落表**，阈值只在那一处定义；OTel 默认关（`CHATVEIN_OTEL=0`），SDK 不进安装包，导出失败必须吞掉。
 
 ## 6. 工程命令 / 文档
 
@@ -211,6 +217,7 @@ description: ChatVein 桌面 Agent（Tauri 2 外壳 + React 19 + Python FastAPI 
 | 冻结 Python 后端 | `npm run prepare:backend` → `tools/build_backend.ps1` |
 | 前端测试 | `npm test`（`useChatSession.test.ts`） |
 | 后端测试 | `npm run test:backend`（`.venv/Scripts/python.exe -m pytest`，默认收集 `backend/tests`） |
+| 离线评测 | `.\tools\run_eval.ps1`（`-Judge` 开评分；`-Rest @("--dry-run")` 只校验用例） |
 | 手动起后端 | `python backend/main.py --port 8420`（需 `X-ChatVein-Token`） |
 | Python 依赖 | `pyproject.toml`；`backend/requirements.txt` / `requirements-dev.txt` |
 | 类型检查配置 | `pyrightconfig.json`、`tsconfig.json`、`.flake8` |
@@ -222,6 +229,7 @@ description: ChatVein 桌面 Agent（Tauri 2 外壳 + React 19 + Python FastAPI 
 | `docs/agent-graphs.md` | 改 simple/medium/hard 图、工具循环、提示词 |
 | `docs/agents.md` | 改理解/改写、工具选择、上下文装配 |
 | `docs/features.md` | 了解功能边界 |
+| `docs/eval.md` | 改评测用例 / 报告 / 退出码 |
 | `docs/skills.md` | 改技能市场/安装/注入 |
 | `docs/workspace.md` | 改工作区/沙箱/产物 |
 | `docs/short-term-memory.md` | 改历史/短期记忆 |
@@ -234,7 +242,7 @@ description: ChatVein 桌面 Agent（Tauri 2 外壳 + React 19 + Python FastAPI 
 | 文件 | 等级 | 内容 | 何时打开 |
 |---|---|---|---|
 | `references/frontend.md` | b | `src/` 全量文件职责、a–f 等级、api 映射、组件依赖、前端约定 | 改页面/组件/请求/状态 |
-| `references/backend-core.md` | a | `main.py`、`db.py`、`agents/`、`conversations/`、`chats/`、`models/`、`roles/`、`skills/`、`embeddings/`、`knowledge/`、`trace/`、`memory/` | 改业务/Agent/存储/接口 |
+| `references/backend-core.md` | a | `main.py`、`db.py`、`agents/`、`conversations/`、`chats/`、`models/`、`roles/`、`skills/`、`embeddings/`、`knowledge/`、`trace/`、`memory/`、`eval/` | 改业务/Agent/存储/接口 |
 | `references/backend-tools.md` | a | `mcps/` 注册表、16 个工具模块、运行时、分组、审批与沙箱 | 改工具/权限/文件访问 |
 | `references/tauri-build.md` | b | Rust 启动监督、事件、打包、更新、脚本、测试、文档 | 改启动/打包/窗口/更新 |
 

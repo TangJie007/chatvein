@@ -1,6 +1,6 @@
 # 生产级增强 · 第一批：内核韧性（详细设计评审稿）
 
-> 对应总纲 [`production-roadmap.md`](./production-roadmap.md)。**设计评审中，尚未改代码**。
+> 对应总纲 [`production-roadmap.md`](./production-roadmap.md)。**1.1–1.4 全部已实现**（逐项日期见各节状态行）。
 > 本批四个能力：1.1 上下文工程 / 1.2 工具可靠性 / 1.3 断点续跑 / 1.4 长期记忆。
 > 全部在现有进程内链路增强，不引入容器、不改 Tauri。每个能力含：现状 → 目标 → 方案 → 改动文件 → 契约/数据 → 风险与回滚 → 验收。
 
@@ -155,7 +155,7 @@ class ToolResult:
 
 > 本能力是 2.2 统一 HITL 的前置。**评审已确认（2026-11-19）：「崩溃/重启后续跑」与「用户点停止后保留现场可恢复」两者都做。** 下文按此范围实现。
 >
-> **状态：后端已实现（2026-11-19）**。新增 `agents/checkpoint.py::SqliteCheckpointer`，`run_pipeline(thread_id=..., resume=...)` 接入；`GET /api/conversations/{id}/resumable`、`POST /api/conversations/{id}/resume`（continue/discard）；开关 `CHATVEIN_CHECKPOINT`（默认开）。**前端「继续生成 / 放弃」按钮随 2.1 一起改 `useChatSession`，尚未接线。**
+> **状态：后端已实现（2026-11-19）**。新增 `agents/checkpoint.py::SqliteCheckpointer`，`run_pipeline(thread_id=..., resume=...)` 接入；`GET /api/conversations/{id}/resumable`、`POST /api/conversations/{id}/resume`（continue/discard）；开关 `CHATVEIN_CHECKPOINT`（默认开）。前端「继续 / 放弃」入口已随 2.1 接线（`useChatSession.resumable` + `ChatPanel` 提示条）。
 
 ### 现状（证据）
 

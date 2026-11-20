@@ -1,6 +1,6 @@
 # 生产级增强 · 第三批：安全与运维（详细设计评审稿）
 
-> 对应总纲 [`production-roadmap.md`](./production-roadmap.md)。**3.1 已实现（2026-11-20）；3.2 / 3.3 设计中**。
+> 对应总纲 [`production-roadmap.md`](./production-roadmap.md)。**3.1–3.3 全部已实现（2026-11-20）**。
 > 边界：本批**不引入容器/OS 级隔离**（需求已确认），只在现有「路径约束 + 正则策略 + 审批」模型上加固。
 > 依赖前两批：3.1 复用 1.2 错误模型；3.2 复用 2.2 审批策略 + 2.3 外部工具契约；3.3 复用全链路 trace。
 > 三个能力：3.1 沙箱加固 / 3.2 细粒度权限 + 审计 / 3.3 eval 闭环 + OTel 可观测。
@@ -198,6 +198,8 @@
 
 ## 3.3 eval 闭环 + OTel 可观测
 
+> **状态：已实现（2026-11-20）**。eval 在 `backend/eval/`（用例 `backend/eval/cases/`），judge 默认关闭（`--judge` 才开），规则断言必跑；OTel 只在 `CHATVEIN_OTEL=1` 时启用且 SDK 不进安装包；指标是查询时聚合的 JSON，没有 `trace_metrics` 表。详见文末「实现纪要」「与评审稿的差异」。
+
 ### 现状（证据）
 
 - 有完整自研 trace（span / LLM / 工具 / token，落 `session.sqlite.turn_traces`），但无离线 eval 集、无 LLM-as-judge、无质量指标回归；`hard.verify` 是唯一运行期自检。
@@ -257,6 +259,45 @@
 - 开 `CHATVEIN_OTEL=1` 配 console 导出，追踪窗与 OTel 输出节点一致。
 - 指标报告给出成功率/取消率/平均 token 等真实数据。
 
+### 实现纪要
+
+| 文件 | 等级 | 实际改动 |
+|---|---|---|
+| `backend/eval/{cases,judge,runner}.py` | c | 新建：用例读取与校验（`load_cases` / `normalize_case`）、规则断言（`check_rules`）、结构化评分（`JudgeScores` 四维 0-5）、批量运行 + 报告 + CLI |
+| `backend/eval/cases/smoke.json` | — | 4 条冒烟用例（直答 / 时间工具 / 计算工具 / 闲聊不调工具） |
+| `backend/trace/otel.py` | c | 新建：`enabled()` / `export_turn()` 懒加载 SDK，span 树一次性导出，时间戳按 `start_ms` 还原 |
+| `backend/trace/metrics.py` | c | 新建：`compute_metrics`（成功率 / 取消率 / 错误率 / 平均与 P95 token·耗时 / 按天 / 按难度）、`count_tool_failures`、`merge_tool_stats`、告警 |
+| `backend/trace/recording.py` | b | `tracing(..., turn_id)`；`finally` 里 `flush` 后调 `otel.export_turn`（取消 / 报错的轮次也导出） |
+| `backend/trace/store.py` | e | `iter_turn_payloads(db_path, limit)`：一次连接读最近 N 轮完整 payload（`created_at DESC, rowid DESC`） |
+| `backend/trace/service.py` / `controller.py` | b / e | `TraceService.metrics()` + `GET /api/conversations/{id}/metrics?days&scan`（会话不存在 404） |
+| `backend/tests/test_eval.py` | — | 21 项：用例校验、规则断言、runner 判定 / 错误 / judge 阈值、报告口径、judge 假模型、指标数学与告警、`iter_turn_payloads`、`/metrics` 路由、OTel 默认关闭与 span 映射 |
+| `tools/run_eval.ps1` | e | 评测入口（`-Cases` / `-Judge` / `-Report` / 透传参数），退出码直接传递 |
+| `src/api/traces.ts` | d | `ConversationMetrics` 等类型 + `getConversationMetrics` |
+| `src/components/trace/TraceWindow.tsx` | c | 侧栏「近 N 天」健康度条幅：成功率、平均/P95 token、工具失败率、首条告警 |
+| `docs/eval.md` | — | 用例格式、命令、退出码、报告字段、局限 |
+
+行为要点：
+
+- **硬门槛与软评分分离**：`check_rules`（工具是否被调用、回复是否含关键 / 禁用片段、回复非空）必跑；`--judge` 只影响「分数」不影响「能不能跑」，避免模型抖动把评测本身弄坏。
+- **临时会话沙箱**：每条用例 `create_conversation_dir()` + `use_conversation_sandbox()` + `bind_turn()`，跑完 `remove_conversation_dir()`——工具的文件 / 命令落在一次性目录，不污染用户工作区，也不会因为没有沙箱直接失败。
+- **退出码**：`0` 全通过；`1` 有 fail / error / 预算跳过；`2` 用例文件不合法或没有可用模型。接 CI 只需要执行这一步。
+- **时间预算而非硬超时**：`--max-seconds` 到点就不再开新用例；单条硬超时会留下无法安全终止的线程与在途请求，宁可标记跳过。
+- **OTel 时间轴**：`base = now - elapsed_ms`，每步 `start = base + start_ms`、`end = start + elapsed_ms`，所以外部 APM 的瀑布图和追踪窗一致；导出放在 `tracing` 的 `finally`，取消与报错也留痕。
+- **指标口径**：轮次指标来自 `turn_traces` 摘要并按 `days` 过滤；工具失败率来自最近 `scan`（默认 100）轮 payload 扫描——两者分母不同，报告里分开列出，前端只展示失败次数。
+- **告警门槛**：窗口内 ≥5 轮才判定（错误率 ≥20% warn / ≥40% critical，取消率 ≥30% warn，工具失败率 ≥50% warn），少量样本不报警。
+
+与评审稿的差异：
+
+1. **用例目录 `evals/cases/` → `backend/eval/cases/`**：跟着包走，后端冻结/打包时不用再补一条资源路径。
+2. **`--no-judge`（评审稿）→ `--judge`（实现）**：默认就是关，不需要反向开关；CI 只跑规则断言即可。
+3. **没有 `trace_metrics` 表**：指标是查询时从追踪聚合出来的视图，落表会引入清理与口径漂移；`GET /api/conversations/{id}/metrics` 直接返回 JSON（带 `schema_version`）。
+4. **`prompt_version` 联动未做**：prompt registry（§4.4）还没落地，报告先带 `role/model_id`；等 registry 有了再补版本字段，避免先造一个假字段。
+5. **`OtelBridge` 不是 trace callbacks 的附加 handler**：回调拿到的是整棵树的快照，逐帧 diff 既容易错、也会丢父子关系；改为 `tracing()` 结束时一次性导出。实时性换成正确性，外部 APM 拿到的是完整瀑布图。
+6. **OTel 依赖不进 `requirements.txt`**：桌面安装包不该为可选导出多背体积；`pip install opentelemetry-sdk`（要 OTLP 再加 `opentelemetry-exporter-otlp-proto-http`）即可，缺依赖静默跳过。
+7. **前端指标条幅放在追踪窗侧栏**，不是「洞察」页：`InsightPanel` 是产物 / 线程视图，健康度属于追踪上下文，放一起才能「看到告警 → 点进某轮」。
+8. **用例暂不支持按例准备文件**（评审稿也没要求）：沙箱是空的，先只覆盖「不需要预置本地文件」的用例；要测文件类工具再加 `${case_dir}` 约定。
+9. **没有 CI 门禁接线**：仓库当前没有 workflow 文件，先把退出码规范好（`0/1/2`），接入 CI 是纯配置动作，不阻塞能力交付。
+
 ---
 
 ## 第三批实施顺序与依赖
@@ -287,4 +328,4 @@
 | 2.4 | 并行编排 | `CHATVEIN_PARALLEL_DELEGATE` | agent_tasks（会话库） | graphs/* | 3 成员并行 |
 | 3.1 | 沙箱加固 | `CHATVEIN_SANDBOX_LIMITS` | —（写 audit） | common.py | env/限额/pip |
 | 3.2 | 权限审计 | `CHATVEIN_PERMISSION_MODE` / `CHATVEIN_AUDIT` | audit.sqlite | registry, common | 拒绝/审计回放 |
-| 3.3 | eval+OTel | `CHATVEIN_OTEL` / `--no-judge` | trace_metrics（会话库） | recording.py | eval 门禁 |
+| 3.3 | eval+OTel | `CHATVEIN_OTEL` / `--judge` | —（指标查询时聚合，不落表） | recording.py | eval 门禁 |

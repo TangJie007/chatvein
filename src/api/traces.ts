@@ -111,3 +111,70 @@ export function getTrace(conversationId: string, turnId: string) {
     `/api/conversations/${conversationId}/traces/${turnId}`
   );
 }
+
+export interface MetricsOverall {
+  turns: number;
+  done: number;
+  cancelled: number;
+  error: number;
+  running: number;
+  success_rate: number;
+  cancel_rate: number;
+  error_rate: number;
+  avg_elapsed_ms: number;
+  p95_elapsed_ms: number;
+  avg_tokens: number;
+  p95_tokens: number;
+  llm_calls: number;
+  tool_calls: number;
+  tool_failures?: number;
+  tool_failure_rate?: number | null;
+}
+
+export interface MetricsDay {
+  date: string;
+  turns: number;
+  done: number;
+  error: number;
+  cancelled: number;
+  success_rate: number;
+  avg_tokens: number;
+  p95_tokens: number;
+  avg_elapsed_ms: number;
+}
+
+export interface MetricsAlert {
+  code: string;
+  level: "warn" | "critical" | string;
+  value: number;
+  message: string;
+}
+
+export interface MetricsToolRow {
+  tool: string;
+  calls: number;
+  failures: number;
+}
+
+/** 会话健康度：窗口内成功率、token / 耗时分布、工具失败率与告警。 */
+export interface ConversationMetrics {
+  schema_version: number;
+  generated_at: string;
+  window_days: number;
+  overall: MetricsOverall;
+  by_day: MetricsDay[];
+  by_difficulty: Array<{
+    difficulty: string;
+    turns: number;
+    success_rate: number;
+    avg_tokens: number;
+  }>;
+  tool_by_name: MetricsToolRow[];
+  alerts: MetricsAlert[];
+}
+
+export function getConversationMetrics(conversationId: string, days = 14) {
+  return backendRequest<ConversationMetrics>(
+    `/api/conversations/${conversationId}/metrics?days=${days}`
+  );
+}

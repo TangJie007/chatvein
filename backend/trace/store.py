@@ -126,3 +126,28 @@ def get_turn_trace(db_path: Path, turn_id: str) -> dict[str, Any] | None:
     except json.JSONDecodeError:
         return None
     return payload if isinstance(payload, dict) else None
+
+
+def iter_turn_payloads(db_path: Path, *, limit: int = 100) -> list[dict[str, Any]]:
+    """最近 ``limit`` 轮的完整 payload（指标要数工具失败，摘要里没有细节）。
+
+    一次连接读完，避免按轮 ``get_turn_trace`` 反复开库。
+    """
+    if not db_path.is_file() or limit <= 0:
+        return []
+    ensure_trace_table(db_path)
+    with _connect(db_path) as conn:
+        rows = conn.execute(
+            # created_at 只到秒：同一秒内落盘的多轮靠 rowid 定先后。
+            "SELECT payload_json FROM turn_traces ORDER BY created_at DESC, rowid DESC LIMIT ?",
+            (int(limit),),
+        ).fetchall()
+    payloads: list[dict[str, Any]] = []
+    for row in rows:
+        try:
+            payload = json.loads(str(row["payload_json"]))
+        except json.JSONDecodeError:
+            continue
+        if isinstance(payload, dict):
+            payloads.append(payload)
+    return payloads

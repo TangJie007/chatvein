@@ -43,7 +43,8 @@
 | `backend/knowledge/` | 知识库文档 + 向量 + 检索 |
 | `backend/models/` | 模型配置（OpenAI 兼容） |
 | `backend/embeddings/` | 向量模型配置 |
-| `backend/trace/` | 追踪记录与查询 |
+| `backend/trace/` | 追踪记录与查询；`metrics.py` 查询时聚合指标、`otel.py` 可选 OTel 导出 |
+| `backend/eval/` | 离线评测：`cases.py` 用例与规则断言、`judge.py` 可选评分、`runner.py` CLI；用例在 `eval/cases/` |
 | `backend/memory/` | 长期记忆：抽取 / 巩固 / 召回，独立库 `memory.sqlite`（`CHATVEIN_MEMORY_DB_PATH`） |
 | `backend/security/` | 权限配置与审计查询接口（`/api/permissions`、`/api/audit/*`） |
 | `backend/db.py` | 主 SQLite 连接与迁移（SCHEMA_VERSION=14） |
@@ -77,6 +78,8 @@
 | 模型/向量模型 | `backend/models/`、`backend/embeddings/` | `src/api/models.ts`、`src/api/embeddings.ts`、`src/components/models/*` |
 | 长期记忆（抽取/召回/整理） | `backend/memory/service.py` | `store.py`、`controller.py`、`main.py`（召回注入 + 异步抽取）、`backend/trace/recording.py`、`src/components/settings/MemorySection.tsx` |
 | 追踪/面板 | `backend/trace/`、`src/components/trace/*`、`insightData.ts` | `src/lib/openTrace.ts`、`src/api/traces.ts` |
+| 离线评测 / 用例 / 报告 | `backend/eval/cases.py`、`backend/eval/runner.py` | `backend/eval/judge.py`、`backend/eval/cases/*.json`、`tools/run_eval.ps1`、`docs/eval.md` |
+| 质量指标 / 告警 / OTel | `backend/trace/metrics.py`、`backend/trace/otel.py` | `backend/trace/{store,service,controller}.py`、`TraceWindow.tsx`、`src/api/traces.ts` |
 | 提示词 | `backend/agents/graphs/prompts.py` | `router.py`、`tool_selector.py`、`hard.py` |
 | 启动/端口/token | `src-tauri/src/backend.rs` | `src/api/client.ts`、`BackendGate.tsx` |
 | 打包/更新 | `src-tauri/tauri.conf.json`、`tools/release_updater.ps1` | `src/lib/updater.ts`、`tools/build_backend.ps1` |
@@ -89,7 +92,8 @@
 - **技能**：`SkillsView` → `/api/skills` → 保存 SKILL.md → 渲染技能目录进 prompt → `load_skill` 读全文。
 - **工具**：角色勾选 → `registry.resolve_tools`（`permissions.static_deny` 预过滤）→ 图内中间件 `permission_gate_middleware`（`check` → allow/ask/deny → 配额）→ 调用 → `record_event("tool.call")`；离线直调 `registry.invoke_tools`（同样过 `check`，`ask` 按拒绝）。Bash/PowerShell 在工具内部走审批，文件越界走 `path_access`；子进程统一经 `sandbox_guard.run_limited`（env 清洗 + 限额 + 审计留痕）。
 - **记忆**：`main.py::_run_chat_heavy` → `memory_service.recall_into_role`（role prompt 副本）→ 图；落盘后 `maybe_extract_async` → `memory.sqlite`（默认 `pending`）→ `PATCH /api/memories/{id}` 确认 → 后续轮召回。
-- **追踪**：`agents/graphs/pipeline.run_pipeline` → `trace.recording.tracing` → span 树 → `turn_traces.payload_json` → `/api/conversations/{id}/traces/{turn}` → `TraceWindow`。
+- **追踪**：`agents/graphs/pipeline.run_pipeline` → `trace.recording.tracing` → span 树 → `turn_traces.payload_json` → `/api/conversations/{id}/traces/{turn}` → `TraceWindow`；`tracing` 结束时（含取消/报错）调 `trace.otel.export_turn`（默认关），`TraceWindow` 侧栏再拉 `/metrics` 显示健康度。
+- **评测**：`tools/run_eval.ps1` → `eval.runner` → `eval.cases` 校验用例 → 临时会话沙箱内 `run_pipeline` → `check_rules`（必跑）→ 可选 `judge.case` → `eval-report.json`；退出码 `0/1/2`。
 
 ## 5. 硬约定
 
@@ -119,6 +123,8 @@
 24. 审计（`mcps/audit.py`）只追加、永不抛错、写前脱敏；新工具要留痕就调 `record_event`，不要新建审计库或直连 SQLite。审计与 trace 是两回事：trace 给用户看思考过程，审计给事后查证据。
 25. 权限判定只走 `mcps/permissions.py::check()`（ReAct 最外层的 `permission_gate_middleware` 是唯一拦截点），工具里不要自己判断能不能执行；`ask` 复用 `approval.py`，`deny` 必须返回 `TOOL_DENIED` 结构化结果。规则文件坏了只能「退回空策略 + 暴露错误」，**不得静默放行或静默拒绝**。
 26. 审计动作名固定：`tool.call`（放行后执行）/ `tool.deny`（规则拒绝、用户拒绝、超时、离线 ask）/ `permission.config`（策略文件不可解析）；沙箱另有 `sandbox.*` / `shell.exec`。`decision_by` 写清来源（`rule:<id>` / `mode:strict` / `user:allow` / `fallback`），便于回放。
+27. 评测里**规则断言必跑、judge 默认关**（`--judge` 才开）：改 prompt / 工具 / 路由要同步跑一次 `tools/run_eval.ps1`，或至少 `--dry-run` 校验用例文件。新能力要加用例，不要在评测里绕过临时沙箱去写用户工作区。
+28. 指标是**查询时聚合的视图**，不要再建 `trace_metrics` 表；告警阈值/口径只在 `trace/metrics.py` 定义一处（前端只展示，不自己算）。OTel 默认关（`CHATVEIN_OTEL=0`）、SDK 不进安装包，导出失败必须吞掉——可观测性不能反过来打断对话。
 
 ## 6. 常用命令
 
@@ -130,6 +136,10 @@ npm run app:dev        # Tauri dev（自动起后端）
 npm run build          # tsc && vite build
 npm test               # vitest run
 npm run test:backend   # .venv pytest
+
+# 离线评测（退出码 0 全通过 / 1 有失败 / 2 配置问题）
+.\tools\run_eval.ps1
+.\tools\run_eval.ps1 -Rest @("--dry-run")   # 只校验用例文件
 
 # 后端（独立）
 .\.venv\Scripts\python.exe backend\main.py --port 8420

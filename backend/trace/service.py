@@ -6,8 +6,9 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Iterator
 
+from .metrics import compute_metrics, merge_tool_stats
 from .recording import TraceRecorder, tracing
-from .store import get_turn_trace, list_turn_traces, save_turn_trace
+from .store import get_turn_trace, iter_turn_payloads, list_turn_traces, save_turn_trace
 
 
 def _role_meta(role: dict[str, Any] | None) -> dict[str, Any]:
@@ -61,6 +62,7 @@ class TraceService:
             message,
             meta=_role_meta(role),
             on_change=persist if db_path is not None and turn_id else None,
+            turn_id=turn_id,
         ) as recorder:
             yield recorder
 
@@ -76,6 +78,20 @@ class TraceService:
         if db is None:
             return None
         return get_turn_trace(db, turn_id)
+
+    def metrics(self, conversation_id: str, *, days: int = 14, scan: int = 100) -> dict[str, Any] | None:
+        """会话健康度。会话不存在返回 ``None``。
+
+        轮次指标按 ``days`` 窗口过滤；工具失败率按最近 ``scan`` 轮的 payload 统计
+        （窗口内可能一轮都没有，但工具问题不能因此显示成 0）。
+        """
+        db = self._session_db(conversation_id)
+        if db is None:
+            return None
+        summaries = list_turn_traces(db)
+        payloads = iter_turn_payloads(db, limit=scan)
+        stats = merge_tool_stats(payloads) if payloads else None
+        return compute_metrics(summaries, days=days, tool_stats=stats)
 
     def _session_db(self, conversation_id: str) -> Path | None:
         from conversations.service import ConversationsService  # pyright: ignore[reportMissingImports]

@@ -2,8 +2,10 @@ import dayjs from "dayjs";
 import { listen } from "@tauri-apps/api/event";
 import { useEffect, useState } from "react";
 import {
+  getConversationMetrics,
   getTrace,
   listTraces,
+  type ConversationMetrics,
   type TraceStep,
   type TraceSummary,
   type TurnTrace,
@@ -235,6 +237,7 @@ export function TraceWindow({
   turnId: string | null;
 }) {
   const [summaries, setSummaries] = useState<TraceSummary[]>([]);
+  const [metrics, setMetrics] = useState<ConversationMetrics | null>(null);
   const [activeTurn, setActiveTurn] = useState<string | null>(turnId);
   const [trace, setTrace] = useState<TurnTrace | null>(null);
   const [stepId, setStepId] = useState<string | null>(null);
@@ -301,6 +304,25 @@ export function TraceWindow({
   }, [conversationId, activeTurn, reloadKey]);
 
   useEffect(() => {
+    if (!conversationId) {
+      setMetrics(null);
+      return;
+    }
+    let cancelled = false;
+    // 指标读的是本会话已落盘的追踪，故障只影响这条小条幅，不影响主视图。
+    void getConversationMetrics(conversationId)
+      .then((value) => {
+        if (!cancelled) setMetrics(value);
+      })
+      .catch(() => {
+        if (!cancelled) setMetrics(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [conversationId, reloadKey]);
+
+  useEffect(() => {
     const live =
       trace?.status === "running" || summaries.some((item) => item.status === "running");
     if (!live) return;
@@ -323,6 +345,36 @@ export function TraceWindow({
             刷新
           </button>
         </div>
+        {metrics && metrics.overall.turns > 0 ? (
+          <div className="mx-2 mb-2 rounded-md bg-tint px-2.5 py-2 text-[11px] leading-4 text-ink-500">
+            <div className="flex items-center justify-between">
+              <span>
+                近 {metrics.window_days} 天 · {metrics.overall.turns} 轮
+              </span>
+              <span
+                className={cn(
+                  "tabular-nums",
+                  metrics.overall.error_rate >= 0.2 ? "text-danger-600" : "text-ink-700"
+                )}
+              >
+                成功 {Math.round(metrics.overall.success_rate * 100)}%
+              </span>
+            </div>
+            <div className="mt-1 flex items-center justify-between text-ink-400">
+              <span>平均 {formatTokens(metrics.overall.avg_tokens)} tok</span>
+              <span>P95 {formatTokens(metrics.overall.p95_tokens)} tok</span>
+            </div>
+            {metrics.overall.tool_failure_rate != null ? (
+              <div className="mt-1 text-ink-400">
+                工具失败 {Math.round(metrics.overall.tool_failure_rate * 100)}%
+                （{metrics.overall.tool_failures ?? 0} 次）
+              </div>
+            ) : null}
+            {metrics.alerts.length > 0 ? (
+              <div className="mt-1.5 text-[11px] text-danger-600">{metrics.alerts[0].message}</div>
+            ) : null}
+          </div>
+        ) : null}
         <div className="min-h-0 flex-1 overflow-auto px-2 pb-3">
           {summaries.length === 0 ? (
             <p className="px-1 py-6 text-center text-[12px] leading-5 text-ink-400">

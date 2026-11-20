@@ -1,0 +1,31 @@
+{
+  "suite": "smoke",
+  "cases": [
+    {
+      "id": "direct_answer",
+      "message": "用一句话解释 HTTP 404 是什么意思。",
+      "expect_substring": ["404"],
+      "forbid_substring": ["无法回答"],
+      "rubric": "一句话说清「资源不存在」；不要调用工具，不要写成教程。"
+    },
+    {
+      "id": "current_time",
+      "message": "现在几点了？只告诉我具体时间，不要别的。",
+      "expect_tools": ["get_current_time"],
+      "rubric": "必须用时间工具取当前时间，不能凭训练数据猜；回复里要有具体时:分。"
+    },
+    {
+      "id": "arithmetic",
+      "message": "算一下 37 * 19 + 128 等于多少。",
+      "expect_tools": ["calculator"],
+      "expect_substring": ["831"],
+      "rubric": "结果必须是 831；只用计算工具，不要手算编造过程。"
+    },
+    {
+      "id": "greeting_no_tool",
+      "message": "你好，用两句话介绍你自己。",
+      "forbid_tools": ["calculator", "get_current_time"],
+      "rubric": "简短自我介绍，说明能调用工具、能读写本地文件；不要空话套话。"
+    }
+  ]
+}

@@ -91,7 +91,9 @@ Agent 图细节见 [`agent-graphs.md`](./agent-graphs.md)；工具矩阵见 [`ag
 | 细粒度权限 | 声明式规则按「路径前缀 / URL 域名 / 只读 SQL」判定，`allow` / `ask` / `deny` 三态，`ask` 复用统一确认卡片；`strict` 下未命中规则即需确认，`normal` 下放行；坏配置不静默（退回空策略并暴露错误） | `mcps/permissions.py` + `graphs/common.py::permission_gate_middleware` |
 | 全量工具审计 | 每次工具调用（内置 / 外部 MCP / 离线直调）写 `audit.sqlite`：脱敏参数、`result_code`、耗时、`decision` / `decision_by`；设置页可按工具 / 判定查询 | `mcps/audit.py` + `backend/security/` + `PermissionSection.tsx` |
 | 中断续跑 | 停止或崩溃后消息流上方出现「继续生成 / 放弃」 | `useChatSession` → `/api/conversations/{id}/resume` |
-| 追踪窗口 | 独立窗看整轮 path / LLM / 工具 / token | `TraceWindow` |
+| 追踪窗口 | 独立窗看整轮 path / LLM / 工具 / token；侧栏显示近 14 天健康度（成功率 / P95 token / 工具失败率 / 首条告警） | `TraceWindow` + `/api/conversations/{id}/metrics` |
+| 离线评测门禁 | `tools/run_eval.ps1` 跑用例集：工具与关键事实做规则断言（必跑），可选 LLM 评分（默认关）；每例在临时会话沙箱内执行，退出码 `0/1/2` 可接 CI | `backend/eval/` + `tools/run_eval.ps1` |
+| 可选 OTel 导出 | `CHATVEIN_OTEL=1` 时把一轮 span 树导出到 console / OTLP，时间轴按 `start_ms` 还原；缺 SDK 静默跳过，不影响对话 | `trace/otel.py` + `trace/recording.py` |
 | 群组 | 左栏整栏是群对话列表（一行 = 一个群组），建群时选成员并开好群对话；右栏是独立的群聊面板：无模型条、无技能，上下文用量放在气泡上方；输入区可「@ 指派」给某个成员，由该成员绑定模型单独执行，气泡与指派记录按成员显示 | `GroupView` / `GroupChatView` |
 | 群组注册 | 会话持久化 `group_members`（角色 id 列表）：创建注册 / 补注册 / 随 `/api/chat` 消息透传，合并去重 | `conversations/` + `main.py` |
 | 团队模式 | `group_members` 非空时主 agent 自动进入团队模式：花名册注入 prompt，挂 `delegate_to_agent`（串行）与 `parallel_delegate`（并行）两个派发工具；成员用自己绑定的模型 / 工具 / 按 `actor_id` 隔离的独立短期记忆完成子任务，回复写回成员名下；小任务主 agent 直接完成不派发 | `agents/delegation.py` + `agents/orchestration.py` + `agents/graphs/medium|hard.py` |
@@ -103,7 +105,7 @@ Agent 图细节见 [`agent-graphs.md`](./agent-graphs.md)；工具矩阵见 [`ag
 
 知识库管理已上线（`KnowledgeView.tsx` + `knowledge/` 模块 + `backend/knowledge/` REST）：左栏文档列表 / 搜索（向量模型就绪时语义召回，否则关键词兜底）、新建 / 编辑 / 删除 / 批量导入（文本文件或粘贴）/ 清空 / 全量重建索引；与 Agent 侧 `kb_*` 工具共用同一份 `kb.sqlite`（`kb_vec_map` 表做 rowid 映射，WAL + busy_timeout 支撑并发）。应用偏好里的托盘 / 开机启动 / 自动更新尚未接 Tauri 插件。
 
-团队模式能力边界见 [`群组模式.md`](./群组模式.md)：成员角色无模型 / 主 agent 无模型时退化，不支持嵌套派发（子 agent 不挂 `delegate_to_agent` / `parallel_delegate`）。并行派发的实现差异见 [`production-design-batch2.md`](./production-design-batch2.md) §2.4「实现纪要」，长期记忆见 [`production-design-batch1.md`](./production-design-batch1.md) §1.4「实现纪要」，沙箱加固见 [`production-design-batch3.md`](./production-design-batch3.md) §3.1「实现纪要」，细粒度权限与审计见同文 §3.2「实现纪要」。
+团队模式能力边界见 [`群组模式.md`](./群组模式.md)：成员角色无模型 / 主 agent 无模型时退化，不支持嵌套派发（子 agent 不挂 `delegate_to_agent` / `parallel_delegate`）。并行派发的实现差异见 [`production-design-batch2.md`](./production-design-batch2.md) §2.4「实现纪要」，长期记忆见 [`production-design-batch1.md`](./production-design-batch1.md) §1.4「实现纪要」，沙箱加固见 [`production-design-batch3.md`](./production-design-batch3.md) §3.1「实现纪要」，细粒度权限与审计见同文 §3.2「实现纪要」，离线评测与 OTel 见同文 §3.3「实现纪要」。
 
 ---
 
@@ -115,6 +117,9 @@ Agent 图细节见 [`agent-graphs.md`](./agent-graphs.md)；工具矩阵见 [`ag
 | sqlite-vec | 同库向量扩展；失败不阻断主流程 |
 | 会话库 | 每会话独立 sqlite：短期记忆 + 工具轨迹 + 追踪 JSON |
 | 轮次元数据 | `turn_id`、tokens、耗时、route、难度等 |
+| 审计库 | `<data>/audit.sqlite`：工具调用 / 沙箱 / shell / 权限配置，只追加、写前脱敏 |
+| 质量指标 | 由追踪**查询时聚合**（不落表）：成功率 / 取消率 / token 与耗时分布 / 工具失败率 / 告警 |
+| OTel 导出 | 可选，`CHATVEIN_OTEL=1` 才加载 SDK；默认关，不影响安装包体积 |
 
 ---
 
