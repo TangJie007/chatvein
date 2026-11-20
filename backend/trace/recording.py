@@ -14,6 +14,8 @@ from uuid import UUID
 from langchain_core.callbacks import BaseCallbackHandler
 from langchain_core.messages import BaseMessage
 
+import errors  # pyright: ignore[reportImplicitRelativeImport]
+
 _recorder: ContextVar[TraceRecorder | None] = ContextVar("chatvein_trace", default=None)
 #: 并行派发时，当前线程「逻辑父节点」的显式覆盖。
 #: ``_parents`` 是单线程栈：多个成员线程各自 open/close 会互相踩栈，
@@ -231,7 +233,11 @@ def _invocation(params: dict[str, Any], serialized: dict[str, Any]) -> dict[str,
 
 
 def _error_info(error: BaseException) -> dict[str, Any]:
-    info: dict[str, Any] = {"message": str(error)}
+    """span 的 error_detail：``message`` 给人看，``code`` 给指标与前端按码聚合。"""
+    info: dict[str, Any] = {
+        "message": str(error),
+        "code": errors.classify(error, stage="trace").code,
+    }
     status = getattr(error, "status_code", None)
     response = getattr(error, "response", None)
     if status is None and response is not None:
@@ -289,6 +295,8 @@ class TraceRecorder:
         self.started_at = _iso_now()
         self.finished_at = self.started_at
         self.status = "running"
+        #: 整轮失败时的错误码（见 ``errors`` 码表）：取消 / 成功时为 None。
+        self.error_code: str | None = None
         self.meta = dict(meta or {})
         self.on_change = on_change
         self.difficulty = ""
@@ -482,8 +490,13 @@ class TraceRecorder:
             totals["cached_tokens"] = cached_tokens
         if reasoning_tokens:
             totals["reasoning_tokens"] = reasoning_tokens
+        amount = self._cost_amount(input_tokens, output_tokens)
+        if amount is not None:
+            totals["cost_amount"] = amount
+            totals["currency"] = self.meta.get("currency") or "CNY"
         return {
             "status": self.status,
+            "error_code": self.error_code,
             "input": self.input,
             "started_at": self.started_at,
             "finished_at": self.finished_at,
@@ -501,10 +514,29 @@ class TraceRecorder:
             "model_name": self.meta.get("model_name"),
             "config_name": self.meta.get("config_name"),
             "context_window": window or None,
+            #: 提示词版本（`agents/prompt_registry.py`）：排障时先看它有没有漂移。
+            "prompts": self.meta.get("prompts"),
+            #: 本轮降级过备用模型时是 {from_config, to_config, code}，否则 None。
+            "model_fallback": self.meta.get("model_fallback"),
+            #: 单轮 token 预算账本（`agents/cost.py`）；没设预算时 limit 为 0。
+            "budget": self.meta.get("budget"),
             "path": _path(self.difficulty, self._memory_used),
             "steps": self.steps,
             "totals": totals,
         }
+
+    def _cost_amount(self, input_tokens: int, output_tokens: int) -> float | None:
+        """金额估算。单价是用户自填的（见 ``trace/service.py::_role_meta``）。
+
+        延迟导入：trace 是底层模块，不该在导入期依赖 agents 包。
+        """
+        price_input = self.meta.get("price_input")
+        price_output = self.meta.get("price_output")
+        if price_input is None and price_output is None:
+            return None
+        from agents import cost  # pyright: ignore[reportImplicitRelativeImport]
+
+        return cost.estimate_amount(input_tokens, output_tokens, price_input, price_output)
 
     def flush(self) -> dict[str, Any]:
         with self._lock:
@@ -595,6 +627,11 @@ class TraceHandler(BaseCallbackHandler):
         step["elapsed_ms"] = int((time.perf_counter() - float(step.pop("started"))) * 1000)
         step["response"] = {"content": _clip(content), "tool_calls": calls}
         step["usage"] = usage
+        # 单轮预算（`agents/cost.py`）：回调是唯一能拿到真实用量的地方。
+        # 延迟导入，避免 trace 在导入期反向依赖 agents 包。
+        from agents import cost  # pyright: ignore[reportImplicitRelativeImport]
+
+        cost.note_usage(usage)
         saved = self.recorder.add(step)
         self.recorder.bind_run(run_id, str(saved["id"]))
 
@@ -724,6 +761,20 @@ def note(kind: str, *, name: str, status: str = "ok", **fields: Any) -> None:
     step: dict[str, Any] = {"kind": kind, "name": name, "status": status}
     step.update(fields)
     recorder.add(step)
+
+
+def note_model_fallback(*, from_config: str, to_config: str, code: str) -> None:
+    """记一次「主模型 → 备用模型」降级（``agents/llm.py::invoke_structured`` 调）。
+
+    同时写进快照 ``model_fallback``：面板上要能一眼看出「这一轮的结论来自备用模型」，
+    否则用户会拿降级后的表现去排查主模型。
+    """
+    recorder = _recorder.get()
+    if recorder is None:
+        return
+    detail = {"from_config": from_config, "to_config": to_config, "code": code}
+    recorder.meta["model_fallback"] = detail
+    note("model_fallback", name="model_fallback", status="warn", **detail)
 
 
 def trace_checkpoint() -> int:
@@ -856,9 +907,10 @@ def tracing(
     try:
         recorder.flush()
         yield recorder
-    except Exception:
+    except Exception as exc:
         if recorder.status == "running":
             recorder.status = "error"
+            recorder.error_code = errors.classify(exc, stage="turn").code
         raise
     finally:
         if recorder.status == "running":

@@ -4,7 +4,7 @@ import * as api from "../../api";
 import type { ChatMessageRecord, TurnTrace } from "../../api";
 import { toChatMessages, toLiveSteps, useChatSession } from "./useChatSession";
 
-vi.mock("../../api", () => {
+vi.mock("../../api", async () => {
   // 单测环境没有可读流：默认让流式直接抛「不支持」，覆盖 sendChat 回落路径。
   class StreamUnsupportedError extends Error {
     constructor() {
@@ -12,7 +12,13 @@ vi.mock("../../api", () => {
       this.name = "StreamUnsupportedError";
     }
   }
+  // 真实错误类：`useChatSession` 用 `instanceof HttpError` 判分支（见 4.3），
+  // 这里要是自己捏一个类，判断永远为假、用例会跑偏。
+  const { HttpError } = await vi.importActual<typeof import("../../api/client")>(
+    "../../api/client"
+  );
   return {
+    HttpError,
     StreamUnsupportedError,
     cancelChat: vi.fn().mockResolvedValue({ turn_id: "t", accepted: true }),
     createConversation: vi.fn(),

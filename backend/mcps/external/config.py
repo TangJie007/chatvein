@@ -16,6 +16,7 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Any
 
+from agents import config  # pyright: ignore[reportImplicitRelativeImport]
 from models.crypto import decrypt_secret, encrypt_secret  # pyright: ignore[reportImplicitRelativeImport]
 
 #: 支持的传输：stdio 拉起子进程；sse / http 连远程（http = Streamable HTTP）。
@@ -30,10 +31,7 @@ _MAX_TIMEOUT_S = 300.0
 
 def external_enabled() -> bool:
     """``CHATVEIN_MCP_EXTERNAL=0`` 完全不加载外部工具（内置工具不受影响）。"""
-    raw = os.environ.get("CHATVEIN_MCP_EXTERNAL")
-    if raw is None:
-        return True
-    return raw.strip().lower() not in {"0", "false", "no", "off", ""}
+    return config.flag("CHATVEIN_MCP_EXTERNAL", True)
 
 
 def sdk_available() -> bool:

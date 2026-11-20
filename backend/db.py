@@ -32,7 +32,8 @@ from sqlmodel import Session, SQLModel
 # v12: 群组 / 团队功能独立成 chats 模块：成员数据迁入独立表 chat_groups，删除 conversations.group_members 列。
 # v13: conversations 冗余 message_count / last_message 列，列表 / 计数不再逐个打开会话空间库。
 # v14: mcp_servers 外部 MCP server 配置表（凭据列存密文，见 mcps/external/config.py）。
-SCHEMA_VERSION = 14
+# v15: llm_models 追加 fallback_config_id / price_input / price_output（备用模型与可选用价，均可空）。
+SCHEMA_VERSION = 15
 DB_FILENAME = "chatvein.db"
 
 _BACKEND_DIR = Path(__file__).resolve().parent
@@ -433,6 +434,30 @@ def _drop_main_messages_table(connection: Connection) -> None:
     connection.exec_driver_sql("DROP TABLE IF EXISTS messages").close()
 
 
+def _ensure_llm_models_fallback_columns(connection: Connection) -> None:
+    """v15：给旧库 ``llm_models`` 补 ``fallback_config_id`` / ``price_input`` / ``price_output``。
+
+    - ``fallback_config_id``：主模型不可用时结构化调用改用的备用配置（不建外键：
+      模型可被删除，悬空引用按「没有备用模型」处理，见 ``agents/llm.py``）。
+    - ``price_input`` / ``price_output``：每百万 token 单价，**用户自填**，只做展示
+      估算；留空就只报 token，不内置价目表（供应商改价频繁）。
+    """
+    rows = connection.exec_driver_sql("PRAGMA table_info(llm_models)").fetchall()
+    names = {str(row[1]) for row in rows}
+    if not names:
+        return
+    # 可空列不写 NOT NULL DEFAULT：旧行保持 NULL = 「未配置」，比 0 更好区分。
+    for column, ddl in (
+        ("fallback_config_id", "VARCHAR(64)"),
+        ("price_input", "REAL"),
+        ("price_output", "REAL"),
+    ):
+        if column not in names:
+            connection.exec_driver_sql(
+                f"ALTER TABLE llm_models ADD COLUMN {column} {ddl}"
+            ).close()
+
+
 def _migrate(connection: Connection) -> None:
     current = int(connection.exec_driver_sql("PRAGMA user_version").scalar_one())
     if current == 1:
@@ -450,6 +475,7 @@ def _migrate(connection: Connection) -> None:
     _ensure_conversations_preview_columns(connection)
     _ensure_conversations_role_id_column(connection)
     _ensure_mcp_servers_table(connection)
+    _ensure_llm_models_fallback_columns(connection)
     if current < 5:
         _drop_main_messages_table(connection)
     if current < 7:

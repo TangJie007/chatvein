@@ -34,7 +34,7 @@
 | `src/api/` | `client.ts`（底层 fetch/invoke）+ 各资源模块 |
 | `src/lib/` | 路由、store、tokens、trace、updater、错误人话 |
 | `backend/main.py` | FastAPI 入口：/api/chat、/api/chat/stream（SSE）、uploads、bash 审批、health、workspace、db |
-| `backend/agents/` | 难度路由、理解/改写、工具选择、ReAct 图、提示词、取消、委派 |
+| `backend/agents/` | 难度路由、理解/改写、工具选择、ReAct 图、提示词、取消、委派；`cost.py` 单轮 token 预算 + 金额估算，`prompt_registry.py` 提示词版本，`config.py` 开关口径（`flag`/`number`） |
 | `backend/mcps/` | 工具注册表、分组、执行、沙箱、Bash/浏览器运行时；`sandbox_guard.py` 执行加固、`permissions.py` 权限规则 + 配额、`audit.py` 审计；`external/` 为外部 MCP 协议客户端 |
 | `backend/conversations/` | 会话 CRUD、成员、turn 编排、历史装配 |
 | `backend/chats/` | 群会话与成员（chat_groups / chat_group_members） |
@@ -47,7 +47,7 @@
 | `backend/eval/` | 离线评测：`cases.py` 用例与规则断言、`judge.py` 可选评分、`runner.py` CLI；用例在 `eval/cases/` |
 | `backend/memory/` | 长期记忆：抽取 / 巩固 / 召回，独立库 `memory.sqlite`（`CHATVEIN_MEMORY_DB_PATH`） |
 | `backend/security/` | 权限配置与审计查询接口（`/api/permissions`、`/api/audit/*`） |
-| `backend/db.py` | 主 SQLite 连接与迁移（SCHEMA_VERSION=14） |
+| `backend/db.py` | 主 SQLite 连接与迁移（SCHEMA_VERSION=15） |
 | `src-tauri/src/` | `lib.rs` `main.rs` `backend.rs` `commands.rs` |
 | `tools/` | 后端冻结、运行时整理、发布、图标、冒烟脚本 |
 
@@ -80,7 +80,8 @@
 | 追踪/面板 | `backend/trace/`、`src/components/trace/*`、`insightData.ts` | `src/lib/openTrace.ts`、`src/api/traces.ts` |
 | 离线评测 / 用例 / 报告 | `backend/eval/cases.py`、`backend/eval/runner.py` | `backend/eval/judge.py`、`backend/eval/cases/*.json`、`tools/run_eval.ps1`、`docs/eval.md` |
 | 质量指标 / 告警 / OTel | `backend/trace/metrics.py`、`backend/trace/otel.py` | `backend/trace/{store,service,controller}.py`、`TraceWindow.tsx`、`src/api/traces.ts` |
-| 提示词 | `backend/agents/graphs/prompts.py` | `router.py`、`tool_selector.py`、`hard.py` |
+| 提示词 | `backend/agents/graphs/prompts.py` | `router.py`、`tool_selector.py`、`hard.py`；版本登记在 `agents/prompt_registry.py`（改文案后跑 `run_eval.ps1 --dry-run`） |
+| 成本预算 / 模型降级 | `backend/agents/cost.py`、`agents/llm.py`（`invoke_structured`） | `graphs/common.py::budget_middlewares`、`graphs/pipeline.py`（每轮 `begin_turn`/复位）、`db.py`（v15 三列）、`models/*`、`ModelsView.tsx`、`TraceWindow.tsx` |
 | 启动/端口/token | `src-tauri/src/backend.rs` | `src/api/client.ts`、`BackendGate.tsx` |
 | 打包/更新 | `src-tauri/tauri.conf.json`、`tools/release_updater.ps1` | `src/lib/updater.ts`、`tools/build_backend.ps1` |
 
@@ -125,6 +126,8 @@
 26. 审计动作名固定：`tool.call`（放行后执行）/ `tool.deny`（规则拒绝、用户拒绝、超时、离线 ask）/ `permission.config`（策略文件不可解析）；沙箱另有 `sandbox.*` / `shell.exec`。`decision_by` 写清来源（`rule:<id>` / `mode:strict` / `user:allow` / `fallback`），便于回放。
 27. 评测里**规则断言必跑、judge 默认关**（`--judge` 才开）：改 prompt / 工具 / 路由要同步跑一次 `tools/run_eval.ps1`，或至少 `--dry-run` 校验用例文件。新能力要加用例，不要在评测里绕过临时沙箱去写用户工作区。
 28. 指标是**查询时聚合的视图**，不要再建 `trace_metrics` 表；告警阈值/口径只在 `trace/metrics.py` 定义一处（前端只展示，不自己算）。OTel 默认关（`CHATVEIN_OTEL=0`）、SDK 不进安装包，导出失败必须吞掉——可观测性不能反过来打断对话。
+29. 单轮预算只在 `agents/cost.py` 记账（用量由 `TraceHandler.on_llm_end` 回灌，禁止另建计量）；超预算的处理是**收尾**（注入提示 + `budget_middlewares` 挡工具），不是报错或硬中断。`begin_turn`/`end_turn` 必须成对出现在 `pipeline.run_pipeline`，否则串轮。
+30. 模型降级只有一处：`agents/llm.py::invoke_structured`（每轮最多一次，`pipeline` 调 `reset_fallback_used`），且只对 429/超时/5xx；流式主循环不降级。备用配置由 `llm_models.fallback_config_id` 单向引用（无外键，悬空即「无备用」），新字段的校验只写在 `models/service.py`。
 
 ## 6. 常用命令
 

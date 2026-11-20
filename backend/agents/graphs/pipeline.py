@@ -6,7 +6,7 @@ from typing import Any, Literal
 
 from langgraph.graph import END, START, StateGraph
 
-from .. import router
+from .. import cost, llm as llm_factory, prompt_registry, router
 from ..checkpoint import checkpoint_enabled, get_checkpointer
 from ..streaming import emit_stage
 from trace.recording import complete, note, runnable_config, tracing
@@ -199,41 +199,60 @@ def run_pipeline(
     """
     text = (message or "").strip()
     persisted = bool(thread_id) and checkpoint_enabled()
-    with tracing(text):
-        payload: dict[str, Any] = {
-            "message": text,
-            "history": list(history or []),
-            "role": role,
-        }
-        if persisted:
-            out = _graph_with_checkpoint().invoke(
-                None if resume else payload,
-                config=runnable_config(
-                    {"configurable": {"thread_id": str(thread_id)}}
-                ),
-            )
-        else:
-            out = build_pipeline().invoke(payload, config=runnable_config())
-        difficulty = str(out.get("difficulty") or "simple")
-        result = {
-            "reply": str(out.get("reply") or ""),
-            "rewritten": str(out.get("rewritten") or text),
-            "difficulty": difficulty,
-            "route": difficulty,
-            "route_reason": out.get("route_reason"),
-            "selected_tools": list(out.get("selected_tools") or []),
-            "candidate_tools": list(out.get("candidate_tools") or []),
-            "tool_plan_reason": out.get("tool_plan_reason"),
-            "tool_trace": list(out.get("tool_trace") or []),
-            "used_llm": bool(out.get("used_llm")),
-        }
-        result["trace"] = complete(
-            difficulty=difficulty,
-            rewritten=str(result["rewritten"]),
-            route_reason=str(result.get("route_reason") or ""),
-            selected_tools=list(result["selected_tools"]),
-            candidate_tools=list(result["candidate_tools"]),
-            tool_plan_reason=str(result.get("tool_plan_reason") or ""),
-            reply=str(result["reply"]),
-        ) or {}
-        return result
+    # 一轮记一次全量版本（不走路由的子图也记）：排障时「提示词是否漂移」一眼能看。
+    prompt_map = prompt_registry.prompt_versions()
+    with tracing(text, meta={"prompts": prompt_map}) as recorder:
+        # 单轮预算与降级标记都按「一次 run_pipeline」复位：两者都是轮内状态。
+        budget_token = cost.begin_turn()
+        llm_factory.reset_fallback_used()
+        try:
+            payload: dict[str, Any] = {
+                "message": text,
+                "history": list(history or []),
+                "role": role,
+            }
+            if persisted:
+                out = _graph_with_checkpoint().invoke(
+                    None if resume else payload,
+                    config=runnable_config(
+                        {"configurable": {"thread_id": str(thread_id)}}
+                    ),
+                )
+            else:
+                out = build_pipeline().invoke(payload, config=runnable_config())
+            difficulty = str(out.get("difficulty") or "simple")
+            result = {
+                "reply": str(out.get("reply") or ""),
+                "rewritten": str(out.get("rewritten") or text),
+                "difficulty": difficulty,
+                "route": difficulty,
+                "route_reason": out.get("route_reason"),
+                "selected_tools": list(out.get("selected_tools") or []),
+                "candidate_tools": list(out.get("candidate_tools") or []),
+                "tool_plan_reason": out.get("tool_plan_reason"),
+                "tool_trace": list(out.get("tool_trace") or []),
+                "used_llm": bool(out.get("used_llm")),
+            }
+            _stamp_budget(recorder)
+            result["trace"] = complete(
+                difficulty=difficulty,
+                rewritten=str(result["rewritten"]),
+                route_reason=str(result.get("route_reason") or ""),
+                selected_tools=list(result["selected_tools"]),
+                candidate_tools=list(result["candidate_tools"]),
+                tool_plan_reason=str(result.get("tool_plan_reason") or ""),
+                reply=str(result["reply"]),
+            ) or {}
+            result["trace"]["prompts"] = prompt_map
+            return result
+        finally:
+            # 取消 / 报错那轮也要留下「跑了多少 token」，否则预算问题无从复盘。
+            _stamp_budget(recorder)
+            cost.end_turn(budget_token)
+
+
+def _stamp_budget(recorder: Any) -> None:
+    """把本轮预算账本写进追踪快照（``trace.recording.snapshot`` 的 ``budget``）。"""
+    budget = cost.current_turn()
+    if budget is not None and recorder is not None:
+        recorder.meta["budget"] = budget.as_dict()

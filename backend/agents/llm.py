@@ -16,18 +16,28 @@ from __future__ import annotations
 import os
 import random
 import time
+from contextvars import ContextVar
 from typing import Any, Callable, Literal, TypeVar
 
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage, SystemMessage
 from langchain_deepseek import ChatDeepSeek
 from langchain_openai import ChatOpenAI
-from pydantic import SecretStr
+from pydantic import PrivateAttr, SecretStr
 
+from errors import (  # pyright: ignore[reportImplicitRelativeImport]
+    MODEL_AUTH,
+    MODEL_FAILED,
+    MODEL_NOT_FOUND,
+    MODEL_RATE_LIMIT,
+    MODEL_TIMEOUT,
+    classify,
+)
 from models.service import ModelsService  # pyright: ignore[reportImplicitRelativeImport]
 
-from trace.recording import active_callbacks
+from trace.recording import active_callbacks, note_model_fallback
 
+from agents import config as agent_config  # pyright: ignore[reportImplicitRelativeImport]
 from agents.cancellation import (  # pyright: ignore[reportImplicitRelativeImport]
     TurnCancelled,
     current_turn_id,
@@ -58,71 +68,45 @@ _RATE_LIMIT_RETRIES = int(_env_number("CHATVEIN_LLM_RATE_LIMIT_RETRIES", 3))
 _RATE_LIMIT_INITIAL_DELAY = _env_number("CHATVEIN_LLM_RATE_LIMIT_DELAY", 10.0)
 _RATE_LIMIT_MAX_DELAY = _env_number("CHATVEIN_LLM_RATE_LIMIT_MAX_DELAY", 60.0)
 
-#: 判定的报文特征（各网关措辞不一）：必须小写比较。
-_RATE_LIMIT_MARKERS = (
-    "rate limit",
-    "rate_limit",
-    "rate-limit",
-    "ratelimit",
-    "too many requests",
-    "quota",
-    "tpm",
-    "rpm",
-    "429",
+#: 值得在气泡里直说的「模型侧」码；其余错误由调用方组织人话。
+_MODEL_HINT_CODES = frozenset(
+    {MODEL_RATE_LIMIT, MODEL_AUTH, MODEL_NOT_FOUND, MODEL_TIMEOUT, MODEL_FAILED}
 )
+
+#: 值得降级到备用模型的码：限流 / 超时 / 5xx。
+#: 鉴权失败不降级——多半是密钥填错，备用模型走同类网关也一样失败，只会掩盖真因。
+_FALLBACK_CODES = frozenset({MODEL_RATE_LIMIT, MODEL_TIMEOUT, MODEL_FAILED})
+
+#: 一轮是否已经降级过。降级只在结构化调用里做，且整轮最多一次，
+#: 否则主备会随着两边抖动来回切换，一轮发出好几份结论。
+_fallback_used: ContextVar[bool] = ContextVar("chatvein_fallback_used", default=False)
+
+
+def reset_fallback_used() -> None:
+    """每轮开始清一次（``graphs/pipeline.py`` 调）。"""
+    _fallback_used.set(False)
 
 
 def is_rate_limit_error(exc: BaseException) -> bool:
     """是不是供应商限流（429 / TPM·RPM 超限）。
 
-    只看报文会漏（`status_code` 未必被透传），只看状态码会漏改造过的网关，
-    所以两者都判命中即算。
+    判定规则只有一处：``errors.classify``（状态码与报文特征都判，命中即算）。
     """
-    if _status_code(exc) == 429:
-        return True
-    text = f"{type(exc).__name__} {exc}".lower()
-    return any(marker in text for marker in _RATE_LIMIT_MARKERS)
-
-
-def _status_code(exc: BaseException) -> int | None:
-    status = getattr(exc, "status_code", None)
-    response = getattr(exc, "response", None)
-    if status is None and response is not None:
-        status = getattr(response, "status_code", None)
-    try:
-        return int(status) if status is not None else None
-    except (TypeError, ValueError):
-        return None
-
-
-def _request_id(exc: BaseException) -> str:
-    for source in (getattr(exc, "request_id", None), getattr(exc, "body", None)):
-        if isinstance(source, str) and source.strip():
-            return source.strip()
-        if isinstance(source, dict):
-            found = source.get("request_id") or source.get("id")
-            if found:
-                return str(found)
-    return ""
+    return classify(exc, stage="llm").code == MODEL_RATE_LIMIT
 
 
 def model_error_hint(exc: BaseException) -> str | None:
-    """模型侧原因（限流 / 鉴权 / 404 / 5xx）的可读提示；认不出来返回 ``None``。"""
-    rid = _request_id(exc)
-    suffix = f"（request_id: {rid}）" if rid else ""
-    status = _status_code(exc)
-    if is_rate_limit_error(exc):
-        return (
-            "模型供应商限流（HTTP 429）：本轮请求超过该模型的 TPM/RPM 配额，"
-            f"已自动退避重试仍未通过。请稍后再试，或在「模型」里换额度更宽的模型。{suffix}"
-        )
-    if status in (401, 403):
-        return f"模型鉴权失败（HTTP {status}）：请检查该模型的 Key 是否有效、是否有此模型权限。{suffix}"
-    if status == 404:
-        return f"模型不可访问（HTTP 404）：请核对模型 ID 与网关地址。{suffix}"
-    if status is not None and status >= 500:
-        return f"模型服务端异常（HTTP {status}）：供应商侧暂时不可用，可稍后重试。{suffix}"
-    return None
+    """模型侧原因（限流 / 鉴权 / 404 / 5xx）的可读提示；认不出来返回 ``None``。
+
+    只有拿到供应商状态码、或报文明确是限流时才认领：裸 ``TimeoutError`` 可能
+    是图跑满 300s，硬说成「模型超时」会让用户查错方向。
+    """
+    err = classify(exc, stage="llm")
+    if err.code not in _MODEL_HINT_CODES:
+        return None
+    if err.code != MODEL_RATE_LIMIT and not err.detail.get("status"):
+        return None
+    return err.message
 
 
 def describe_model_error(exc: BaseException) -> str:
@@ -172,6 +156,9 @@ class ChatOpenAICompat(ChatOpenAI):
     （DeepSeek 相反，走 ``ChatDeepSeekReact``。）
     """
 
+    #: 这条实例来自哪条 ``llm_models`` 配置；结构化调用失败时据此找回备用模型。
+    _chatvein_config_id: str | None = PrivateAttr(default=None)
+
     def _get_request_payload(
         self,
         input_: Any,
@@ -190,6 +177,9 @@ class ChatOpenAICompat(ChatOpenAI):
 
 class ChatDeepSeekReact(ChatDeepSeek):
     """DeepSeek 线路：多轮把 ``reasoning_content`` 写回 assistant 消息。"""
+
+    #: 同 ``ChatOpenAICompat``：标记配置来源，供备用模型查找。
+    _chatvein_config_id: str | None = PrivateAttr(default=None)
 
     def _get_request_payload(
         self,
@@ -303,13 +293,63 @@ def get_chat_model(
     if callbacks:
         kwargs["callbacks"] = callbacks
 
+    chat: BaseChatModel
     if profile == "deepseek":
-        return ChatDeepSeekReact(**kwargs)
-    return ChatOpenAICompat(**kwargs)
+        chat = ChatDeepSeekReact(**kwargs)
+    else:
+        chat = ChatOpenAICompat(**kwargs)
+    # 单测会用 SimpleNamespace 顶替配置实体（没有 id）——那时就是「不可降级」
+    chat._chatvein_config_id = str(getattr(cfg, "id", "") or "") or None
+    return chat
+
+
+def fallback_model(model: BaseChatModel) -> BaseChatModel | None:
+    """主模型的备用模型实例；没配 / 已停用 / 本轮已降级过时返回 ``None``。
+
+    开关 ``CHATVEIN_MODEL_FALLBACK``（默认开）。
+    """
+    if _fallback_used.get() or not agent_config.flag("CHATVEIN_MODEL_FALLBACK", True):
+        return None
+    primary_id = getattr(model, "_chatvein_config_id", None)
+    if not primary_id:
+        return None
+    try:
+        svc = ModelsService()
+        primary = svc.get_entity(str(primary_id))
+        fallback_id = getattr(primary, "fallback_config_id", None) if primary else None
+        if not fallback_id or fallback_id == primary_id:
+            return None
+        cfg = svc.get_entity(str(fallback_id))
+    except Exception:  # noqa: BLE001 — 查配置失败不该影响本轮主调用
+        return None
+    if cfg is None or not cfg.enabled or not (cfg.api_key or "").strip():
+        return None
+    # 备用模型自己的温度 / 上限才合理；结构化调用总是非流式、关思考。
+    # 传得很保守：`get_chat_model` 里 thinking=False 只对 deepseek 线路生效。
+    return get_chat_model(role={"model_id": cfg.id}, streaming=False, thinking=False)
 
 
 def invoke_structured(model: BaseChatModel, schema: type, messages: list[Any]) -> Any:
-    """按结构化结果调用模型。"""
+    """按结构化结果调用模型；主模型命中限流 / 超时 / 5xx 时整轮降级一次。"""
+    try:
+        return _structured_call(model, schema, messages)
+    except Exception as exc:  # noqa: BLE001
+        if classify(exc, stage="llm").code not in _FALLBACK_CODES:
+            raise
+        backup = fallback_model(model)
+        if backup is None:
+            raise
+        _fallback_used.set(True)
+        note_model_fallback(
+            from_config=str(getattr(model, "_chatvein_config_id", "") or ""),
+            to_config=str(getattr(backup, "_chatvein_config_id", "") or ""),
+            code=classify(exc, stage="llm").code,
+        )
+        return _structured_call(backup, schema, messages)
+
+
+def _structured_call(model: BaseChatModel, schema: type, messages: list[Any]) -> Any:
+    """结构化调用本身：先 function_calling，被网关拒绝再退回 json_mode。"""
     last: BaseException | None = None
     for method in ("function_calling", "json_mode"):
         payload = messages

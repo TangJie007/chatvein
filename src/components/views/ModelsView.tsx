@@ -43,6 +43,9 @@ type ModelForm = {
   baseUrl: string;
   modelId: string;
   apiKey: string;
+  fallbackId: string;
+  priceInput: string;
+  priceOutput: string;
 };
 
 function toForm(model: LlmModelRecord): ModelForm {
@@ -51,7 +54,22 @@ function toForm(model: LlmModelRecord): ModelForm {
     baseUrl: model.base_url ?? "",
     modelId: model.model_id,
     apiKey: model.key_mask ?? "",
+    fallbackId: model.fallback_config_id ?? "",
+    priceInput: model.price_input?.toString() ?? "",
+    priceOutput: model.price_output?.toString() ?? "",
   };
+}
+
+/**
+ * 单价输入 → 提交值。
+ * - 空 = `null`（清除，只统计 token）
+ * - 非法 = `undefined`（不提交，别把已存的价格悄悄清成 0）
+ */
+function parsePrice(raw: string): number | null | undefined {
+  const text = raw.trim();
+  if (!text) return null;
+  const value = Number(text);
+  return Number.isFinite(value) && value >= 0 ? value : undefined;
 }
 
 function formToPayload(form: ModelForm): UpdateLlmModelPayload {
@@ -59,7 +77,12 @@ function formToPayload(form: ModelForm): UpdateLlmModelPayload {
     name: form.name.trim(),
     model_id: form.modelId.trim(),
     base_url: form.baseUrl.trim() || null,
+    fallback_config_id: form.fallbackId || null,
   };
+  const priceInput = parsePrice(form.priceInput);
+  const priceOutput = parsePrice(form.priceOutput);
+  if (priceInput !== undefined) payload.price_input = priceInput;
+  if (priceOutput !== undefined) payload.price_output = priceOutput;
   // 仅当用户改过密钥（不含脱敏星号）时才提交
   if (form.apiKey && !form.apiKey.includes("*") && !form.apiKey.includes("•")) {
     payload.api_key = form.apiKey.trim();
@@ -279,6 +302,7 @@ export function ModelsView({ addRequestId = 0, onModelsChange }: ModelsViewProps
           <ModelConfig
             key={active.id}
             model={active}
+            models={models}
             status={statusById[active.id]}
             onSave={handleSave}
             onDelete={handleDelete}
@@ -302,6 +326,8 @@ export function ModelsView({ addRequestId = 0, onModelsChange }: ModelsViewProps
 
 type ModelConfigProps = {
   model: LlmModelRecord;
+  /** 全部模型：备用模型下拉只列「其他已启用」的配置。 */
+  models: LlmModelRecord[];
   status?: "online" | "offline";
   onSave: (id: string, form: ModelForm) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
@@ -310,6 +336,7 @@ type ModelConfigProps = {
 
 function ModelConfig({
   model,
+  models,
   status,
   onSave,
   onDelete,
@@ -322,6 +349,8 @@ function ModelConfig({
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [banner, setBanner] = useState<string | null>(null);
+  // 备用模型只能选「别的、已启用」的配置；自己不能当自己的备用
+  const fallbackCandidates = models.filter((m) => m.id !== model.id && m.enabled);
 
   useEffect(() => {
     setForm(toForm(model));
@@ -474,6 +503,44 @@ function ModelConfig({
                   {showKey ? "隐藏" : "显示"}
                 </button>
               </div>
+            </Field>
+          </Card>
+
+          <Card
+            title="备用模型与价格"
+            desc="主模型限流、超时或 5xx 时，路由/选型/规划这类结构化调用改走备用模型（每轮最多降级一次）"
+          >
+            <Field label="备用模型" hint="留空表示不降级">
+              <SelectInput
+                value={form.fallbackId}
+                onChange={(v) => set("fallbackId", v)}
+                options={[
+                  { value: "", label: "不使用备用模型" },
+                  ...fallbackCandidates.map((m) => ({
+                    value: m.id,
+                    label: `${m.name} · ${m.model_id || m.provider}`,
+                  })),
+                ]}
+              />
+            </Field>
+            <Field
+              label="输入价"
+              hint="每百万 token，留空只统计 token；单位见 CHATVEIN_PRICE_CURRENCY"
+            >
+              <TextInput
+                mono
+                value={form.priceInput}
+                onChange={(v) => set("priceInput", v)}
+                placeholder="例如 2"
+              />
+            </Field>
+            <Field label="输出价" hint="每百万 token，仅用于追踪里的金额估算">
+              <TextInput
+                mono
+                value={form.priceOutput}
+                onChange={(v) => set("priceOutput", v)}
+                placeholder="例如 8"
+              />
             </Field>
           </Card>
         </div>
@@ -779,6 +846,33 @@ function Field({
       </span>
       {children}
     </label>
+  );
+}
+
+function SelectInput({
+  value,
+  onChange,
+  options,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  options: { value: string; label: string }[];
+}) {
+  return (
+    <select
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      className={cn(
+        "w-full min-w-0 rounded-xl bg-surface px-3 py-2.5 text-[12.5px] text-ink-900 shadow-soft",
+        "focus:outline-none focus-visible:shadow-lift"
+      )}
+    >
+      {options.map((option) => (
+        <option key={option.value} value={option.value}>
+          {option.label}
+        </option>
+      ))}
+    </select>
   );
 }
 

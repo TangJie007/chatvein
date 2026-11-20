@@ -31,6 +31,7 @@ if str(_BACKEND_ROOT) not in sys.path:
 import db  # noqa: E402  # pyright: ignore[reportImplicitRelativeImport]
 from agents.cancellation import bind_turn, clear_turn  # noqa: E402
 from agents.graphs.pipeline import run_pipeline  # noqa: E402
+from agents.prompt_registry import prompt_versions, verify  # noqa: E402
 from eval.cases import DEFAULT_CASES, RULE_FIELDS, CaseError, check_rules, load_cases  # noqa: E402
 from eval.judge import JudgeUnavailable, judge_case, resolve_model  # noqa: E402
 from mcps.sandbox import (  # noqa: E402
@@ -195,6 +196,8 @@ def build_report(
             "elapsed_ms": elapsed_ms,
         },
         "judge_mean": round(sum(scored) / len(scored), 2) if scored else None,
+        #: 提示词版本：两次报告分数不同时，先确认这块有没有变（见 agents/prompt_registry.py）。
+        "prompts": prompt_versions(),
         "results": results,
     }
 
@@ -235,7 +238,12 @@ def _write_report(report: dict[str, Any], target: str) -> None:
 
 
 def _print_dry(suite: str, cases: list[dict[str, Any]]) -> None:
+    versions = prompt_versions()
     print(f"用例文件 OK：{suite} · {len(cases)} 条")
+    print(
+        "提示词注册表 OK："
+        + "、".join(f"{name}={version}" for name, version in versions.items())
+    )
     for case in cases:
         bits = []
         for field in RULE_FIELDS:
@@ -256,6 +264,11 @@ def main(argv: list[str] | None = None) -> int:
     if args.limit > 0:
         cases = cases[: args.limit]
     if args.dry_run:
+        # 注册表失配（改了常量名没改登记）在这里拦住：否则报告里的版本号会静默撒谎。
+        problems = verify()
+        if problems:
+            print("提示词注册表有问题：" + "；".join(problems), file=sys.stderr)
+            return 2
         _print_dry(suite, cases)
         return 0
 

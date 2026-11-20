@@ -11,6 +11,7 @@ import { MentionText } from "./MentionText";
 import type { MemberAvatar } from "./mentions";
 import { WaitingBubble } from "./WaitingBubble";
 import type { SessionItem } from "./SessionList";
+import type { ErrorAction } from "./useChatSession";
 import {
   InsightPanel,
   type InsightArtifact,
@@ -48,6 +49,50 @@ function formatDuration(ms?: number | null): string {
   return `${(ms / 1000).toFixed(1)} s`;
 }
 
+/** 动作 → 按钮文案。加新动作时，`useChatSession::actionForCode` 与这里要同时改。 */
+const ERROR_ACTION_LABELS: Record<ErrorAction, string> = {
+  configure: "去设置模型",
+  retry: "再试一次",
+};
+
+/**
+ * 错误条：一句话 + 可选的动作按钮。
+ * 文案由后端给（`errors.MESSAGES`），这里只决定「点了会去哪」。
+ */
+function ErrorNote({
+  message,
+  tone,
+  action,
+  onAction,
+}: {
+  message: string;
+  tone: "danger" | "muted";
+  action?: ErrorAction | null;
+  onAction?: (action: ErrorAction) => void;
+}) {
+  return (
+    <div
+      role="status"
+      className={cn(
+        "flex max-w-full items-start gap-1.5 rounded-xl px-3 py-2 text-[12.5px]",
+        tone === "muted" ? "bg-tint text-ink-500" : "bg-danger-50 text-danger-600"
+      )}
+    >
+      <AlertCircle className="mt-0.5 size-3.5 shrink-0" strokeWidth={1.75} />
+      <span className="min-w-0 flex-1 break-words">{message}</span>
+      {action && onAction ? (
+        <button
+          type="button"
+          onClick={() => onAction(action)}
+          className="shrink-0 cursor-pointer rounded-md px-2 py-0.5 text-[11.5px] font-medium ring-1 ring-current/40 hover:bg-white/50"
+        >
+          {ERROR_ACTION_LABELS[action]}
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
 type ChatPanelProps = {
   /** chat=对话视图（会话头 + 模型条 + 技能）；group=群组视图（用量在气泡上方，无模型 / 技能）。 */
   variant?: "chat" | "group";
@@ -78,6 +123,9 @@ type ChatPanelProps = {
   errorTone?: "danger" | "muted";
   /** 错误挂在哪个气泡下面（一般是本次提问的气泡 id）；null 则退回列表底部展示。 */
   errorAnchorId?: string | null;
+  /** 错误条上的建议动作（由后端错误码推导：configure=去补模型，retry=再发一次）。 */
+  errorAction?: ErrorAction | null;
+  onErrorAction?: (action: ErrorAction) => void;
   workspaceDir?: string;
   conversationId?: string | null;
   insightThread?: InsightThreadItem[];
@@ -141,6 +189,8 @@ export function ChatPanel({
   error = null,
   errorTone = "danger",
   errorAnchorId = null,
+  errorAction = null,
+  onErrorAction,
   workspaceDir,
   conversationId,
   insightThread = [],
@@ -460,20 +510,12 @@ export function ChatPanel({
                       </div>
                       {/* 本轮异常：直接挂在提问气泡下方，用户一眼看到是哪一句失败了。 */}
                       {error && m.id === errorAnchorId ? (
-                        <p
-                          className={cn(
-                            "flex max-w-full items-start gap-1.5 rounded-xl px-3 py-2 text-[12.5px]",
-                            errorTone === "muted"
-                              ? "bg-tint text-ink-500"
-                              : "bg-danger-50 text-danger-600"
-                          )}
-                        >
-                          <AlertCircle
-                            className="mt-0.5 size-3.5 shrink-0"
-                            strokeWidth={1.75}
-                          />
-                          <span className="min-w-0 break-words">{error}</span>
-                        </p>
+                        <ErrorNote
+                          message={error}
+                          tone={errorTone}
+                          action={errorAction}
+                          onAction={onErrorAction}
+                        />
                       ) : null}
                       {isActiveTask ? (
                         <div
@@ -552,16 +594,12 @@ export function ChatPanel({
               })
             )}
             {error && !errorAnchorId ? (
-              <p
-                className={cn(
-                  "rounded-xl px-3 py-2 text-[12.5px]",
-                  errorTone === "muted"
-                    ? "bg-tint text-ink-500"
-                    : "bg-danger-50 text-danger-600"
-                )}
-              >
-                {error}
-              </p>
+              <ErrorNote
+                message={error}
+                tone={errorTone}
+                action={errorAction}
+                onAction={onErrorAction}
+              />
             ) : null}
           </div>
         </ScrollArea>

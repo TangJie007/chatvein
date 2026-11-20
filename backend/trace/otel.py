@@ -16,6 +16,8 @@ import threading
 import time
 from typing import Any
 
+from agents import config  # pyright: ignore[reportImplicitRelativeImport]
+
 _LOCK = threading.Lock()
 _TRACER: Any = None
 _UNAVAILABLE = False
@@ -26,9 +28,8 @@ def _env(name: str, default: str = "") -> str:
 
 
 def enabled() -> bool:
-    """``CHATVEIN_OTEL=0``（默认）时不碰 OTel，连 import 都不做。"""
-    value = _env("CHATVEIN_OTEL", "0").lower()
-    return value not in ("", "0", "false", "off", "no")
+    """``CHATVEIN_OTEL=0``（默认）时不碰 OTel，连 import 都不做（口径见 ``agents/config.py``）。"""
+    return config.flag("CHATVEIN_OTEL", False)
 
 
 def _tracer() -> Any:

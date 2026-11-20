@@ -114,8 +114,33 @@ export interface RequestOptions {
 
 const DEFAULT_TIMEOUT_MS = 30_000;
 
+/** 后端错误信封，形状与 `backend/errors.py::AgentError.to_dict()` 一一对应。
+ *  `code` 是闭集：界面按码决定动作（换模型 / 等一会 / 去设置），不看文案。 */
+export interface ErrorEnvelope {
+  code: string;
+  message: string;
+  retryable: boolean;
+  stage: string;
+  detail?: Record<string, unknown>;
+}
+
 /** HTTP 业务错误（非 2xx）：与网络层失败区分，不参与重试/掉线复位。 */
-class HttpError extends Error {}
+export class HttpError extends Error {
+  readonly status: number;
+  /** 后端错误码；老后端 / 非 AgentError 响应里为空串。 */
+  readonly code: string;
+  readonly retryable: boolean;
+  readonly stage: string;
+
+  constructor(status: number, message: string, envelope?: Partial<ErrorEnvelope>) {
+    super(message);
+    this.name = "HttpError";
+    this.status = status;
+    this.code = envelope?.code ?? "";
+    this.retryable = Boolean(envelope?.retryable);
+    this.stage = envelope?.stage ?? "";
+  }
+}
 
 /** 客户端超时：与「用户取消」「网络失败」区分开，UI 才能给出准确提示。
  *  超时只说明前端等不下去了，后端任务多半还在跑，不能当成掉线。 */
@@ -193,7 +218,7 @@ async function doRequest<T>(
       /* keep raw text when not JSON */
     }
     if (!res.ok) {
-      throw new HttpError(httpErrorMessage(res.status, text));
+      throw buildHttpError(res.status, text);
     }
     return data as T;
   } catch (err) {
@@ -231,19 +256,41 @@ function isUserAbort(signal: AbortSignal | null, err: unknown): boolean {
   return false;
 }
 
-/** 非 2xx：优先取 FastAPI 的 ``detail``（或 message），避免只显示裸 JSON / 状态码。 */
-function httpErrorMessage(status: number, text: string): string {
-  let detail = text;
+/** 非 2xx 的响应体 → 人话 + 信封。`error` 只有新后端才给（detail 一直都在）。 */
+function parseErrorBody(text: string): { detail: string; envelope?: ErrorEnvelope } {
   try {
-    const parsed = JSON.parse(text) as { detail?: unknown; message?: unknown };
+    const parsed = JSON.parse(text) as {
+      detail?: unknown;
+      message?: unknown;
+      error?: unknown;
+    };
+    const envelope = isEnvelope(parsed?.error) ? parsed.error : undefined;
+    let detail = "";
     if (typeof parsed?.detail === "string") detail = parsed.detail;
     else if (Array.isArray(parsed?.detail)) detail = parsed.detail.map(String).join("；");
     else if (typeof parsed?.message === "string") detail = parsed.message;
+    return { detail, envelope };
   } catch {
     /* 非 JSON：保留原文 */
   }
-  const body = detail.trim();
-  return body ? `请求失败（${status}）：${body}` : `请求失败（${status}）`;
+  return { detail: text };
+}
+
+function isEnvelope(value: unknown): value is ErrorEnvelope {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    typeof (value as { code?: unknown }).code === "string" &&
+    typeof (value as { message?: unknown }).message === "string"
+  );
+}
+
+/** 非 2xx 的统一出口：`error.message` → `detail` → 原文，避免只显示裸 JSON / 状态码。 */
+function buildHttpError(status: number, text: string): HttpError {
+  const { detail, envelope } = parseErrorBody(text);
+  const body = (envelope?.message || detail || "").trim();
+  const message = body ? `请求失败（${status}）：${body}` : `请求失败（${status}）`;
+  return new HttpError(status, message, envelope);
 }
 
 /** 当前运行环境拿不到可读流（Tauri HTTP 插件个别平台返回 body=null）。 */
@@ -319,7 +366,8 @@ export async function backendStream(
     });
     if (!res.ok) {
       const text = await res.text().catch(() => "");
-      throw new Error(httpErrorMessage(res.status, text));
+      // 带码抛错：调用方靠 `code === "STREAM_DISABLED"` 决定回落，不靠中文文案。
+      throw buildHttpError(res.status, text);
     }
     if (!res.body) throw new StreamUnsupportedError();
 

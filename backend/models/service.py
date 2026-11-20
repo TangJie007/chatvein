@@ -64,6 +64,9 @@ class ModelsService:
             retries=entity.retries,
             context_window_k=entity.context_window_k,
             enabled=entity.enabled,
+            fallback_config_id=entity.fallback_config_id,
+            price_input=entity.price_input,
+            price_output=entity.price_output,
             description=entity.description,
             created_at=_iso(entity.created_at),
             updated_at=_iso(entity.updated_at),
@@ -78,6 +81,26 @@ class ModelsService:
     def get_model(self, model_id: str) -> LlmModelResponseDto | None:
         entity = self._repo.find_by_id(model_id)
         return self.to_response(entity) if entity else None
+
+    def _validate_fallback(
+        self, model_id: str | None, fallback_id: str | None
+    ) -> str | None:
+        """备用模型只能是「另一条存在且已启用」的配置。
+
+        死链会在运行期被 `agents/llm.py` 静默忽略，用户会以为已经配好；所以在写入时
+        就报错，错误文案直接给出下一步。
+        """
+        if not fallback_id:
+            return None
+        fallback_id = fallback_id.strip()
+        if model_id and fallback_id == model_id:
+            raise ValueError("备用模型不能指向自己")
+        target = self._repo.find_by_id(fallback_id)
+        if target is None:
+            raise ValueError("备用模型不存在，请先在模型列表里创建它")
+        if not target.enabled:
+            raise ValueError("备用模型已停用，请先启用它再设为备用")
+        return fallback_id
 
     def create_model(self, dto: CreateLlmModelDto) -> LlmModelResponseDto:
         now = _utc_now()
@@ -96,6 +119,9 @@ class ModelsService:
             retries=dto.retries,
             context_window_k=dto.context_window_k,
             enabled=dto.enabled,
+            fallback_config_id=self._validate_fallback(None, dto.fallback_config_id),
+            price_input=dto.price_input,
+            price_output=dto.price_output,
             description=dto.description.strip(),
             created_at=now,
             updated_at=now,
@@ -122,12 +148,21 @@ class ModelsService:
                 entity.api_key = encrypt_secret(raw.strip() or None)
             del data["api_key"]
 
+        if "fallback_config_id" in data:
+            data["fallback_config_id"] = self._validate_fallback(
+                model_id, data["fallback_config_id"]
+            )
+
         for key, value in data.items():
-            if key in {"name", "provider", "model_id", "description"} and isinstance(
-                value, str
-            ):
+            if isinstance(value, str) and key in {
+                "name",
+                "provider",
+                "model_id",
+                "description",
+            }:
                 value = value.strip()
-            if key == "base_url" and isinstance(value, str):
+            # 空串表示清除：备用模型 / 基地址都要落成 NULL，而不是空字符串
+            if key in {"fallback_config_id", "base_url"} and isinstance(value, str):
                 value = value.strip() or None
             setattr(entity, key, value)
 

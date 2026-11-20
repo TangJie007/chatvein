@@ -15,15 +15,14 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from typing import Any, Iterator
 
+from . import config
+
 _sink: ContextVar[StreamSink | None] = ContextVar("chatvein_stream_sink", default=None)
 
 
 def stream_enabled() -> bool:
-    """``CHATVEIN_STREAM=0`` 一键回落到非流式。"""
-    raw = os.environ.get("CHATVEIN_STREAM")
-    if raw is None:
-        return True
-    return raw.strip().lower() not in {"0", "false", "no", "off", ""}
+    """``CHATVEIN_STREAM=0`` 一键回落到非流式（判定口径见 ``agents/config.py``）。"""
+    return config.flag("CHATVEIN_STREAM", True)
 
 
 class StreamSink:

@@ -18,6 +18,7 @@ import os
 import threading
 import time
 import uuid
+from agents import config  # pyright: ignore[reportImplicitRelativeImport]
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
@@ -41,10 +42,7 @@ _tool_call_id: ContextVar[str] = ContextVar("chatvein_approval_tool_call", defau
 
 
 def unified_enabled() -> bool:
-    raw = os.environ.get("CHATVEIN_UNIFIED_APPROVAL")
-    if raw is None:
-        return True
-    return raw.strip().lower() not in {"0", "false", "no", "off", ""}
+    return config.flag("CHATVEIN_UNIFIED_APPROVAL", True)
 
 
 def approval_timeout() -> float:

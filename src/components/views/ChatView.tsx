@@ -24,7 +24,7 @@ import { buildInsightArtifacts, buildInsightThread } from "../chat/insightData";
 import { SessionList, toSessionItem, type SessionItem } from "../chat/SessionList";
 import { CreatingOverlay } from "../chat/CreatingOverlay";
 import { RolePickerDialog } from "../chat/RolePickerDialog";
-import { useChatSession } from "../chat/useChatSession";
+import { useChatSession, type ErrorAction } from "../chat/useChatSession";
 import { loadGroups } from "../../lib/groupsStore";
 import { CREATE_MIN_MS, CREATE_STEPS, sleep } from "../../lib/creationSteps";
 import { ConfirmDialog } from "../ui/confirm-dialog";
@@ -102,6 +102,7 @@ export function ChatView({ newRequestId = 0, onConversationCount }: ChatViewProp
     error,
     errorTone,
     errorAnchorId,
+    errorAction,
     pendingQuestion,
     liveSteps,
     restoreText,
@@ -114,6 +115,22 @@ export function ChatView({ newRequestId = 0, onConversationCount }: ChatViewProp
     send,
     cancel,
   } = chat;
+
+  /**
+   * 错误条上的动作。错误码 → 动作的映射在 `useChatSession::actionForCode`，
+   * 这里只负责「动作落地」：去模型页补配置，或把最后一句提问重发一次。
+   */
+  const handleErrorAction = useCallback(
+    (action: ErrorAction) => {
+      if (action === "configure") {
+        navigate(VIEW_PATH.models);
+        return;
+      }
+      const lastAsk = [...messages].reverse().find((m) => m.role === "user");
+      if (lastAsk) void send(lastAsk.content);
+    },
+    [messages, navigate, send]
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -365,6 +382,8 @@ export function ChatView({ newRequestId = 0, onConversationCount }: ChatViewProp
           error={error}
           errorTone={errorTone}
           errorAnchorId={errorAnchorId}
+          errorAction={errorAction}
+          onErrorAction={handleErrorAction}
           meta={meta}
           onStop={() => cancel("stop")}
           resumable={!!chat.resumable}

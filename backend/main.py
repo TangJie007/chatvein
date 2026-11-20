@@ -23,10 +23,12 @@ from typing import Any, cast
 import uvicorn
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 import db  # pyright: ignore[reportImplicitRelativeImport]
+import errors  # pyright: ignore[reportImplicitRelativeImport]
+from agents import config as agent_config  # pyright: ignore[reportImplicitRelativeImport]
 from agents.cancellation import (  # pyright: ignore[reportImplicitRelativeImport]
     TurnCancelled,
     bind_turn,
@@ -46,7 +48,6 @@ from agents.streaming import (  # pyright: ignore[reportImplicitRelativeImport]
     bind_stream_sink,
     stream_enabled,
 )
-from agents.llm import model_error_hint  # pyright: ignore[reportImplicitRelativeImport]
 from agents.graphs.pipeline import run_pipeline  # pyright: ignore[reportImplicitRelativeImport]
 from conversations.entity.dto import ConversationRecord  # pyright: ignore[reportImplicitRelativeImport]
 from chats.module import (  # pyright: ignore[reportImplicitRelativeImport]
@@ -137,6 +138,23 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["Content-Type", "X-ChatVein-Token"],
 )
+
+
+def _error_envelope_enabled() -> bool:
+    """``CHATVEIN_ERROR_ENVELOPE=0`` 时只回 ``detail``（旧前端 / 排障对照用）。"""
+    return agent_config.flag("CHATVEIN_ERROR_ENVELOPE", True)
+
+
+@app.exception_handler(errors.AgentError)
+async def _agent_error_handler(_request: Request, exc: errors.AgentError) -> JSONResponse:
+    """REST 出口：``detail`` 保持原样（老前端不改也能用），``error`` 供按码分流。
+
+    SSE 不走这里——帧由 ``_stream_events`` 自己拼，形状见 :meth:`AgentError.to_dict`。
+    """
+    body: dict[str, Any] = {"detail": exc.http_detail()}
+    if _error_envelope_enabled():
+        body["error"] = exc.to_dict()
+    return JSONResponse(status_code=exc.http_status, content=body)
 
 # 访问令牌：Rust 启动后端时通过 CHATVEIN_TOKEN 注入，前端每次请求带
 # X-ChatVein-Token header，这里逐请求校验，不匹配直接 401。
@@ -239,9 +257,9 @@ async def chat(req: ChatRequest, request: Request):
         return _aborted_payload()
     except Exception as exc:  # noqa: BLE001
         traceback.print_exc()
-        # 限流 / 鉴权 / 供应商 5xx：直说人话，别让用户对着 HTTP 429 猜
-        detail = model_error_hint(exc) or f"对话失败：{exc}"
-        raise HTTPException(status_code=500, detail=detail) from exc
+        # 限流 / 鉴权 / 供应商 5xx 由 errors.classify 认领（码 + 人话 + 可重试），
+        # 交给统一异常处理器：detail 不变，新增 error 字段供前端按码分流。
+        raise errors.classify(exc, stage="chat") from exc
 
 
 @app.post("/api/chat/cancel", tags=["chat"], summary="取消在途的一轮生成")
@@ -669,15 +687,11 @@ async def _stream_events(req: ChatRequest, request: Request):
                 {"event": "cancelled", "data": {"turn_id": turn_id, "resumable": True}}
             )
         except Exception as exc:  # noqa: BLE001
+            err = errors.classify(exc, stage="stream")
             await queue.put(
                 {
                     "event": "error",
-                    "data": {
-                        "code": "chat_failed",
-                        "message": model_error_hint(exc),
-                        "retryable": True,
-                        "turn_id": turn_id,
-                    },
+                    "data": {**err.to_dict(), "turn_id": turn_id},
                 }
             )
         finally:
@@ -715,9 +729,8 @@ async def chat_stream(req: ChatRequest, request: Request):
     ``CHATVEIN_STREAM=0`` 时直接 409：调用方应回落到旧接口，而不是拿到半成品。
     """
     if not stream_enabled():
-        raise HTTPException(
-            status_code=409, detail="流式已关闭（CHATVEIN_STREAM=0），请使用 /api/chat"
-        )
+        # 带码之后前端不再靠「流式已关闭」这句中文猜回落时机（见 client.ts）。
+        raise errors.AgentError(errors.STREAM_DISABLED, stage="stream")
     return StreamingResponse(
         _stream_events(req, request),
         media_type="text/event-stream",

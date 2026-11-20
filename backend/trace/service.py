@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Iterator
@@ -35,6 +36,13 @@ def _role_meta(role: dict[str, Any] | None) -> dict[str, Any]:
     window_k = int(entity.context_window_k or 0)
     if window_k:
         meta["context_window"] = window_k * 1000
+    # 单价（batch4 · 4.7）：留空就不算金额，只报 token，别假装知道价钱。
+    if entity.price_input is not None or entity.price_output is not None:
+        meta["price_input"] = float(entity.price_input or 0.0)
+        meta["price_output"] = float(entity.price_output or 0.0)
+        meta["currency"] = (os.environ.get("CHATVEIN_PRICE_CURRENCY") or "CNY").strip() or "CNY"
+    if entity.fallback_config_id:
+        meta["fallback_config_id"] = entity.fallback_config_id
     return meta
 
 

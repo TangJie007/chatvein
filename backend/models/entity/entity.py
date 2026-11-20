@@ -42,6 +42,13 @@ class LlmModel(SQLModel, table=True):
 
     enabled: bool = Field(default=True)
 
+    #: 备用模型配置 id（batch4 · 4.7）：主模型在**结构化调用**上失败时改用它。
+    #: 只存 id、不建外键——模型可被删除，悬空引用按「没有备用模型」处理。
+    fallback_config_id: str | None = Field(default=None, max_length=64)
+    #: 每百万 token 单价，用户自填，仅用于追踪里的金额估算；留空只统计 token。
+    price_input: float | None = Field(default=None)
+    price_output: float | None = Field(default=None)
+
     description: str = Field(default="", max_length=500)
     created_at: datetime = Field(default_factory=_utc_now)
     updated_at: datetime = Field(default_factory=_utc_now)

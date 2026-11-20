@@ -27,12 +27,18 @@ def get_model(model_id: str):
 
 @models_controller.post("/", status_code=201)
 def create_model(payload: CreateLlmModelDto):
-    return _service.create_model(payload)
+    try:
+        return _service.create_model(payload)
+    except ValueError as exc:  # 备用模型校验：直接回 400 + 人话文案
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @models_controller.patch("/{model_id}")
 def update_model(model_id: str, payload: UpdateLlmModelDto):
-    model = _service.update_model(model_id, payload)
+    try:
+        model = _service.update_model(model_id, payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     if model is None:
         raise HTTPException(status_code=404, detail="模型不存在")
     return model

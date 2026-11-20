@@ -6,6 +6,7 @@ import {
   getConversation,
   getConversationWorkspace,
   getTrace,
+  HttpError,
   listResumable,
   resumeTurn,
   sendChat,
@@ -27,6 +28,19 @@ import type { InsightStep } from "./InsightPanel";
  * 对话视图与群组视图共用这一份逻辑，但各自有独立的实例与面板，
  * 因此群组特有的规则（不展示模型、没有技能）不会反过来影响对话视图。
  */
+
+/** 错误条上的建议动作：去补模型配置 / 再发一次。码表见 `backend/errors.py`。 */
+export type ErrorAction = "configure" | "retry";
+
+/**
+ * 码 → 动作。认不出的码（老后端 / 内部错误）一律不给按钮：
+ * 与其猜一个大概率没用的动作，不如让用户自己读那句话。
+ */
+function actionForCode(code: string): ErrorAction | null {
+  if (code === "MODEL_AUTH" || code === "MODEL_CONFIG") return "configure";
+  if (code === "MODEL_RATE_LIMIT" || code === "TOOL_TRANSIENT_EXHAUSTED") return "retry";
+  return null;
+}
 
 export type ChatSessionMeta = {
   difficulty?: string;
@@ -126,6 +140,8 @@ export function useChatSession({
   const [sending, setSending] = useState(false);
   const [error, setErrorState] = useState<string | null>(null);
   const [errorTone, setErrorTone] = useState<"danger" | "muted">("danger");
+  /** 错误条上的建议动作（由后端错误码推导，见 `actionForCode`）。 */
+  const [errorAction, setErrorAction] = useState<ErrorAction | null>(null);
   /** 本轮异常挂在哪个气泡下面（提问气泡 id）；null 表示错误不挂载到具体气泡。 */
   const [errorAnchorId, setErrorAnchorId] = useState<string | null>(null);
   /** 本轮正在回答的问题原文：生成中把「思考流」锁定到这条问题上。 */
@@ -166,9 +182,10 @@ export function useChatSession({
   const lastPersistedIdRef = useRef(0);
 
   const setError = useCallback(
-    (message: string | null, tone: "danger" | "muted" = "danger") => {
+    (message: string | null, tone: "danger" | "muted" = "danger", action: ErrorAction | null = null) => {
       setErrorTone(tone);
       setErrorState(message);
+      setErrorAction(action);
       if (!message) setErrorAnchorId(null);
     },
     []
@@ -329,6 +346,8 @@ export function useChatSession({
       // 只是本地 UI，不进入 API 请求体。
       const slugs = nextSkills?.length ? nextSkills.map((s) => s.slug) : null;
       let failure: string | null = null;
+      //: 失败原因的错误码（见 backend/errors.py）：决定错误条上给不给按钮。
+      let failureCode = "";
       try {
         for (let index = 0; index < targets.length; index++) {
           // 本轮 id 由前端生成：后端按它逐步落追踪，思考流可边等边轮询。
@@ -369,17 +388,19 @@ export function useChatSession({
                   } else if (event.event === "cancelled") {
                     streamCancelled = true;
                   } else if (event.event === "error") {
-                    streamFailure =
-                      (event.data as { message?: string }).message ?? "流式生成失败";
+                    const data = event.data as { message?: string; code?: string };
+                    streamFailure = data.message ?? "流式生成失败";
+                    failureCode = data.code ?? "";
                   }
                 }
               );
               streamOpened = true;
             } catch (err) {
               // 环境不支持流式 / 后端显式关流式：回落普通请求，不能把功能弄丢。
+              // 判据是码（STREAM_DISABLED），不是「流式已关闭」这句文案——文案会改，码不会。
               const fallback =
                 err instanceof StreamUnsupportedError ||
-                (err instanceof Error && err.message.includes("流式已关闭"));
+                (err instanceof HttpError && err.code === "STREAM_DISABLED");
               if (!fallback) throw err;
             }
             if (streamCancelled) {
@@ -458,6 +479,7 @@ export function useChatSession({
             // 摘掉占位气泡并报真实原因——留着空气泡会一直显示「思考中」，
             // 而思考流已随轮询停止，看起来就像「思考中断了却还在转」。
             setMessages((prev) => prev.filter((m) => m.id !== pendingId));
+            if (!failureCode && err instanceof HttpError) failureCode = err.code;
             failure =
               failure ??
               (isAbortError(err) ? "本轮生成已中断，未收到结果" : errorMessage(err));
@@ -465,7 +487,7 @@ export function useChatSession({
         }
         // 保留提问气泡（错误挂在它下面），助手气泡已在上面逐个摘掉 / 填充。
         if (failure) {
-          setError(failure);
+          setError(failure, "danger", actionForCode(failureCode));
           setErrorAnchorId(optimisticId);
         }
       } finally {
@@ -624,6 +646,7 @@ export function useChatSession({
     sending,
     error,
     errorTone,
+    errorAction,
     errorAnchorId,
     pendingQuestion,
     liveSteps,

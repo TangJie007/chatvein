@@ -14,6 +14,9 @@ export interface TraceTotals extends TraceUsage {
   tool_calls: number;
   llm_ms?: number;
   tool_ms?: number;
+  /** 金额估算：只有模型里填了单价才有（后端 `agents/cost.py` 算）。 */
+  cost_amount?: number;
+  currency?: string;
 }
 
 export interface TraceInvocation {
@@ -32,6 +35,8 @@ export interface TraceErrorDetail {
   message?: string;
   status_code?: number;
   request_id?: string;
+  /** 错误码（`backend/errors.py` 码表）：让「同一个原因」在多次失败里可聚合。 */
+  code?: string;
 }
 
 export interface TraceMessage {
@@ -93,6 +98,23 @@ export interface TurnTrace extends TraceSummary {
   candidate_tools: string[];
   tool_plan_reason: string;
   reply: string;
+  /** 提示词版本（`backend/agents/prompt_registry.py`）：id → 8 位版本号。 */
+  prompts?: Record<string, string> | null;
+  /** 本轮是否降级过备用模型；非空时面板顶部要给提示，否则用户会拿降级结果排查主模型。 */
+  model_fallback?: {
+    from_config: string;
+    to_config: string;
+    code: string;
+  } | null;
+  /** 单轮预算账本（`backend/agents/cost.py`）；没配预算时 token_limit 为 0。 */
+  budget?: {
+    token_limit: number;
+    input_tokens: number;
+    output_tokens: number;
+    total_tokens: number;
+    llm_calls: number;
+    curtailed: boolean;
+  } | null;
   path: TracePathNode[];
   steps: TraceStep[];
 }

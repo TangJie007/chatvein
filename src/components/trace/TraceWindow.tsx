@@ -181,6 +181,11 @@ function StepDetail({ step }: { step: TraceStep }) {
 
       {step.error ? (
         <p className="rounded-xl bg-danger-50 px-3 py-2 text-[12.5px] text-danger-600">
+          {step.error_detail?.code ? (
+            <span className="mr-1.5 rounded bg-white/70 px-1.5 py-0.5 font-mono text-[11px]">
+              {step.error_detail.code}
+            </span>
+          ) : null}
           {step.error_detail?.status_code ? `HTTP ${step.error_detail.status_code} ` : ""}
           {step.error}
           {step.error_detail?.request_id ? ` · ${step.error_detail.request_id}` : ""}
@@ -442,11 +447,44 @@ export function TraceWindow({
                 <span>工具 {trace.totals.tool_calls}</span>
                 {trace.totals.llm_ms ? <span>模型 {formatElapsed(trace.totals.llm_ms)}</span> : null}
                 {trace.totals.tool_ms ? <span>工具耗时 {formatElapsed(trace.totals.tool_ms)}</span> : null}
+                {trace.totals.cost_amount ? (
+                  <span title="按模型里填的单价估算">
+                    ≈ {trace.totals.currency ?? "CNY"} {trace.totals.cost_amount.toFixed(4)}
+                  </span>
+                ) : null}
+                {trace.budget && trace.budget.token_limit > 0 ? (
+                  <span title="单轮 token 预算（CHATVEIN_TURN_TOKEN_BUDGET）">
+                    预算 {formatTokens(trace.budget.total_tokens)}/{formatTokens(trace.budget.token_limit)}
+                    {trace.budget.curtailed ? " · 已收尾" : ""}
+                  </span>
+                ) : null}
               </div>
               {trace.role_name || trace.model_name || trace.config_name || trace.context_window ? (
                 <p className="mt-1 text-[12px] text-ink-400">
                   {[trace.role_name, trace.config_name || trace.model_name].filter(Boolean).join(" · ")}
                   {trace.context_window ? ` · 窗口 ${formatTokens(trace.context_window)}` : ""}
+                </p>
+              ) : null}
+              {trace.model_fallback ? (
+                // 结论来自备用模型：先看这里，再去怀疑主模型或提示词。
+                <p className="mt-2 rounded-lg bg-warn-50 px-2 py-1.5 text-[11.5px] leading-5 text-warn-600">
+                  本轮降级到备用模型（{trace.model_fallback.code}）：
+                  {trace.model_fallback.from_config || "主模型"} →{" "}
+                  {trace.model_fallback.to_config || "备用模型"}。每轮最多降级一次，见{" "}
+                  <code>agents/llm.py</code>。
+                </p>
+              ) : null}
+              {trace.prompts && Object.keys(trace.prompts).length > 0 ? (
+                // 一行看漂移：悬停看全部 id。版本定义见 agents/prompt_registry.py。
+                <p
+                  className="mt-1 truncate font-mono text-[11px] text-ink-400"
+                  title={Object.entries(trace.prompts)
+                    .map(([id, version]) => `${id}=${version}`)
+                    .join("\n")}
+                >
+                  {Object.entries(trace.prompts)
+                    .map(([id, version]) => `${id}=${version}`)
+                    .join(" · ")}
                 </p>
               ) : null}
               <div className="mt-3 flex flex-wrap items-center gap-1.5">

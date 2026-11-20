@@ -17,6 +17,11 @@ export interface LlmModelRecord {
   retries: number;
   context_window_k: number;
   enabled: boolean;
+  /** 备用模型配置 id：主模型限流/超时/5xx 时结构化调用改用它。 */
+  fallback_config_id: string | null;
+  /** 每百万 token 单价，用户自填，仅用于追踪里的金额估算；留空表示不显示金额。 */
+  price_input: number | null;
+  price_output: number | null;
   description: string;
   created_at: string;
   updated_at: string;
@@ -37,6 +42,10 @@ export type CreateLlmModelPayload = {
   retries?: number;
   context_window_k?: number;
   enabled?: boolean;
+  /** 传 null 清除备用模型；必须指向另一条已启用的配置。 */
+  fallback_config_id?: string | null;
+  price_input?: number | null;
+  price_output?: number | null;
   description?: string;
 };
 

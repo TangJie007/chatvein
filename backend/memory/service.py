@@ -20,6 +20,8 @@ from __future__ import annotations
 
 import os
 import re
+
+from agents import config  # pyright: ignore[reportImplicitRelativeImport]
 import threading
 import uuid
 from typing import Any
@@ -61,19 +63,15 @@ _SENSITIVE = (
 
 
 def memory_enabled() -> bool:
-    return (os.environ.get("CHATVEIN_MEMORY", "1") or "1").strip() != "0"
+    return config.flag("CHATVEIN_MEMORY", True)
 
 
 def auto_accept() -> bool:
-    return (os.environ.get("CHATVEIN_MEMORY_AUTO_ACCEPT", "0") or "0").strip() == "1"
+    return config.flag("CHATVEIN_MEMORY_AUTO_ACCEPT", False)
 
 
 def extract_every_turns() -> int:
-    raw = (os.environ.get("CHATVEIN_MEMORY_EXTRACT_TURN_INTERVAL", "1") or "1").strip()
-    try:
-        return max(1, int(raw))
-    except ValueError:
-        return 1
+    return config.number("CHATVEIN_MEMORY_EXTRACT_TURN_INTERVAL", 1, minimum=1)
 
 
 def contains_secret(text: str) -> bool:

@@ -1,6 +1,6 @@
 # 生产级增强 · 第四批：横切治理（详细设计评审稿）
 
-> 对应总纲 [`production-roadmap.md`](./production-roadmap.md) §4「贯穿三批的横切设计」。**设计评审中，尚未改代码**。
+> 对应总纲 [`production-roadmap.md`](./production-roadmap.md) §4「贯穿三批的横切设计」。**已实现（2026-11），落地范围与偏差见文末「实现纪要」**。
 > 本批是前三批（1.1–1.4 / 2.1–2.4 / 3.1–3.3）**遗留横切项的收口**：不含新页面、不引入第三方依赖、不改 Tauri 壳。
 > 三个能力：4.3 统一错误模型 / 4.4 Prompt 与配置治理 / 4.7 成本预算与模型 fallback（本批新增编号）。
 > 互不重叠、各自带开关，可独立交付与回滚；顺序上 4.3 先行（4.4 的报告与 4.7 的触发条件都要用它的错误码）。
@@ -340,8 +340,40 @@ def turn_usage() -> TurnBudget                     # ContextVar，与 tool_scope
 | 能力 | 开关 | 新增数据 | a 级文件改动 | 专项冒烟 |
 |---|---|---|---|---|
 | 4.3 统一错误模型 | `CHATVEIN_ERROR_ENVELOPE` | —（trace 加 `error_code`） | `main.py`、`useChatSession.ts` | 断网 / 错误 key 两个场景的「去配置」按钮 |
-| 4.4 Prompt 治理 | `CHATVEIN_PROMPT_REGISTRY` | —（trace/eval 加 `prompts`） | — | 改一个字不升版本 → `--dry-run` 报错 |
-| 4.7 预算 + fallback | `CHATVEIN_TURN_TOKEN_BUDGET` / `CHATVEIN_MODEL_FALLBACK` | `models` 三列（主库 v15） | `db.py` | 5000 token 预算收尾 + 备用模型降级 |
+| 4.4 Prompt 治理 | 无（`eval --dry-run` 自检当门禁） | —（trace/eval 加 `prompts`） | — | 改一个字不升版本 → `--dry-run` 报错 |
+| 4.7 预算 + fallback | `CHATVEIN_TURN_TOKEN_BUDGET` / `CHATVEIN_MODEL_FALLBACK` | `llm_models` 三列（主库 v15） | `db.py` | 5000 token 预算收尾 + 备用模型降级 |
+
+## 实现纪要（batch4 落地记录）
+
+### 落地位置
+
+| 能力 | 落在哪 | 备注 |
+|---|---|---|
+| 4.3 错误码表 + 分类 | `backend/errors.py`（`classify` / `AgentError` / `MESSAGES` / `HTTP_STATUS`） | `tool_result.py` 只 re-export `TOOL_*`，`test_errors.py` 断言两处恒等 |
+| 4.3 REST/SSE 信封 | `main.py` 异常处理器 + SSE `error` 帧（`code/retryable/stage`，保留 `detail`） | `CHATVEIN_ERROR_ENVELOPE=0` 回到旧形状 |
+| 4.3 前端按码决策 | `client.ts`（`ErrorEnvelope` / 具名 `HttpError`）、`useChatSession.ts`（`actionForCode` → `configure`/`retry`）、`ChatPanel.tsx`（`ErrorNote` 按钮）、`ChatView.tsx`（落地动作） | 回落判定改用 `STREAM_DISABLED` 码，不再匹配中文文案 |
+| 4.3 trace | `recording.py` step `error_detail.code`、轮级 `error_code`；`TraceWindow` 显示码徽标 | — |
+| 4.4 提示词版本 | `agents/prompt_registry.py`：7 个 spec（framework / agent.medium / agent.hard / route.understand / tools.select / team.aggregate / eval.judge）、版本 = 原文 sha256 前 8 位 | 进 `pipeline` 的 trace meta、`TraceWindow` 头部、eval 报告与 `--dry-run` 输出 |
+| 4.4 配置口径 | `agents/config.py::flag/number` + `docs/configuration.md` 全量表 | `backend/tests/test_config.py` 用 AST 扫「真的读环境变量」的调用，漏写即失败 |
+| 4.7 预算 | `agents/cost.py`（`TurnBudget` / `begin_turn` / `note_usage` / `over_budget` / `mark_curtailed`）、`common.budget_middlewares()`（`before_model` 注入收尾提示 + `wrap_tool_call` 挡工具）、`pipeline` 轮开始/结束复位 | 用量来自 `TraceHandler.on_llm_end` 回灌，不另起计量口径 |
+| 4.7 fallback | `llm.invoke_structured` 内部：命中 `MODEL_RATE_LIMIT/TIMEOUT/FAILED` 且配置了备用模型时切一次；`reset_fallback_used()` 每轮复位 | 流式主循环不降级（中途换模型会混增量） |
+| 4.7 数据 | `db.py` v15（可空三列，幂等）、`models` entity/dto/service/controller（写入即校验） | 悬空 `fallback_config_id` 运行期按「无备用」处理 |
+| 4.7 展示 | `ModelsView` 备用模型下拉 + 两个价格输入；`TraceWindow` 降级条幅、金额、预算进度 | 金额只在填了单价时出现（`CHATVEIN_PRICE_CURRENCY` 仅换单位） |
+
+### 与原设计的偏差（有意为之）
+
+1. **提示词不搬文本、也不在导入期 `register()`**：注册表用 `ast` 读源码字符串常量，避免把「提示词版本」变成启动期依赖与循环依赖；代价是 `verify()` 只能校验「源符号存在 / id 唯一 / 常量可读」，不能做 `Template.substitute` 渲染校验。`CHATVEIN_PROMPT_REGISTRY` 开关取消——没有需要回滚的运行时行为。
+2. **fallback 不做成 `with_fallback(model, fallback)` 包装**：降级逻辑收在 `invoke_structured` 内部（它是全仓库唯一的结构化调用入口），调用点无需改动；模型实例构造时打 `_chatvein_config_id` 私有标记，用于找回备用配置。
+3. **降级触发码收窄为 429 / 超时 / 5xx**：鉴权错（`MODEL_AUTH`）与「模型名不存在」不降级——多半是配置填错，备用模型往往同样失败，只会掩盖真因。
+4. **金额只做展示**：单价由用户在模型表单填（每百万 token），未填只报 token；不内置价目表、不做币种换算（`CHATVEIN_PRICE_CURRENCY` 只影响符号）。
+5. **配置口径统一到「新开关 + 本次触碰的开关」**：`mcps/resilience.py`、`agents/orchestration.py`、`token_budget.py` 的数值开关保留各自的钳位函数（有上下限、支持小数），已在 `docs/configuration.md` 第 5 节标注。
+
+### 回归记录
+
+- `pytest backend/tests`：全绿（含新增 `test_errors.py` / `test_prompt_registry.py` / `test_config.py` / `test_cost.py` / `test_model_fallback.py` / `test_models_fallback_fields.py`）。
+- `npm run build`：通过。
+- `tools/run_eval.ps1 -Rest @("--dry-run")`：退出码 0，输出 7 条 spec 版本号。
+
 
 ## 待评审确认
 

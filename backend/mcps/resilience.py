@@ -21,6 +21,7 @@ from contextvars import ContextVar
 from dataclasses import dataclass, field
 from typing import Any, Callable, Iterator
 
+import errors  # pyright: ignore[reportImplicitRelativeImport]
 from agents.cancellation import TurnCancelled, raise_if_cancelled
 
 from .tool_result import (
@@ -80,6 +81,9 @@ _TRANSIENT_ERRNOS = {
     111,  # ECONNREFUSED
 }
 
+#: 类名兜底：底层库（httpx / socket 包装）既不带状态码也不带英文报文关键词时用。
+_TRANSIENT_NAMES = ("timeout", "connection", "connect", "transport", "network", "httpx")
+
 _CACHE_LIMIT = 256
 
 
@@ -121,30 +125,26 @@ def _retry_base_s() -> float:
     return max(0.0, min(5.0, _env_float("CHATVEIN_TOOL_RETRY_BASE", 0.5)))
 
 
+#: 拒绝类码：都不该重试，但 audit 里要能区分「规则不让」与「沙箱越界」。
+_DENIED_CODES = frozenset({errors.TOOL_DENIED, errors.SANDBOX_VIOLATION})
+
+
 def classify_exception(exc: BaseException) -> str:
-    """把异常归到 ``transient|deterministic|denied|cancelled``。"""
-    if isinstance(exc, TurnCancelled):
+    """把异常归到 ``transient|deterministic|denied|cancelled``（重试层专用）。
+
+    归类本身只在 ``errors.classify`` 一处定义；这里只做「码 → 重试策略」的翻译。
+    末尾两个兜底（异常类名 / errno）是为旧行为保留的：有些底层库既不带状态码，
+    报文里也没有英文关键词，只能靠类名认出来。
+    """
+    err = errors.classify(exc, stage="tool")
+    if err.code == errors.CANCELLED:
         return "cancelled"
-    message = str(exc).lower()
-    if isinstance(exc, PermissionError):
+    if err.code in _DENIED_CODES:
         return "denied"
-    # 工具层拒绝（会话外路径 / 命令策略）多半是带中文原因的 ValueError。
-    if any(word in message for word in ("拒绝", "不允许", "未授权", "denied", "not allowed")):
-        return "denied"
-    if isinstance(
-        exc,
-        (TimeoutError, ConnectionError, BrokenPipeError, InterruptedError),
-    ):
-        return "transient"
-    status = getattr(exc, "status_code", None)
-    if status is None:
-        response = getattr(exc, "response", None)
-        status = getattr(response, "status_code", None)
-    if isinstance(status, int) and (status == 429 or status >= 500):
+    if err.retryable:
         return "transient"
     name = type(exc).__name__.lower()
-    transient_words = ("timeout", "connection", "connect", "transport", "network", "httpx")
-    if any(word in name for word in transient_words):
+    if any(word in name for word in _TRANSIENT_NAMES):
         return "transient"
     if isinstance(exc, OSError) and exc.errno in _TRANSIENT_ERRNOS:
         return "transient"

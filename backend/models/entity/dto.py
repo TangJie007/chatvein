@@ -21,6 +21,10 @@ class CreateLlmModelDto(BaseModel):
     retries: int = Field(default=2, ge=0, le=10)
     context_window_k: int = Field(default=128, ge=1, le=10_000)
     enabled: bool = True
+    #: 备用模型（必须指向另一条已启用配置）；价格按「每百万 token」填，可留空。
+    fallback_config_id: str | None = None
+    price_input: float | None = Field(default=None, ge=0)
+    price_output: float | None = Field(default=None, ge=0)
     description: str = Field(default="", max_length=500)
 
 
@@ -41,6 +45,10 @@ class UpdateLlmModelDto(BaseModel):
     retries: int | None = Field(default=None, ge=0, le=10)
     context_window_k: int | None = Field(default=None, ge=1, le=10_000)
     enabled: bool | None = None
+    #: 传空字符串表示清除备用模型 / 价格。
+    fallback_config_id: str | None = None
+    price_input: float | None = Field(default=None, ge=0)
+    price_output: float | None = Field(default=None, ge=0)
     description: str | None = Field(default=None, max_length=500)
 
 
@@ -62,6 +70,9 @@ class LlmModelResponseDto(BaseModel):
     retries: int
     context_window_k: int
     enabled: bool
+    fallback_config_id: str | None
+    price_input: float | None
+    price_output: float | None
     description: str
     created_at: str
     updated_at: str

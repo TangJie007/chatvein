@@ -17,8 +17,9 @@ from langchain.agents.middleware import (
     before_model,
     wrap_tool_call,
 )
-from langchain_core.messages import ToolMessage
+from langchain_core.messages import HumanMessage, ToolMessage
 
+from agents import cost  # pyright: ignore[reportImplicitRelativeImport]
 from agents.cancellation import TurnCancelled, raise_if_cancelled  # pyright: ignore[reportImplicitRelativeImport]
 from mcps.approval import bind_tool_call, request_approval  # pyright: ignore[reportImplicitRelativeImport]
 from mcps.approval_policy import permission_approval  # pyright: ignore[reportImplicitRelativeImport]
@@ -410,6 +411,42 @@ def cancellation_guards() -> list[Any]:
     return [_before_tool, _before_model]
 
 
+def budget_middlewares() -> list[Any]:
+    """单轮 token 预算（`agents/cost.py`）：超预算后只收尾、不再执行工具。
+
+    判定放在**每一次**模型调用之前：往轮次里追加一条 HumanMessage 让它直接给结论；
+    同时把工具调用挡回去——不然模型会继续发工具调用，把「收尾」变成空转。
+
+    预算没配（``CHATVEIN_TURN_TOKEN_BUDGET=0``，默认）时这两个钩子都是透明放行。
+    """
+
+    @before_model(name="BudgetCurtail")
+    def _curtail(state: Any, runtime: Any) -> dict[str, Any] | None:
+        if not cost.over_budget() or not cost.mark_curtailed():
+            return None
+        budget = cost.current_turn()
+        note(
+            "budget",
+            name="budget",
+            status="warn",
+            detail=budget.as_dict() if budget is not None else {},
+        )
+        return {"messages": [HumanMessage(content=cost.CURTAIL_MESSAGE)]}
+
+    @wrap_tool_call(name="BudgetBlockTool")
+    def _block(request: Any, handler: Any) -> Any:
+        if not cost.over_budget():
+            return handler(request)
+        call = getattr(request, "tool_call", None) or {}
+        call_id = str(call.get("id") or "") if isinstance(call, dict) else ""
+        return ToolMessage(
+            content="本轮 token 预算已用完，该工具不再执行。请直接基于已有信息给出结论。",
+            tool_call_id=call_id,
+        )
+
+    return [_block, _curtail]
+
+
 def rate_limit_retry_middleware():
     """供应商限流（429 / TPM·RPM 超限）时退避重试，其余错误照常抛出。
 
@@ -513,6 +550,8 @@ def build_react_graph(
     - 供应商限流：退避重试若干次，仍失败由上层翻成可读提示
     """
     middleware: list[Any] = [
+        # 预算排最前：超预算后连审批都不该再弹（用户看到弹窗会以为还能继续跑）。
+        *budget_middlewares(),
         *permission_gate_middleware(),
         same_arg_tool_guard(),
         *resilient_tool_middleware(),

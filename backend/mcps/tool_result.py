@@ -11,20 +11,34 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from errors import (  # pyright: ignore[reportImplicitRelativeImport]
+    MCP_SERVER_DOWN,
+    TOOL_CIRCUIT_OPEN,
+    TOOL_DENIED,
+    TOOL_FAILED,
+    TOOL_OK,
+    TOOL_SKIPPED,
+    TOOL_TIMEOUT,
+    TOOL_TRANSIENT_EXHAUSTED,
+)
+
+#: 码表定义在 ``errors.py``（REST / SSE / trace 共用一份）；这里 re-export 是为了
+#: 保持 ``from mcps.tool_result import TOOL_DENIED`` 的旧导入路径不失效。
+__all__ = [
+    "ERROR_KINDS",
+    "MCP_SERVER_DOWN",
+    "TOOL_CIRCUIT_OPEN",
+    "TOOL_DENIED",
+    "TOOL_FAILED",
+    "TOOL_OK",
+    "TOOL_SKIPPED",
+    "TOOL_TIMEOUT",
+    "TOOL_TRANSIENT_EXHAUSTED",
+    "ToolResult",
+]
+
 #: 错误类别：决定是否重试、如何给人话提示。
 ERROR_KINDS = ("transient", "deterministic", "denied", "cancelled")
-
-TOOL_OK = "TOOL_OK"
-TOOL_FAILED = "TOOL_FAILED"
-TOOL_DENIED = "TOOL_DENIED"
-TOOL_TRANSIENT_EXHAUSTED = "TOOL_TRANSIENT_EXHAUSTED"
-TOOL_CIRCUIT_OPEN = "TOOL_CIRCUIT_OPEN"
-TOOL_SKIPPED = "TOOL_SKIPPED"
-#: 单次工具超时（外部 MCP server 最长等待）。与 ``external/client.py`` 的
-#: ``MCP_TOOL_TIMEOUT`` 对齐，异常上带 ``tool_code`` 时由 resilience 直取。
-TOOL_TIMEOUT = "TOOL_TIMEOUT"
-#: 外部 MCP 服务连不上 / 已断开：不该重试，换工具或直答。
-MCP_SERVER_DOWN = "MCP_SERVER_DOWN"
 
 
 @dataclass

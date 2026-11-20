@@ -20,6 +20,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from agents import config  # pyright: ignore[reportImplicitRelativeImport]
+
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS audit_events (
     seq INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -75,7 +77,8 @@ def _iso_now() -> str:
 
 
 def audit_enabled() -> bool:
-    return (os.environ.get("CHATVEIN_AUDIT", "1") or "1").strip() != "0"
+    """默认开。``CHATVEIN_AUDIT=0`` 关闭（口径见 ``agents/config.py``；留空按关）。"""
+    return config.flag("CHATVEIN_AUDIT", True)
 
 
 def audit_db_path() -> Path:

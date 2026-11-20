@@ -19,6 +19,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator
 
+from . import config
 from langgraph.checkpoint.base import (
     BaseCheckpointSaver,
     Checkpoint,
@@ -60,12 +61,8 @@ _ensure_lock = threading.Lock()
 
 
 def checkpoint_enabled() -> bool:
-    import os
-
-    raw = os.environ.get("CHATVEIN_CHECKPOINT")
-    if raw is None:
-        return True
-    return raw.strip().lower() not in {"0", "false", "no", "off", ""}
+    """``CHATVEIN_CHECKPOINT=0`` 关掉中断续跑（判定口径见 ``agents/config.py``）。"""
+    return config.flag("CHATVEIN_CHECKPOINT", True)
 
 
 def thread_id_for(conversation_id: str, turn_id: str) -> str:
